@@ -58,8 +58,8 @@ def resolve_agent_api_key(agent: str, explicit_key: Optional[str] = None) -> Opt
     if isinstance(agent_keys, dict) and agent in agent_keys and agent_keys[agent]:
         return str(agent_keys[agent]).strip()
 
-    # 3. For coding_harness, fallback to the general SAFI_API_KEY or cfg["api_key"]
-    if agent == "coding_harness":
+    # 3. For software_engineer, fallback to the general SAFI_API_KEY or cfg["api_key"]
+    if agent == "software_engineer":
         gen_env = os.environ.get("SAFI_API_KEY") or os.environ.get("SAFI_POLICY_API_KEY")
         if gen_env:
             return gen_env.strip()
@@ -79,8 +79,8 @@ def save_agent_api_key(agent: str, key: str) -> None:
     clean_key = key.strip()
     agent_keys[agent] = clean_key
     cfg["agent_keys"] = agent_keys
-    # Keep top-level api_key in sync for coding_harness or if unset
-    if agent == "coding_harness" or not cfg.get("api_key"):
+    # Keep top-level api_key in sync for software_engineer or if unset
+    if agent == "software_engineer" or not cfg.get("api_key"):
         cfg["api_key"] = clean_key
     save_config(cfg)
 
@@ -89,13 +89,14 @@ def list_configured_agent_keys() -> Dict[str, str]:
     """Return dictionary of configured agent keys."""
     cfg = load_config()
     agent_keys = dict(cfg.get("agent_keys") or {})
-    if cfg.get("api_key") and "coding_harness" not in agent_keys:
-        agent_keys["coding_harness"] = str(cfg["api_key"]).strip()
+    if cfg.get("api_key") and "software_engineer" not in agent_keys:
+        agent_keys["software_engineer"] = str(cfg["api_key"]).strip()
     return agent_keys
 
 
-def resolve_api_key(explicit_key: Optional[str] = None, agent: str = "coding_harness") -> Optional[str]:
+def resolve_api_key(explicit_key: Optional[str] = None, agent: str = "software_engineer") -> Optional[str]:
     return resolve_agent_api_key(agent, explicit_key=explicit_key)
+
 
 
 

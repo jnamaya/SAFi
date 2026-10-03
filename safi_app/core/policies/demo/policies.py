@@ -39,7 +39,8 @@ from ...agents.bible_scholar import THE_BIBLE_SCHOLAR_AGENT
 from ...agents.socratic_tutor import THE_SOCRATIC_TUTOR_AGENT
 from ...agents.safi_steward import THE_SAFI_STEWARD_AGENT
 from ...agents.runsafi_steward import THE_RUNSAFI_STEWARD_AGENT
-from ...agents.coding_harness import CODING_HARNESS_AGENT
+from ...agents.software_engineer import SOFTWARE_ENGINEER_AGENT
+
 
 
 def _lift_values(values: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -341,5 +342,6 @@ DEMO_AGENT_POLICY_MAP: Dict[str, str] = {
     "tutor": "demo_academic_tutoring_policy",
     "safi": "demo_product_guidance_policy",
     "runsafi": "demo_runsafi_guidance_policy",
-    "coding_harness": "demo_coding_harness_policy",
+    "software_engineer": "demo_coding_harness_policy",
+
 }

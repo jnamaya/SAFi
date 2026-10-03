@@ -107,7 +107,7 @@ class TestSafiCliTurn(unittest.TestCase):
             workspace_root=Path("."),
             conversation_id="test-conv",
             user_id="test-user",
-            agent="coding_harness",
+            agent="software_engineer",
             auto_approve=True,
             max_steps=2,
         )
@@ -128,7 +128,7 @@ class TestSafiCliTurn(unittest.TestCase):
             workspace_root=Path("."),
             conversation_id="test-conv",
             user_id="test-user",
-            agent="coding_harness",
+            agent="software_engineer",
             auto_approve=True,
         )
         self.assertIsNotNone(res)
@@ -159,7 +159,7 @@ class TestSafiCliTurn(unittest.TestCase):
             workspace_root=Path("."),
             conversation_id="test-conv",
             user_id="test-user",
-            agent="coding_harness",
+            agent="software_engineer",
         )
         self.assertIsNotNone(res)
         self.assertEqual(res.get("finalOutput"), "Done listing.")
@@ -188,11 +188,11 @@ class TestSafiCliAgentSwitching(unittest.TestCase):
     def test_per_agent_key_storage_and_resolution(self):
         # Save key for fiduciary
         config.save_agent_api_key("fiduciary", "sk-fiduciary-123")
-        # Save key for coding_harness
-        config.save_agent_api_key("coding_harness", "sk-coding-456")
+        # Save key for software_engineer
+        config.save_agent_api_key("software_engineer", "sk-coding-456")
 
         self.assertEqual(config.resolve_agent_api_key("fiduciary"), "sk-fiduciary-123")
-        self.assertEqual(config.resolve_agent_api_key("coding_harness"), "sk-coding-456")
+        self.assertEqual(config.resolve_agent_api_key("software_engineer"), "sk-coding-456")
         self.assertIsNone(config.resolve_agent_api_key("health_navigator"))
 
         # Test environment variable override
@@ -205,7 +205,7 @@ class TestSafiCliAgentSwitching(unittest.TestCase):
         client.api_key = "old-key"
 
         new_agent, new_conv = prompt_switch_agent(
-            current_agent="coding_harness",
+            current_agent="software_engineer",
             client=client,
             workspace_root=Path("."),
             requested_agent="fiduciary",
@@ -221,7 +221,7 @@ class TestSafiCliAgentSwitching(unittest.TestCase):
 
         with patch("builtins.input", return_value="sk-new-financial-key"):
             new_agent, new_conv = prompt_switch_agent(
-                current_agent="coding_harness",
+                current_agent="software_engineer",
                 client=client,
                 workspace_root=Path("."),
                 requested_agent="fiduciary",
@@ -241,7 +241,7 @@ class TestSafiCliAgentSwitching(unittest.TestCase):
         # "2" corresponds to fiduciary in AVAILABLE_AGENTS
         with patch("builtins.input", return_value="2"):
             new_agent, new_conv = prompt_switch_agent(
-                current_agent="coding_harness",
+                current_agent="software_engineer",
                 client=client,
                 workspace_root=Path("."),
                 requested_agent=None,
@@ -256,14 +256,14 @@ class TestSafiCliAgentSwitching(unittest.TestCase):
 
         with patch("builtins.input", return_value=""):
             new_agent, new_conv = prompt_switch_agent(
-                current_agent="coding_harness",
+                current_agent="software_engineer",
                 client=client,
                 workspace_root=Path("."),
                 requested_agent=None,
             )
 
         # Should remain on current agent
-        self.assertEqual(new_agent, "coding_harness")
+        self.assertEqual(new_agent, "software_engineer")
         self.assertEqual(client.api_key, "coding-key")
 
     def test_prompt_switch_agent_cancelled_on_empty_key_input(self):
@@ -273,20 +273,20 @@ class TestSafiCliAgentSwitching(unittest.TestCase):
         # User chooses fiduciary (2), but presses Enter when asked for key
         with patch("builtins.input", side_effect=["2", ""]):
             new_agent, new_conv = prompt_switch_agent(
-                current_agent="coding_harness",
+                current_agent="software_engineer",
                 client=client,
                 workspace_root=Path("."),
                 requested_agent=None,
             )
 
-        self.assertEqual(new_agent, "coding_harness")
+        self.assertEqual(new_agent, "software_engineer")
         self.assertEqual(client.api_key, "coding-key")
 
     def test_prompt_command_menu_exit(self):
         client = MagicMock()
         with patch("builtins.input", return_value="6"):
             agent, conv, should_exit = prompt_command_menu(
-                current_agent="coding_harness",
+                current_agent="software_engineer",
                 client=client,
                 workspace_root=Path("."),
                 current_conv="conv-1",
@@ -297,7 +297,7 @@ class TestSafiCliAgentSwitching(unittest.TestCase):
         client = MagicMock()
         with patch("builtins.input", return_value="new"):
             agent, conv, should_exit = prompt_command_menu(
-                current_agent="coding_harness",
+                current_agent="software_engineer",
                 client=client,
                 workspace_root=Path("."),
                 current_conv="conv-1",
@@ -309,13 +309,13 @@ class TestSafiCliAgentSwitching(unittest.TestCase):
         client = MagicMock()
         with patch("builtins.input", return_value=""):
             agent, conv, should_exit = prompt_command_menu(
-                current_agent="coding_harness",
+                current_agent="software_engineer",
                 client=client,
                 workspace_root=Path("."),
                 current_conv="conv-1",
             )
         self.assertFalse(should_exit)
-        self.assertEqual(agent, "coding_harness")
+        self.assertEqual(agent, "software_engineer")
         self.assertEqual(conv, "conv-1")
 
 

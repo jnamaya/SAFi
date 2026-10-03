@@ -97,10 +97,11 @@ def run_agent_turn(
 
 
 AVAILABLE_AGENTS = {
-    "coding_harness": {
-        "title": "Coding Assistant",
+    "software_engineer": {
+        "title": "Software Engineer",
         "description": "Direct, audited repository engineering & software development",
     },
+
     "fiduciary": {
         "title": "The Fiduciary",
         "description": "Market-aware financial analyst, portfolio educator & data-driven guide",
@@ -460,7 +461,8 @@ def main():
     parser.add_argument("prompt", nargs="?", help="Task prompt. If omitted, starts interactive REPL mode.")
     parser.add_argument("-k", "--api-key", help="SAFi Policy API Key (defaults to SAFI_API_KEY env or config).")
     parser.add_argument("-u", "--api-url", help="SAFi backend URL (default: http://localhost:5000).")
-    parser.add_argument("-a", "--agent", default="coding_harness", help="Agent persona (default: coding_harness).")
+    parser.add_argument("-a", "--agent", default="software_engineer", help="Agent persona (default: software_engineer).")
+
     parser.add_argument("-w", "--workspace", default=".", help="Workspace path (default: current directory).")
     parser.add_argument(
         "--confirm",

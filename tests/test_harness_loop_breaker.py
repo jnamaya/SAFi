@@ -381,7 +381,8 @@ class HarnessProgressEndpointTests(unittest.TestCase):
                     "message": "Review this file",
                     "user_id": "coding-harness",
                     "conversation_id": "oc_test_harness",
-                    "agent": "coding_harness",
+                    "agent": "software_engineer",
+
                     "tools": [tool],
                     "tool_results": [{"tool_name": "read", "arguments": {}, "result": "file"}],
                     "recent_turns": "Prior software prompt.",
@@ -436,7 +437,7 @@ class HarnessProgressEndpointTests(unittest.TestCase):
         self.assertEqual(data.get("policyName"), "Financial Advisory Policy")
         self.assertEqual(data.get("policyId"), "demo_financial_advisory_policy")
 
-    def test_harness_uses_api_key_policy_for_coding_harness(self):
+    def test_harness_uses_api_key_policy_for_software_engineer(self):
         fake_safi = SimpleNamespace(
             profile={"policy_id": "coding-policy-1", "policy_name": "Org Coding Policy"},
             process_prompt=AsyncMock(return_value={"finalOutput": "coding answer", "audit_status": "complete"}),
@@ -455,16 +456,17 @@ class HarnessProgressEndpointTests(unittest.TestCase):
                     "message": "Refactor this function",
                     "user_id": "cli-user",
                     "conversation_id": "conv-1",
-                    "agent": "coding_harness",
+                    "agent": "software_engineer",
                 },
                 headers={"X-API-KEY": "coding-policy-key"},
             )
 
         self.assertEqual(response.status_code, 200)
-        # Verify get_or_create received the API key's policy for coding_harness
+        # Verify get_or_create received the API key's policy for software_engineer
         mock_get_or_create.assert_called_once()
         call_kwargs = mock_get_or_create.call_args.kwargs
         self.assertEqual(call_kwargs.get("policy_id"), "coding-policy-1")
+
 
     def test_harness_respects_explicit_client_policy_id(self):
         fake_safi = SimpleNamespace(

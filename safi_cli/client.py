@@ -27,7 +27,8 @@ class SafiClient:
         conversation_id: str,
         message: str,
         workspace_root: str,
-        agent: str = "coding_harness",
+        agent: str = "software_engineer",
+
         tool_results: Optional[List[Dict[str, Any]]] = None,
         recent_turns: str = "",
         message_id: Optional[str] = None,
