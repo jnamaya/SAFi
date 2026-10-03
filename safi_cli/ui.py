@@ -42,37 +42,70 @@ def _get_sparkline(data: List[float], width: int = 10) -> str:
 PRICING_PER_1M = {
     "claude-3-5-sonnet": (3.00, 15.00),
     "claude-3-sonnet": (3.00, 15.00),
+    "claude-sonnet": (3.00, 15.00),
     "claude-3-opus": (15.00, 75.00),
+    "claude-opus": (15.00, 75.00),
     "claude-3-haiku": (0.25, 1.25),
+    "claude-haiku": (0.25, 1.25),
     "gpt-4o-mini": (0.15, 0.60),
-    "gpt-4o": (5.00, 15.00),
+    "gpt-4o": (2.50, 10.00),
+    "gpt-5": (1.25, 10.00),
+    "gemini-2.5-flash": (0.30, 2.50),
+    "gemini-2.5-pro": (1.25, 10.00),
+    "deepseek": (0.28, 0.42),
+    "llama": (0.59, 0.79),
 }
 
 def _estimate_cost(model_name: str, in_t: int, out_t: int) -> Optional[float]:
+    if not model_name:
+        return None
     model_lower = model_name.lower()
     for k, v in PRICING_PER_1M.items():
         if k in model_lower:
             return (in_t / 1_000_000) * v[0] + (out_t / 1_000_000) * v[1]
     return None
 
-_session_in_tokens: int = 0
-_session_out_tokens: int = 0
-_session_cost: float = 0.0
+_session_intellect = {"in": 0, "out": 0, "cost": 0.0}
+_session_conscience = {"in": 0, "out": 0, "cost": 0.0}
 
 def _record_turn_telemetry(result: Dict[str, Any]):
-    """Accumulate session token and cost counters across turns."""
-    global _session_in_tokens, _session_out_tokens, _session_cost
-    token_usage = result.get("token_usage")
-    ai_prov = result.get("aiProvenance")
-    if token_usage and isinstance(token_usage, dict):
-        in_t = token_usage.get("prompt_tokens", 0)
-        out_t = token_usage.get("completion_tokens", 0)
-        _session_in_tokens += in_t
-        _session_out_tokens += out_t
-        if ai_prov and isinstance(ai_prov, dict) and ai_prov.get("model"):
-            cost = _estimate_cost(ai_prov.get("model"), in_t, out_t)
-            if cost is not None:
-                _session_cost += cost
+    """Accumulate session token and cost counters across turns for each faculty."""
+    global _session_intellect, _session_conscience
+    models_usage = result.get("models_usage")
+    if models_usage and isinstance(models_usage, dict):
+        # Intellect
+        intellect_data = models_usage.get("intellect") or {}
+        in_t = int(intellect_data.get("prompt_tokens") or 0)
+        out_t = int(intellect_data.get("completion_tokens") or 0)
+        _session_intellect["in"] += in_t
+        _session_intellect["out"] += out_t
+        model_name = intellect_data.get("model") or ""
+        cost = _estimate_cost(model_name, in_t, out_t)
+        if cost is not None:
+            _session_intellect["cost"] += cost
+
+        # Conscience
+        conscience_data = models_usage.get("conscience") or {}
+        c_in = int(conscience_data.get("prompt_tokens") or 0)
+        c_out = int(conscience_data.get("completion_tokens") or 0)
+        _session_conscience["in"] += c_in
+        _session_conscience["out"] += c_out
+        c_model = conscience_data.get("model") or ""
+        c_cost = _estimate_cost(c_model, c_in, c_out)
+        if c_cost is not None:
+            _session_conscience["cost"] += c_cost
+    else:
+        token_usage = result.get("token_usage")
+        ai_prov = result.get("aiProvenance")
+        if token_usage and isinstance(token_usage, dict):
+            in_t = int(token_usage.get("prompt_tokens") or 0)
+            out_t = int(token_usage.get("completion_tokens") or 0)
+            _session_intellect["in"] += in_t
+            _session_intellect["out"] += out_t
+            if ai_prov and isinstance(ai_prov, dict) and ai_prov.get("model"):
+                cost = _estimate_cost(ai_prov.get("model"), in_t, out_t)
+                if cost is not None:
+                    _session_intellect["cost"] += cost
 
 
 def _build_scoreboard_panel(result: Dict[str, Any]) -> Any:
@@ -114,42 +147,57 @@ def _build_scoreboard_panel(result: Dict[str, Any]) -> Any:
     if has_scores:
         panels.append(Panel(table, title="[bold]POLICY AUDIT", border_style="dim"))
 
-    # Model and Token Stats
-    token_usage = result.get("token_usage")
-    ai_prov = result.get("aiProvenance")
+    # Models Stats Breakdown
+    models_usage = result.get("models_usage") or {}
     stats_content = []
 
-    model_name_for_cost = None
-    if ai_prov and isinstance(ai_prov, dict):
-        model_name = ai_prov.get("model")
-        if model_name:
-            model_name_for_cost = model_name
-            stats_content.append(Text(f"Model: {model_name}", style="dim"))
+    # 1. Intellect Section
+    intellect_data = models_usage.get("intellect") or {}
+    ai_prov = result.get("aiProvenance") or {}
+    intellect_model = (
+        intellect_data.get("model")
+        or result.get("intellectModel")
+        or (ai_prov.get("model") if isinstance(ai_prov, dict) else None)
+        or "Unknown"
+    )
+    token_usage = intellect_data if "prompt_tokens" in intellect_data else (result.get("token_usage") or {})
+    in_t = int(token_usage.get("prompt_tokens") or 0)
+    out_t = int(token_usage.get("completion_tokens") or 0)
+    cost = _estimate_cost(intellect_model, in_t, out_t)
+    cost_str = f" (${cost:.4f})" if cost and cost >= 0.0001 else (" (<$0.0001)" if cost and cost > 0 else "")
+    sess_cost = _session_intellect["cost"]
+    sess_cost_str = f" (${sess_cost:.4f})" if sess_cost >= 0.0001 else (" (<$0.0001)" if sess_cost > 0 else "")
 
-    if token_usage and isinstance(token_usage, dict):
-        in_t = token_usage.get("prompt_tokens", 0)
-        out_t = token_usage.get("completion_tokens", 0)
+    stats_content.append(Text(f"Intellect: {intellect_model}", style="bold cyan"))
+    if in_t or out_t or _session_intellect["in"]:
+        stats_content.append(Text(f"  Turn: {in_t:,} in | {out_t:,} out{cost_str}", style="dim"))
+        stats_content.append(Text(f"  Session: {_session_intellect['in']:,} in | {_session_intellect['out']:,} out{sess_cost_str}", style="dim"))
+    else:
+        stats_content.append(Text("  Turn: - | Session: -", style="dim"))
 
-        cost_str = ""
-        sess_cost_str = ""
-        if model_name_for_cost:
-            cost = _estimate_cost(model_name_for_cost, in_t, out_t)
-            if cost is not None:
-                if 0 < cost < 0.0001:
-                    cost_str = " (<$0.0001)"
-                elif cost >= 0.0001:
-                    cost_str = f" (${cost:.4f})"
+    # 2. Conscience Section
+    conscience_data = models_usage.get("conscience") or {}
+    conscience_model = (
+        conscience_data.get("model")
+        or result.get("conscienceModel")
+        or "systemone (Jev)"
+    )
+    c_in = int(conscience_data.get("prompt_tokens") or 0)
+    c_out = int(conscience_data.get("completion_tokens") or 0)
+    c_cost = _estimate_cost(conscience_model, c_in, c_out)
+    c_cost_str = f" (${c_cost:.4f})" if c_cost and c_cost >= 0.0001 else (" (<$0.0001)" if c_cost and c_cost > 0 else "")
+    c_sess_cost = _session_conscience["cost"]
+    c_sess_cost_str = f" (${c_sess_cost:.4f})" if c_sess_cost >= 0.0001 else (" (<$0.0001)" if c_sess_cost > 0 else "")
 
-        if 0 < _session_cost < 0.0001:
-            sess_cost_str = " (<$0.0001)"
-        elif _session_cost >= 0.0001:
-            sess_cost_str = f" (${_session_cost:.4f})"
-
-        stats_content.append(Text(f"Turn Tokens: {in_t} in | {out_t} out{cost_str}", style="dim"))
-        stats_content.append(Text(f"Session Total: {_session_in_tokens} in | {_session_out_tokens} out{sess_cost_str}", style="dim"))
+    stats_content.append(Text(f"Conscience: {conscience_model}", style="bold magenta"))
+    if c_in or c_out or _session_conscience["in"]:
+        stats_content.append(Text(f"  Turn: {c_in:,} in | {c_out:,} out{c_cost_str}", style="dim"))
+        stats_content.append(Text(f"  Session: {_session_conscience['in']:,} in | {_session_conscience['out']:,} out{c_sess_cost_str}", style="dim"))
+    else:
+        stats_content.append(Text("  Audit: Jev / TypeSafe (deterministic)", style="dim italic"))
 
     if stats_content and has_scores:
-        panels.append(Panel(Group(*stats_content), title="[bold]MODEL STATS", border_style="dim"))
+        panels.append(Panel(Group(*stats_content), title="[bold]MODELS STATS", border_style="dim"))
 
     if not panels:
         return Text("")

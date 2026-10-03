@@ -25,20 +25,25 @@ from ..core import provenance
 from ..config import Config
 from ..role_config import ROLE_CONFIG
 
-def harness_intellect_token_usage():
-    """OpenAI-compatible usage for the model call that filled the context."""
+def harness_faculty_token_usage(route: str):
+    """OpenAI-compatible usage for a specific route (intellect, conscience)."""
     from ..core.services.usage_tracking import request_call_usage
 
-    usage = request_call_usage("intellect")
+    usage = request_call_usage(route)
     if not usage:
         return None
     tokens_in = max(0, int(usage.get("input_tokens", 0)))
     tokens_out = max(0, int(usage.get("output_tokens", 0)))
     return {
+        "model": usage.get("model", ""),
+        "provider": usage.get("provider", ""),
         "prompt_tokens": tokens_in,
         "completion_tokens": tokens_out,
         "total_tokens": tokens_in + tokens_out,
     }
+
+def harness_intellect_token_usage():
+    return harness_faculty_token_usage("intellect")
 
 conversations_bp = Blueprint('conversations', __name__)
 
@@ -1816,7 +1821,20 @@ async def harness_process_prompt_endpoint():
             client_recent_turns=recent_turns,
             client_workspace_context=workspace_context,
         )
-        result["token_usage"] = harness_intellect_token_usage()
+        intellect_tokens = harness_faculty_token_usage("intellect")
+        conscience_tokens = harness_faculty_token_usage("conscience")
+
+        result["models_usage"] = {
+            "intellect": {
+                "model": (intellect_tokens or {}).get("model") or result.get("intellectModel") or selected_intellect,
+                **(intellect_tokens or {})
+            },
+            "conscience": {
+                "model": (conscience_tokens or {}).get("model") or result.get("conscienceModel") or selected_conscience,
+                **(conscience_tokens or {})
+            }
+        }
+        result["token_usage"] = intellect_tokens
         result.setdefault("aiProvenance", provenance.ai_marker(model=selected_intellect))
         return provenance.mark_json_response(jsonify(result))
     except Exception:
