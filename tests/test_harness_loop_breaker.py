@@ -343,7 +343,7 @@ class HarnessProgressEndpointTests(unittest.TestCase):
                  ],
              }) as get_audit:
             response = self.client.get(
-                f"/harness/progress/{message_id}?user_id=coding-harness",
+                f"/agentic/progress/{message_id}?user_id=coding-harness",
                 headers={"X-API-KEY": "policy-key"},
             )
 
@@ -355,7 +355,7 @@ class HarnessProgressEndpointTests(unittest.TestCase):
 
     def test_progress_endpoint_rejects_missing_api_key(self):
         response = self.client.get(
-            "/harness/progress/f9c06f6b-6133-4976-87d2-d5c7dc5d1e83?user_id=user"
+            "/agentic/progress/f9c06f6b-6133-4976-87d2-d5c7dc5d1e83?user_id=user"
         )
         self.assertEqual(response.status_code, 401)
 
@@ -376,7 +376,7 @@ class HarnessProgressEndpointTests(unittest.TestCase):
              patch.object(conv.pg, "activate_org"), \
              patch.object(conv, "harness_intellect_token_usage", return_value=None):
             response = self.client.post(
-                "/harness/process_prompt",
+                "/agentic/process_prompt",
                 json={
                     "message": "Review this file",
                     "user_id": "coding-harness",

@@ -18,7 +18,7 @@ class SafiClient:
     def __init__(self, api_url: str, api_key: str):
         self.api_url = api_url.rstrip("/")
         self.api_key = api_key.strip()
-        self.endpoint = f"{self.api_url}/api/harness/process_prompt"
+        self.endpoint = f"{self.api_url}/api/agentic/process_prompt"
 
     def send_turn(
         self,

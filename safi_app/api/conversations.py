@@ -43,7 +43,14 @@ def harness_faculty_token_usage(route: str):
     }
 
 def harness_intellect_token_usage():
-    return harness_faculty_token_usage("intellect")
+    res = harness_faculty_token_usage("intellect")
+    if not res:
+        return None
+    return {
+        "prompt_tokens": res["prompt_tokens"],
+        "completion_tokens": res["completion_tokens"],
+        "total_tokens": res["total_tokens"],
+    }
 
 conversations_bp = Blueprint('conversations', __name__)
 
@@ -1673,9 +1680,9 @@ def _normalize_harness_tools(raw_tools, workspace_context=None):
     return normalized
 
 
-@conversations_bp.route('/harness/progress/<message_id>', methods=['GET'])
-def harness_progress_endpoint(message_id):
-    """Authenticated, minimal progress feed for the OpenAI-compatible gateway."""
+@conversations_bp.route('/agentic/progress/<message_id>', methods=['GET'])
+def agentic_progress_endpoint(message_id):
+    """Authenticated, minimal progress feed for the agentic gateway."""
     api_key = request.headers.get("X-API-KEY") or request.headers.get("Authorization", "")
     if api_key.startswith("Bearer "):
         api_key = api_key.split(" ", 1)[1]
@@ -1718,8 +1725,8 @@ def harness_progress_endpoint(message_id):
     return response
 
 
-@conversations_bp.route('/harness/process_prompt', methods=['POST'])
-async def harness_process_prompt_endpoint():
+@conversations_bp.route('/agentic/process_prompt', methods=['POST'])
+async def agentic_process_prompt_endpoint():
     """Authenticate and translate client fields, then enter SAFi's orchestrator."""
     api_key = request.headers.get("X-API-KEY") or request.headers.get("Authorization", "")
     if api_key.startswith("Bearer "):
