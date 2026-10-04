@@ -261,11 +261,12 @@ def resolve_faculty_model_pair(
     conscience = conscience_model or ""
     configured_conscience = by_id.get(conscience.casefold()) if conscience else None
 
-    if not conscience_explicit and configured_conscience is None and llm_models:
-        # Automatic defaults may name a model whose provider is not configured.
+    # Jev is excluded in v1.5.0; any lingering user selection or unconfigured/unknown
+    # model must fall back to an available model rather than failing closed.
+    if (configured_conscience is None or conscience.casefold().startswith("jev")) and llm_models:
         conscience = llm_models[0]
 
-    if not intellect_explicit and intellect.casefold() not in by_id and llm_models:
+    if (intellect.casefold().startswith("jev") or (not intellect_explicit and intellect.casefold() not in by_id)) and llm_models:
         intellect = llm_models[0]
 
     if intellect and conscience and intellect.casefold() == conscience.casefold():
