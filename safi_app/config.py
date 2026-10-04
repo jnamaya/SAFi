@@ -812,18 +812,16 @@ class Config:
                     "python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
                 )
 
-        # At least one LLM provider key must be present in any environment
+        # Check LLM provider keys
         llm_keys = [
             cls.GROQ_API_KEY, cls.OPENAI_API_KEY, cls.ANTHROPIC_API_KEY,
             cls.GEMINI_API_KEY, cls.MISTRAL_API_KEY, cls.DEEPSEEK_API_KEY,
             cls.ZHIPU_API_KEY, cls.CEREBRAS_API_KEY, cls.LOCAL_MODEL_API_KEY,
         ]
         if not any(llm_keys):
-            errors.append(
-                "No LLM API key is configured — set at least one of: "
-                "GROQ_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY, "
-                "GEMINI_API_KEY, MISTRAL_API_KEY, DEEPSEEK_API_KEY, "
-                "ZHIPU_API_KEY, CEREBRAS_API_KEY, SAFI_LOCAL_MODEL_API_KEY"
+            _log.warning(
+                "No LLM API key configured in .env. Configure at least one provider key "
+                "in .env or via Settings -> Models & Usage before running prompts."
             )
 
         if errors:
