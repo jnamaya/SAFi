@@ -161,7 +161,7 @@ def get_profile(name: str, policy_id: Optional[str] = None) -> Dict[str, Any]:
     raw_agent = _load_profile(name)
     if not raw_agent:
         raise KeyError(f"Unknown profile '{name}'.")
-    agent = json.loads(json.dumps(raw_agent))
+    agent = json.loads(json.dumps(raw_agent, default=str))
     _stamp_legacy_gate_reasons(agent.get("values"))
 
     effective_policy_id = policy_id or agent.get("policy_id")
@@ -182,7 +182,7 @@ def get_profile(name: str, policy_id: Optional[str] = None) -> Dict[str, Any]:
             policy_config = policy.get("policy_config") or {}
             policy_version = policy.get("version")
             policy_name = policy.get("name")
-            policy_values = json.loads(json.dumps(policy.get("values_weights", []) or []))
+            policy_values = json.loads(json.dumps(policy.get("values_weights", []) or [], default=str))
             _stamp_legacy_gate_reasons(policy_values)
             governance = {
                 "global_worldview": policy.get("worldview", ""),
