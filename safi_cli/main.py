@@ -86,6 +86,29 @@ def run_agent_turn(
 
             # Terminal answer reached
             final_text = res.get("finalOutput") or ""
+
+            # Display any server-executed tool calls (e.g. fiduciary stock tools, web search)
+            executed_tools = res.get("toolCalls") or res.get("tool_calls") or []
+            for tc in executed_tools:
+                t_name = tc.get("tool") or tc.get("tool_name", "")
+                if not t_name:
+                    continue
+                t_params = tc.get("params") or tc.get("parameters") or {}
+                t_decision = tc.get("decision") or tc.get("willDecision", "approve")
+                t_reason = tc.get("reason") or tc.get("willReason")
+                t_result = tc.get("result") or tc.get("result_snippet")
+                t_ledger = tc.get("toolProposalLedger") or tc.get("conscienceLedger") or []
+
+                ui.print_tool_proposal(t_name, t_params, {
+                    "willDecision": t_decision,
+                    "willReason": t_reason,
+                    "toolProposalLedger": t_ledger,
+                })
+                if t_result:
+                    ui.print_tool_result_summary(t_name, str(t_result))
+                else:
+                    ui.console.print(f"  [dim green]↳ ✓ Executed {t_name} (server MCP)[/dim green]")
+
             ui.print_final_output(final_text, res)
             return res
 

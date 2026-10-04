@@ -483,6 +483,42 @@ class TestSafiClientToolPayload(unittest.TestCase):
         payload = mock_post.call_args.kwargs["json"]
         self.assertIsNone(payload.get("tools"))
 
+    @patch("safi_cli.ui.print_tool_proposal")
+    @patch("safi_cli.ui.print_tool_result_summary")
+    @patch("safi_cli.ui.print_final_output")
+    def test_run_agent_turn_displays_server_tool_calls(self, mock_final, mock_summary, mock_proposal):
+        client = MagicMock()
+        client.send_turn.return_value = {
+            "type": "response",
+            "finalOutput": "NVDA is $120.",
+            "toolCalls": [
+                {
+                    "tool": "get_stock_price",
+                    "params": {"ticker": "NVDA"},
+                    "decision": "approve",
+                    "reason": "Authorized tool",
+                    "result": "{\"price\": 120.0}",
+                }
+            ],
+            "willDecision": "approve",
+        }
+        res = run_agent_turn(
+            client=client,
+            prompt="NVDA price?",
+            workspace_root=Path("."),
+            conversation_id="c-1",
+            user_id="u-1",
+            agent="fiduciary",
+        )
+        self.assertIsNotNone(res)
+        mock_proposal.assert_called_once_with(
+            "get_stock_price",
+            {"ticker": "NVDA"},
+            {"willDecision": "approve", "willReason": "Authorized tool", "toolProposalLedger": []},
+        )
+        mock_summary.assert_called_once_with("get_stock_price", '{"price": 120.0}')
+        mock_final.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

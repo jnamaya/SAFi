@@ -1181,6 +1181,8 @@ class SAFi:
                         f"Orchestrator: Tool '{current_tool_name}' executed. "
                         f"Result snippet: {str(tool_result)[:120]}"
                     )
+                    if tool_audit:
+                        tool_audit[-1]["result"] = str(tool_result)[:300]
 
                     # Evidence for the audit. Labelled with the tool AND its
                     # arguments, because "which search produced this" is the first
@@ -1677,7 +1679,8 @@ class SAFi:
             "conscienceLedger": ledger, "spirit_score": S_t, "spiritNote": note,
             "policyId": (self.profile or {}).get("policy_id"),
             "policyVersion": (self.profile or {}).get("policy_version"),
-            "audit_status": "complete"
+            "audit_status": "complete",
+            "toolCalls": tool_audit,
         }
 
     async def evaluate_output(
