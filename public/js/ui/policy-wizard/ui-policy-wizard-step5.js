@@ -169,9 +169,9 @@ export function renderWillStep(container, policyData) {
                 </div>
                 <div class="flex gap-2 mb-3">
                     <input type="text" id="pw-banned-input"
-                        class="flex-1 p-2.5 rounded-lg border border-red-200 dark:border-red-900/50 bg-gray-50 dark:bg-neutral-800 text-sm font-mono focus:ring-2 focus:ring-red-500 outline-none"
+                        class="flex-1 min-w-0 p-2.5 rounded-lg border border-red-200 dark:border-red-900/50 bg-gray-50 dark:bg-neutral-800 text-sm font-mono focus:ring-2 focus:ring-red-500 outline-none"
                         placeholder="e.g. \`\`\`html">
-                    <button id="pw-add-banned-btn" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold transition-colors">Add</button>
+                    <button id="pw-add-banned-btn" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold transition-colors shrink-0">Add</button>
                 </div>
                 <ul id="pw-banned-list" class="space-y-2"></ul>
             </div>
@@ -184,9 +184,9 @@ export function renderWillStep(container, policyData) {
                 </div>
                 <div class="flex gap-2 mb-3">
                     <input type="text" id="pw-blacklist-input"
-                        class="flex-1 p-2.5 rounded-lg border border-amber-200 dark:border-amber-900/50 bg-gray-50 dark:bg-neutral-800 text-sm focus:ring-2 focus:ring-amber-500 outline-none"
+                        class="flex-1 min-w-0 p-2.5 rounded-lg border border-amber-200 dark:border-amber-900/50 bg-gray-50 dark:bg-neutral-800 text-sm focus:ring-2 focus:ring-amber-500 outline-none"
                         placeholder="e.g. insider trading tips">
-                    <button id="pw-add-blacklist-btn" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-semibold transition-colors">Add</button>
+                    <button id="pw-add-blacklist-btn" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-semibold transition-colors shrink-0">Add</button>
                 </div>
                 <ul id="pw-blacklist-list" class="space-y-2"></ul>
             </div>
@@ -201,9 +201,9 @@ export function renderWillStep(container, policyData) {
                 </div>
                 <div class="flex gap-2 mb-3">
                     <input type="text" id="pw-rule-input"
-                        class="flex-1 p-2.5 rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-sm focus:ring-2 focus:ring-gray-400 outline-none"
+                        class="flex-1 min-w-0 p-2.5 rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-sm focus:ring-2 focus:ring-gray-400 outline-none"
                         placeholder="The response must not...">
-                    <button id="pw-add-rule-btn" class="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg text-sm font-semibold transition-colors">Add</button>
+                    <button id="pw-add-rule-btn" class="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg text-sm font-semibold transition-colors shrink-0">Add</button>
                 </div>
                 <ul id="pw-rules-list" class="space-y-2"></ul>
                 <button id="pw-compile-rules-btn" class="mt-3 w-full px-4 py-2.5 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2">
