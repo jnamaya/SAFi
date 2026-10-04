@@ -36,7 +36,7 @@ google-auth>=2.29.0
 dnspython>=2.4.0
 
 # ── Document Processing ────────────────────────────────────────────────────────
-PyPDF2>=3.0.1
+pypdf>=6.0.0
 # Image attachments and scanned PDFs, OCR'd to text so they travel the same
 # governed path as any other attachment — the image bytes never reach a model.
 # pytesseract only wraps the `tesseract` BINARY, which the Dockerfile installs in

@@ -81,20 +81,20 @@ def _extract_csv(file_storage) -> str:
 
 def _extract_pdf(file_storage) -> str:
     try:
-        import PyPDF2
+        import pypdf
     except ImportError:
         raise ValueError(
-            "PDF support requires PyPDF2. "
-            "Install with: pip install PyPDF2"
+            "PDF support requires pypdf. "
+            "Install with: pip install pypdf"
         )
 
-    reader = PyPDF2.PdfReader(file_storage)
+    reader = pypdf.PdfReader(file_storage)
     pages = []
     ocr_pages = 0
     for i, page in enumerate(reader.pages):
         text = (page.extract_text() or "").strip()
 
-        # A scanned page has an embedded image and no text layer, so PyPDF2
+        # A scanned page has an embedded image and no text layer, so pypdf
         # returns nothing and the page silently disappears from the extraction.
         # Before OCR existed, a fully scanned PDF raised "may be image-based" and
         # a PARTLY scanned one was worse: it succeeded, returned only the typed
