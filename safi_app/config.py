@@ -109,9 +109,15 @@ def _detect_faculty_defaults() -> dict:
             # defaults every faculty to a model nothing is serving.
             alias = active_local_model()
             if alias:
-                return {"intellect": alias, "conscience": alias, "light": alias}
+                defaults = {"intellect": alias, "conscience": alias, "light": alias}
+                if os.environ.get("TYPESAFE_API_KEY", "").strip():
+                    defaults["conscience"] = "jev-1.13.0"
+                return defaults
             continue
-        return dict(_FACULTY_DEFAULTS_BY_PROVIDER[provider])
+        defaults = dict(_FACULTY_DEFAULTS_BY_PROVIDER[provider])
+        if os.environ.get("TYPESAFE_API_KEY", "").strip():
+            defaults["conscience"] = "jev-1.13.0"
+        return defaults
     # No provider we can name a real model for. SAFI_*_MODEL may still be set
     # explicitly, and Config.validate() refuses to start when no provider key
     # exists at all, so this shape only has to exist.
@@ -122,7 +128,8 @@ def _faculty_env(name: str, default: str) -> str:
     """Read a SAFI_*_MODEL var, treating a blank assignment as unset.
 
     .env.example ships every faculty line present-but-empty so operators can see
-    the knob without setting it.
+    the knob without setting it, and the appliance wizard leaves Conscience
+    empty on purpose so a TypeSafe key added later is auto-promoted to Jev.
     load_dotenv() turns that blank line into an empty string, and
     os.environ.get(name, default) would hand the empty string straight back,
     shadowing the detected default with no model at all.
@@ -345,10 +352,17 @@ class Config:
     DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY")
     ZHIPU_API_KEY = os.environ.get("ZHIPU_API_KEY")
     CEREBRAS_API_KEY = os.environ.get("CEREBRAS_API_KEY")
+    TYPESAFE_API_KEY = os.environ.get("TYPESAFE_API_KEY", "").strip()
     # The appliance uses the harmless value "local". It remains an
     # API-key-shaped setting because the existing OpenAI client uses the same
     # initialization path for every OpenAI-compatible endpoint.
     LOCAL_MODEL_API_KEY = os.environ.get("SAFI_LOCAL_MODEL_API_KEY", "").strip()
+    # There is deliberately no LOCAL_JEV_PATH field here. The directory of a
+    # verified Laya bundle is read straight from the environment by jev_local,
+    # because that lookup has to tell "absent" (probe the default location) from
+    # "set to empty" (local Jev deliberately off, for comparison against hosted).
+    # Any value resolved through Config collapses both to "" and loses the
+    # distinction, which is the only part of it that carries meaning.
     GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY")
 
     # MySQL connection details

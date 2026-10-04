@@ -208,7 +208,10 @@ class LLMProvider:
                 self.log.error(f"Failed to initialize provider '{name}': {e}")
 
     def uses_typed_conscience(self) -> bool:
-        return False
+        route = self.config.get("routes", {}).get("conscience", {})
+        provider = route.get("provider")
+        details = self.config.get("providers", {}).get(provider, {})
+        return details.get("type") == "typesafe"
 
     def tool_call_history_entry(self, tool_name: str, arguments: str,
                                 raw_turn: Optional[Dict[str, Any]] = None):
@@ -242,8 +245,39 @@ class LLMProvider:
         rubrics: List[Dict[str, Any]],
         instructions: str,
     ) -> List[Dict[str, Any]]:
-        raise NotImplementedError("Structured Conscience dispatch is not available in v1.5.0")
+        """Run Jev's typed Choice questions and convert them into SAFi's ledger.
 
+        The score comes from the rubric band selected by Jev; its probability
+        distribution and derived confidence are retained for review. Jev does
+        not generate evidence prose, so the reason string records the selected
+        band rather than inventing a factual explanation.
+        """
+        route = self.config.get("routes", {}).get("conscience", {})
+        provider_name = route.get("provider")
+        model_name = route.get("model")
+        details = self.config.get("providers", {}).get(provider_name, {})
+        if details.get("type") != "typesafe":
+            raise ValueError("Structured Conscience dispatch requires the TypeSafe provider")
+
+        from .provider_governance import assert_provider_allowed
+        assert_provider_allowed(provider_name, context=f"route:conscience, model:{model_name}")
+
+        # An appliance with a verified local Laya bundle serves the same contract
+        # in process, so it must not be stopped by the key check below: the ISO
+        # ships no Jev key, and requiring one would make typed Conscience
+        # permanently unavailable offline. is_available() is a stat-only test,
+        # and an absent or partial bundle falls through to the hosted path
+        # unchanged.
+        from . import jev_local
+        local_jev = jev_local.is_available()
+        if not local_jev:
+            from .deployment_keys import resolve_provider_key
+            api_key = resolve_provider_key(provider_name, details.get("api_key"))
+            if not api_key:
+                raise RuntimeError("TypeSafe API key is not configured")
+
+        questions: Dict[str, Any] = {}
+        mapping: Dict[str, Dict[str, Dict[str, Any]]] = {}
         for index, rubric in enumerate(rubrics):
             value = str(rubric.get("value") or f"value_{index}")
             guide = rubric.get("scoring_guide") or []
