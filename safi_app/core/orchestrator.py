@@ -607,6 +607,16 @@ class SAFi:
     def _record_harness_progress(self, message_id: str, code: str) -> None:
         record_harness_progress(self.store, message_id, code)
 
+    async def _dispatch_server_tool(
+        self, tool_name: str, parameters: dict, user_id: Optional[str] = None
+    ) -> Any:
+        """Execute a policy-authorized server-side MCP tool during harness turns."""
+        if not self.mcp_manager:
+            return f"ERROR: MCP manager is not configured for {tool_name}"
+        return await self.mcp_manager.execute_tool(
+            tool_name, parameters, user_id=user_id
+        )
+
     async def process_prompt(
         self,
         user_prompt: str,
@@ -666,14 +676,16 @@ class SAFi:
             # with its allow-list before offering schemas to Intellect. This also
             # makes the compiled profile the single source of Will authorization.
             declared_harness_tools = set(CONNECTOR_TOOLS["coding_harness"])
-            profile_for_turn["allowed_tools"] = sorted(
+            valid_client_tools = (
                 advertised_client_tool_names & declared_harness_tools
                 & allowed_tool_names
             )
+            # Server-side tools are policy-authorized tools that SAFi executes internally:
+            server_tool_names = allowed_tool_names - declared_harness_tools
+            profile_for_turn["allowed_tools"] = sorted(valid_client_tools | server_tool_names)
+
             # The dispatcher sees only the policy-authorized subset of offered
-            # tool schemas. This prevents the client vocabulary from bypassing
-            # the profile/policy intersection while allowing provider aliases
-            # such as client-specific filePath arguments to pass unchanged to Will.
+            # tool schemas, plus any server-side MCP tools authorized for this persona.
             filtered_client_tools = [
                 tool for tool in client_owned_tools
                 if isinstance(tool, dict)
@@ -681,11 +693,19 @@ class SAFi:
                     (set(CONNECTOR_TOOLS.get(tool.get("name"), (tool.get("name"),)))
                      & set(profile_for_turn["allowed_tools"]))
                 )
+                and (
+                    set(CONNECTOR_TOOLS.get(tool.get("name"), (tool.get("name"),)))
+                    & declared_harness_tools
+                )
+            ]
+            server_tool_schemas = [
+                tool for tool in (self.mcp_manager.get_tools_for_agent(profile_for_turn) if self.mcp_manager else [])
+                if tool.get("name") in server_tool_names
             ]
             self.intellect_engine.profile = profile_for_turn
             self.will_gate.profile = profile_for_turn
             self.conscience.profile = profile_for_turn
-            client_owned_tools = filtered_client_tools
+            client_owned_tools = filtered_client_tools + server_tool_schemas
             context = client_workspace_context if isinstance(client_workspace_context, dict) else {}
             workspace_lines = []
             for key, label in (("working_directory", "Client working directory"),
@@ -1031,6 +1051,15 @@ class SAFi:
                             **safe_parameters,
                             "path": safe_parameters.get("filePath", ""),
                         }
+                    server_result = None
+                    if tool_name in server_tool_names:
+                        try:
+                            server_result = await self._dispatch_server_tool(
+                                tool_name, safe_parameters, user_id=user_id
+                            )
+                        except Exception as exc:
+                            self.log.error(f"Orchestrator: Server tool '{tool_name}' raised: {exc}")
+                            server_result = f"ERROR: tool execution failed — {exc}"
                     self._record_harness_progress(message_id, "finalizing")
                     tool_event = [{
                         "tool_name": tool_name,
@@ -1038,6 +1067,11 @@ class SAFi:
                         "decision": tool_decision,
                         "reason": tool_reason,
                     }]
+                    if server_result is not None:
+                        tool_event[0]["result"] = str(server_result)[:300]
+                        tool_event[0]["executed_by"] = "server"
+                        if tool_audit:
+                            tool_audit[-1]["result"] = str(server_result)[:300]
                     governance_record = {
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                         "mode": "harness_integration",
@@ -1077,7 +1111,7 @@ class SAFi:
                         message_id, tool_summary, audit_status="complete"
                     )
                     self._append_log(governance_record)
-                    return {
+                    res_payload = {
                         "type": "tool_call",
                         "tool_name": tool_name,
                         "parameters": safe_parameters,
@@ -1089,6 +1123,13 @@ class SAFi:
                         "conscienceLedger": tool_preflight_ledger,
                         "toolProposalLedger": tool_preflight_ledger,
                     }
+                    if server_result is not None:
+                        res_payload["executed_by"] = "server"
+                        if isinstance(server_result, (dict, list)):
+                            res_payload["result"] = json.dumps(server_result, ensure_ascii=False)
+                        else:
+                            res_payload["result"] = str(server_result)
+                    return res_payload
 
                 if tool_name == "task" and loop_stopped:
                     a_t = (

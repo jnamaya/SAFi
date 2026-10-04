@@ -63,7 +63,7 @@ class SafiClient:
         # Informational and advisory personas (e.g. fiduciary, health_navigator)
         # use governed server-side MCP tools (stock market data, web search, etc.).
         is_coding_agent = (agent == "software_engineer")
-        tools_payload = TOOL_SCHEMAS if is_coding_agent else None
+        tools_payload = TOOL_SCHEMAS if is_coding_agent else []
 
         payload: Dict[str, Any] = {
             "user_id": user_id,

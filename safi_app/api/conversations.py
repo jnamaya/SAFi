@@ -1769,6 +1769,8 @@ async def agentic_process_prompt_endpoint():
     is_coding_agent = bool(agent_data.get("track_work_context")) if agent_data else (agent_key == "software_engineer")
     if raw_tools is not None and is_coding_agent:
         tools = _normalize_harness_tools(raw_tools, workspace_context)
+    elif raw_tools is not None:
+        tools = []
     else:
         tools = None
     raw_results = data.get("tool_results", [])

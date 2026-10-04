@@ -69,6 +69,17 @@ def run_agent_turn(
                     })
                     continue
 
+                # Server-executed tool (e.g. fiduciary stock tools, web search)
+                if res.get("executed_by") == "server" or "result" in res:
+                    result_str = str(res.get("result", ""))
+                    ui.print_tool_result_summary(tool_name, result_str)
+                    tool_results.append({
+                        "tool_name": tool_name,
+                        "arguments": args,
+                        "result": result_str,
+                    })
+                    continue
+
                 # Permission check for mutating/shell tools
                 allowed = ui.prompt_user_permission(tool_name, args, auto_approve=auto_approve)
                 if not allowed:
@@ -87,9 +98,11 @@ def run_agent_turn(
             # Terminal answer reached
             final_text = res.get("finalOutput") or ""
 
-            # Display any server-executed tool calls (e.g. fiduciary stock tools, web search)
+            # Display any server-executed tool calls not already displayed step-by-step
             executed_tools = res.get("toolCalls") or res.get("tool_calls") or []
-            for tc in executed_tools:
+            displayed_tools_count = len(tool_results)
+            unseen_tools = executed_tools[displayed_tools_count:] if len(executed_tools) >= displayed_tools_count else []
+            for tc in unseen_tools:
                 t_name = tc.get("tool") or tc.get("tool_name", "")
                 if not t_name:
                     continue

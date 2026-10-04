@@ -464,7 +464,7 @@ class TestSafiClientToolPayload(unittest.TestCase):
         self.assertIn("write", tool_names)
 
     @patch("requests.post")
-    def test_send_turn_omits_tools_for_fiduciary(self, mock_post):
+    def test_send_turn_sends_empty_tools_for_fiduciary(self, mock_post):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"ok": True, "finalOutput": "Market analysis"}
@@ -481,7 +481,54 @@ class TestSafiClientToolPayload(unittest.TestCase):
 
         mock_post.assert_called_once()
         payload = mock_post.call_args.kwargs["json"]
-        self.assertIsNone(payload.get("tools"))
+        self.assertEqual(payload.get("tools"), [])
+
+    @patch("safi_cli.ui.print_tool_proposal")
+    @patch("safi_cli.ui.print_tool_result_summary")
+    @patch("safi_cli.ui.print_final_output")
+    def test_run_agent_turn_executes_server_tool_step_by_step(self, mock_final, mock_summary, mock_proposal):
+        client = MagicMock()
+        client.send_turn.side_effect = [
+            {
+                "type": "tool_call",
+                "tool_name": "get_stock_price",
+                "parameters": {"ticker": "TSLA"},
+                "willDecision": "approve",
+                "executed_by": "server",
+                "result": '{"symbol": "TSLA", "current_price": 370.59}',
+            },
+            {
+                "type": "response",
+                "finalOutput": "Tesla is trading at $370.59.",
+                "toolCalls": [
+                    {
+                        "tool": "get_stock_price",
+                        "params": {"ticker": "TSLA"},
+                        "decision": "approve",
+                        "result": '{"symbol": "TSLA", "current_price": 370.59}',
+                    }
+                ],
+                "willDecision": "approve",
+            },
+        ]
+        res = run_agent_turn(
+            client=client,
+            prompt="how is Tesla doing?",
+            workspace_root=Path("."),
+            conversation_id="c-tsla",
+            user_id="u-tsla",
+            agent="fiduciary",
+        )
+        self.assertIsNotNone(res)
+        self.assertEqual(client.send_turn.call_count, 2)
+        # Verify proposal and summary printed once during step-by-step loop
+        mock_proposal.assert_called_once()
+        mock_summary.assert_called_once_with("get_stock_price", '{"symbol": "TSLA", "current_price": 370.59}')
+        mock_final.assert_called_once()
+        # Verify tool_results sent in the second turn
+        second_call_kwargs = client.send_turn.call_args_list[1].kwargs
+        self.assertEqual(len(second_call_kwargs["tool_results"]), 1)
+        self.assertEqual(second_call_kwargs["tool_results"][0]["tool_name"], "get_stock_price")
 
     @patch("safi_cli.ui.print_tool_proposal")
     @patch("safi_cli.ui.print_tool_result_summary")

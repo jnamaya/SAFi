@@ -473,7 +473,7 @@ class HarnessProgressEndpointTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
-        self.assertIsNone(fake_safi.process_prompt.call_args.kwargs.get("client_owned_tools"))
+        self.assertEqual(fake_safi.process_prompt.call_args.kwargs.get("client_owned_tools"), [])
 
     def test_harness_uses_api_key_policy_for_software_engineer(self):
         fake_safi = SimpleNamespace(
