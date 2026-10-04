@@ -698,8 +698,12 @@ class SAFi:
                     & declared_harness_tools
                 )
             ]
+            if self.mcp_manager:
+                all_server_tools = await self.mcp_manager.get_tools_for_agent(profile_for_turn)
+            else:
+                all_server_tools = []
             server_tool_schemas = [
-                tool for tool in (self.mcp_manager.get_tools_for_agent(profile_for_turn) if self.mcp_manager else [])
+                tool for tool in all_server_tools
                 if tool.get("name") in server_tool_names
             ]
             self.intellect_engine.profile = profile_for_turn
