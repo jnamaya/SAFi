@@ -403,12 +403,12 @@ class HarnessProgressEndpointTests(unittest.TestCase):
         self.assertEqual(kwargs["client_workspace_context"]["workspace_root"], "/repo")
         self.assertEqual(kwargs["override_message_id"], "f9c06f6b-6133-4976-87d2-d5c7dc5d1e83")
 
-    def test_harness_uses_agent_policy_when_switching_to_fiduciary(self):
+    def test_harness_uses_api_key_policy_for_fiduciary(self):
         fake_safi = SimpleNamespace(
-            profile={"policy_id": "demo_financial_advisory_policy", "policy_name": "Financial Advisory Policy"},
+            profile={"policy_id": "safinstitute_org_safi_financial_advisory_policy", "policy_name": "Financial Advisory Policy"},
             process_prompt=AsyncMock(return_value={"finalOutput": "financial advice", "audit_status": "complete"}),
         )
-        with patch.object(conv.db, "get_policy_id_by_api_key", return_value="coding-policy-1"), \
+        with patch.object(conv.db, "get_policy_id_by_api_key", return_value="safinstitute_org_safi_financial_advisory_policy"), \
              patch.object(conv.db, "get_user_details", return_value={"org_id": "org-1"}), \
              patch.object(conv.db, "upsert_external_conversation", create=True), \
              patch.object(conv.db, "ensure_conversation_access"), \
@@ -424,19 +424,19 @@ class HarnessProgressEndpointTests(unittest.TestCase):
                     "conversation_id": "conv-1",
                     "agent": "fiduciary",
                 },
-                headers={"X-API-KEY": "coding-policy-key"},
+                headers={"X-API-KEY": "fiduciary-policy-key"},
             )
 
         self.assertEqual(response.status_code, 200)
-        # Verify get_or_create received the fiduciary policy, NOT the API key's coding policy
+        # Verify get_or_create received the API key's policy for fiduciary
         mock_get_or_create.assert_called_once()
         call_kwargs = mock_get_or_create.call_args.kwargs
-        self.assertEqual(call_kwargs.get("policy_id"), "demo_financial_advisory_policy")
+        self.assertEqual(call_kwargs.get("policy_id"), "safinstitute_org_safi_financial_advisory_policy")
         self.assertEqual(mock_get_or_create.call_args.args[0], "fiduciary")
         data = response.get_json()
         self.assertEqual(data.get("policyName"), "Financial Advisory Policy")
-        self.assertEqual(data.get("policyId"), "demo_financial_advisory_policy")
-        # Verify client_owned_tools is None for fiduciary so server-side MCP tools are preserved
+        self.assertEqual(data.get("policyId"), "safinstitute_org_safi_financial_advisory_policy")
+        # Verify client_owned_tools is None when tools is omitted
         self.assertIsNone(fake_safi.process_prompt.call_args.kwargs.get("client_owned_tools"))
 
     def test_harness_preserves_server_mcp_tools_when_client_sends_tools_for_fiduciary(self):

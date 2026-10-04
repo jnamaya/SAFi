@@ -1821,11 +1821,10 @@ async def agentic_process_prompt_endpoint():
         client_policy_id = data.get("policy_id")
         if client_policy_id:
             target_policy_id = client_policy_id
-        elif agent_policy_id and agent_key != "software_engineer":
-
-            target_policy_id = agent_policy_id
+        elif policy_id:
+            target_policy_id = policy_id
         else:
-            target_policy_id = policy_id or agent_policy_id
+            target_policy_id = agent_policy_id
 
         saf_system = global_safi_cache.get_or_create(
             agent_key,
