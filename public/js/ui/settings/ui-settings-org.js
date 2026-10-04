@@ -185,8 +185,8 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                 </div>
 
                 <div id="org-name-edit-container" class="hidden flex items-center gap-2 w-full max-w-md">
-                    <input type="text" id="input-org-name" value="${org.name}" class="flex-1 px-3 py-2 bg-gray-50 dark:bg-neutral-800 border border-gray-300 dark:border-neutral-700 rounded-lg focus:ring-2 focus:ring-green-500 outline-none">
-                    <button id="btn-save-org-name" class="p-2 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-lg">
+                    <input type="text" id="input-org-name" value="${org.name}" class="flex-1 min-w-0 px-3 py-2 bg-gray-50 dark:bg-neutral-800 border border-gray-300 dark:border-neutral-700 rounded-lg focus:ring-2 focus:ring-green-500 outline-none">
+                    <button id="btn-save-org-name" class="p-2 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-lg shrink-0">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
                     </button>
                     <button id="btn-cancel-org-name" class="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg">
@@ -298,9 +298,9 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                             <p class="text-xs text-gray-500 mt-0.5 mb-3">Checked against every message <em>before</em> any agent runs. Matching is literal and case-insensitive, so keep phrases short and distinctive. Added to whatever each policy blocks.</p>
                             <div class="flex gap-2 mb-3">
                                 <input type="text" id="charter-blacklist-input"
-                                    class="flex-1 px-3 py-2 text-sm bg-white dark:bg-neutral-900 border border-amber-200 dark:border-amber-900/50 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none"
+                                    class="flex-1 min-w-0 px-3 py-2 text-sm bg-white dark:bg-neutral-900 border border-amber-200 dark:border-amber-900/50 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none"
                                     placeholder="e.g. insider trading tips">
-                                <button id="charter-add-blacklist" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-semibold transition-colors">Add</button>
+                                <button id="charter-add-blacklist" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-semibold transition-colors shrink-0">Add</button>
                             </div>
                             <ul id="charter-blacklist-list" class="space-y-2"></ul>
                         </div>
@@ -614,7 +614,7 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
         }
         list.innerHTML = blacklistData.map((p, i) => `
             <li class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-white dark:bg-neutral-900 border border-amber-100 dark:border-amber-900/30">
-                <span class="text-sm text-gray-800 dark:text-gray-200 break-all">${escapeHtml(p)}</span>
+                <span class="text-sm text-gray-800 dark:text-gray-200 break-all min-w-0">${escapeHtml(p)}</span>
                 <button data-blacklist-remove="${i}" class="text-red-500 hover:text-red-600 text-xs font-semibold shrink-0">Remove</button>
             </li>`).join('');
         list.querySelectorAll('[data-blacklist-remove]').forEach(btn => {
