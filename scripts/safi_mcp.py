@@ -263,6 +263,11 @@ def _entry_from_registry(name: str) -> dict:
 
 
 def cmd_add(args) -> int:
+    fail(
+        "Dynamic MCP server installation is disabled in SAFi v1.5.0+. "
+        "Native gateways (Google Workspace, Microsoft Graph) and built-in tools "
+        "ship pre-configured. Use client-side tools (safi_cli) for workstation operations."
+    )
     servers = read_servers()
 
     if args.url:

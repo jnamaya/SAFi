@@ -114,7 +114,7 @@ class StrictMode(unittest.TestCase):
     UNVERIFIABLE = {**INTACT, "state": "unverifiable", "intact": False, "fingerprint": None}
 
     def _boot(self, status, mode):
-        with patch.dict(os.environ, {"SAFI_ENFORCE_INTEGRITY": mode}):
+        with patch.dict(os.environ, {"SAFI_ENFORCE_INTEGRITY": mode, "SAFI_EXPECTED_FINGERPRINT": ""}):
             return integrity.enforce_at_boot(logging.getLogger("t"), status=status)
 
     def test_default_mode_boots_tainted_loudly(self):

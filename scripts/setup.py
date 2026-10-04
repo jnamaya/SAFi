@@ -384,34 +384,42 @@ def collect_interactive() -> Dict[str, str]:
     values["SAFI_DEPLOYMENT_MODE"] = kind
 
     # ── 2. LLM provider ──────────────────────────────────────────────────────
-    heading(2, total, "AI provider")
-    print(dim("  SAFi needs at least one model provider. You can add more later\n"
-              "  by filling in the other *_API_KEY lines in .env."))
+    heading(2, total, "AI provider (optional)")
+    print(dim("  SAFi can connect to Groq, Gemini, OpenAI, Anthropic, and more.\n"
+              "  An API key is optional during setup — you can provide one now, or\n"
+              "  skip and enter your keys later in Settings → Models & Usage."))
     print()
-    chosen = ask_choice("Which provider do you want to start with?", [
+    provider_options = [
         (p["key"], f"{p['name']} {dim('— ' + p['note'])}", p["signup"])
         for p in PROVIDERS
-    ], default=0)
-    provider = next(p for p in PROVIDERS if p["key"] == chosen)
+    ] + [("skip", "Skip for now", "Configure API keys later in the web UI under Settings → Models & Usage")]
 
-    api_key = ask(f"Paste your {provider['name']} API key", secret_hint=True)
-    while True:
-        print(dim(f"  Checking the key against {provider['name']}…"))
-        ok, msg = verify_key(provider, api_key)
-        if ok:
-            print(green(f"  ✓ {msg}"))
-            break
-        print(red(f"  ✗ {msg}"))
-        # One prompt, not a yes/no followed by a key prompt: after being told a
-        # key was rejected, the obvious thing to type next is another key — so
-        # that is what this accepts.
-        retry = _read("  Paste a different key, or press Enter to keep this one: ")
-        if not retry:
-            print(yellow("  Keeping the key as entered — SAFi will fail at the "
-                         "first model call if it is wrong."))
-            break
-        api_key = retry
-    values[provider["key"]] = api_key
+    chosen = ask_choice("Which provider do you want to start with?", provider_options, default=0)
+
+    if chosen == "skip":
+        print(yellow("  Skipping API key for now. You can enter your API key after\n"
+                     "  logging in under Settings → Models & Usage."))
+    else:
+        provider = next(p for p in PROVIDERS if p["key"] == chosen)
+        api_key = _read(f"  Paste your {provider['name']} API key (Enter to skip): ")
+        if not api_key:
+            print(yellow(f"  No key entered. You can add your {provider['name']} key later\n"
+                         "  under Settings → Models & Usage."))
+        else:
+            while True:
+                print(dim(f"  Checking the key against {provider['name']}…"))
+                ok, msg = verify_key(provider, api_key)
+                if ok:
+                    print(green(f"  ✓ {msg}"))
+                    break
+                print(red(f"  ✗ {msg}"))
+                retry = _read("  Paste a different key, or press Enter to keep this one: ")
+                if not retry:
+                    print(yellow("  Keeping key as entered."))
+                    break
+                api_key = retry
+            if api_key:
+                values[provider["key"]] = api_key
 
     # ── 3. Where it will be reachable ────────────────────────────────────────
     heading(3, total, "Network")
@@ -460,19 +468,37 @@ def collect_interactive() -> Dict[str, str]:
         print(dim("  A local admin account will be created so you can sign in\n"
                   "  without registering an OAuth application."))
 
-    admin_email = ask("Admin email address", "admin@localhost")
-    admin_password = gen_password()
+    admin_username = ask("Admin username", "admin").strip().lower()
+    admin_email = ask("Admin email address", f"{admin_username}@localhost" if admin_username else "admin@localhost")
+
+    while True:
+        admin_password = _read("  Admin password: ")
+        if not admin_password:
+            print(red("  Password cannot be empty. Please enter a password."))
+            continue
+        confirm = _read("  Confirm admin password: ")
+        if admin_password != confirm:
+            print(red("  Passwords do not match. Please try again."))
+            continue
+        break
+
+    values["SAFI_LOCAL_ADMIN_USERNAME"] = admin_username
     values["SAFI_LOCAL_ADMIN_EMAIL"] = admin_email
     values["SAFI_LOCAL_ADMIN_PASSWORD"] = admin_password
 
+    values["SAFI_TENANCY_MODE"] = "single"
     if login == "google":
         print(dim(f"\n  Authorized redirect URI: {base_url}/api/callback/google"))
+        values["SAFI_SSO_ENABLED"] = "true"
         values["GOOGLE_CLIENT_ID"] = ask("Google client ID")
         values["GOOGLE_CLIENT_SECRET"] = ask("Google client secret")
     elif login == "microsoft":
         print(dim(f"\n  Redirect URI: {base_url}/api/callback/microsoft"))
+        values["SAFI_SSO_ENABLED"] = "true"
         values["MICROSOFT_CLIENT_ID"] = ask("Microsoft client ID")
         values["MICROSOFT_CLIENT_SECRET"] = ask("Microsoft client secret")
+    else:
+        values["SAFI_SSO_ENABLED"] = "false"
 
     # Optional TCB Fingerprint pin — production-grade installs only. Trial
     # installs run from a cloned branch, where a pin can only mismatch.
@@ -515,21 +541,20 @@ def collect_defaults() -> Dict[str, str]:
         "WEB_BASE_URL": "http://localhost:5000",
         "ALLOWED_ORIGINS": "http://localhost:5000",
         "SESSION_COOKIE_SECURE": "False",
-        "SAFI_LOCAL_ADMIN_EMAIL": "admin@localhost",
+        "SAFI_LOCAL_ADMIN_USERNAME": os.environ.get("SAFI_LOCAL_ADMIN_USERNAME", "admin"),
+        "SAFI_LOCAL_ADMIN_EMAIL": os.environ.get("SAFI_LOCAL_ADMIN_EMAIL", "admin@localhost"),
     }
     found = [p for p in PROVIDERS if os.environ.get(p["key"])]
-    if not found:
-        raise SystemExit(red(
-            "--defaults needs a provider key in the environment. Export one first, e.g.:\n"
-            "  export GROQ_API_KEY=gsk_...\n"
-            "Accepted: " + ", ".join(p["key"] for p in PROVIDERS)))
     for p in found:
         values[p["key"]] = os.environ[p["key"]]
     values.update(generated_secrets())
-    admin_password = gen_password()
+    admin_password = os.environ.get("SAFI_LOCAL_ADMIN_PASSWORD") or gen_password()
     values["SAFI_LOCAL_ADMIN_PASSWORD"] = admin_password
     values["_admin_password"] = admin_password
-    print(f"Using {', '.join(p['name'] for p in found)} from the environment.")
+    if found:
+        print(f"Using {', '.join(p['name'] for p in found)} from the environment.")
+    else:
+        print(yellow("No AI provider key found in environment; configure in Settings → Models & Usage."))
     return values
 
 
@@ -583,9 +608,16 @@ def main() -> int:
               "passwords, admin password."))
 
     print(bold("\n  Sign in with:"))
+    if values.get("SAFI_LOCAL_ADMIN_USERNAME"):
+        print(f"    username {bold(values['SAFI_LOCAL_ADMIN_USERNAME'])}")
     print(f"    email    {values['SAFI_LOCAL_ADMIN_EMAIL']}")
     print(f"    password {bold(admin_password)}")
-    print(yellow("    Shown once. It is in .env as SAFI_LOCAL_ADMIN_PASSWORD."))
+    print(yellow("    It is stored in .env as SAFI_LOCAL_ADMIN_PASSWORD."))
+
+    has_provider_key = any(p["key"] in values for p in PROVIDERS)
+    if not has_provider_key:
+        print(yellow("\n  Note: No AI provider API key was configured.\n"
+                     "  Sign in to SAFi and enter your key under Settings → Models & Usage."))
 
     if values.get("SAFI_ENCRYPTION_KEY"):
         print(yellow("\n  Back up SAFI_ENCRYPTION_KEY somewhere off this machine."

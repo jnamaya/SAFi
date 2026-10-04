@@ -934,10 +934,10 @@ class SAFi:
         # answer blocked, permanently. Merged into retrieved_context at the single
         # point where all tool-loop exits converge, just before _finalize_draft.
         #
-        # Phase Zero scanned the USER PROMPT only and never sees this text, so
-        # retrieved third-party content is the one vector into the model the
-        # signature gate does not cover. Nothing downstream re-scans it either:
-        # it reaches the Conscience as evidence and the draft as grounding.
+        # Phase Zero scans the user prompt and, per turn, each tool result before
+        # it is used (evaluate_tool_result). Retrieved third-party content still
+        # reaches the Conscience as evidence and the draft as grounding, so the
+        # signature gate is a filter, not a guarantee.
         tool_evidence: List[str] = [
             f"[TOOL RESULT — {item.get('tool_name', 'unknown')} called with "
             f"{json.dumps(item.get('arguments') or {}, sort_keys=True, default=str)}]\n"
@@ -1221,6 +1221,22 @@ class SAFi:
                     except Exception as exc:
                         self.log.error(f"Orchestrator: Tool '{current_tool_name}' raised: {exc}")
                         tool_result = f"ERROR: tool execution failed — {exc}"
+
+                    result_safe, result_reason = self.phase_zero.evaluate_tool_result(tool_result)
+                    if not result_safe:
+                        self.log.warning(
+                            f"Orchestrator: Tool '{current_tool_name}' output withheld by Phase Zero: {result_reason}"
+                        )
+                        tool_audit.append(_tool_audit_entry(
+                            current_tool_name, current_parameters,
+                            "block", f"tool_result:{result_reason}",
+                            agent_turn=agent_turn,
+                        ))
+                        tool_result = (
+                            "ERROR: the tool output was withheld by the security gate "
+                            f"({result_reason}). Do not retry this call; answer using only "
+                            "the information already gathered."
+                        )
 
                     self.log.info(
                         f"Orchestrator: Tool '{current_tool_name}' executed. "

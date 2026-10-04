@@ -266,7 +266,7 @@ class ConscienceAuditor:
         )
 
         if self._uses_typed_conscience():
-            # Jev accepts a bounded Choice per value instead of generating a
+            # Structured auditors accept a bounded Choice per value instead of generating a
             # prose ledger. Preserve the audit policy and evidence boundary in
             # instructions; the state fields remain evidence, never commands.
             guidance_template = prompt_template.split(

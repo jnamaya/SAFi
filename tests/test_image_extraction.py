@@ -160,7 +160,7 @@ class ScannedPdfs(unittest.TestCase):
 
     def test_a_page_with_no_text_layer_is_ocrd(self):
         pages = [self._Page("Typed page one"), self._Page("", [self._Img()])]
-        with patch.dict(sys.modules, {"PyPDF2": type("m", (), {"PdfReader": self._reader(pages)})}), \
+        with patch.dict(sys.modules, {"pypdf": type("m", (), {"PdfReader": self._reader(pages)})}), \
              patch.object(D, "_ocr_available", return_value=True), \
              patch.object(D, "_ocr_image_bytes", return_value="Scanned page two"):
             out = D._extract_pdf(io.BytesIO(b"x"))
@@ -170,7 +170,7 @@ class ScannedPdfs(unittest.TestCase):
     def test_a_partly_scanned_pdf_declares_that_ocr_was_used(self):
         """It used to silently return only the typed pages and look complete."""
         pages = [self._Page("Typed"), self._Page("", [self._Img()])]
-        with patch.dict(sys.modules, {"PyPDF2": type("m", (), {"PdfReader": self._reader(pages)})}), \
+        with patch.dict(sys.modules, {"pypdf": type("m", (), {"PdfReader": self._reader(pages)})}), \
              patch.object(D, "_ocr_available", return_value=True), \
              patch.object(D, "_ocr_image_bytes", return_value="Scanned"):
             out = D._extract_pdf(io.BytesIO(b"x"))
@@ -179,7 +179,7 @@ class ScannedPdfs(unittest.TestCase):
 
     def test_a_fully_typed_pdf_gets_no_ocr_note(self):
         pages = [self._Page("Page one text is long enough to clear the floor")]
-        with patch.dict(sys.modules, {"PyPDF2": type("m", (), {"PdfReader": self._reader(pages)})}), \
+        with patch.dict(sys.modules, {"pypdf": type("m", (), {"PdfReader": self._reader(pages)})}), \
              patch.object(D, "_ocr_available", return_value=True), \
              patch.object(D, "_ocr_image_bytes", return_value="SHOULD NOT BE CALLED"):
             out = D._extract_pdf(io.BytesIO(b"x"))
@@ -188,7 +188,7 @@ class ScannedPdfs(unittest.TestCase):
 
     def test_a_scan_with_ocr_unavailable_still_raises_the_old_error(self):
         pages = [self._Page("", [self._Img()])]
-        with patch.dict(sys.modules, {"PyPDF2": type("m", (), {"PdfReader": self._reader(pages)})}), \
+        with patch.dict(sys.modules, {"pypdf": type("m", (), {"PdfReader": self._reader(pages)})}), \
              patch.object(D, "_ocr_available", return_value=False):
             with self.assertRaises(ValueError) as cm:
                 D._extract_pdf(io.BytesIO(b"x"))

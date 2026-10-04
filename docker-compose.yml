@@ -23,7 +23,7 @@ services:
     pull_policy: build
     # Explicit tag so `purge` can reference it. Without this, compose names the
     # image after the project directory, which differs between checkouts.
-    image: safi:latest
+    image: safi:v1.5.0
     # Pinned, not left to the container id. An MCP tool server that stores
     # credentials on the mount may derive its encryption key from the hostname
     # (the Google Workspace extension salts with os.hostname()), and a hostname
@@ -47,15 +47,9 @@ services:
     volumes:
       - ./logs:/app/logs
       - ./cache:/app/cache
-      # Installed MCP tool servers. Mounted so `safi_mcp.py add` survives a
+      # Installed MCP tool servers. Mounted so `safi_mcp.py` survives a
       # rebuild; see mcp/README.md.
       - ./mcp:/app/mcp
-      # npm's cache, so an `npx` tool server downloads once per deployment
-      # rather than on every container start. It has to be this path: the MCP
-      # SDK passes stdio servers only a safe allow-list of environment
-      # variables, so NPM_CONFIG_CACHE cannot redirect it, while HOME is
-      # inherited and npm defaults to $HOME/.npm.
-      - npm_cache:/root/.npm
       # RAG indexes persist across rebuilds; the entrypoint auto-builds the
       # small `safi` knowledge base here on first boot if it's missing.
       - vector_store:/app/vector_store
@@ -82,7 +76,7 @@ services:
     # second build is a fully cached no-op resolving to the same image id.
     build: .
     pull_policy: build
-    image: safi:latest
+    image: safi:v1.5.0
     env_file: .env
     environment:
       DB_HOST: db
@@ -103,7 +97,7 @@ services:
   scheduler:
     build: .
     pull_policy: build
-    image: safi:latest
+    image: safi:v1.5.0
     env_file: .env
     environment:
       DB_HOST: db
@@ -131,7 +125,7 @@ services:
   indexer:
     build: .
     pull_policy: build
-    image: safi:latest
+    image: safi:v1.5.0
     env_file: .env
     environment:
       DB_HOST: db
@@ -170,7 +164,7 @@ services:
   workspace-gateway:
     build: .
     pull_policy: build
-    image: safi:latest
+    image: safi:v1.5.0
     profiles: ["gateways"]
     env_file:
       - path: ./gateways/workspace-gateway.env
@@ -193,7 +187,7 @@ services:
   graph-gateway:
     build: .
     pull_policy: build
-    image: safi:latest
+    image: safi:v1.5.0
     profiles: ["gateways"]
     env_file:
       - path: ./gateways/graph-gateway.env
@@ -212,7 +206,6 @@ services:
 volumes:
   db_data:
   vector_store:
-  npm_cache:
   # One per gateway, never shared: each holds a DIFFERENT provider's tokens
   # under its own signing key, and the two sqlite files would otherwise sit in
   # one directory for no reason.

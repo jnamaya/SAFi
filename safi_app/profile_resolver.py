@@ -188,7 +188,7 @@ def get_profile(name: str, policy_id: Optional[str] = None) -> Dict[str, Any]:
             policy_config = policy.get("policy_config") or {}
             policy_version = policy.get("version")
             policy_name = policy.get("name")
-            policy_values = json.loads(json.dumps(policy.get("values_weights", []) or []))
+            policy_values = json.loads(json.dumps(policy.get("values_weights", []) or [], default=str))
             _stamp_legacy_gate_reasons(policy_values)
             governance = {
                 "global_worldview": policy.get("worldview", ""),

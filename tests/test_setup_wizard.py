@@ -58,7 +58,8 @@ class TemplateContract(unittest.TestCase):
         written |= {
             "FLASK_ENV", "SAFI_DEPLOYMENT_MODE", "APP_PORT", "WEB_BASE_URL",
             "ALLOWED_ORIGINS", "SESSION_COOKIE_SECURE",
-            "SAFI_LOCAL_ADMIN_EMAIL", "SAFI_LOCAL_ADMIN_PASSWORD",
+            "SAFI_LOCAL_ADMIN_USERNAME", "SAFI_LOCAL_ADMIN_EMAIL", "SAFI_LOCAL_ADMIN_PASSWORD",
+            "SAFI_TENANCY_MODE", "SAFI_SSO_ENABLED",
             "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET",
             "MICROSOFT_CLIENT_ID", "MICROSOFT_CLIENT_SECRET",
         }
@@ -222,8 +223,8 @@ class ValidateAgainstRealConfig(unittest.TestCase):
         })
         self._validate(parse_env(render_from(values)))
 
-    def test_missing_provider_key_still_fails(self):
-        """Guard against the previous test passing for the wrong reason."""
+    def test_missing_provider_key_allows_bootstrap_for_ui_config(self):
+        """A fresh install can boot without a provider key in .env so keys can be set in UI."""
         values = setup.generated_secrets()
         values.update({
             "FLASK_ENV": "development",
@@ -232,6 +233,19 @@ class ValidateAgainstRealConfig(unittest.TestCase):
         })
         env = parse_env(render_from(values))
         env = {k: v for k, v in env.items() if not k.endswith("_API_KEY")}
+        self._validate(env)
+
+    def test_missing_db_password_fails_production_validate(self):
+        values = setup.generated_secrets()
+        values.update({
+            "FLASK_ENV": "production",
+            "SAFI_DEPLOYMENT_MODE": "production",
+            "WEB_BASE_URL": "https://safi.example.org",
+            "SAFI_LOCAL_ADMIN_EMAIL": "admin@example.org",
+            "SAFI_LOCAL_ADMIN_PASSWORD": setup.gen_password(),
+            "DB_PASSWORD": "",
+        })
+        env = parse_env(render_from(values))
         with self.assertRaises(ValueError):
             self._validate(env)
 

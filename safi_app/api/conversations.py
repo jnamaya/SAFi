@@ -723,8 +723,7 @@ async def process_prompt_endpoint():
             "code": "AGENT_ACCESS_DENIED"
         }), 403
 
-    # Resolution order: agent -> user -> system default, preferring Jev for an
-    # inherited Conscience route when its key is available. Explicit model
+    # Resolution order: agent -> user -> system default. Explicit model
     # choices are kept, but duplicate faculty models resolve to another usable
     # chat model.
     intellect_model = agent_profile.get('intellect_model') or user_details.get('intellect_model') or Config.INTELLECT_MODEL

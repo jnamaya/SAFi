@@ -617,14 +617,30 @@ class _Runtime:
         command = params.get("command")
         if not command:
             raise ValueError("stdio transport requires 'command'")
-        # The child inherits nothing by default. An MCP server that needs a
+        # The child inherits nothing sensitive by default. An MCP server that needs a
         # token gets it named explicitly in `env`, so reading the file tells you
         # exactly what the subprocess can see.
+        clean_env = {
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            "HOME": os.environ.get("HOME", "/tmp"),
+            "TMPDIR": "/tmp",
+            "LANG": os.environ.get("LANG", "C.UTF-8"),
+        }
+        user_env = _expand(params.get("env")) or {}
+        blocked_keys = {
+            "SAFI_ENCRYPTION_KEY", "DB_PASSWORD", "DATABASE_URL",
+            "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY",
+            "GOOGLE_API_KEY", "SECRET_KEY", "JWT_SECRET", "ADMIN_PASSWORD",
+        }
+        for k, v in user_env.items():
+            if k not in blocked_keys:
+                clean_env[k] = str(v)
+
         return stdio_client(
             StdioServerParameters(
                 command=str(command),
                 args=[str(a) for a in (params.get("args") or [])],
-                env=_expand(params.get("env")) or None,
+                env=clean_env,
                 cwd=params.get("cwd") or None,
             )
         )

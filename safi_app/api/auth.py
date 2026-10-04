@@ -22,7 +22,6 @@ from ..bootstrap import create_organization
 from ..role_config import ROLE_CONFIG
 from ..profile_resolver import get_profile, list_profiles
 from authlib.integrations.base_client.errors import OAuthError
-from google_auth_oauthlib.flow import Flow # For Tool Auth
 import jwt
 
 from ..core import totp as totp_lib
@@ -198,18 +197,14 @@ def _org_claim_gate(user_details, idp, claims):
     return reason
 
 
-def _decode_id_token_unverified(token):
-    """Claims from an id_token obtained DIRECTLY from the token endpoint over
-    TLS with client authentication — provenance makes the payload trustworthy
-    without re-verifying the signature (same trust model as the userinfo
-    call these flows already rely on). Never use on tokens from clients."""
-    try:
-        idt = (token or {}).get('id_token')
-        if not idt:
-            return {}
-        return jwt.decode(idt, options={"verify_signature": False})
-    except Exception:
-        return {}
+def _ms_link_allowed(user, tid):
+    """An existing account found only by email may be adopted by a Microsoft
+    login when its organization is pinned to the signing-in tenant."""
+    org_id = (user or {}).get('org_id')
+    if not org_id or not tid:
+        return False
+    want = ((db.get_org_identity_config(org_id) or {}).get('ms_tenant_id') or '').lower()
+    return bool(want) and want == tid.lower()
 
 
 def _enforce_domain_ownership(user_details, idp):
@@ -465,18 +460,15 @@ def sso_required(fn):
 @auth_bp.route('/app-config', methods=['GET'])
 def app_config():
     """Non-sensitive feature flags, so the UI can adapt before login."""
+    google_configured = bool(Config.GOOGLE_CLIENT_ID and Config.GOOGLE_CLIENT_SECRET)
+    microsoft_configured = bool(Config.MICROSOFT_CLIENT_ID and Config.MICROSOFT_CLIENT_SECRET)
     return jsonify({
         "demo_enabled":        Config.ENABLE_DEMO_LOGIN,
-        # Also true whenever SMTP is configured, not just the local admin —
-        # an invite-claim account (backlog 51) needs this same form to log
-        # in again, and it can only exist if SMTP was configured to deliver
-        # its claim link in the first place.
         "local_login_enabled": Config.password_login_available(),
         "voice_input_enabled": Config.VOICE_INPUT_ENABLED,
-        # Drives the Google/Microsoft buttons. The endpoints are gated
-        # separately (see sso_required) -- this is only so the page does not
-        # offer buttons that would 404.
-        "sso_login_enabled":   Config.SSO_LOGIN_ENABLED,
+        "sso_login_enabled":   Config.SSO_LOGIN_ENABLED and (google_configured or microsoft_configured),
+        "google_login_enabled": Config.SSO_LOGIN_ENABLED and google_configured,
+        "microsoft_login_enabled": Config.SSO_LOGIN_ENABLED and microsoft_configured,
     })
 
 # MAIN APP AUTHENTICATION (OpenID Connect for Login)
@@ -918,11 +910,21 @@ def callback_microsoft():
         
         # Authlib uses the saved redirect_uri from session automatically.
         token = oauth.microsoft.authorize_access_token()
+        nonce = session.pop('nonce', None)
+        id_claims = oauth.microsoft.parse_id_token(token, nonce=nonce) or {}
+        tid = (id_claims.get('tid') or '').lower()
+        oid = id_claims.get('oid')
+        if not tid or not oid:
+            current_app.logger.warning("Microsoft callback rejected: id_token lacks tid/oid.")
+            return redirect('/?error=auth_failed')
         
         resp = oauth.microsoft.get('https://graph.microsoft.com/v1.0/me')
         user_info = resp.json()
+        if user_info.get('id') != oid:
+            current_app.logger.warning("Microsoft callback rejected: Graph identity does not match id_token.")
+            return redirect('/?error=auth_failed')
         
-        email = user_info.get('mail') or user_info.get('userPrincipalName')
+        email = (user_info.get('mail') or user_info.get('userPrincipalName') or '').strip().lower()
         
         picture_data = None
         try:
@@ -943,8 +945,24 @@ def callback_microsoft():
             'picture': picture_data
         }
 
-        existing_user = db.get_user_by_email(email)
+        existing_by_id = db.get_user_details(oid)
+        existing_by_email = db.get_user_by_email(email) if email else None
+        existing_user = existing_by_id
+        if existing_by_email and existing_by_email['id'] != oid:
+            if existing_by_id or not _ms_link_allowed(existing_by_email, tid):
+                db.log_auth_event('login_denied', f"user:{existing_by_email['id']}",
+                                  org_id=existing_by_email.get('org_id'),
+                                  user_id=existing_by_email['id'],
+                                  detail={"reason": "email_link_unverified", "idp": "microsoft", "tid": tid})
+                current_app.logger.warning(
+                    f"Microsoft login refused: {email} belongs to another account and tenant {tid} is not pinned to it.")
+                return redirect('/?error=login_denied&reason=email_link_unverified')
+            existing_user = existing_by_email
+
         if existing_user:
+            early_denied = _org_claim_gate(existing_user, 'microsoft', id_claims)
+            if early_denied:
+                return redirect(f'/?error=login_denied&reason={early_denied}')
             mapped_user_info['id'] = existing_user['id']
             mapped_user_info['sub'] = existing_user['id']
             if not picture_data and existing_user.get('picture'):
@@ -970,8 +988,7 @@ def callback_microsoft():
         _found_org_if_unaffiliated(user_details, idp='microsoft')
 
         # Per-tenant claim enforcement + directory/MFA evidence (Phase 2).
-        # tid/amr come from the id_token minted by the token endpoint.
-        id_claims = _decode_id_token_unverified(token)
+        # tid/amr come from the verified id_token.
         denied = _org_claim_gate(user_details, 'microsoft', id_claims)
         if denied:
             return redirect(f'/?error=login_denied&reason={denied}')

@@ -1,8 +1,8 @@
 # ── Core Framework ────────────────────────────────────────────────────────────
 # [async] pulls in asgiref, required for the app's async views/faculties
 Flask[async]==3.1.3
-gunicorn==21.2.0
-Werkzeug==3.1.3
+gunicorn==23.0.0
+Werkzeug==3.1.9
 
 # ── Database ───────────────────────────────────────────────────────────────────
 mysql-connector-python==9.1.0
@@ -32,12 +32,11 @@ flask-cors>=4.0.0
 PyJWT>=2.8.0
 requests>=2.31.0
 google-auth>=2.29.0
-google-auth-oauthlib>=1.2.0
 # DNS TXT-record lookups for org domain verification (api/organizations.py)
 dnspython>=2.4.0
 
 # ── Document Processing ────────────────────────────────────────────────────────
-PyPDF2>=3.0.1
+pypdf>=6.0.0
 # Image attachments and scanned PDFs, OCR'd to text so they travel the same
 # governed path as any other attachment — the image bytes never reach a model.
 # pytesseract only wraps the `tesseract` BINARY, which the Dockerfile installs in
@@ -47,8 +46,6 @@ pytesseract>=0.3.10
 # Pillow: pytesseract's image input. Already present in the bare-metal venv
 # (the retired marketing publisher imported it) but never declared until now.
 Pillow>=10.0.0
-# pypdf (successor to PyPDF2) is used by the SharePoint MCP server
-pypdf>=6.0.0
 python-docx>=1.1.0
 openpyxl>=3.1.0
 lxml>=5.0.0
@@ -70,8 +67,6 @@ uvicorn>=0.30.0
 
 # ── MCP Servers / Plugins ─────────────────────────────────────────────────────
 ddgs>=9.0.0                        # web_search MCP server
-PyGithub>=2.0.0                    # github MCP server
-google-api-python-client>=2.100.0  # google_drive MCP server
 yfinance>=0.2.0                    # fiduciary plugin + MCP server
 beautifulsoup4>=4.12.0             # bible_scholar_readings plugin
 httpx>=0.27.0                      # bible_scholar_readings plugin (direct import; also an openai/anthropic dep)
@@ -86,5 +81,4 @@ cryptography==48.0.0
 # pandas: NOT a dashboard dep — required at import time by yfinance
 # (core/plugins/fiduciary_data.py)
 pandas>=2.0.0
-pycryptodome
 edge-tts==7.2.8
