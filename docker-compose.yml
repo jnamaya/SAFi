@@ -23,7 +23,7 @@ services:
     pull_policy: build
     # Explicit tag so `purge` can reference it. Without this, compose names the
     # image after the project directory, which differs between checkouts.
-    image: safi:latest
+    image: safi:v1.5.0
     # Pinned, not left to the container id. An MCP tool server that stores
     # credentials on the mount may derive its encryption key from the hostname
     # (the Google Workspace extension salts with os.hostname()), and a hostname
@@ -82,7 +82,7 @@ services:
     # second build is a fully cached no-op resolving to the same image id.
     build: .
     pull_policy: build
-    image: safi:latest
+    image: safi:v1.5.0
     env_file: .env
     environment:
       DB_HOST: db
@@ -103,7 +103,7 @@ services:
   scheduler:
     build: .
     pull_policy: build
-    image: safi:latest
+    image: safi:v1.5.0
     env_file: .env
     environment:
       DB_HOST: db
@@ -131,7 +131,7 @@ services:
   indexer:
     build: .
     pull_policy: build
-    image: safi:latest
+    image: safi:v1.5.0
     env_file: .env
     environment:
       DB_HOST: db
@@ -170,7 +170,7 @@ services:
   workspace-gateway:
     build: .
     pull_policy: build
-    image: safi:latest
+    image: safi:v1.5.0
     profiles: ["gateways"]
     env_file:
       - path: ./gateways/workspace-gateway.env
@@ -193,7 +193,7 @@ services:
   graph-gateway:
     build: .
     pull_policy: build
-    image: safi:latest
+    image: safi:v1.5.0
     profiles: ["gateways"]
     env_file:
       - path: ./gateways/graph-gateway.env
