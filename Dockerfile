@@ -16,13 +16,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         g++ \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY requirements.txt requirements.lock ./
 
 # No torch pre-install step any more: embeddings run through ONNX Runtime via
 # fastembed, so nothing pulls PyTorch and the CPU-wheel workaround that existed
 # to avoid the CUDA build is unnecessary.
 RUN python -m venv /opt/venv \
-    && /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
+    && /opt/venv/bin/pip install --no-cache-dir --require-hashes -r requirements.lock
 
 
 # ── Stage 2: runtime image ─────────────────────────────────────────────────────
@@ -46,36 +46,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/*
 
-# Node, so `npx` MCP tool servers can run (GOVERNANCE_BACKLOG 48b). Most of the
-# MCP ecosystem ships as npm packages; without a Node runtime the CLI has to
-# refuse them, which left the reliable majority of servers unusable.
-#
-# Copied from the official image rather than installed with apt. Debian's
-# `nodejs` is a conservative LTS and pulls a long recommends chain, while
-# node:22-slim is built on the same trixie base as python:3.13-slim, so the
-# binary and its glibc match and this is a file copy with no package manager
-# involved. npm
-# itself is plain JavaScript under node_modules; the two shims are the entry
-# points npm's own installer would create.
-COPY --from=node:22-slim /usr/local/bin/node /usr/local/bin/node
-COPY --from=node:22-slim /usr/local/lib/node_modules /usr/local/lib/node_modules
-RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
-    && ln -s /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
-    # npm's own docs and man pages, and corepack (the yarn/pnpm shim), are not
-    # reachable from anything this image does. Small next to the 120 MB node
-    # binary, which is the real and irreducible cost of running npm servers.
-    && rm -rf /usr/local/lib/node_modules/npm/docs \
-              /usr/local/lib/node_modules/npm/man \
-              /usr/local/lib/node_modules/corepack \
-    && node --version && npx --version
-
-# NOTE: npm's cache location is NOT set here, and cannot usefully be. The MCP
-# SDK gives a stdio server only an allow-list of environment variables
-# (get_default_environment), so NPM_CONFIG_CACHE set on this image never reaches
-# npx. HOME is on that list, so the cache lands in /root/.npm, which
-# docker-compose persists as a named volume. Without that volume every container
-# start re-downloads every npm tool server before it can answer.
-
 # Copy the version-independent virtualenv from the deps stage. This avoids
 # depending on the patch-level directory chosen by the base image (for example
 # python3.13.15 rather than python3.13).
@@ -88,8 +58,10 @@ COPY scripts/  ./scripts/
 COPY rag/      ./rag/
 COPY wsgi.py   .
 
-# Create persistent data directories (overridden by docker-compose volumes)
-RUN mkdir -p logs cache vector_store
+# Create persistent data directories and unprivileged application user
+RUN useradd -u 10001 -m -d /home/safi -s /bin/bash safi \
+    && mkdir -p logs cache vector_store gateway-data /home/safi/.cache \
+    && chown -R safi:safi /app /home/safi
 
 COPY docker-entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
@@ -98,5 +70,7 @@ RUN chmod +x /entrypoint.sh
 EXPOSE 5000
 # Dashboard port (Streamlit)
 EXPOSE 8501
+
+USER safi
 
 ENTRYPOINT ["/entrypoint.sh"]

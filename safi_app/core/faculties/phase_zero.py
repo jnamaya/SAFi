@@ -120,6 +120,27 @@ class PhaseZeroGate:
 
         return True, "pass"
 
+    def evaluate_tool_result(self, tool_result: str) -> Tuple[bool, str]:
+        text = str(tool_result or "")
+        text_lower = text.lower()
+
+        for category, patterns in (self.threat_rules.get("INJECTION_SIGNATURES") or {}).items():
+            for pattern in patterns:
+                if pattern in text_lower:
+                    self.log.warning(
+                        f"PhaseZeroGate: Injection in tool result | "
+                        f"category='{category}' pattern='{pattern}'"
+                    )
+                    return False, f"injection:{category}"
+
+        if self._has_embedded_instruction(text):
+            self.log.warning(
+                "PhaseZeroGate: Embedded instruction heuristic triggered in tool result."
+            )
+            return False, "injection:embedded_instruction"
+
+        return True, "pass"
+
     def _probes_internals(self, prompt_lower: str):
         """
         True when the prompt names the agent's internal governance machinery AND
