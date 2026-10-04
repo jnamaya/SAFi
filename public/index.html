@@ -1138,10 +1138,11 @@
         // buttons entirely rather than leaving dead ends. The endpoints 404 as
         // well (see sso_required in api/auth.py) — this only keeps the page
         // from offering something that cannot work.
-        if (cfg.sso_login_enabled === false) {
-          ['login-button', 'login-microsoft-button'].forEach(id => {
-            document.getElementById(id)?.remove();
-          });
+        if (!cfg.google_login_enabled) {
+          document.getElementById('login-button')?.remove();
+        }
+        if (!cfg.microsoft_login_enabled) {
+          document.getElementById('login-microsoft-button')?.remove();
         }
         if (cfg.local_login_enabled && !_inviteToken) {
           const section = document.getElementById('local-login-section');

@@ -486,14 +486,19 @@ def collect_interactive() -> Dict[str, str]:
     values["SAFI_LOCAL_ADMIN_EMAIL"] = admin_email
     values["SAFI_LOCAL_ADMIN_PASSWORD"] = admin_password
 
+    values["SAFI_TENANCY_MODE"] = "single"
     if login == "google":
         print(dim(f"\n  Authorized redirect URI: {base_url}/api/callback/google"))
+        values["SAFI_SSO_ENABLED"] = "true"
         values["GOOGLE_CLIENT_ID"] = ask("Google client ID")
         values["GOOGLE_CLIENT_SECRET"] = ask("Google client secret")
     elif login == "microsoft":
         print(dim(f"\n  Redirect URI: {base_url}/api/callback/microsoft"))
+        values["SAFI_SSO_ENABLED"] = "true"
         values["MICROSOFT_CLIENT_ID"] = ask("Microsoft client ID")
         values["MICROSOFT_CLIENT_SECRET"] = ask("Microsoft client secret")
+    else:
+        values["SAFI_SSO_ENABLED"] = "false"
 
     # Optional TCB Fingerprint pin — production-grade installs only. Trial
     # installs run from a cloned branch, where a pin can only mismatch.

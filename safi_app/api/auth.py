@@ -465,18 +465,15 @@ def sso_required(fn):
 @auth_bp.route('/app-config', methods=['GET'])
 def app_config():
     """Non-sensitive feature flags, so the UI can adapt before login."""
+    google_configured = bool(Config.GOOGLE_CLIENT_ID and Config.GOOGLE_CLIENT_SECRET)
+    microsoft_configured = bool(Config.MICROSOFT_CLIENT_ID and Config.MICROSOFT_CLIENT_SECRET)
     return jsonify({
         "demo_enabled":        Config.ENABLE_DEMO_LOGIN,
-        # Also true whenever SMTP is configured, not just the local admin —
-        # an invite-claim account (backlog 51) needs this same form to log
-        # in again, and it can only exist if SMTP was configured to deliver
-        # its claim link in the first place.
         "local_login_enabled": Config.password_login_available(),
         "voice_input_enabled": Config.VOICE_INPUT_ENABLED,
-        # Drives the Google/Microsoft buttons. The endpoints are gated
-        # separately (see sso_required) -- this is only so the page does not
-        # offer buttons that would 404.
-        "sso_login_enabled":   Config.SSO_LOGIN_ENABLED,
+        "sso_login_enabled":   Config.SSO_LOGIN_ENABLED and (google_configured or microsoft_configured),
+        "google_login_enabled": Config.SSO_LOGIN_ENABLED and google_configured,
+        "microsoft_login_enabled": Config.SSO_LOGIN_ENABLED and microsoft_configured,
     })
 
 # MAIN APP AUTHENTICATION (OpenID Connect for Login)
