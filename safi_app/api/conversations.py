@@ -1758,8 +1758,19 @@ async def agentic_process_prompt_endpoint():
     else:
         message_id = str(uuid.uuid4())
 
+    from ..profile_resolver import _load_profile
+    agent_data = _load_profile(agent_key)
+    agent_policy_id = agent_data.get("policy_id") if agent_data else None
+
     workspace_context = _normalize_workspace_context(data.get("workspace_context"))
-    tools = _normalize_harness_tools(data.get("tools"), workspace_context)
+    raw_tools = data.get("tools")
+    # Informational or advisory agents (such as fiduciary, health_navigator)
+    # run governed server-side MCP tools instead of local repository harness tools.
+    is_coding_agent = bool(agent_data.get("track_work_context")) if agent_data else (agent_key == "software_engineer")
+    if raw_tools is not None and is_coding_agent:
+        tools = _normalize_harness_tools(raw_tools, workspace_context)
+    else:
+        tools = None
     raw_results = data.get("tool_results", [])
     tool_results = [item for item in raw_results if isinstance(item, dict)] \
         if isinstance(raw_results, list) else []
@@ -1804,9 +1815,6 @@ async def agentic_process_prompt_endpoint():
             intellect_explicit=bool(os.environ.get("SAFI_INTELLECT_MODEL")),
             conscience_explicit=bool(os.environ.get("SAFI_CONSCIENCE_MODEL")),
         )
-        from ..profile_resolver import _load_profile
-        agent_data = _load_profile(agent_key)
-        agent_policy_id = agent_data.get("policy_id") if agent_data else None
 
         client_policy_id = data.get("policy_id")
         if client_policy_id:

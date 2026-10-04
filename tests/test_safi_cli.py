@@ -439,8 +439,54 @@ class TestSafiCliDynamicAgentDiscovery(unittest.TestCase):
         self.assertEqual(client.api_key, "sk-billing-key")
 
 
+class TestSafiClientToolPayload(unittest.TestCase):
+    @patch("requests.post")
+    def test_send_turn_includes_tools_for_software_engineer(self, mock_post):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"ok": True, "finalOutput": "Done"}
+        mock_post.return_value = mock_resp
+
+        client = SafiClient("https://safi.test", "sk-test")
+        client.send_turn(
+            user_id="u1",
+            conversation_id="c1",
+            message="Inspect repo",
+            workspace_root="/tmp/repo",
+            agent="software_engineer",
+        )
+
+        mock_post.assert_called_once()
+        payload = mock_post.call_args.kwargs["json"]
+        self.assertIsNotNone(payload.get("tools"))
+        tool_names = [t["function"]["name"] for t in payload["tools"]]
+        self.assertIn("read", tool_names)
+        self.assertIn("write", tool_names)
+
+    @patch("requests.post")
+    def test_send_turn_omits_tools_for_fiduciary(self, mock_post):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"ok": True, "finalOutput": "Market analysis"}
+        mock_post.return_value = mock_resp
+
+        client = SafiClient("https://safi.test", "sk-test")
+        client.send_turn(
+            user_id="u1",
+            conversation_id="c1",
+            message="What is AAPL price?",
+            workspace_root="/tmp/repo",
+            agent="fiduciary",
+        )
+
+        mock_post.assert_called_once()
+        payload = mock_post.call_args.kwargs["json"]
+        self.assertIsNone(payload.get("tools"))
+
+
 if __name__ == "__main__":
     unittest.main()
+
 
 
 

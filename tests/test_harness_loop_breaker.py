@@ -436,6 +436,44 @@ class HarnessProgressEndpointTests(unittest.TestCase):
         data = response.get_json()
         self.assertEqual(data.get("policyName"), "Financial Advisory Policy")
         self.assertEqual(data.get("policyId"), "demo_financial_advisory_policy")
+        # Verify client_owned_tools is None for fiduciary so server-side MCP tools are preserved
+        self.assertIsNone(fake_safi.process_prompt.call_args.kwargs.get("client_owned_tools"))
+
+    def test_harness_preserves_server_mcp_tools_when_client_sends_tools_for_fiduciary(self):
+        fake_safi = SimpleNamespace(
+            profile={"policy_id": "demo_financial_advisory_policy", "policy_name": "Financial Advisory Policy"},
+            process_prompt=AsyncMock(return_value={"finalOutput": "NVDA PE is 65", "audit_status": "complete"}),
+        )
+        tool = {
+            "type": "function",
+            "function": {
+                "name": "read",
+                "description": "Read file",
+                "parameters": {"type": "object", "properties": {"path": {"type": "string"}}},
+            },
+        }
+        with patch.object(conv.db, "get_policy_id_by_api_key", return_value="fiduciary-key"), \
+             patch.object(conv.db, "get_user_details", return_value={"org_id": "org-1"}), \
+             patch.object(conv.db, "upsert_external_conversation", create=True), \
+             patch.object(conv.db, "ensure_conversation_access"), \
+             patch.object(conv, "resolve_effective_faculty_models", return_value=("i", "c")), \
+             patch.object(conv.global_safi_cache, "get_or_create", return_value=fake_safi), \
+             patch.object(conv.pg, "activate_org"), \
+             patch.object(conv, "harness_intellect_token_usage", return_value=None):
+            response = self.client.post(
+                "/agentic/process_prompt",
+                json={
+                    "message": "What is NVDA P/E ratio?",
+                    "user_id": "cli-user",
+                    "conversation_id": "conv-1",
+                    "agent": "fiduciary",
+                    "tools": [tool],
+                },
+                headers={"X-API-KEY": "fiduciary-key"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(fake_safi.process_prompt.call_args.kwargs.get("client_owned_tools"))
 
     def test_harness_uses_api_key_policy_for_software_engineer(self):
         fake_safi = SimpleNamespace(

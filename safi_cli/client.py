@@ -59,6 +59,12 @@ class SafiClient:
             "Content-Type": "application/json",
         }
 
+        # Client-owned repository tools are only used for software engineering tasks.
+        # Informational and advisory personas (e.g. fiduciary, health_navigator)
+        # use governed server-side MCP tools (stock market data, web search, etc.).
+        is_coding_agent = (agent == "software_engineer")
+        tools_payload = TOOL_SCHEMAS if is_coding_agent else None
+
         payload: Dict[str, Any] = {
             "user_id": user_id,
             "conversation_id": conversation_id,
@@ -68,7 +74,7 @@ class SafiClient:
                 "working_directory": workspace_root,
                 "workspace_root": workspace_root,
             },
-            "tools": TOOL_SCHEMAS,
+            "tools": tools_payload,
             "tool_results": tool_results or [],
             "recent_turns": recent_turns,
         }
