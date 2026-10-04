@@ -81,7 +81,10 @@ def main() -> int:
         print("error: no test files matched", file=sys.stderr)
         return 2
 
-    env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+    repo_root = str(TESTS_DIR.parent)
+    pythonpath = os.environ.get("PYTHONPATH")
+    combined_path = f"{repo_root}:{pythonpath}" if pythonpath else repo_root
+    env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "PYTHONPATH": combined_path}
 
     if not args.no_bootstrap:
         rc = bootstrap_schema(env)

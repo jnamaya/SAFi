@@ -741,7 +741,7 @@ async function handleViewGoverningPolicy(profile) {
 async function handleQuickModelSwitch(modelId) {
   try {
     // Intellect and Conscience are independent faculty routes. Changing the
-    // drafting model must preserve a separately selected auditor (e.g. Jev).
+    // drafting model must preserve a separately selected auditor.
     await api.updateUserModels({ intellect_model: modelId });
     user.intellect_model = modelId;
     const model = availableModels.find(m => m.id === modelId);
