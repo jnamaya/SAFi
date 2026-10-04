@@ -319,6 +319,126 @@ class TestSafiCliAgentSwitching(unittest.TestCase):
         self.assertEqual(conv, "conv-1")
 
 
+from safi_cli.main import DEFAULT_AGENTS, discover_agents
+from safi_cli.client import SafiClient
+
+
+class TestSafiCliDynamicAgentDiscovery(unittest.TestCase):
+    def setUp(self):
+        AVAILABLE_AGENTS.clear()
+        AVAILABLE_AGENTS.update(DEFAULT_AGENTS)
+
+    def tearDown(self):
+        AVAILABLE_AGENTS.clear()
+        AVAILABLE_AGENTS.update(DEFAULT_AGENTS)
+
+    @patch("requests.get")
+    def test_client_get_available_agents_success(self, mock_get):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "ok": True,
+            "available": [
+                {"key": "software_engineer", "name": "Software Engineer", "description": "Eng"},
+                {"key": "custom_financial_bot", "name": "Custom Financial Bot", "description": "Org Bot"},
+            ],
+        }
+        mock_get.return_value = mock_resp
+
+        client = SafiClient("https://safi.demo.com", "sk-safi-key123")
+        agents = client.get_available_agents()
+
+        self.assertEqual(len(agents), 2)
+        self.assertEqual(agents[1]["key"], "custom_financial_bot")
+        mock_get.assert_called_once_with(
+            "https://safi.demo.com/api/agents/all",
+            headers={"X-API-KEY": "sk-safi-key123"},
+            timeout=5,
+        )
+
+    @patch("requests.get")
+    def test_client_get_available_agents_fallback_route(self, mock_get):
+        mock_404 = MagicMock()
+        mock_404.status_code = 404
+
+        mock_200 = MagicMock()
+        mock_200.status_code = 200
+        mock_200.json.return_value = {
+            "ok": True,
+            "available": [{"key": "remote_agent", "name": "Remote Agent"}],
+        }
+        mock_get.side_effect = [mock_404, mock_200]
+
+        client = SafiClient("https://safi.demo.com")
+        agents = client.get_available_agents()
+
+        self.assertEqual(len(agents), 1)
+        self.assertEqual(agents[0]["key"], "remote_agent")
+        self.assertEqual(mock_get.call_count, 2)
+
+    @patch("requests.get", side_effect=Exception("Connection refused"))
+    def test_client_get_available_agents_error_returns_empty(self, mock_get):
+        client = SafiClient("https://offline-instance.local")
+        agents = client.get_available_agents()
+        self.assertEqual(agents, [])
+
+    def test_discover_agents_updates_available_agents(self):
+        client = MagicMock()
+        client.get_available_agents.return_value = [
+            {"key": "marketing_writer", "name": "Marketing Copywriter", "description": "Writes copy"},
+            {"key": "sec_auditor", "name": "SEC Auditor", "description": "Financial compliance"},
+        ]
+
+        discovered = discover_agents(client)
+        self.assertEqual(len(discovered), 2)
+        self.assertIn("marketing_writer", AVAILABLE_AGENTS)
+        self.assertEqual(AVAILABLE_AGENTS["marketing_writer"]["title"], "Marketing Copywriter")
+        self.assertIn("sec_auditor", AVAILABLE_AGENTS)
+        self.assertNotIn("software_engineer", AVAILABLE_AGENTS)
+
+    def test_url_switching_discovers_instance_specific_agents(self):
+        # Instance 1: safi.demo.com
+        client_demo = MagicMock()
+        client_demo.api_url = "https://safi.demo.com"
+        client_demo.get_available_agents.return_value = [
+            {"key": "demo_specialist", "name": "Demo Specialist", "description": "On demo.com"},
+        ]
+        discover_agents(client_demo)
+        self.assertIn("demo_specialist", AVAILABLE_AGENTS)
+        self.assertEqual(list(AVAILABLE_AGENTS.keys()), ["demo_specialist"])
+
+        # Instance 2: safi.demo1.com
+        client_demo1 = MagicMock()
+        client_demo1.api_url = "https://safi.demo1.com"
+        client_demo1.get_available_agents.return_value = [
+            {"key": "demo1_analyst", "name": "Demo1 Analyst", "description": "On demo1.com"},
+            {"key": "demo1_coder", "name": "Demo1 Coder", "description": "On demo1.com"},
+        ]
+        discover_agents(client_demo1)
+        self.assertNotIn("demo_specialist", AVAILABLE_AGENTS)
+        self.assertIn("demo1_analyst", AVAILABLE_AGENTS)
+        self.assertIn("demo1_coder", AVAILABLE_AGENTS)
+
+    def test_prompt_switch_agent_with_dynamically_discovered_agent(self):
+        client = MagicMock()
+        client.api_url = "https://safi.demo1.com"
+        client.api_key = "current-key"
+        client.get_available_agents.return_value = [
+            {"key": "billing_auditor", "name": "Billing Auditor", "description": "Audits bills"},
+        ]
+
+        with patch("safi_cli.config.resolve_agent_api_key", return_value="sk-billing-key"):
+            new_agent, _ = prompt_switch_agent(
+                current_agent="software_engineer",
+                client=client,
+                workspace_root=Path("."),
+                requested_agent="billing_auditor",
+            )
+
+        self.assertEqual(new_agent, "billing_auditor")
+        self.assertEqual(client.api_key, "sk-billing-key")
+
+
 if __name__ == "__main__":
     unittest.main()
 

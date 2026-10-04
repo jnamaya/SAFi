@@ -3,7 +3,7 @@ import os
 import sys
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 try:
     import readline
@@ -96,12 +96,11 @@ def run_agent_turn(
         return None
 
 
-AVAILABLE_AGENTS = {
+DEFAULT_AGENTS = {
     "software_engineer": {
         "title": "Software Engineer",
         "description": "Direct, audited repository engineering & software development",
     },
-
     "fiduciary": {
         "title": "The Fiduciary",
         "description": "Market-aware financial analyst, portfolio educator & data-driven guide",
@@ -124,6 +123,38 @@ AVAILABLE_AGENTS = {
     },
 }
 
+AVAILABLE_AGENTS = dict(DEFAULT_AGENTS)
+
+
+def discover_agents(client: Optional[SafiClient] = None) -> Dict[str, Dict[str, Any]]:
+    """Discover available agents dynamically from the server URL, falling back to local defaults."""
+    if not client:
+        return AVAILABLE_AGENTS
+
+    try:
+        if hasattr(client, "get_available_agents") and callable(client.get_available_agents):
+            remote_list = client.get_available_agents()
+            if isinstance(remote_list, list) and remote_list:
+                discovered = {}
+                for item in remote_list:
+                    if not isinstance(item, dict):
+                        continue
+                    k = item.get("key") or item.get("agent_key")
+                    if not k:
+                        continue
+                    discovered[k] = {
+                        "title": item.get("name") or item.get("title") or k.replace("_", " ").title(),
+                        "description": item.get("description") or "",
+                        "is_custom": item.get("is_custom", False),
+                    }
+                if discovered:
+                    AVAILABLE_AGENTS.clear()
+                    AVAILABLE_AGENTS.update(discovered)
+    except Exception:
+        pass
+
+    return AVAILABLE_AGENTS
+
 
 def prompt_switch_agent(
     current_agent: str,
@@ -135,6 +166,7 @@ def prompt_switch_agent(
     from rich.table import Table
     from rich import box
 
+    discover_agents(client)
     agent_keys = list(AVAILABLE_AGENTS.keys())
     target_agent = None
 
@@ -155,7 +187,8 @@ def prompt_switch_agent(
             return current_agent, config.resolve_session_id(str(workspace_root))
 
     if not target_agent:
-        table = Table(title="Available SAFi Agent Personas", box=box.ROUNDED)
+        backend_tag = f" ({client.api_url})" if getattr(client, "api_url", None) else ""
+        table = Table(title=f"Available SAFi Agent Personas{backend_tag}", box=box.ROUNDED)
         table.add_column("#", style="bold yellow", width=3, justify="right")
         table.add_column("Agent Key", style="cyan bold")
         table.add_column("Title", style="green")
@@ -236,6 +269,7 @@ def show_config(client: SafiClient, workspace_root: Path, current_agent: str, cu
     from rich.table import Table
     from rich import box
 
+    discover_agents(client)
     ui.console.print(f"\n[bold cyan]SAFi CLI Configuration[/]")
     ui.console.print(f"  [dim]Backend URL:[/]     {client.api_url}")
     ui.console.print(f"  [dim]Workspace:[/]       {workspace_root}")
@@ -499,13 +533,22 @@ def main():
         sys.exit(0)
 
     if args.set_url:
-        config.save_config({"api_url": args.set_url.strip().rstrip("/")})
+        new_url = args.set_url.strip().rstrip("/")
+        config.save_config({"api_url": new_url})
         ui.console.print(f"[bold green]✓ Saved API URL to {config.CONFIG_FILE}[/]")
+        test_client = SafiClient(new_url)
+        discovered = discover_agents(test_client)
+        ui.console.print(f"[dim]Backend {new_url}: discovered {len(discovered)} available agent persona(s).[/dim]")
         sys.exit(0)
 
-    # Resolve settings for the targeted agent
+    # Resolve settings for the targeted agent and backend URL
+    api_url = config.resolve_api_url(args.api_url)
     target_agent = args.agent
     api_key = config.resolve_agent_api_key(target_agent, args.api_key)
+
+    client = SafiClient(api_url, api_key or "")
+    discover_agents(client)
+
     if not api_key:
         agent_title = AVAILABLE_AGENTS.get(target_agent, {}).get("title", target_agent)
         ui.console.print(
@@ -525,16 +568,14 @@ def main():
             )
             sys.exit(1)
         config.save_agent_api_key(target_agent, api_key)
+        client.api_key = api_key
         ui.console.print(f"[bold green]✓ Saved Policy API Key for {target_agent} to {config.CONFIG_FILE}[/]")
+        discover_agents(client)
 
-
-    api_url = config.resolve_api_url(args.api_url)
     workspace_root = Path(args.workspace).resolve()
     conv_id = config.resolve_session_id(str(workspace_root), new_session=args.new)
     user_id = f"cli_{os.getlogin() if hasattr(os, 'getlogin') else 'user'}"
     auto_approve = not args.require_approval
-
-    client = SafiClient(api_url, api_key)
 
     if args.prompt:
         # Single-shot command

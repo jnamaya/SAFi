@@ -15,10 +15,30 @@ class SafiClientError(Exception):
 
 
 class SafiClient:
-    def __init__(self, api_url: str, api_key: str):
+    def __init__(self, api_url: str, api_key: str = ""):
         self.api_url = api_url.rstrip("/")
-        self.api_key = api_key.strip()
+        self.api_key = (api_key or "").strip()
         self.endpoint = f"{self.api_url}/api/agentic/process_prompt"
+
+    def get_available_agents(self) -> List[Dict[str, Any]]:
+        """Fetch available agents from the connected SAFi backend URL."""
+        headers = {}
+        if self.api_key:
+            headers["X-API-KEY"] = self.api_key
+        for path in ("/api/agents/all", "/api/agentic/agents"):
+            try:
+                resp = requests.get(
+                    f"{self.api_url}{path}",
+                    headers=headers,
+                    timeout=5,
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if isinstance(data, dict) and data.get("ok") and isinstance(data.get("available"), list):
+                        return data["available"]
+            except Exception:
+                continue
+        return []
 
     def send_turn(
         self,

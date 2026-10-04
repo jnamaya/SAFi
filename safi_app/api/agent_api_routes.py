@@ -320,9 +320,30 @@ def save_agent():
         return jsonify({"error": "An internal error occurred."}), 500
 
 @agent_api_bp.route('/agents/all', methods=['GET'], strict_slashes=False)
+@agent_api_bp.route('/agentic/agents', methods=['GET'], strict_slashes=False)
 def list_all_agents():
     user = session.get("user")
     user_id = user.get("id") or user.get("sub") if user else None
+    org_id = user.get('org_id') if user else None
+    user_role = user.get('role') or ROLE_CONFIG["default_role"] if user else None
+
+    # Check for API key in headers (for CLI and programmatic clients)
+    if not user_id:
+        raw_key = request.headers.get("X-API-KEY") or request.headers.get("Authorization", "")
+        if raw_key.startswith("Bearer "):
+            raw_key = raw_key.split(" ", 1)[1]
+        raw_key = raw_key.strip()
+        if raw_key:
+            try:
+                policy_id = db.get_policy_id_by_api_key(raw_key)
+                if policy_id:
+                    policy = db.get_policy(policy_id)
+                    if policy:
+                        org_id = policy.get("org_id")
+                        user_id = policy.get("created_by")
+                        user_role = ROLE_CONFIG["default_role"]
+            except Exception as e:
+                current_app.logger.warning(f"Error resolving policy from API key in list_all_agents: {e}")
     
     sys_agents = []
     for k, v in AGENTS.items():
@@ -337,18 +358,19 @@ def list_all_agents():
         sys_agents.append(a)
         
     db_agents = []
-    if user_id:
+    if user_id or org_id:
         try:
             raw_list = db.list_agents(
-                user_id, user.get('org_id'), user.get('role') or ROLE_CONFIG["default_role"],
+                user_id, org_id, user_role or ROLE_CONFIG["default_role"],
                 ROLE_CONFIG["visibility_roles"],
             )
             # Explicit grants widen the configured visibility result.
             seen_keys = {a.get('agent_key') or a.get('key') for a in raw_list}
-            for granted in sharing_store.granted_agents(user_id, user.get('org_id')):
-                if granted['key'] not in seen_keys:
-                    granted['shared_via_grant'] = True
-                    raw_list.append(granted)
+            if user_id:
+                for granted in sharing_store.granted_agents(user_id, org_id):
+                    if granted['key'] not in seen_keys:
+                        granted['shared_via_grant'] = True
+                        raw_list.append(granted)
             for agent in raw_list:
                 try:
                     # get_profile() is the sole compiler — it returns the full
