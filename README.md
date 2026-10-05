@@ -372,9 +372,9 @@ them at the moment of need.
 - **[Knowledge Bases & Tools, step by step](docs/KNOWLEDGE_AND_TOOLS.md)**:
   the whole lifecycle, from upload or install to a governed call, including
   who approves what and who signs in.
-- **[MCP tools, the operator manual](docs/MCP_TOOLS.md)**: installing servers
-  with the CLI, per-user OAuth, credentials and scopes, and worked examples
-  including GitHub's official server.
+- **[MCP tools and native gateways](docs/MCP_TOOLS.md)**: configuring
+  native gateways, declared servers, per-user OAuth, credentials and scopes,
+  and worked examples including GitHub's official server.
 
 ## Sensitive Data Controls
 

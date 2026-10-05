@@ -1,11 +1,22 @@
-# MCP tools: installing and configuring them
+# MCP tools: Native Gateways and Declarative Configuration
 
-SAFi agents can call tools. Some ship with the product; others come from MCP
-servers you install. This document covers installing a server, granting it, and
-the rules that decide which of the two kinds of tool a given job needs.
+SAFi agents can call tools. Some ship built-in with the product; others come from
+native OAuth gateways (such as Google Workspace and Microsoft Graph), client-side
+workstation tools (`safi_cli`), or custom declared MCP servers. This document covers
+how tools reach agents, how to configure native gateways and declared servers, and
+the governance rules that authorize tool calls.
 
-Audience: whoever controls the deployment installs servers (sections 2 and 8);
-policy editors decide which of their tools may be used (section 4).
+> [!IMPORTANT]
+> **Dynamic MCP Installation in SAFi v1.5.0+**: Dynamic installation of third-party
+> MCP tool packages (`safi_mcp.py add`) is **disabled** to harden container security,
+> prevent supply chain compromise, and enforce strict least-privilege boundaries.
+> - **Enterprise Tools**: Native gateways for Google Workspace and Microsoft Graph
+>   ship pre-configured as dedicated microservices (`gateways/`).
+> - **Workstation / File Actions**: Executed client-side via `safi_cli`, governed in real
+>   time by the Conscience engine rather than running unverified host binaries in the container.
+> - **Built-in Connectors**: Internal tools reside under `safi_app/core/mcp_servers/`.
+> - **Declared Servers**: Custom internal HTTP/SSE servers can still be configured
+>   statically in `servers.json` (`MCP_SERVERS_JSON`).
 
 ---
 
@@ -13,38 +24,48 @@ policy editors decide which of their tools may be used (section 4).
 
 One pipeline, five steps, and each one is a different person's decision:
 
-1. **Install** (operator, on the host). `scripts/safi_mcp.py add ...` writes the
-   server into the file `MCP_SERVERS_JSON` names. Section 9.
-2. **Discover** (SAFi). It connects to the server and asks what tools it has.
-3. **Catalogue** (Settings → Tools Catalog). The server and its tools appear,
-   **visible and completely inactive**. Nothing can call them.
+1. **Configure / Enable** (operator, on the host). Start native gateway services
+   (`docker compose --profile gateways up -d`) or declare servers in `servers.json`.
+2. **Discover** (SAFi). It connects to the configured server or gateway and inspects available tools.
+3. **Catalogue** (Settings → Tools Catalog). The server/gateway and its tools appear,
+   **visible and completely inactive**. Nothing can call them yet.
 4. **Policy** (editor). In a policy's Tools & Guardrails step, enable the
    specific tools agents under that policy may use, and leave the rest off.
 5. **Assign** (agent). An agent gets the tools its policy allows, and the Will
    checks every call against that list by exact name before it runs.
 
-**Installation happens on the host, in step 1, and nowhere else.** There is no
-API route and no admin screen for it. It belongs where the person doing it
-already holds the rights that running someone else's code implies. Settings,
-Tools Catalog is where an installed server is seen, signed in to and granted,
-which is steps 3 and 4.
+**Tool declarations happen on the host, in step 1.** There is no API route and
+no unauthenticated admin screen to arbitrarily add external servers. Settings →
+Tools Catalog is where an authorized server is seen, signed in to (OAuth), and
+granted per organization, which is steps 3 and 4.
 
-## 2. Installing a server
+## 2. Declaring an MCP server
 
-`MCP_SERVERS_JSON` points at a JSON file, by default
-`safi_app/core/mcp_servers/mcp_servers.json`, which ships empty. Each key is a
-server; each server becomes one connector.
+`MCP_SERVERS_JSON` points at a JSON file (by default `/app/mcp/servers.json`,
+mounted from `./mcp/servers.json` under Docker). Each key is a server; each server
+becomes one connector.
 
-### stdio (a local process)
+### http / sse (a remote server or native gateway)
 
 ```json
 {
-  "acme_billing": {
-    "label": "Acme Billing API",
+  "internal_pricing": {
+    "label": "Pricing Service",
+    "transport": "http",
+    "url": "https://pricing.internal.example.com/mcp"
+  }
+}
+```
+
+### stdio (an existing local executable)
+
+```json
+{
+  "demo": {
+    "label": "Demo Server",
     "transport": "stdio",
-    "command": "npx",
-    "args": ["-y", "@acme/billing-mcp"],
-    "env": { "ACME_TOKEN": "${ACME_TOKEN}" }
+    "command": "python",
+    "args": ["/app/mcp/demo_server.py"]
   }
 }
 ```
@@ -202,10 +223,17 @@ for a third party to weaken your own policy.
 ## 5. Per-user authorization (OAuth 2.1)
 
 A server that implements the MCP authorization specification does not take a
-static credential at all. Install it with `--auth oauth`:
+static credential at all. Declare it in `servers.json` with `"auth": "oauth"`:
 
-```
-scripts/safi_mcp.py add --url https://tools.example.com/mcp --auth oauth
+```json
+{
+  "tools_server": {
+    "label": "Tools Server",
+    "transport": "http",
+    "url": "https://tools.example.com/mcp",
+    "auth": "oauth"
+  }
+}
 ```
 
 Each member then presses **Sign in** on the server's card in Settings → Tools
@@ -257,15 +285,25 @@ deployment brings its own OAuth App (GitHub → Settings → Developer settings 
 OAuth Apps) with the callback URL
 `{WEB_BASE_URL}/api/mcp/auth/github_mcp/callback`, then:
 
-```
+```bash
 GITHUB_MCP_CLIENT_ID=...       # in .env
 GITHUB_MCP_CLIENT_SECRET=...
+```
 
-scripts/safi_mcp.py add --url https://api.githubcopilot.com/mcp --auth oauth \
-    --key github_mcp --label "GitHub (official)" \
-    --client-id '${GITHUB_MCP_CLIENT_ID}' \
-    --client-secret '${GITHUB_MCP_CLIENT_SECRET}' \
-    --scopes "repo,read:user,read:org"
+Add to `servers.json`:
+
+```json
+{
+  "github_mcp": {
+    "label": "GitHub (official)",
+    "transport": "http",
+    "url": "https://api.githubcopilot.com/mcp",
+    "auth": "oauth",
+    "client_id": "${GITHUB_MCP_CLIENT_ID}",
+    "client_secret": "${GITHUB_MCP_CLIENT_SECRET}",
+    "scopes": ["repo", "read:user", "read:org"]
+  }
+}
 ```
 
 Set `--scopes` deliberately, and know one measured fact: GitHub's hosted
@@ -305,8 +343,17 @@ Setup:
 2. Run the gateway (see `deploy/systemd/safi-workspace-gateway.service` for
    bare metal). Put TLS in front of it; the base URL must be https in
    production.
-3. Install it in SAFi from the host:
-   `scripts/safi_mcp.py add --url {GATEWAY_BASE_URL}/mcp --auth oauth`
+3. Declare it in `servers.json`:
+   ```json
+   {
+     "workspace": {
+       "label": "Google Workspace",
+       "transport": "http",
+       "url": "{GATEWAY_BASE_URL}/mcp",
+       "auth": "oauth"
+     }
+   }
+   ```
 4. Members press Sign in on its card in Settings, Tools Catalog.
 
 ### Running a gateway under Docker
@@ -393,8 +440,17 @@ Setup:
    work or school account.
 2. Run the gateway (see `deploy/systemd/safi-graph-gateway.service` for bare
    metal; default port 8403). TLS in front, https base URL in production.
-3. Install it in SAFi from the host:
-   `scripts/safi_mcp.py add --url {GATEWAY_BASE_URL}/mcp --auth oauth`
+3. Declare it in `servers.json`:
+   ```json
+   {
+     "graph": {
+       "label": "Microsoft Graph",
+       "transport": "http",
+       "url": "{GATEWAY_BASE_URL}/mcp",
+       "auth": "oauth"
+     }
+   }
+   ```
 4. Members press Sign in on its card in Settings, Tools Catalog.
 
 ## 6. Static credential or per-user sign-in?
@@ -529,181 +585,94 @@ Two more things worth knowing before you install something you did not write:
 
 ## 9. The operator CLI
 
-`scripts/safi_mcp.py` manages the servers in `MCP_SERVERS_JSON` from a shell. It
-is how servers are installed, and the only way. Whoever runs this CLI already
-has shell on the host, so installing a server adds no privilege they did not
-already hold. That is the whole point.
+`scripts/safi_mcp.py` inspects and manages the declared servers in `MCP_SERVERS_JSON`.
 
-```
+```bash
 scripts/safi_mcp.py list                     # what is configured, and where from
-scripts/safi_mcp.py search filesystem        # the registry, packages included
-scripts/safi_mcp.py add io.github.owner/svc  # from the registry
-scripts/safi_mcp.py add --url https://example.com/mcp
-scripts/safi_mcp.py add --command npx --args "-y,@scope/server@1.2.3"
-scripts/safi_mcp.py check                    # connect to everything, report
-scripts/safi_mcp.py remove <key>
+scripts/safi_mcp.py check                    # connect to configured servers, report status
 scripts/safi_mcp.py disable <key>            # keep the definition, stop connecting
+scripts/safi_mcp.py enable <key>             # re-enable a disabled server
+scripts/safi_mcp.py remove <key>             # remove server from servers.json
 ```
 
-Three things it does that matter:
+> [!NOTE]
+> **Dynamic Add Disabled**: `scripts/safi_mcp.py add` is disabled in SAFi v1.5.0+ with:
+> ```
+> Dynamic MCP server installation is disabled in SAFi v1.5.0+.
+> Native gateways (Google Workspace, Microsoft Graph) and built-in tools ship pre-configured.
+> Use client-side tools (safi_cli) for workstation operations.
+> ```
+> To configure internal or custom servers, declare them directly in `servers.json`.
 
-- **It checks before it saves.** A server that does not answer is not written to
-  the file unless you pass `--force`, so a typo does not become a mystery later.
-- **It refuses a launcher that is not installed.** Most of the registry is npm
-  packages, and a host without Node could never start one. The CLI checks for
-  the launcher and names the missing binary rather than writing a definition
-  that fails silently. The Docker image carries Node and `npx`, so package
-  servers work there; a bare-metal host is where this check earns its keep.
-- **No restart.** Every write bumps the same counter the GUI uses, so running
-  workers re-read the file on their next request.
+Three things the CLI does that matter:
 
-### A worked example: Google Workspace
+- **It checks connectivity.** `check` verifies endpoints and tool discovery without needing a full restart.
+- **No restart.** Every write (`disable`, `enable`, `remove`) bumps the shared generation counter, so running workers re-read `servers.json` on their next request.
+- **Safe state management.** It manages enabling/disabling cleanly without manual JSON formatting errors.
 
-The Gemini CLI Workspace extension is a real MCP server, and installing it shows
-what a substantial one involves. It is distributed as a git checkout rather than
-a package, so it is cloned, built once, and started directly:
+### Enterprise Integration: Google Workspace and Microsoft Graph
 
-```
-git clone --depth 1 https://github.com/gemini-cli-extensions/workspace.git mcp/workspace
-docker compose exec app sh -c "cd /app/mcp/workspace && npm install"
-docker compose exec app python scripts/safi_mcp.py add \
-    --command node --args="workspace-server/dist/index.js,--use-dot-names" \
-    --cwd /app/mcp/workspace --key workspace --label "Google Workspace"
-```
+In SAFi v1.5.0+, enterprise integrations for Google Workspace and Microsoft Graph
+ship as **native, isolated OAuth gateways** (`workspace-gateway` and `graph-gateway`).
+They run as separate microservices rather than running untrusted packages inside the app container:
 
-Then authorize it, interactively, from a terminal with a TTY:
+```bash
+# 1. Fill in provider credentials
+cp gateways/workspace-gateway.env.example gateways/workspace-gateway.env
 
-```
-docker compose exec app sh -c "cd /app/mcp/workspace && npm run auth-utils -- login"
+# 2. Launch the gateway service
+docker compose --profile gateways up -d
 ```
 
-It prints a Google URL, you sign in, and you paste the returned JSON back.
+Declare the gateway in `servers.json`:
+```json
+{
+  "workspace": {
+    "label": "Google Workspace",
+    "transport": "http",
+    "url": "https://workspace-gateway.example.com/mcp",
+    "auth": "oauth"
+  }
+}
+```
 
-**Read this before you enable any of it.** The server advertises 57 tools, and
-they are not all reads: `gmail.send`, `gmail.modify`, `drive.trashFile`,
-`drive.moveFile`, `calendar.deleteEvent` and `chat.sendMessage` all act on the
-world. It authenticates as ONE Google identity, whoever completed that login, so
-every agent granted these tools acts as that person, and that account's audit
-log is where the activity appears. This is the service-principal case from
-section 5, applied to exactly the data section 5 says it is wrong for.
-
-That is not a reason to avoid it, but it is a reason to grant narrowly. Enable a
-read-only subset in a policy first (`drive.search`, `calendar.listEvents`,
-`docs.getText`, `time.getCurrentDate`) and leave anything that sends, moves or
-deletes switched off until you have a reason and a reviewer.
-
-Two operational notes specific to servers of this shape:
-
-- **Credentials live next to the checkout** (`gemini-cli-workspace-token.json`),
-  which is on the mount and therefore survives rebuilds. Their encryption key is
-  salted with the hostname, so `docker-compose.yml` pins `hostname: safi-app`;
-  without that the container id changes on every `up` and the saved token
-  silently stops decrypting.
-- **`--cwd` matters.** A server distributed as a checkout resolves its own files
-  relative to where it started, so it needs a working directory rather than an
-  absolute path alone.
+Members sign in via Settings → Tools Catalog using standard OAuth PKCE.
 
 ### Try it: the bundled demo server
 
-`mcp/demo_server.py` is a two-tool server for seeing the pipeline work:
+`mcp/demo_server.py` is a two-tool server for seeing the pipeline work.
+Add it to `mcp/servers.json`:
 
+```json
+{
+  "demo": {
+    "label": "Demo Server",
+    "transport": "stdio",
+    "command": "python",
+    "args": ["/app/mcp/demo_server.py"]
+  }
+}
 ```
-docker compose exec app python scripts/safi_mcp.py add \
-    --command python --args "/app/mcp/demo_server.py" --key demo --label "Demo Server"
+
+Check the connection:
+```bash
+docker compose exec app python scripts/safi_mcp.py check
 ```
 
 Enable `demo_echo` and not `demo_word_count` in a policy, assign that policy to
 an agent, and the agent gets exactly one of the two.
 
-### On bare metal
+### Server Environment and Security Hardening
 
-Everything works the same: the runtime spawns a subprocess or opens an HTTP
-connection, and nothing in it is Docker-specific. Four differences are worth
-setting up deliberately.
-
-**Run the CLI as the service user.** The app runs as `safi`, so that is who has
-to read the server file and start the servers:
-
-```bash
-cd /var/www/safi
-sudo -u safi ./venv/bin/python scripts/safi_mcp.py list
-```
-
-Running it as root writes a file the service may not be able to read, and puts
-any package cache in root's home rather than the service user's.
-
-**Keep the server file OUTSIDE the checkout.** Upgrades are `git pull`, and the
-file shipped inside the package is tracked, so servers written into it either
-block the pull or get replaced by it. Point `MCP_SERVERS_JSON` somewhere the
-service user owns and git does not:
-
-```
-MCP_SERVERS_JSON=/home/safi/mcp-servers.json
-```
-
-The same goes for anything a definition points at: server checkouts, scripts and
-the credential files they write. Put them under the service user's home, not
-under `/var/www/safi`.
-
-**Node is not installed by the bare-metal instructions.** The Docker image ships
-it; a bare-metal host does not, so `npx` servers need Node installed for the
-`safi` user to run (`apt install nodejs npm`, or NodeSource for a current
-version). Hosted (`--url`) servers need nothing.
-
-**Do not add systemd hardening without checking this.** The shipped unit sets
-`User`, `Group` and `WorkingDirectory` and nothing else. Adding `PrivateTmp`,
-`ProtectHome` or `NoNewPrivileges=yes` will stop stdio servers starting or cut
-them off from their credential files, and the failure surfaces as
-`MCPError: Connection closed` rather than as a permissions error.
-
-### In Docker, the server file must be a mount
-
-`docker-compose.yml` mounts `./mcp` and points `MCP_SERVERS_JSON` at
-`/app/mcp/servers.json`. That is not a convenience: the Dockerfile copies
-`safi_app/` into the image, so a server file living under it is replaced on
-every `docker compose up --build`, which silently wipes the operator's installed
-servers and makes the CLI useless across rebuilds. If you move the file, keep it
-outside the copied paths.
-
-### Package servers: what runs them
-
-The container image ships **Node 22**, so `npx` servers work out of the box:
-
-```
-docker compose exec app python scripts/safi_mcp.py \
-    add --command npx --args="-y,@modelcontextprotocol/server-everything"
-```
-
-Note the `--args=` form. A value starting with a dash is read as an option
-otherwise, and `--args "-y,..."` fails with "expected one argument".
-
-Python packages need `uvx`, which is not installed: `pip install uv` in the
-image adds it. Hosted (`--url`) servers need no local runtime at all.
-
-Two consequences of running npm servers worth knowing:
-
-- **The first start downloads the package.** The npm cache is a named volume
-  (`npm_cache`), so that happens once per deployment rather than on every
-  container start. A server whose package cannot be fetched simply fails, and
-  its tools are absent.
-- **An unpinned package is fetched fresh.** `npx -y @scope/server` can run
-  different code tomorrow than today with nothing in your deployment having
-  changed. Pin the version, and prefer `add <registry-name>`, which uses the
-  exact version the publisher released.
-
-### Pin your packages
-
-`npx -y @scope/server` fetches from the network at every boot, so the code
-running on your host can change without anyone touching your deployment. The CLI
-warns when it sees no version pin. Registry installs use the exact version the
-registry published, which is why `add <registry-name>` is preferable to writing
-the command by hand.
-
-### What it does not do
-
-It installs; it grants nothing. A server added here is a connector an
-organization must still allow, a policy must still list, and an agent must still
-enable, and the Will still authorizes call by call.
+- **Unprivileged Runtime**: As of v1.5.0, the container runs under a dedicated, unprivileged
+  `safi` user (`uid=10001`), not `root`.
+- **Minimal Supply Chain**: Compilers and runtime package installers (`node`, `npm`, `npx`)
+  have been removed from the runtime container image. Third-party tools cannot be dynamically downloaded
+  or spawned inside the production application container.
+- **Client-Side Workstation Operations**: File operations, bash commands, git commands,
+  and local coding tasks are executed on the client machine via `safi_cli`. The SAFi server
+  maintains strict policy governance and real-time audit logging while the client workstation
+  executes the approved tool operations.
 
 ---
 

@@ -938,17 +938,20 @@ compiler. The same compile step hoists a policy's
 `will_rules.tool_parameter_constraints` to the top-level key the Will's
 Step-3 parameter gate reads.
 
-**Adding a tool: install an MCP server, do not write a connector.** For
-anything that is not a member-delegated OAuth integration, the answer is
-now a server in the file `MCP_SERVERS_JSON` names, which needs no code
-and no redeploy. See `docs/MCP_TOOLS.md`, and note the credential rule:
-an MCP server authenticates as the deployment (a service principal), so it
-fits shared and system resources, while a member's own drive or mailbox
-belongs on a delegated-OAuth connector or you lose attribution and
-offboarding.
+**Adding a tool in SAFi v1.5.0+:**
+Dynamic runtime installation of third-party MCP servers on the backend container
+is disabled for security hardening and supply-chain protection. Depending on the tool's
+nature:
+- **Enterprise OAuth Tools (Google Workspace, Microsoft Graph):** Use the pre-configured
+  native gateway services (`gateways/`). See `docs/MCP_TOOLS.md`.
+- **Workstation / File Operations:** Run client-side via `safi_cli`, which executes tools
+  locally under Conscience policy authorization rather than running arbitrary code on the server.
+- **Custom MCP Servers:** If running standalone internal MCP servers (HTTP, SSE, or stdio),
+  declare them statically in `servers.json` (`MCP_SERVERS_JSON`).
+- **Built-in Connectors:** Add an in-process connector under `core/mcp_servers/` following the
+  six-step pattern below.
 
-**Adding a built-in connector** is still the six-step in-code pattern,
-and is only the right choice for delegated per-user OAuth:
+**Adding a built-in connector** is the standard in-code pattern:
 
 1. Add `core/mcp_servers/your_tool.py` with plain `async def` functions
    (model it on `google_maps.py` or `web_search.py`).
@@ -1165,10 +1168,10 @@ out. The catalog:
   and are discovered, never imported by name (§18).
 - **Plugins**: `register_plugin()` at import time; the registry is TCB,
   each registration is User Space content (§18).
-- **Tools**: operator-installed MCP servers are declared in the servers
-  file, discovered at boot, and become connector names a policy can
-  authorize (§15). Adding a tool never edits the Will; the allow-list it
-  enforces is compiled data.
+- **Tools**: native gateways, built-in connectors, and declared MCP servers
+  are discovered at boot and become connector names a policy can authorize (§15).
+  Workstation operations run client-side via `safi_cli`. Adding a tool never edits
+  the Will; the allow-list it enforces is compiled data.
 - **Reading**: governance records, the Audit Hub, the export, and the
   hash chain (§12) are the read surface. They carry snapshots (context,
   work memory, tool calls), so nothing you change in User Space rewrites
