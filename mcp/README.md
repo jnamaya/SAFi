@@ -1,27 +1,41 @@
 # Operator MCP server definitions
 
-`servers.json` in this directory is the list of MCP tool servers this
-deployment has installed. It is **mounted into the container**, not baked into
-the image, so servers added with `scripts/safi_mcp.py` survive a rebuild.
+`servers.json` in this directory is the declarative list of MCP tool servers for
+this deployment. It is **mounted into the container** at `/app/mcp/servers.json`,
+so declarations survive image rebuilds.
 
-That mount is the whole reason this directory exists. Before it, the file lived
-inside the package, the Dockerfile copied it in at build time, and every
-`docker compose up --build` silently replaced an operator's server list with the
-empty file from the repo.
+> **Note on SAFi v1.5.0+**: Dynamic runtime installation of third-party MCP
+> servers (`scripts/safi_mcp.py add`) is **disabled** to harden container
+> security and protect the supply chain.
+> - **Enterprise Tools**: Native gateways for Google Workspace and Microsoft Graph
+>   ship pre-configured as isolated services under `gateways/` (start with
+>   `docker compose --profile gateways up -d`).
+> - **Workstation / File Operations**: Run client-side via `safi_cli`, governed by
+>   the SAFi policy engine.
+> - **Built-in Connectors**: Internal tools live in `safi_app/core/mcp_servers/`.
 
-`servers.json` is gitignored: it is deployment configuration, not source. `demo_server.py` is a two-tool MCP server kept here so the pipeline can be seen
-working. Install it, enable one of its two tools in a policy, and watch an agent
-get exactly that one:
+`servers.json` is gitignored: it is deployment configuration, not source.
+If you need to declare a custom internal MCP server (HTTP, SSE, or stdio), define
+it statically in `servers.json`:
 
-    docker compose exec app python scripts/safi_mcp.py add \
-        --command python --args "/app/mcp/demo_server.py" --key demo --label "Demo Server"
+```json
+{
+  "demo": {
+    "label": "Demo Server",
+    "transport": "stdio",
+    "command": "python",
+    "args": ["/app/mcp/demo_server.py"]
+  }
+}
+```
 
 Anything a server definition points at has to live on this mount for the same
 reason the definitions do. A path inside the container (`/tmp/...`) survives
 until the next rebuild and then reports "Connection closed", which is the SDK
 saying the command died without saying why.
 
-Manage it with the CLI rather than by hand:
+Use the operator CLI to inspect or toggle declared servers:
 
     docker compose exec app python scripts/safi_mcp.py list
-    docker compose exec app python scripts/safi_mcp.py add --url https://example.com/mcp
+    docker compose exec app python scripts/safi_mcp.py check
+    docker compose exec app python scripts/safi_mcp.py disable <key>

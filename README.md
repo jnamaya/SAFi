@@ -83,6 +83,7 @@ Each role here starts from a different question.
 SAFi does not require you to rebuild your existing agent stack.
 
 - **[Evaluate an existing agent](docs/DEVELOPER_GUIDE.md#9-the-evaluate-gateway)** — Use the /evaluate gateway to govern the output of an agent you have already built. Your orchestration, prompts, and tool layer can stay where they are.
+- **[Use SAFi CLI](docs/DEVELOPER_GUIDE.md)** — Run the native governed CLI assistant in your terminal to inspect and work with local repositories.
 - **[Run the quick start](#quick-start)** — Clone the repository and run SAFi locally with Docker and a database.
 - **[Read the developer guide](docs/DEVELOPER_GUIDE.md)** — Explore the repository layout, architecture, policy authoring, tool authorization, and integration surfaces.
 - **[Find a good first issue](https://github.com/jnamaya/SAFi/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)** — Review accessible contribution opportunities and open an issue when you find something worth improving.
@@ -371,9 +372,9 @@ them at the moment of need.
 - **[Knowledge Bases & Tools, step by step](docs/KNOWLEDGE_AND_TOOLS.md)**:
   the whole lifecycle, from upload or install to a governed call, including
   who approves what and who signs in.
-- **[MCP tools, the operator manual](docs/MCP_TOOLS.md)**: installing servers
-  with the CLI, per-user OAuth, credentials and scopes, and worked examples
-  including GitHub's official server.
+- **[MCP tools and native gateways](docs/MCP_TOOLS.md)**: configuring
+  native gateways, declared servers, per-user OAuth, credentials and scopes,
+  and worked examples including GitHub's official server.
 
 ## Sensitive Data Controls
 

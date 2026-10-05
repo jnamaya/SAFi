@@ -62,10 +62,10 @@ the author does not sign off on their own work.
   policy compile into one weighted value set per agent, charter share
   defaulting to 40%. Policies are versioned, and the version in force is
   stamped on every record.
-- **Governed tool calls.** Installing an MCP server grants nothing. A policy
-  enables specific tools, an agent is assigned what its policy allows, and the
-  Will checks every individual call before it runs. Tools acting as a person
-  require that person to sign in once. See `api/mcp_api.py`,
+- **Governed tool calls.** Configuring an MCP server or native gateway grants
+  nothing. A policy enables specific tools, an agent is assigned what its policy
+  allows, and the Will checks every individual call before it runs. Tools acting
+  as a person require that person to sign in once. See `api/mcp_api.py`,
   `core/services/mcp_oauth.py`, `core/services/connector_governance.py`.
 - **The `/evaluate` gateway.** Govern the output of an agent you have already
   built, leaving your orchestration, prompts, and tool layer where they are.
