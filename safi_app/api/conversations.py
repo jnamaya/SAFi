@@ -25,7 +25,7 @@ from ..core import provenance
 from ..config import Config
 from ..role_config import ROLE_CONFIG
 
-def harness_faculty_token_usage(route: str):
+def agentic_faculty_token_usage(route: str):
     """OpenAI-compatible usage for a specific route (intellect, conscience)."""
     from ..core.services.usage_tracking import request_call_usage
 
@@ -42,8 +42,11 @@ def harness_faculty_token_usage(route: str):
         "total_tokens": tokens_in + tokens_out,
     }
 
-def harness_intellect_token_usage():
-    res = harness_faculty_token_usage("intellect")
+harness_faculty_token_usage = agentic_faculty_token_usage
+
+
+def agentic_intellect_token_usage():
+    res = agentic_faculty_token_usage("intellect")
     if not res:
         return None
     return {
@@ -51,6 +54,8 @@ def harness_intellect_token_usage():
         "completion_tokens": res["completion_tokens"],
         "total_tokens": res["total_tokens"],
     }
+
+harness_intellect_token_usage = agentic_intellect_token_usage
 
 conversations_bp = Blueprint('conversations', __name__)
 
@@ -1629,13 +1634,13 @@ def _normalize_workspace_context(raw_context):
     return normalized
 
 
-def _normalize_harness_tools(raw_tools, workspace_context=None):
-    """Convert harness OpenAI-format tool specs into the MCP shape Intellect expects.
+def _normalize_agentic_tools(raw_tools, workspace_context=None):
+    """Convert agentic OpenAI-format tool specs into the MCP shape Intellect expects.
 
-    Harnesses advertise tools as {"type": "function", "function": {name,
+    Agentic clients advertise tools as {"type": "function", "function": {name,
     description, parameters}}; the provider layer reads name/description/
     input_schema. Anything already in MCP shape passes through, and malformed
-    entries are dropped rather than failing the turn — a harness advertising a
+    entries are dropped rather than failing the turn — a client advertising a
     bad tool should still get a governed answer, just without that tool.
     """
     if not isinstance(raw_tools, list):
@@ -1679,6 +1684,8 @@ def _normalize_harness_tools(raw_tools, workspace_context=None):
         })
     return normalized
 
+_normalize_harness_tools = _normalize_agentic_tools
+
 
 @conversations_bp.route('/agentic/progress/<message_id>', methods=['GET'])
 def agentic_progress_endpoint(message_id):
@@ -1689,7 +1696,7 @@ def agentic_progress_endpoint(message_id):
     policy_id = db.get_policy_id_by_api_key(api_key) if api_key else None
     if not policy_id:
         return jsonify({"error": "Unauthorized"}), 401
-    user_id = request.args.get("user_id", "")
+    user_id = (request.args.get("user_id") or "").strip() or None
     try:
         message_id = str(uuid.UUID(message_id))
     except (ValueError, TypeError, AttributeError):
@@ -1709,6 +1716,7 @@ def agentic_progress_endpoint(message_id):
     allowed_codes = set(HARNESS_PROGRESS_LABELS)
     progress_codes = []
     seen_codes = set()
+    latest_step = None
     for entry in reasoning_log if isinstance(reasoning_log, list) else []:
         if not isinstance(entry, dict):
             continue
@@ -1716,10 +1724,15 @@ def agentic_progress_endpoint(message_id):
         if code in allowed_codes and code not in seen_codes:
             seen_codes.add(code)
             progress_codes.append(code)
+        step_val = entry.get("step")
+        if step_val:
+            latest_step = step_val
     progress = {
         "progress": progress_codes,
         "complete": audit_result.get("status") == "complete",
     }
+    if user_id not in ("coding-harness", "opencode-harness"):
+        progress["latest_step"] = latest_step
     response = jsonify(progress)
     response.headers["Cache-Control"] = "no-store"
     return response
@@ -1740,6 +1753,8 @@ async def agentic_process_prompt_endpoint():
     user_prompt = data.get("message")
     conversation_id = data.get("conversation_id")
     agent_key = data.get("agent", "safi")
+    raw_user_name = data.get("user_name")
+    user_name = raw_user_name.strip() if isinstance(raw_user_name, str) and raw_user_name.strip() else None
     if not all([user_id, user_prompt, conversation_id]):
         return jsonify({"error": "Missing required fields"}), 400
     if not isinstance(conversation_id, str) or len(conversation_id.strip()) > db.CONVERSATION_ID_MAX_LEN:
@@ -1765,10 +1780,10 @@ async def agentic_process_prompt_endpoint():
     workspace_context = _normalize_workspace_context(data.get("workspace_context"))
     raw_tools = data.get("tools")
     # Informational or advisory agents (such as fiduciary, health_navigator)
-    # run governed server-side MCP tools instead of local repository harness tools.
+    # run governed server-side MCP tools instead of local repository agentic tools.
     is_coding_agent = bool(agent_data.get("track_work_context")) if agent_data else (agent_key == "software_engineer")
     if raw_tools is not None and is_coding_agent:
-        tools = _normalize_harness_tools(raw_tools, workspace_context)
+        tools = _normalize_agentic_tools(raw_tools, workspace_context)
     elif raw_tools is not None:
         tools = []
     else:
@@ -1785,11 +1800,23 @@ async def agentic_process_prompt_endpoint():
             db.upsert_user({
                 "sub": user_id,
                 "id": user_id,
-                "name": f"Bot User {user_id[-4:]}",
+                "name": user_name or f"User {user_id[-4:]}",
                 "email": f"{user_id}@bot.safinstitute.org",
                 "picture": "",
             })
             db.update_user_profile(user_id, agent_key)
+            user_details = db.get_user_details(user_id)
+        elif user_name and user_details.get("name") != user_name:
+            current_name = str(user_details.get("name") or "")
+            if current_name.startswith("Bot User") or current_name.startswith("User cli_"):
+                db.upsert_user({
+                    "id": user_id,
+                    "name": user_name,
+                    "email": user_details.get("email"),
+                    "role": user_details.get("role"),
+                    "org_id": user_details.get("org_id"),
+                })
+                user_details = db.get_user_details(user_id)
 
         if hasattr(db, "upsert_external_conversation"):
             db.upsert_external_conversation(conversation_id, user_id, title="Harness Chat")
@@ -1807,16 +1834,25 @@ async def agentic_process_prompt_endpoint():
                 org_id = founding_org.get("id")
         if org_id and (not user_details or not user_details.get("org_id")):
             db.update_user_org_and_role(user_id, org_id, "member")
-        selected_intellect = Config.INTELLECT_MODEL
-        selected_conscience = Config.CONSCIENCE_MODEL
+
+        client_intellect = data.get("intellect_model") or data.get("model")
+        selected_intellect = client_intellect or (agent_data.get("intellect_model") if agent_data else None) or user_details.get("intellect_model") or Config.INTELLECT_MODEL
+        selected_conscience = (agent_data.get("conscience_model") if agent_data else None) or user_details.get("conscience_model") or Config.CONSCIENCE_MODEL
         selected_intellect, selected_conscience = resolve_effective_faculty_models(
             Config,
             selected_intellect,
             selected_conscience,
             org_id,
-            intellect_explicit=bool(os.environ.get("SAFI_INTELLECT_MODEL")),
+            intellect_explicit=bool(client_intellect or (agent_data.get("intellect_model") if agent_data else None) or user_details.get("intellect_model") or os.environ.get("SAFI_INTELLECT_MODEL")),
             conscience_explicit=bool(os.environ.get("SAFI_CONSCIENCE_MODEL")),
         )
+
+        allowlist = pg.get_org_allowlist(org_id)
+        if not pg.model_allowed(selected_intellect, allowlist):
+            return jsonify({
+                "error": f"Intellect model '{selected_intellect}' uses a provider your organization has blocked.",
+                "code": "PROVIDER_NOT_ALLOWED"
+            }), 403
 
         client_policy_id = data.get("policy_id")
         if client_policy_id:
@@ -1838,11 +1874,12 @@ async def agentic_process_prompt_endpoint():
 
         from ..core.services.usage_tracking import begin_request_usage
         begin_request_usage()
+        effective_user_name = user_name or (user_details.get("name") if user_details else None) or "User"
         result = await saf_system.process_prompt(
             user_prompt,
             user_id,
             conversation_id,
-            user_name="Harness",
+            user_name=effective_user_name,
             override_message_id=message_id,
             org_id=org_id,
             client_owned_tools=tools,
@@ -1857,8 +1894,8 @@ async def agentic_process_prompt_endpoint():
             result["policyId"] = saf_profile.get("policy_id")
 
 
-        intellect_tokens = harness_faculty_token_usage("intellect")
-        conscience_tokens = harness_faculty_token_usage("conscience")
+        intellect_tokens = agentic_faculty_token_usage("intellect")
+        conscience_tokens = agentic_faculty_token_usage("conscience")
 
         result["models_usage"] = {
             "intellect": {
@@ -1879,3 +1916,159 @@ async def agentic_process_prompt_endpoint():
             "finalOutput": "I encountered an internal error processing your request.",
             "messageId": message_id,
         }), 500
+
+
+@conversations_bp.route('/agentic/compress', methods=['POST'])
+async def agentic_compress_endpoint():
+    """Compress or retrieve conversational memory summary for an agentic session."""
+    api_key = request.headers.get("X-API-KEY") or request.headers.get("Authorization", "")
+    if api_key.startswith("Bearer "):
+        api_key = api_key.split(" ", 1)[1]
+    policy_id = db.get_policy_id_by_api_key(api_key) if api_key else None
+    if not policy_id:
+        return jsonify({"error": "Unauthorized: Invalid Policy API Key"}), 401
+
+    data = request.get_json(silent=True) or {}
+    conversation_id = data.get("conversation_id")
+    if not conversation_id or not isinstance(conversation_id, str):
+        return jsonify({"error": "Missing conversation_id"}), 400
+    conversation_id = conversation_id.strip()
+
+    action = (data.get("action") or "compress").strip().lower()
+
+    if action in ("get", "show", "view", "status"):
+        summary = db.fetch_conversation_summary(conversation_id) or ""
+        return jsonify({
+            "ok": True,
+            "summary": summary,
+            "tokens": max(0, len(summary) // 4) if summary else 0,
+        })
+
+    if action in ("clear", "reset"):
+        db.update_conversation_summary(conversation_id, "")
+        return jsonify({
+            "ok": True,
+            "message": "Memory summary cleared.",
+            "summary": "",
+            "tokens": 0,
+        })
+
+    # Action: compress
+    raw_history = db.fetch_chat_history_for_conversation(conversation_id, limit=100)
+    valid_turns = [m for m in raw_history if m.get("content") and m.get("content").strip()]
+    if len(valid_turns) < 2:
+        existing_summary = db.fetch_conversation_summary(conversation_id) or ""
+        return jsonify({
+            "ok": True,
+            "compressed": False,
+            "message": "Conversation history is already minimal (fewer than 2 turns to compress).",
+            "turns_count": len(valid_turns),
+            "summary": existing_summary,
+            "tokens_before": sum(len(m.get("content", "")) for m in valid_turns) // 4,
+            "tokens_after": len(existing_summary) // 4,
+            "tokens_saved": 0,
+            "reduction_pct": 0.0,
+        })
+
+    agent_key = data.get("agent", "software_engineer")
+    from ..profile_resolver import _load_profile
+    agent_data = _load_profile(agent_key)
+    target_policy_id = policy_id or (agent_data.get("policy_id") if agent_data else None)
+
+    client_intellect = data.get("model") or data.get("intellect_model")
+    selected_intellect = client_intellect or (agent_data.get("intellect_model") if agent_data else None) or Config.INTELLECT_MODEL
+
+    saf_system = global_safi_cache.get_or_create(
+        agent_key,
+        selected_intellect,
+        None,
+        None,
+        policy_id=target_policy_id,
+    )
+
+    transcript_lines = []
+    for m in valid_turns:
+        role = "Developer" if m.get("role") == "user" else "Assistant"
+        content = m.get("content", "").strip()
+        if len(content) > 8000:
+            content = content[:4000] + "\n...[truncated output]...\n" + content[-4000:]
+        transcript_lines.append(f"{role}: {content}")
+    full_transcript = "\n\n".join(transcript_lines)
+
+    old_summary = db.fetch_conversation_summary(conversation_id) or ""
+    tokens_before = max(1, (len(full_transcript) + len(old_summary)) // 4)
+
+    system_prompt = (
+        "You are an expert technical context compression engine for an autonomous coding agent.\n"
+        "Your task is to compress the conversation history into an information-dense, structured summary.\n"
+        "This summary will replace raw chat history in future turns to save context tokens while maintaining total technical continuity.\n\n"
+        "STRUCTURE YOUR SUMMARY USING THESE EXACT HEADINGS:\n"
+        "### 1. Primary Goal & Scope\n"
+        "What the user requested, initial state, and any changes in direction.\n\n"
+        "### 2. Technical Stack & Environment\n"
+        "Languages, frameworks, tools, directory paths, and configuration.\n\n"
+        "### 3. Key Changes & Files Touched\n"
+        "List all files created, modified, or examined with exact file paths and function names.\n\n"
+        "### 4. Solved Issues & Discoveries\n"
+        "Errors diagnosed, syntax bugs fixed, gotchas identified, and operational findings.\n\n"
+        "### 5. Current State & Pending Tasks\n"
+        "What is currently working and immediate next steps/tasks to accomplish.\n\n"
+        "GUIDELINES:\n"
+        "- Be highly factual, concise, and dense.\n"
+        "- Preserve exact code symbols, paths, and technical decisions.\n"
+        "- Eliminate pleasantries, filler phrases, and boilerplate.\n"
+        "- Target 250 to 500 words."
+    )
+
+    prompt_content = ""
+    if old_summary:
+        prompt_content += f"PREVIOUS COMPACTED MEMORY:\n{old_summary}\n\n"
+    prompt_content += (
+        f"CONVERSATION TRANSCRIPT TO COMPRESS ({len(valid_turns)} messages):\n"
+        f"{full_transcript}\n\nProduce the structured technical summary:"
+    )
+
+    summary = None
+    try:
+        summary = saf_system._backend_completion(
+            system_prompt,
+            prompt_content,
+            model=selected_intellect,
+            temperature=None,
+            json_mode=False,
+        )
+    except Exception as exc:
+        current_app.logger.warning(f"Compression completion with {selected_intellect} failed: {exc}")
+
+    if (not summary or not summary.strip()) and selected_intellect != Config.BACKEND_MODEL:
+        try:
+            summary = saf_system._backend_completion(
+                system_prompt,
+                prompt_content,
+                model=Config.BACKEND_MODEL,
+                temperature=None,
+                json_mode=False,
+            )
+        except Exception as exc:
+            current_app.logger.warning(f"Compression completion fallback failed: {exc}")
+
+    if not summary or not summary.strip():
+        return jsonify({"error": "Compression engine failed to generate summary. Please check your provider configuration."}), 500
+
+    summary = summary.strip()
+    db.update_conversation_summary(conversation_id, summary)
+
+    tokens_after = max(1, len(summary) // 4)
+    tokens_saved = max(0, tokens_before - tokens_after)
+    reduction_pct = round((tokens_saved / tokens_before) * 100, 1) if tokens_before > tokens_after else 0.0
+
+    return jsonify({
+        "ok": True,
+        "compressed": True,
+        "turns_count": len(valid_turns),
+        "tokens_before": tokens_before,
+        "tokens_after": tokens_after,
+        "tokens_saved": tokens_saved,
+        "reduction_pct": reduction_pct,
+        "summary": summary,
+    })

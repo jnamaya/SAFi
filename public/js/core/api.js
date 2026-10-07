@@ -475,6 +475,14 @@ export async function generateKey(policyId, label = "Default") {
     return httpJSON(`${urls.POLICIES}/${policyId}/keys`, 'POST', { label });
 }
 
+export async function listPolicyKeys(policyId) {
+    return httpGet(`${urls.POLICIES}/${policyId}/keys`);
+}
+
+export async function revokePolicyKey(policyId, keyHash) {
+    return httpJSON(`${urls.POLICIES}/${policyId}/keys/${keyHash}`, 'DELETE', {});
+}
+
 export async function rotateKey(policyId) {
     return httpJSON(`${urls.POLICIES}/${policyId}/rotate_key`, 'POST', {});
 }

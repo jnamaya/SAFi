@@ -1,7 +1,7 @@
 """
 Headless governance gateway.
 
-POST /api/evaluate lets an EXTERNAL agent (or its harness) submit an
+POST /api/evaluate lets an EXTERNAL agent (or client) submit an
 input/output pair for governance under a SAFi Policy — Conscience audit,
 Will hard gates, Spirit alignment — without SAFi generating anything.
 Authentication is the Policy API key (same contract as /bot/process_prompt);

@@ -135,3 +135,66 @@ def resolve_session_id(workspace_root: str, new_session: bool = False) -> str:
     except OSError:
         pass
     return new_id
+
+
+def resolve_user_name(explicit_name: Optional[str] = None) -> str:
+    """Resolve display name for the CLI user."""
+    if explicit_name and explicit_name.strip():
+        return explicit_name.strip()
+    env_name = os.environ.get("SAFI_USER_NAME")
+    if env_name and env_name.strip():
+        return env_name.strip()
+    cfg = load_config()
+    if cfg.get("user_name"):
+        return str(cfg.get("user_name")).strip()
+    try:
+        login = os.getlogin()
+    except Exception:
+        login = os.environ.get("USER", "user")
+    return login.capitalize() if login else "User"
+
+
+def save_user_name(name: str) -> None:
+    """Save default user name to config."""
+    save_config({"user_name": name.strip()})
+
+
+def resolve_intellect_model(agent: Optional[str] = None, explicit_model: Optional[str] = None) -> Optional[str]:
+    """Resolve the preferred LLM model powering the Intellect faculty."""
+    if explicit_model and explicit_model.strip():
+        return explicit_model.strip()
+
+    # 1. Environment variable: SAFI_INTELLECT_MODEL_<AGENT> or SAFI_INTELLECT_MODEL
+    if agent:
+        env_agent = os.environ.get(f"SAFI_INTELLECT_MODEL_{agent.upper()}")
+        if env_agent and env_agent.strip():
+            return env_agent.strip()
+    env_global = os.environ.get("SAFI_INTELLECT_MODEL")
+    if env_global and env_global.strip():
+        return env_global.strip()
+
+    # 2. Config file under 'agent_models' or top-level 'intellect_model'
+    cfg = load_config()
+    if agent:
+        agent_models = cfg.get("agent_models") or {}
+        if isinstance(agent_models, dict) and agent in agent_models and agent_models[agent]:
+            return str(agent_models[agent]).strip()
+    if cfg.get("intellect_model"):
+        return str(cfg.get("intellect_model")).strip()
+    return None
+
+
+def save_intellect_model(model: str, agent: Optional[str] = None) -> None:
+    """Save default Intellect AI model preference."""
+    ensure_config_dir()
+    cfg = load_config()
+    clean_model = model.strip()
+    if agent:
+        agent_models = cfg.get("agent_models") or {}
+        if not isinstance(agent_models, dict):
+            agent_models = {}
+        agent_models[agent] = clean_model
+        cfg["agent_models"] = agent_models
+    else:
+        cfg["intellect_model"] = clean_model
+    save_config(cfg)

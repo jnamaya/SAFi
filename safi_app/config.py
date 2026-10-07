@@ -25,7 +25,7 @@ _FACULTY_DEFAULTS_BY_PROVIDER = {
     "groq":      {"intellect": "openai/gpt-oss-20b",        "conscience": "openai/gpt-oss-120b",       "light": "openai/gpt-oss-20b"},
     "gemini":    {"intellect": "gemini-3.5-flash-lite",    "conscience": "gemini-3.8-flash",          "light": "gemini-3.5-flash-lite"},
     "anthropic": {"intellect": "claude-haiku-4-5-20251001", "conscience": "claude-haiku-4-5-20251001", "light": "claude-haiku-4-5-20251001"},
-    "openai":    {"intellect": "gpt-5-mini",                "conscience": "gpt-5-mini",                "light": "gpt-5-nano"},
+    "openai":    {"intellect": "gpt-6-luna",                "conscience": "gpt-5-mini",                "light": "gpt-5-nano"},
     # Conscience keeps Medium while Intellect and the background tier drop to
     # Small: auditing is the one role where a weaker model changes what the
     # framework can block, so it does not get cut alongside the answering path.
@@ -702,6 +702,7 @@ class Config:
         # word alone, so neither needs its version back.
         {"id": "gemini-3.5-flash-lite", "label": "Gemini Flash Lite"},
         {"id": "gemini-3.8-flash", "label": "Gemini Flash"},
+        {"id": "gemma-4-31b-it", "label": "Gemma 31B"},
 
         # Mistral Models
         {"id": "mistral-small-2603", "label": "Mistral Small"},

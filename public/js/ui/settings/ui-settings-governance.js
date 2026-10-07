@@ -2,6 +2,7 @@ import * as ui from '../ui.js';
 import * as api from '../../core/api.js';
 import { openPolicyWizard } from '../ui-policy-wizard.js';
 import { renderProfileDetailsModal } from './ui-settings-agents.js';
+import { escapeHtml, formatRelativeTime } from '../../core/utils.js';
 
 // Constraint count must handle both shapes of will_rules: legacy
 // list-of-rules, and the structured dict (whose .length is undefined).
@@ -69,7 +70,7 @@ export async function renderSettingsGovernanceTab() {
                          <button class="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white view-policy-btn" data-id="${p.id}">View</button>
                          <button class="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white history-policy-btn" data-id="${p.id}" data-name="${p.name}">History</button>
                          ${canEditPolicy ? `<button class="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white dup-policy-btn" data-id="${p.id}">Duplicate</button>` : ''}
-                         ${canGenerateKey ? `<button class="text-sm text-green-600 hover:underline gen-key-btn" data-id="${p.id}" data-name="${p.name}">Generate Key</button>` : ''}
+                         ${canGenerateKey ? `<button class="text-sm text-green-600 hover:underline manage-keys-btn" data-id="${p.id}" data-name="${escapeHtml(p.name)}">API Keys</button>` : ''}
                          ${!isReadOnly && canEditPolicy ? `
                          <button class="text-sm text-gray-600 hover:text-green-600 edit-policy-btn" data-id="${p.id}">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
@@ -145,23 +146,9 @@ export async function renderSettingsGovernanceTab() {
             });
         });
 
-        container.querySelectorAll('.gen-key-btn').forEach(btn => {
-            btn.addEventListener('click', async () => {
-                const label = prompt(`Enter a label for this new key (e.g. "Marketing Bot"):`, "New Key");
-                if (label) {
-                    try {
-                        const res = await api.generateKey(btn.dataset.id, label);
-                        if (res.ok) {
-                            const key = res.api_key.trim();
-                            await navigator.clipboard.writeText(key);
-                            alert(`Secure Key Generated & Copied to Clipboard!\n\n${key}\n\nPlease paste this immediately.`);
-                        } else {
-                            alert("Failed to generate key. Please try again.");
-                        }
-                    } catch (e) {
-                        alert("An error occurred. Please try again.");
-                    }
-                }
+        container.querySelectorAll('.manage-keys-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                openManageKeysModal(btn.dataset.id, btn.dataset.name, canGenerateKey);
             });
         });
 
@@ -354,4 +341,209 @@ async function openPolicyHistory(policyId, policyName, canEdit) {
     } catch (e) {
         body.innerHTML = `<p class="text-red-500 text-center py-8">${e.message}</p>`;
     }
+}
+
+// --- API Keys Management (modal) ---
+async function openManageKeysModal(policyId, policyName, canGenerateKey = true) {
+    document.getElementById('policy-keys-modal')?.remove();
+    const modal = document.createElement('div');
+    modal.id = 'policy-keys-modal';
+    modal.className = 'fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm';
+    modal.innerHTML = `
+      <div class="bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden border border-gray-200 dark:border-neutral-800 text-gray-900 dark:text-neutral-100">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
+          <div class="min-w-0 pr-4">
+            <h3 class="font-bold text-lg text-gray-900 dark:text-white truncate">API Keys &mdash; ${escapeHtml(policyName || policyId)}</h3>
+            <p class="text-xs text-gray-500 dark:text-neutral-400 font-mono mt-0.5 truncate">Policy ID: ${escapeHtml(policyId)}</p>
+          </div>
+          <button id="keys-modal-close" class="text-gray-400 hover:text-gray-700 dark:text-neutral-400 dark:hover:text-white p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+
+        <div class="p-6 overflow-y-auto custom-scrollbar space-y-6 bg-white dark:bg-neutral-900">
+          ${canGenerateKey ? `
+          <!-- Generate Key Card -->
+          <div class="p-4 bg-gray-50 dark:bg-neutral-800/50 rounded-xl border border-gray-200 dark:border-neutral-700/80">
+            <h4 class="text-sm font-bold text-gray-900 dark:text-white mb-1">Generate New API Key</h4>
+            <p class="text-xs text-gray-500 dark:text-neutral-400 mb-3">Issue a named key for a developer, machine, or service account to identify them in the audit trail.</p>
+            <div class="flex flex-col sm:flex-row gap-2">
+              <input id="new-key-label" type="text" placeholder="Key Label (e.g. Nelson - Laptop, CI Pipeline)"
+                     class="flex-1 px-3.5 py-2.5 bg-white dark:bg-neutral-900 border border-gray-300 dark:border-neutral-700 rounded-lg text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-green-500 dark:focus:ring-green-400">
+              <button id="btn-submit-new-key" class="px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-lg transition-colors shrink-0 flex items-center justify-center gap-1.5 shadow-sm">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                Generate Key
+              </button>
+            </div>
+            <div id="new-key-alert-container" class="mt-3 hidden"></div>
+          </div>` : ''}
+
+          <!-- Keys List -->
+          <div>
+            <div class="flex items-center justify-between mb-3">
+              <h4 class="text-xs font-bold text-gray-400 dark:text-neutral-500 uppercase tracking-wider">Active Keys</h4>
+              <span id="keys-count-badge" class="text-xs text-gray-500 dark:text-neutral-400 font-medium"></span>
+            </div>
+            <div id="keys-list-container" class="space-y-2">
+              <div class="p-6 text-center text-gray-500 dark:text-neutral-400"><div class="thinking-spinner w-6 h-6 mx-auto mb-2"></div>Loading keys…</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="px-6 py-3.5 bg-gray-50 dark:bg-neutral-900 border-t border-gray-200 dark:border-neutral-800 flex justify-end">
+          <button id="keys-modal-done" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-gray-800 dark:text-neutral-200 text-sm font-medium rounded-lg transition-colors">Done</button>
+        </div>
+      </div>`;
+
+    document.body.appendChild(modal);
+
+    const close = () => {
+        document.removeEventListener('keydown', onKeyDown);
+        modal.remove();
+    };
+    const onKeyDown = (e) => { if (e.key === 'Escape') close(); };
+    document.addEventListener('keydown', onKeyDown);
+    modal.addEventListener('click', e => { if (e.target === modal) close(); });
+    modal.querySelector('#keys-modal-close')?.addEventListener('click', close);
+    modal.querySelector('#keys-modal-done')?.addEventListener('click', close);
+
+    const listContainer = modal.querySelector('#keys-list-container');
+    const countBadge = modal.querySelector('#keys-count-badge');
+
+    const loadAndRenderKeys = async () => {
+        try {
+            const res = await api.listPolicyKeys(policyId);
+            if (!res.ok) throw new Error(res.error || 'Failed to load keys');
+            const keys = res.keys || [];
+            countBadge.textContent = `${keys.length} key${keys.length === 1 ? '' : 's'}`;
+
+            if (keys.length === 0) {
+                listContainer.innerHTML = `
+                  <div class="p-6 text-center border-2 border-dashed border-gray-200 dark:border-neutral-800 rounded-xl text-gray-400 dark:text-neutral-500 text-sm">
+                    No active API keys found for this policy. Generate one above to connect the CLI or an agent.
+                  </div>`;
+                return;
+            }
+
+            listContainer.innerHTML = keys.map(k => {
+                const relCreated = k.created_at ? formatRelativeTime(k.created_at) || new Date(k.created_at).toLocaleDateString() : '—';
+                const relUsed = k.last_used_at ? formatRelativeTime(k.last_used_at) || new Date(k.last_used_at).toLocaleDateString() : 'Never used';
+                const isNeverUsed = !k.last_used_at;
+
+                return `
+                  <div class="p-3.5 bg-white dark:bg-neutral-800/50 rounded-xl border border-gray-200 dark:border-neutral-700/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 hover:border-gray-300 dark:hover:border-neutral-600 transition-colors">
+                    <div class="min-w-0 flex-1">
+                      <div class="flex items-center gap-2 flex-wrap">
+                        <span class="font-semibold text-sm text-gray-900 dark:text-white break-words">${escapeHtml(k.label)}</span>
+                        <span class="text-xs font-mono px-2 py-0.5 bg-gray-100 dark:bg-neutral-800 border border-transparent dark:border-neutral-700 text-gray-600 dark:text-neutral-300 rounded font-normal" title="SHA-256 Key Hash Prefix">#${escapeHtml(k.key_hash_prefix || (k.key_hash || '').slice(0, 8))}</span>
+                      </div>
+                      <div class="text-xs text-gray-500 dark:text-neutral-400 mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <span>Created: <strong class="text-gray-700 dark:text-neutral-300 font-normal">${relCreated}</strong></span>
+                        <span>&bull;</span>
+                        <span>Last used: <strong class="${isNeverUsed ? 'text-gray-400 dark:text-neutral-500 font-normal' : 'text-green-600 dark:text-green-400 font-medium'}">${relUsed}</strong></span>
+                      </div>
+                    </div>
+                    ${canGenerateKey ? `
+                    <div class="shrink-0 flex items-center justify-end">
+                      <button class="revoke-single-key-btn px-2.5 py-1.5 text-xs text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg font-medium transition-colors flex items-center gap-1.5 border border-transparent dark:border-red-900/30"
+                              data-hash="${escapeHtml(k.key_hash)}" data-label="${escapeHtml(k.label)}">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                        Revoke
+                      </button>
+                    </div>` : ''}
+                  </div>`;
+            }).join('');
+
+            listContainer.querySelectorAll('.revoke-single-key-btn').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const label = btn.dataset.label;
+                    const hash = btn.dataset.hash;
+                    if (!confirm(`Are you sure you want to revoke API key "${label}"?\n\nAny developer, CLI, or agent using this key will immediately lose access.`)) {
+                        return;
+                    }
+                    btn.disabled = true;
+                    btn.textContent = 'Revoking…';
+                    try {
+                        const revRes = await api.revokePolicyKey(policyId, hash);
+                        if (revRes.ok) {
+                            ui.showToast(`Revoked API key "${label}"`, 'info');
+                            await loadAndRenderKeys();
+                        } else {
+                            alert(revRes.error || 'Failed to revoke key');
+                            btn.disabled = false;
+                            btn.textContent = 'Revoke';
+                        }
+                    } catch (e) {
+                        alert('Error revoking key: ' + e.message);
+                        btn.disabled = false;
+                        btn.textContent = 'Revoke';
+                    }
+                });
+            });
+        } catch (e) {
+            listContainer.innerHTML = `<div class="p-4 text-center text-red-500 text-sm">Error loading keys: ${escapeHtml(e.message)}</div>`;
+        }
+    };
+
+    // Generate Key form handling
+    const labelInput = modal.querySelector('#new-key-label');
+    const submitBtn = modal.querySelector('#btn-submit-new-key');
+    const alertContainer = modal.querySelector('#new-key-alert-container');
+
+    if (submitBtn && labelInput) {
+        const handleGen = async () => {
+            const label = (labelInput.value || '').trim() || 'Default Key';
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Generating…';
+            try {
+                const res = await api.generateKey(policyId, label);
+                if (res.ok && res.api_key) {
+                    const rawKey = res.api_key.trim();
+                    alertContainer.classList.remove('hidden');
+                    alertContainer.innerHTML = `
+                      <div class="p-3.5 bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800/60 rounded-xl text-sm">
+                        <div class="flex items-center justify-between mb-1.5">
+                          <span class="font-bold text-xs uppercase tracking-wider text-green-800 dark:text-green-400">Key Created &mdash; Save Now</span>
+                          <span class="text-xs text-amber-600 dark:text-amber-400 font-semibold">Will not be shown again</span>
+                        </div>
+                        <div class="flex items-center gap-2 mt-1">
+                          <code id="new-key-display" class="flex-1 p-2.5 bg-white dark:bg-neutral-900 rounded-lg border border-green-300 dark:border-neutral-700 font-mono text-xs break-all select-all text-green-700 dark:text-green-400 font-bold">${escapeHtml(rawKey)}</code>
+                          <button id="btn-copy-new-key" class="px-3.5 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-semibold shrink-0 transition-colors shadow-sm">Copy</button>
+                        </div>
+                      </div>`;
+                    labelInput.value = '';
+
+                    modal.querySelector('#btn-copy-new-key')?.addEventListener('click', async (e) => {
+                        await navigator.clipboard.writeText(rawKey);
+                        e.target.textContent = 'Copied!';
+                        setTimeout(() => { if (e.target) e.target.textContent = 'Copy'; }, 2000);
+                    });
+
+                    try {
+                        await navigator.clipboard.writeText(rawKey);
+                        ui.showToast('New API key copied to clipboard!', 'success');
+                    } catch (_) {}
+
+                    await loadAndRenderKeys();
+                } else {
+                    alert(res.error || 'Failed to generate key.');
+                }
+            } catch (e) {
+                alert('Error generating key: ' + e.message);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg> Generate Key`;
+            }
+        };
+
+        submitBtn.addEventListener('click', handleGen);
+        labelInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                handleGen();
+            }
+        });
+    }
+
+    await loadAndRenderKeys();
 }

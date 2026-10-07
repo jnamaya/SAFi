@@ -50,9 +50,14 @@ CONNECTOR_TOOLS: Dict[str, Tuple[str, ...]] = {
     # authorized and the agent is refused every turn it tries to use it.
     # Order matches get_tools_for_agent's emission order, which
     # test_tool_connector_expansion asserts.
+    "agentic_coding": (
+        "read", "grep", "glob", "list",
+        "bash", "write", "edit", "patch", "delete",
+        "webfetch", "websearch", "task", "todowrite", "skill", "lsp", "question",
+    ),
     "coding_harness": (
         "read", "grep", "glob", "list",
-        "bash", "write", "edit", "patch",
+        "bash", "write", "edit", "patch", "delete",
         "webfetch", "websearch", "task", "todowrite", "skill", "lsp", "question",
     ),
     "find_places": ("find_places",),

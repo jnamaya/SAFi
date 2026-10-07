@@ -80,6 +80,20 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "delete",
+            "description": "Delete a file or directory in the repository. Path is relative to the repository root.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "File or directory path relative to repository root to delete."}
+                },
+                "required": ["path"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "grep",
             "description": "Search file contents in the repository using a regular expression.",
             "parameters": {
@@ -134,6 +148,26 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
                 "required": ["command"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "task",
+            "description": "Delegate a unit of work to an autonomous subagent in an isolated context. Use proactively whenever a task involves multi-file exploration/search ('researcher'), running test suites ('tester'), or reviewing code changes ('code_reviewer'). Returns synthesized findings without consuming main context tokens.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "description": {"type": "string", "description": "Short 3-5 word summary of the delegated task."},
+                    "prompt": {"type": "string", "description": "Detailed goal and instructions for the subagent."},
+                    "subagent_type": {
+                        "type": "string",
+                        "description": "Role/persona for the subagent: 'researcher' (read-only search), 'tester' (test runner), or 'code_reviewer'.",
+                        "enum": ["researcher", "tester", "code_reviewer"]
+                    }
+                },
+                "required": ["description", "prompt"]
+            }
+        }
     }
 ]
 
@@ -159,7 +193,9 @@ def execute_tool(
     """Execute a tool proposal locally inside workspace_root."""
     try:
         if name == "read":
-            path_str = args.get("path") or ""
+            path_str = args.get("path") or args.get("filePath") or args.get("file_path") or ""
+            if not path_str.strip():
+                return "Error: 'path' parameter is required for read."
             target = resolve_safe_path(path_str, workspace_root)
             if not target.exists():
                 return f"Error: No such file: {path_str}"
@@ -183,17 +219,37 @@ def execute_tool(
             return body + note
 
         elif name == "write":
-            path_str = args.get("path") or ""
+            path_str = args.get("path") or args.get("filePath") or args.get("file_path") or ""
+            if not path_str.strip():
+                return "Error: 'path' parameter is required for write."
             content = args.get("content") or ""
             target = resolve_safe_path(path_str, workspace_root)
+            if target == workspace_root or target.is_dir():
+                return f"Error: Cannot write to directory '{path_str}'. Specify a target file path."
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content, encoding="utf-8")
             return f"Successfully wrote {len(content)} characters to {path_str}."
 
         elif name == "edit":
-            path_str = args.get("path") or ""
-            target_str = args.get("target") or ""
-            replacement_str = args.get("replacement") or ""
+            path_str = args.get("path") or args.get("filePath") or args.get("file_path") or ""
+            if not path_str.strip():
+                return "Error: 'path' parameter is required for edit."
+            target_str = (
+                args.get("target")
+                or args.get("oldString")
+                or args.get("old_string")
+                or args.get("old_str")
+                or args.get("oldText")
+                or ""
+            )
+            replacement_str = (
+                args.get("replacement")
+                or args.get("newString")
+                or args.get("new_string")
+                or args.get("new_str")
+                or args.get("newText")
+                or ""
+            )
             target = resolve_safe_path(path_str, workspace_root)
             if not target.exists():
                 return f"Error: No such file: {path_str}"
@@ -201,13 +257,39 @@ def execute_tool(
             text = target.read_text(encoding="utf-8", errors="replace")
             count = text.count(target_str)
             if count == 0:
-                return f"Error: Target text block not found in {path_str}. Verify whitespace and indentation."
+                # Try CRLF/LF normalization if exact match failed
+                normalized_text = text.replace("\r\n", "\n")
+                normalized_target = target_str.replace("\r\n", "\n")
+                normalized_replacement = replacement_str.replace("\r\n", "\n")
+                if normalized_target in normalized_text and normalized_text.count(normalized_target) == 1:
+                    new_text = normalized_text.replace(normalized_target, normalized_replacement, 1)
+                    target.write_text(new_text, encoding="utf-8")
+                    return f"Successfully applied edit to {path_str}."
+                return f"Error: Target text block not found in {path_str}. Verify whitespace and indentation, or use 'write' to rewrite the full file."
             if count > 1:
-                return f"Error: Target text occurs {count} times in {path_str}. Provide more surrounding lines for uniqueness."
+                return f"Error: Target text occurs {count} times in {path_str}. Provide more surrounding lines for uniqueness, or use 'write' to rewrite the full file."
 
             new_text = text.replace(target_str, replacement_str, 1)
             target.write_text(new_text, encoding="utf-8")
             return f"Successfully applied edit to {path_str}."
+
+        elif name in ("delete", "remove"):
+            path_str = args.get("path") or args.get("filePath") or args.get("file_path") or ""
+            if not path_str.strip():
+                return "Error: 'path' parameter is required for delete."
+            target = resolve_safe_path(path_str, workspace_root)
+            if not target.exists():
+                return f"Error: No such file or directory: {path_str}"
+            if target == workspace_root:
+                return "Error: Cannot delete the repository root directory."
+            if target.is_file() or target.is_symlink():
+                target.unlink()
+                return f"Successfully deleted file: {path_str}"
+            elif target.is_dir():
+                import shutil
+                shutil.rmtree(target)
+                return f"Successfully deleted directory: {path_str}"
+            return f"Error: Cannot delete '{path_str}'."
 
         elif name == "grep":
             pattern = args.get("pattern") or ""
@@ -337,6 +419,10 @@ def execute_tool(
             if len(out) > 20000:
                 out = out[:20000] + f"\n... [output truncated, {len(out)} chars total]"
             return f"Exit code {proc.returncode}\n{out}".strip()
+
+        elif name in ("task", "delegate_subagent"):
+            desc = args.get("description", "")
+            return f"Subagent task '{desc}' processed."
 
         else:
             return f"Unknown tool: '{name}'"

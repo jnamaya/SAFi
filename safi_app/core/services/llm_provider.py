@@ -790,7 +790,7 @@ class LLMProvider:
                 )
             except Exception as e:
                 self.log.error(f"Gemini generation failed: {e}")
-                return "{}"
+                raise
             self._capture_usage(route, provider_name, model_name, provider_type, resp)
 
             try:
@@ -879,7 +879,7 @@ class LLMProvider:
     def _is_rate_limit_error(exc: Exception) -> bool:
         """True when retrying would immediately amplify provider throttling."""
         text = f"{type(exc).__name__}: {exc}".lower()
-        return "429" in text or "rate limit" in text or "ratelimit" in text
+        return any(k in text for k in ("429", "rate limit", "ratelimit", "resource_exhausted", "quota"))
 
     @staticmethod
     def explain_provider_error(exc: Exception) -> str:

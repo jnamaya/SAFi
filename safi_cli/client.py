@@ -1,4 +1,4 @@
-"""HTTP Client communicating directly with SAFi's governed harness endpoint."""
+"""HTTP Client communicating directly with SAFi's governed agentic endpoint."""
 
 import json
 from typing import Any, Dict, List, Optional
@@ -40,6 +40,26 @@ class SafiClient:
                 continue
         return []
 
+    def get_available_models(self) -> List[Dict[str, Any]]:
+        """Fetch available models for the Intellect faculty from the connected SAFi backend."""
+        headers = {}
+        if self.api_key:
+            headers["X-API-KEY"] = self.api_key
+        for path in ("/api/agentic/models", "/api/models"):
+            try:
+                resp = requests.get(
+                    f"{self.api_url}{path}",
+                    headers=headers,
+                    timeout=5,
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if isinstance(data, dict) and data.get("ok") and isinstance(data.get("models"), list):
+                        return data["models"]
+            except Exception:
+                continue
+        return []
+
     def send_turn(
         self,
         *,
@@ -48,10 +68,12 @@ class SafiClient:
         message: str,
         workspace_root: str,
         agent: str = "software_engineer",
-
+        user_name: Optional[str] = None,
+        model: Optional[str] = None,
         tool_results: Optional[List[Dict[str, Any]]] = None,
         recent_turns: str = "",
         message_id: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """Dispatch a single turn to SAFi's governed pipeline."""
         headers = {
@@ -62,8 +84,11 @@ class SafiClient:
         # Client-owned repository tools are only used for software engineering tasks.
         # Informational and advisory personas (e.g. fiduciary, health_navigator)
         # use governed server-side MCP tools (stock market data, web search, etc.).
-        is_coding_agent = (agent == "software_engineer")
-        tools_payload = TOOL_SCHEMAS if is_coding_agent else []
+        if tools is not None:
+            tools_payload = tools
+        else:
+            is_coding_agent = (agent == "software_engineer")
+            tools_payload = TOOL_SCHEMAS if is_coding_agent else []
 
         payload: Dict[str, Any] = {
             "user_id": user_id,
@@ -78,6 +103,11 @@ class SafiClient:
             "tool_results": tool_results or [],
             "recent_turns": recent_turns,
         }
+        if model:
+            payload["intellect_model"] = model
+            payload["model"] = model
+        if user_name:
+            payload["user_name"] = user_name
         if message_id:
             payload["message_id"] = message_id
 
@@ -117,3 +147,67 @@ class SafiClient:
             return resp.json()
         except ValueError:
             raise SafiClientError("Backend returned invalid non-JSON response.", details=resp.text)
+
+    def get_turn_progress(self, message_id: str, user_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Fetch real-time reasoning progress for an in-flight message."""
+        headers = {}
+        if self.api_key:
+            headers["X-API-KEY"] = self.api_key
+        params = {}
+        if user_id:
+            params["user_id"] = user_id
+        try:
+            resp = requests.get(
+                f"{self.api_url}/api/agentic/progress/{message_id}",
+                headers=headers,
+                params=params,
+                timeout=2.0,
+            )
+            if resp.status_code == 200:
+                return resp.json()
+        except Exception:
+            return None
+        return None
+
+    def compress_conversation(
+        self,
+        conversation_id: str,
+        user_id: str,
+        agent: str = "software_engineer",
+        model: Optional[str] = None,
+        action: str = "compress",
+    ) -> Dict[str, Any]:
+        """Compress or manage the conversation's memory summary."""
+        headers = {
+            "Content-Type": "application/json",
+        }
+        if self.api_key:
+            headers["X-API-KEY"] = self.api_key
+        payload = {
+            "conversation_id": conversation_id,
+            "user_id": user_id,
+            "agent": agent,
+            "action": action,
+        }
+        if model:
+            payload["model"] = model
+        try:
+            resp = requests.post(
+                f"{self.api_url}/api/agentic/compress",
+                headers=headers,
+                json=payload,
+                timeout=120,
+            )
+            if resp.status_code == 200:
+                return resp.json()
+            err_data = {}
+            try:
+                err_data = resp.json()
+            except Exception:
+                pass
+            return {
+                "ok": False,
+                "error": err_data.get("error", f"Server returned HTTP {resp.status_code}"),
+            }
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}

@@ -47,7 +47,7 @@ class VocabularyTests(unittest.TestCase):
         self.assertEqual(
             set(OPENCODE_TOOL_NAMES),
             {
-                "read", "grep", "glob", "list", "bash", "write", "edit", "patch",
+                "read", "grep", "glob", "list", "bash", "write", "edit", "patch", "delete",
                 "webfetch", "websearch", "task", "todowrite", "skill", "lsp",
                 "question",
             },
@@ -73,6 +73,15 @@ class VocabularyTests(unittest.TestCase):
             {t["name"] for t in tools},
             set(OPENCODE_TOOL_NAMES),
             "connector expansion lost a tool; it will be refused forever",
+        )
+
+    def test_manager_expands_agentic_coding_to_full_vocabulary(self):
+        mgr = MCPManager({})
+        tools = asyncio.run(mgr.get_tools_for_agent({"tools": ["agentic_coding"]}))
+        self.assertEqual(
+            {t["name"] for t in tools},
+            set(OPENCODE_TOOL_NAMES),
+            "agentic_coding connector expansion lost a tool; it will be refused forever",
         )
 
     def test_policy_intersection_keeps_only_approved_client_tools(self):

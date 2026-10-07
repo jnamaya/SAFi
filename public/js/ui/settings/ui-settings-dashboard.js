@@ -142,6 +142,7 @@ function entityParams() {
     const p = rangeDates();
     if (state.mode === 'policy' && state.entity) p.policy_id = state.entity;
     if (state.mode === 'agent' && state.entity) p.profile = state.entity;
+    if (state.user_id) p.user_id = state.user_id;
     return p;
 }
 
@@ -166,8 +167,8 @@ export async function renderSettingsDashboardTab() {
     orgId = org.id;
     // view defaults to 'consistency' so the card's heading and its y-axis agree
     // on load; it used to open on 'deviation' under a "Consistency Trend" title.
-    state = { mode: 'agent', entity: '', range: '30d', filter: '', q: '', offset: 0,
-              maDays: 7, view: 'consistency', showPoints: false, filters: { profiles: [], policies: [] } };
+    state = { mode: 'agent', entity: '', user_id: '', range: '30d', filter: '', q: '', offset: 0,
+              maDays: 7, view: 'consistency', showPoints: false, filters: { profiles: [], policies: [], users: [] } };
 
     try {
         state.filters = await api.getAuditFilters(orgId);
@@ -195,16 +196,19 @@ function renderControls() {
     const el = document.getElementById('ah-controls');
     if (!el) return;
     const opts = state.mode === 'policy' ? state.filters.policies : state.filters.profiles;
+    const userOpts = state.filters.users || [];
     const sel = (id, entries, cur) => `
-        <select id="${id}" class="rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-2 py-1.5 text-xs">
+        <select id="${id}" class="rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-2 py-1.5 text-xs text-gray-800 dark:text-neutral-200">
             ${entries.map(([v, l]) => `<option value="${esc(v)}" ${v === cur ? 'selected' : ''}>${esc(l)}</option>`).join('')}
         </select>`;
     el.innerHTML = `
         ${sel('ah-mode', [['agent', 'By agent'], ['policy', 'By policy']], state.mode)}
         ${sel('ah-entity', [['', state.mode === 'policy' ? 'All policies' : 'All agents'],
             ...opts.map(o => [o, String(o).replace(/_/g, ' ')])], state.entity)}
+        ${userOpts.length > 0 ? sel('ah-user', [['', 'All users'],
+            ...userOpts.map(u => [u.user_id, u.name || u.user_id])], state.user_id) : ''}
         ${sel('ah-range', [['7d', 'Last 7 days'], ['30d', 'Last 30 days'], ['all', 'All time']], state.range)}
-        <button id="ah-export" class="px-3 py-1.5 text-xs border border-gray-300 dark:border-neutral-600 rounded-lg whitespace-nowrap" title="Downloads the decrypted records matching the current filters. The export is recorded in the compliance evidence log.">Export JSON</button>
+        <button id="ah-export" class="px-3 py-1.5 text-xs border border-gray-300 dark:border-neutral-600 rounded-lg whitespace-nowrap text-gray-800 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-700" title="Downloads the decrypted records matching the current filters. The export is recorded in the compliance evidence log.">Export JSON</button>
     `;
     el.querySelector('#ah-mode')?.addEventListener('change', e => {
         state.mode = e.target.value; state.entity = ''; state.offset = 0;
@@ -212,6 +216,9 @@ function renderControls() {
     });
     el.querySelector('#ah-entity')?.addEventListener('change', e => {
         state.entity = e.target.value; state.offset = 0; refreshData();
+    });
+    el.querySelector('#ah-user')?.addEventListener('change', e => {
+        state.user_id = e.target.value; state.offset = 0; refreshData();
     });
     el.querySelector('#ah-range')?.addEventListener('change', e => {
         state.range = e.target.value; state.offset = 0; refreshData();
@@ -559,6 +566,10 @@ async function renderExplorer() {
             <td class="px-4 py-3 text-sm whitespace-nowrap">${fmtDate(i.created_at)}</td>
             <td class="px-4 py-3 text-sm">${esc((i.profile_key || '—').replace(/_/g, ' '))}
                 ${i.prompt_preview ? `<div class="text-xs text-gray-400 truncate max-w-[26rem]">${esc(i.prompt_preview)}</div>` : ''}</td>
+            <td class="px-4 py-3 text-sm whitespace-nowrap">
+                <span class="font-medium text-gray-900 dark:text-neutral-100">${esc(i.user_name || i.user_id || '—')}</span>
+                ${i.user_name && i.user_id && i.user_name !== i.user_id ? `<div class="text-xs text-gray-400 font-mono">${esc(i.user_id)}</div>` : ''}
+            </td>
             <td class="px-4 py-3 text-xs font-mono whitespace-nowrap">${esc(i.intellect_model || '—')}</td>
             <td class="px-4 py-3 text-sm whitespace-nowrap" title="${esc(ALIGNMENT_HELP)}">${alignmentLabel(i.spirit_score)}</td>
             <td class="px-4 py-3 text-sm whitespace-nowrap" title="${esc(CONSISTENCY_HELP)}">${consistencyLabel(i.drift)}</td>
@@ -588,7 +599,7 @@ async function renderExplorer() {
             : `<div class="overflow-x-auto rounded-lg border border-gray-200 dark:border-neutral-700">
                 <table class="w-full text-left">
                     <thead class="bg-gray-50 dark:bg-neutral-800 text-xs uppercase text-gray-500 dark:text-gray-400">
-                        <tr><th class="px-4 py-3">Time</th><th class="px-4 py-3">Agent</th><th class="px-4 py-3">Model</th><th class="px-4 py-3">Alignment</th><th class="px-4 py-3">Consistency</th><th class="px-4 py-3">Decision</th></tr>
+                        <tr><th class="px-4 py-3">Time</th><th class="px-4 py-3">Agent</th><th class="px-4 py-3">User</th><th class="px-4 py-3">Model</th><th class="px-4 py-3">Alignment</th><th class="px-4 py-3">Consistency</th><th class="px-4 py-3">Decision</th></tr>
                     </thead>
                     <tbody>${rows}</tbody>
                 </table>
@@ -639,7 +650,7 @@ function textCard(title, body, help = '') {
 function toolCallsCard(calls) {
     if (!Array.isArray(calls) || calls.length === 0) return '';
     const rows = calls.map(c => {
-        // Orchestrator records use tool/params; harness tool proposals use
+        // Orchestrator records use tool/params; agentic tool proposals use
         // tool_name/parameters, and returned client (e.g. safi-cli) results use
         // tool_name/arguments. Read all three shapes so older and newer turns
         // remain legible in the same audit timeline.
@@ -671,7 +682,7 @@ function toolCallsCard(calls) {
     return `
         <div class="rounded-lg border border-gray-200 dark:border-neutral-700">
             <div class="px-4 py-2 border-b border-gray-100 dark:border-neutral-800 text-xs uppercase text-gray-400">Tools used</div>
-            <div class="px-4 pt-2 text-xs text-gray-400">Tool proposals and the Will's verdicts, plus calls returned by the harness.</div>
+            <div class="px-4 pt-2 text-xs text-gray-400">Tool proposals and the Will's verdicts, plus calls returned by the agentic client.</div>
             ${rows}
         </div>`;
 }
@@ -816,6 +827,7 @@ async function renderDetail(messagePk) {
         </div>
         <div class="text-xs text-gray-400 mb-4">
             ${fmtDate(ev.created_at)} · ${esc((ev.profile_key || '—').replace(/_/g, ' '))}
+            ${(ev.user_name || ev.user_id) ? ` · user <strong class="text-gray-700 dark:text-neutral-200 font-medium">${esc(ev.user_name || ev.user_id)}${ev.user_name && ev.user_id && ev.user_name !== ev.user_id ? ` (${esc(ev.user_id)})` : ''}</strong>` : ''}
             ${ev.policy_id ? ` · policy ${esc(String(ev.policy_id).replace(/_/g, ' '))}${ev.policy_version ? ` (v${esc(ev.policy_version)})` : ''}` : ''}
             ${ev.intellect_model ? ` · <span class="font-mono">${esc(ev.intellect_model)}</span>` : ''}
             ${auditModel ? ` · <span title="Model that performed the per-value policy audit for this turn">audited by <span class="font-mono">${esc(auditModel)}</span></span>` : ''}

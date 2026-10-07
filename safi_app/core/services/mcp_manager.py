@@ -46,10 +46,10 @@ from ..tool_connectors import (
 log = logging.getLogger(__name__)
 
 
-def coding_harness_declaration_only() -> frozenset:
-    """Names the coding_harness connector declares but SAFi does not execute.
+def agentic_declaration_only() -> frozenset:
+    """Names the agentic_coding connector declares but SAFi does not execute.
 
-    Harness vocabulary minus the four repository tools implemented in
+    Agentic coding vocabulary minus the four repository tools implemented in
     core/mcp_servers/coding_harness.py. Kept as a helper rather than inlined so
     dispatch and the catalog agree on the split from one definition.
     """
@@ -57,6 +57,9 @@ def coding_harness_declaration_only() -> frozenset:
         CODING_HARNESS_TOOL_NAMES, SAFI_EXECUTED_TOOLS,
     )
     return frozenset(CODING_HARNESS_TOOL_NAMES) - SAFI_EXECUTED_TOOLS
+
+
+coding_harness_declaration_only = agentic_declaration_only
 
 
 
@@ -364,7 +367,7 @@ class MCPManager:
 
         tools = []
 
-        if "coding_harness" in allowed_tools:
+        if "agentic_coding" in allowed_tools or "coding_harness" in allowed_tools:
             tools.append({
                 "name": "read",
                 "description": (
@@ -455,6 +458,10 @@ class MCPManager:
                 ("patch", "Apply a diff to a file. Executed by the "
                           "coding-agent client, not by SAFi.",
                  {"filePath": {"type": "string"}}, ["filePath"]),
+                ("delete", "Delete a file or directory. Executed by the "
+                           "coding-agent client, not by SAFi.",
+                 {"path": {"type": "string"}, "filePath": {"type": "string"}},
+                 []),
                 ("webfetch", "Fetch a URL. Executed by the coding-agent "
                              "client, not by SAFi.",
                  {"url": {"type": "string"}}, ["url"]),
@@ -674,7 +681,7 @@ class MCPManager:
                 # agent may use — the same rule discovered MCP servers follow.
                 # Saving stores the connector name, which expand_connectors
                 # turns back into these four.
-                "category": "Coding Harness",
+                "category": "Agentic Coding",
                 "tools": [
                     {
                         "name": "read",
@@ -872,7 +879,7 @@ class MCPManager:
         # SAFi. Say so explicitly: a bare "not found" reads as a bug, and worse
         # would leave the caller believing the command had been refused for a
         # governance reason when it simply has no local executor.
-        if tool_name in coding_harness_declaration_only():
+        if tool_name in agentic_declaration_only():
             return json.dumps({
                 "error": (
                     f"Tool '{tool_name}' is provided by the coding-agent client, "

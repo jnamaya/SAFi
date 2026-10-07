@@ -564,7 +564,7 @@ async def list_directory(path: str = ".", limit: int = _MAX_RESULTS) -> str:
 # emission order, which test_tool_connector_expansion asserts.
 CODING_HARNESS_TOOL_NAMES: Tuple[str, ...] = (
     "read", "grep", "glob", "list",
-    "bash", "write", "edit", "patch",
+    "bash", "write", "edit", "patch", "delete",
     "webfetch", "websearch", "task", "todowrite", "skill", "lsp", "question",
 )
 OPENCODE_TOOL_NAMES: Tuple[str, ...] = CODING_HARNESS_TOOL_NAMES

@@ -3670,8 +3670,19 @@ def get_policy_keys(pid):
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
-        cursor.execute("SELECT label, created_at, last_used_at, key_hash FROM api_keys WHERE policy_id=%s", (pid,))
+        cursor.execute("SELECT label, created_at, last_used_at, key_hash FROM api_keys WHERE policy_id=%s ORDER BY created_at DESC", (pid,))
         return cursor.fetchall()
+    finally:
+        cursor.close()
+        conn.close()
+
+def delete_policy_key(pid, key_hash):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM api_keys WHERE policy_id=%s AND key_hash=%s", (pid, key_hash))
+        conn.commit()
+        return cursor.rowcount > 0
     finally:
         cursor.close()
         conn.close()
@@ -5134,7 +5145,7 @@ UNATTRIBUTED_ORG = "__unattributed__"
 # benefit over telling integrators the limit.
 CONVERSATION_ID_MAX_LEN = 36
 
-def _governance_where(org_id, profile=None, policy_id=None, date_from=None, date_to=None):
+def _governance_where(org_id, profile=None, policy_id=None, date_from=None, date_to=None, user_id=None):
     if org_id == UNATTRIBUTED_ORG:
         where = ["org_id IS NULL"]
         params = []
@@ -5147,6 +5158,9 @@ def _governance_where(org_id, profile=None, policy_id=None, date_from=None, date
     if policy_id:
         where.append("policy_id=%s")
         params.append(policy_id)
+    if user_id:
+        where.append("user_id=%s")
+        params.append(user_id)
     if date_from:
         where.append("created_at>=%s")
         params.append(date_from)
@@ -5156,25 +5170,31 @@ def _governance_where(org_id, profile=None, policy_id=None, date_from=None, date
     return " AND ".join(where), params
 
 def list_governance_filters(org_id):
-    """Profiles and policies that actually have governance records for this
-    org — replaces the Streamlit 'scan the 5 newest files' heuristic."""
+    """Profiles, policies, and users that actually have governance records for this org."""
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(dictionary=True)
     try:
         cursor.execute(
             "SELECT DISTINCT profile_key FROM governance_records "
             "WHERE org_id=%s AND profile_key IS NOT NULL ORDER BY profile_key", (org_id,))
-        profiles = [r[0] for r in cursor.fetchall()]
+        profiles = [r["profile_key"] for r in cursor.fetchall()]
         cursor.execute(
             "SELECT DISTINCT policy_id FROM governance_records "
             "WHERE org_id=%s AND policy_id IS NOT NULL ORDER BY policy_id", (org_id,))
-        policies = [r[0] for r in cursor.fetchall()]
-        return {"profiles": profiles, "policies": policies}
+        policies = [r["policy_id"] for r in cursor.fetchall()]
+        cursor.execute(
+            "SELECT DISTINCT g.user_id, COALESCE(u.name, g.user_id) AS name "
+            "FROM governance_records g "
+            "LEFT JOIN users u ON u.id = g.user_id "
+            "WHERE g.org_id=%s AND g.user_id IS NOT NULL "
+            "ORDER BY name", (org_id,))
+        users = cursor.fetchall()
+        return {"profiles": profiles, "policies": policies, "users": users}
     finally:
         cursor.close()
         conn.close()
 
-def governance_summary(org_id, profile=None, policy_id=None, date_from=None, date_to=None):
+def governance_summary(org_id, profile=None, policy_id=None, date_from=None, date_to=None, user_id=None):
     """One SQL pass over the plaintext columns. Metric definitions ported
     exactly from the Streamlit Audit Hub (they encode deliberate decisions):
     Alignment averages APPROVED turns only — redirected turns carry a
@@ -5182,7 +5202,7 @@ def governance_summary(org_id, profile=None, policy_id=None, date_from=None, dat
     pooling them would inflate compliance when an agent blocks gracefully.
     Overall score = clip(avgAlignment − avgDrift×10, 1, 10). Empty windows
     return None everywhere — the UI renders N/A, never a default."""
-    where, params = _governance_where(org_id, profile, policy_id, date_from, date_to)
+    where, params = _governance_where(org_id, profile, policy_id, date_from, date_to, user_id=user_id)
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -5223,11 +5243,11 @@ def governance_summary(org_id, profile=None, policy_id=None, date_from=None, dat
     }
 
 def governance_trend(org_id, bucket="day", profile=None, policy_id=None,
-                     date_from=None, date_to=None):
+                     date_from=None, date_to=None, user_id=None):
     """Per-bucket mean drift/consistency + turn count for the trend chart.
     Moving-average smoothing stays client-side (a display choice)."""
     fmt = "%Y-%m-%d %H:00" if bucket == "hour" else "%Y-%m-%d"
-    where, params = _governance_where(org_id, profile, policy_id, date_from, date_to)
+    where, params = _governance_where(org_id, profile, policy_id, date_from, date_to, user_id=user_id)
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -5252,22 +5272,9 @@ def governance_trend(org_id, bucket="day", profile=None, policy_id=None,
     return out
 
 def governance_trend_by_profile(org_id, bucket="day", profile=None, policy_id=None,
-                                date_from=None, date_to=None):
-    """The same buckets as governance_trend(), split one series per agent.
-
-    Why this exists: governance_trend()'s mean is taken over *turns*, so a
-    high-volume agent dominates it. On 2026-07-24 in dev, one agent sat at
-    drift 0.0 over 7 turns and another at 0.6163 over 2, and the pooled line
-    plotted 0.137 — a consistency of 86% that described neither agent. Drift is only ever meaningful per agent (spirit_memory is keyed on
-    profile_name, so every turn's drift is a distance from that agent's own mu),
-    which is what makes the split the honest default rather than a nicety.
-
-    Returns a list of series ordered by scored turns, descending:
-        [{"profile_key", "turns", "scored_turns", "buckets": [...]}, ...]
-    Each series' buckets carry the same keys governance_trend() returns.
-    """
+                                date_from=None, date_to=None, user_id=None):
     fmt = "%Y-%m-%d %H:00" if bucket == "hour" else "%Y-%m-%d"
-    where, params = _governance_where(org_id, profile, policy_id, date_from, date_to)
+    where, params = _governance_where(org_id, profile, policy_id, date_from, date_to, user_id=user_id)
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -5282,8 +5289,6 @@ def governance_trend_by_profile(org_id, bucket="day", profile=None, policy_id=No
 
     series = {}
     for key, b, avg_drift, turns, drift_turns in rows:
-        # profile_key is NULL on pre-attribution rows; keep them in their own
-        # bucket rather than silently folding them into a named agent.
         key = key or ""
         s = series.setdefault(key, {"profile_key": key, "turns": 0,
                                     "scored_turns": 0, "buckets": []})
@@ -5317,10 +5322,10 @@ def _gov_filter_clause(flt):
     return None
 
 def list_governance_events(org_id, profile=None, policy_id=None, flt=None,
-                           date_from=None, date_to=None, limit=50, offset=0):
+                           date_from=None, date_to=None, limit=50, offset=0, user_id=None):
     """Explorer rows from plaintext columns only — no decryption. Returns
     (rows, total) where total counts everything matching the filters."""
-    where, params = _governance_where(org_id, profile, policy_id, date_from, date_to)
+    where, params = _governance_where(org_id, profile, policy_id, date_from, date_to, user_id=user_id)
     clause = _gov_filter_clause(flt)
     if clause:
         where += f" AND {clause}"
@@ -5333,18 +5338,25 @@ def list_governance_events(org_id, profile=None, policy_id=None, flt=None,
             f"SELECT {_GOV_EVENT_COLUMNS} FROM governance_records WHERE {where} "
             f"ORDER BY created_at DESC, id DESC LIMIT %s OFFSET %s",
             tuple(params) + (limit, offset))
-        return cursor.fetchall(), total
+        rows = cursor.fetchall()
+        user_ids = {r["user_id"] for r in rows if r.get("user_id")}
+        if user_ids:
+            format_strings = ','.join(['%s'] * len(user_ids))
+            cursor.execute(f"SELECT id, name FROM users WHERE id IN ({format_strings})", tuple(user_ids))
+            names = {u["id"]: u["name"] for u in cursor.fetchall()}
+            for r in rows:
+                r["user_name"] = names.get(r.get("user_id")) or r.get("user_id")
+        else:
+            for r in rows:
+                r["user_name"] = r.get("user_id")
+        return rows, total
     finally:
         cursor.close()
         conn.close()
 
 def search_governance_events(org_id, q, profile=None, policy_id=None, flt=None,
-                             date_from=None, date_to=None, limit=50):
-    """Prompt search: decrypt-and-scan within the filtered window under a hard
-    row cap (the examiner-export cap pattern — prompt text is deliberately not
-    indexable). Raises ValueError when the window exceeds the cap so the
-    caller can tell the user to narrow the range."""
-    where, params = _governance_where(org_id, profile, policy_id, date_from, date_to)
+                             date_from=None, date_to=None, limit=50, user_id=None):
+    where, params = _governance_where(org_id, profile, policy_id, date_from, date_to, user_id=user_id)
     clause = _gov_filter_clause(flt)
     if clause:
         where += f" AND {clause}"
@@ -5376,13 +5388,25 @@ def search_governance_events(org_id, q, profile=None, policy_id=None, flt=None,
             matches.append(row)
             if len(matches) >= limit:
                 break
+    user_ids = {r["user_id"] for r in matches if r.get("user_id")}
+    if user_ids:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            format_strings = ','.join(['%s'] * len(user_ids))
+            cursor.execute(f"SELECT id, name FROM users WHERE id IN ({format_strings})", tuple(user_ids))
+            names = {u["id"]: u["name"] for u in cursor.fetchall()}
+            for r in matches:
+                r["user_name"] = names.get(r.get("user_id")) or r.get("user_id")
+        finally:
+            cursor.close()
+            conn.close()
+    else:
+        for r in matches:
+            r["user_name"] = r.get("user_id")
     return matches, window
 
 def get_governance_event(org_id, message_pk):
-    """Drill-down: the decrypted capture + provenance columns + hash-chain
-    verification + a reviewed marker when a review_queue row exists (the
-    cross-link to the Review tab). Returns None when the record is missing
-    or belongs to another org."""
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
@@ -5392,6 +5416,10 @@ def get_governance_event(org_id, message_pk):
         row = cursor.fetchone()
         if not row:
             return None
+        if row.get("user_id"):
+            cursor.execute("SELECT name FROM users WHERE id=%s", (row["user_id"],))
+            u_row = cursor.fetchone()
+            row["user_name"] = u_row["name"] if u_row and u_row.get("name") else row["user_id"]
         cursor.execute(
             "SELECT audit_status, model_attribution, profile_values, timestamp "
             "FROM chat_history WHERE id=%s",
@@ -5419,11 +5447,11 @@ def get_governance_event(org_id, message_pk):
     }
 
 def export_governance_events(org_id, profile=None, policy_id=None, flt=None,
-                             date_from=None, date_to=None):
+                             date_from=None, date_to=None, user_id=None):
     """Filtered records, decrypted, for download — capped like the examiner
     export. The CALLER must custody-log the export (counts + filters, never
     content) to org_compliance_log before returning bytes."""
-    where, params = _governance_where(org_id, profile, policy_id, date_from, date_to)
+    where, params = _governance_where(org_id, profile, policy_id, date_from, date_to, user_id=user_id)
     clause = _gov_filter_clause(flt)
     if clause:
         where += f" AND {clause}"

@@ -63,6 +63,7 @@ def _common_filters():
     return {
         "profile": request.args.get("profile") or None,
         "policy_id": request.args.get("policy_id") or None,
+        "user_id": request.args.get("user_id") or None,
         "flt": flt,
         "date_from": date_from,
         "date_to": date_to,

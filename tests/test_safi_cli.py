@@ -566,6 +566,373 @@ class TestSafiClientToolPayload(unittest.TestCase):
         mock_summary.assert_called_once_with("get_stock_price", '{"price": 120.0}')
         mock_final.assert_called_once()
 
+    def test_ui_banner_and_audit_details(self):
+        from safi_cli import ui
+        # Verify banner runs cleanly with and without intellect_model
+        ui.print_banner("/tmp/repo", "software_engineer", "http://localhost:5000", user_name="Alice", intellect_model="claude-3-5-sonnet")
+
+        # Verify audit details formatting
+        test_payload = {
+            "policyName": "Agentic Coding Policy",
+            "conscienceLedger": [
+                {"value": "Non-Destructive Operations", "score": 0.85, "rationale": "Read-only exploration"},
+                {"value": "Scope Compliance", "score": -0.2, "rationale": "Accessed unexpected path"},
+            ],
+            "spirit_score": 8.2,
+            "spiritNote": "Alignment 8/10, drift low.",
+        }
+        ui.print_audit_details(test_payload)
+        self.assertIsNotNone(ui.COLOR_BRAND_600)
+        self.assertEqual(ui.COLOR_BRAND_600, "#16a34a")
+
+
+class TestSafiModelSelection(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.config_dir = Path(self.temp_dir.name)
+        self.orig_config_file = config.CONFIG_FILE
+        config.CONFIG_FILE = self.config_dir / "config.json"
+        self.env_patcher = unittest.mock.patch.dict(os.environ)
+        self.env_patcher.start()
+        for k in list(os.environ.keys()):
+            if k.startswith("SAFI_INTELLECT_MODEL"):
+                os.environ.pop(k, None)
+
+    def tearDown(self):
+        self.env_patcher.stop()
+        config.CONFIG_FILE = self.orig_config_file
+        self.temp_dir.cleanup()
+
+    def test_resolve_intellect_model_explicit(self):
+        model = config.resolve_intellect_model("software_engineer", "claude-3-5-sonnet")
+        self.assertEqual(model, "claude-3-5-sonnet")
+
+    def test_resolve_intellect_model_env(self):
+        with unittest.mock.patch.dict(os.environ, {"SAFI_INTELLECT_MODEL_FIDUCIARY": "gpt-4o"}):
+            self.assertEqual(config.resolve_intellect_model("fiduciary"), "gpt-4o")
+
+        with unittest.mock.patch.dict(os.environ, {"SAFI_INTELLECT_MODEL": "deepseek-v4-flash"}):
+            self.assertEqual(config.resolve_intellect_model("software_engineer"), "deepseek-v4-flash")
+
+    def test_save_and_resolve_intellect_model(self):
+        config.save_intellect_model("gemini-3.5-flash-lite", agent="software_engineer")
+        self.assertEqual(config.resolve_intellect_model("software_engineer"), "gemini-3.5-flash-lite")
+
+        config.save_intellect_model("mistral-small-2603")
+        self.assertEqual(config.resolve_intellect_model("health_navigator"), "mistral-small-2603")
+
+    def test_client_send_turn_passes_model(self):
+        from safi_cli.client import SafiClient
+        client = SafiClient("http://mock-backend:5000", "test-key")
+        with unittest.mock.patch("requests.post") as mock_post:
+            mock_post.return_value.status_code = 200
+            mock_post.return_value.json.return_value = {"ok": True, "type": "final_output", "finalOutput": "Hello"}
+            client.send_turn(
+                user_id="u1",
+                conversation_id="c1",
+                message="Hi",
+                workspace_root="/tmp",
+                model="claude-3-5-sonnet",
+            )
+            mock_post.assert_called_once()
+            _, kwargs = mock_post.call_args
+            payload = kwargs.get("json", {})
+            self.assertEqual(payload.get("intellect_model"), "claude-3-5-sonnet")
+            self.assertEqual(payload.get("model"), "claude-3-5-sonnet")
+
+    def test_client_get_available_models(self):
+        from safi_cli.client import SafiClient
+        client = SafiClient("http://mock-backend:5000", "test-key")
+        with unittest.mock.patch("requests.get") as mock_get:
+            mock_get.return_value.status_code = 200
+            mock_get.return_value.json.return_value = {
+                "ok": True,
+                "models": [{"id": "gpt-4o", "label": "GPT-4o", "provider": "OpenAI"}],
+            }
+            models = client.get_available_models()
+            self.assertEqual(len(models), 1)
+            self.assertEqual(models[0]["id"], "gpt-4o")
+
+    def test_discover_models_merging(self):
+        from safi_cli.main import discover_models
+        from safi_cli.client import SafiClient
+        client = SafiClient("http://mock-backend:5000", "test-key")
+        with unittest.mock.patch.object(client, "get_available_models") as mock_remote:
+            mock_remote.return_value = [{"id": "custom-model-1", "label": "Custom LLM"}]
+            discovered = discover_models(client)
+            ids = [m["id"] for m in discovered]
+            self.assertIn("custom-model-1", ids)
+            self.assertIn("claude-3-5-sonnet", ids)
+
+    def test_prompt_switch_model_direct(self):
+        from safi_cli.main import prompt_switch_model
+        from safi_cli.client import SafiClient
+        client = SafiClient("http://mock-backend:5000", "test-key")
+        with unittest.mock.patch.object(client, "get_available_models", return_value=[]):
+            chosen = prompt_switch_model(None, client, requested_model="gpt-4o", current_agent="software_engineer")
+            self.assertEqual(chosen, "gpt-4o")
+            self.assertEqual(config.resolve_intellect_model("software_engineer"), "gpt-4o")
+
+    def test_prompt_switch_model_interactive(self):
+        from safi_cli.main import prompt_switch_model
+        from safi_cli.client import SafiClient
+        client = SafiClient("http://mock-backend:5000", "test-key")
+        with unittest.mock.patch.object(client, "get_available_models", return_value=[]):
+            with unittest.mock.patch("builtins.input", return_value="1"):
+                chosen = prompt_switch_model(None, client, current_agent="software_engineer")
+                self.assertIsNotNone(chosen)
+                self.assertEqual(config.resolve_intellect_model("software_engineer"), chosen)
+
+    def test_prompt_command_menu_model(self):
+        from safi_cli.main import prompt_command_menu
+        from safi_cli.client import SafiClient
+        client = SafiClient("http://mock-backend:5000", "test-key")
+        with unittest.mock.patch("builtins.input", return_value="8"):
+            with unittest.mock.patch("safi_cli.main.prompt_switch_model") as mock_switch:
+                agent, conv, should_exit = prompt_command_menu(
+                    current_agent="software_engineer",
+                    client=client,
+                    workspace_root=Path("/tmp"),
+                    current_conv="conv-1",
+                    current_model="gpt-4o",
+                )
+                self.assertFalse(should_exit)
+                mock_switch.assert_called_once()
+
+    @patch("requests.get")
+    def test_get_turn_progress(self, mock_get):
+        from safi_cli.client import SafiClient
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "complete": False,
+            "latest_step": "Auditing policy compliance for 'edit'...",
+            "progress": ["analyzing", "checking_tool"]
+        }
+        mock_get.return_value = mock_resp
+
+        client = SafiClient("http://mock-backend:5000", "test-key")
+        data = client.get_turn_progress("msg-123", user_id="user-1")
+        self.assertIsNotNone(data)
+        self.assertEqual(data["latest_step"], "Auditing policy compliance for 'edit'...")
+        mock_get.assert_called_once_with(
+            "http://mock-backend:5000/api/agentic/progress/msg-123",
+            headers={"X-API-KEY": "test-key"},
+            params={"user_id": "user-1"},
+            timeout=2.0,
+        )
+
+    @patch("requests.post")
+    def test_compress_conversation_client(self, mock_post):
+        from safi_cli.client import SafiClient
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "ok": True,
+            "compressed": True,
+            "turns_count": 8,
+            "tokens_before": 6200,
+            "tokens_after": 450,
+            "tokens_saved": 5750,
+            "reduction_pct": 92.7,
+            "summary": "### 1. Goal\nBuild game."
+        }
+        mock_post.return_value = mock_resp
+
+        client = SafiClient("http://mock-backend:5000", "test-key")
+        res = client.compress_conversation("conv-xyz", user_id="user-1", agent="software_engineer", model="gpt-4o", action="compress")
+        self.assertTrue(res["ok"])
+        self.assertTrue(res["compressed"])
+        self.assertEqual(res["reduction_pct"], 92.7)
+        mock_post.assert_called_once_with(
+            "http://mock-backend:5000/api/agentic/compress",
+            headers={"Content-Type": "application/json", "X-API-KEY": "test-key"},
+            json={"conversation_id": "conv-xyz", "user_id": "user-1", "agent": "software_engineer", "action": "compress", "model": "gpt-4o"},
+            timeout=120,
+        )
+
+    def test_ui_print_compression_result(self):
+        from safi_cli.ui import print_compression_result
+        # Test rendering without errors
+        data = {
+            "ok": True,
+            "compressed": True,
+            "turns_count": 8,
+            "tokens_before": 6200,
+            "tokens_after": 450,
+            "tokens_saved": 5750,
+            "reduction_pct": 92.7,
+            "summary": "### 1. Primary Goal\nBuild platformer game."
+        }
+        print_compression_result(data)
+
+        # Test minimal / not-compressed rendering
+        minimal_data = {
+            "ok": True,
+            "compressed": False,
+            "message": "Already minimal.",
+            "summary": ""
+        }
+        print_compression_result(minimal_data)
+
+    def test_compression_telemetry_reduction(self):
+        from safi_cli import ui
+        ui.reset_session_telemetry()
+        # Simulate turns accumulating tokens
+        turn_1 = {
+            "models_usage": {
+                "intellect": {"prompt_tokens": 10000, "completion_tokens": 200, "model": "gpt-6-luna"},
+                "conscience": {"prompt_tokens": 8000, "completion_tokens": 100, "model": "jev-1.13.0"},
+            }
+        }
+        ui._record_turn_telemetry(turn_1)
+        self.assertEqual(ui._session_intellect["in"], 10000)
+        self.assertEqual(ui._session_conscience["in"], 8000)
+        self.assertEqual(ui._session_active_context, 10000)
+
+        # Now compress: 10,000 down to 500 (saved 9,500)
+        ui.record_compression_telemetry(
+            tokens_before=10000,
+            tokens_after=500,
+            tokens_saved=9500,
+            reduction_pct=95.0,
+            intellect_model="gpt-6-luna",
+        )
+
+        # Verify session input tokens dropped down to the compacted baseline
+        self.assertEqual(ui._session_intellect["in"], 500)
+        self.assertEqual(ui._session_active_context, 500)
+        self.assertEqual(ui._session_compression["tokens_saved"], 9500)
+        self.assertEqual(ui._session_compression["reduction_pct"], 95.0)
+
+        # Next turn should build on the reduced baseline
+        turn_2 = {
+            "models_usage": {
+                "intellect": {"prompt_tokens": 700, "completion_tokens": 150, "model": "gpt-6-luna"},
+                "conscience": {"prompt_tokens": 700, "completion_tokens": 50, "model": "jev-1.13.0"},
+            }
+        }
+        ui._record_turn_telemetry(turn_2)
+        self.assertEqual(ui._session_intellect["in"], 1200)
+        self.assertEqual(ui._session_active_context, 700)
+
+        # Panel rendering with compacted state
+        panel = ui.build_telemetry_panel(intellect_model="gpt-6-luna", in_t=700, out_t=150)
+        self.assertIsNotNone(panel)
+
+        # Resetting session wipes telemetry cleanly
+        ui.reset_session_telemetry()
+        self.assertEqual(ui._session_intellect["in"], 0)
+        self.assertEqual(ui._session_compression["tokens_saved"], 0)
+
+
+class TestSafiSubagentDelegation(unittest.TestCase):
+    def test_run_subagent_task_researcher(self):
+        from safi_cli.main import run_subagent_task
+        client = MagicMock()
+        client.send_turn.side_effect = [
+            {
+                "type": "tool_call",
+                "tool_name": "list",
+                "parameters": {"path": "."},
+                "willDecision": "approve",
+            },
+            {
+                "type": "response",
+                "finalOutput": "Found files: test.py, README.md",
+            },
+        ]
+        args = {
+            "description": "Find test files",
+            "prompt": "List files in directory",
+            "subagent_type": "researcher",
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            res = run_subagent_task(
+                client=client,
+                args=args,
+                workspace_root=Path(tmpdir),
+                parent_conv_id="conv-parent",
+                user_id="user-1",
+            )
+            self.assertIn("Found files: test.py, README.md", res)
+            self.assertEqual(client.send_turn.call_count, 2)
+            # Verify child conversation ID is isolated
+            call_kwargs = client.send_turn.call_args_list[0].kwargs
+            self.assertTrue(call_kwargs["conversation_id"].startswith("conv-parent_sub_"))
+            # Verify child tools are strictly read-only
+            tool_names = [t["function"]["name"] for t in call_kwargs["tools"]]
+            self.assertEqual(set(tool_names), {"read", "grep", "glob", "list"})
+
+    def test_run_subagent_task_blocks_prohibited_tool(self):
+        from safi_cli.main import run_subagent_task
+        client = MagicMock()
+        client.send_turn.side_effect = [
+            {
+                "type": "tool_call",
+                "tool_name": "write",  # Researcher is NOT allowed to write!
+                "parameters": {"path": "bad.py", "content": "bad"},
+                "willDecision": "approve",
+            },
+            {
+                "type": "response",
+                "finalOutput": "Understood, write was blocked.",
+            },
+        ]
+        args = {
+            "description": "Attempt write",
+            "prompt": "Try to write a file",
+            "subagent_type": "researcher",
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            res = run_subagent_task(
+                client=client,
+                args=args,
+                workspace_root=Path(tmpdir),
+                parent_conv_id="conv-parent",
+                user_id="user-1",
+            )
+            self.assertIn("Understood, write was blocked", res)
+            second_call_kwargs = client.send_turn.call_args_list[1].kwargs
+            tool_results = second_call_kwargs["tool_results"]
+            self.assertEqual(len(tool_results), 1)
+            self.assertIn("not permitted to execute 'write'", tool_results[0]["result"])
+
+    @patch("safi_cli.main.run_subagent_task")
+    def test_run_agent_turn_delegates_to_subagent(self, mock_subagent):
+        mock_subagent.return_value = "Subagent found 2 files."
+        client = MagicMock()
+        client.send_turn.side_effect = [
+            {
+                "type": "tool_call",
+                "tool_name": "task",
+                "parameters": {
+                    "description": "Search code",
+                    "prompt": "Find auth files",
+                    "subagent_type": "researcher",
+                },
+                "willDecision": "approve",
+            },
+            {
+                "type": "response",
+                "finalOutput": "Based on subagent research, auth is in auth.py.",
+                "willDecision": "approve",
+            },
+        ]
+        res = run_agent_turn(
+            client=client,
+            prompt="Find auth files",
+            workspace_root=Path("."),
+            conversation_id="conv-1",
+            user_id="u-1",
+            agent="software_engineer",
+        )
+        self.assertIsNotNone(res)
+        mock_subagent.assert_called_once()
+        self.assertEqual(client.send_turn.call_count, 2)
+        second_call = client.send_turn.call_args_list[1].kwargs
+        self.assertEqual(second_call["tool_results"][0]["result"], "Subagent found 2 files.")
+
 
 if __name__ == "__main__":
     unittest.main()

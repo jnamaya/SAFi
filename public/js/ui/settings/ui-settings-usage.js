@@ -340,7 +340,7 @@ async function renderLocalPane(host, res, orgId) {
 
     const models = res.models || [];
     const badge = (m) => m.downloading
-        ? '<span class="text-blue-600 dark:text-blue-400 font-medium">Downloading</span>'
+        ? '<span class="text-amber-600 dark:text-amber-400 font-medium">Downloading</span>'
         : m.active
         ? '<span class="text-green-600 dark:text-green-400 font-medium">Serving</span>'
             : m.installed

@@ -110,6 +110,8 @@ def detect_provider(model_name: str) -> str:
     custom = _custom_models_cache["map"].get(m)
     if custom:
         return custom
+    if m.startswith("models/"):
+        m = m[7:]
     if m.startswith("jev-") or m.startswith("typesafe/jev"):
         return "typesafe"
     # Cerebras serves gpt-oss WITHOUT the vendor prefix (Groq's id is
@@ -121,14 +123,14 @@ def detect_provider(model_name: str) -> str:
     # Groq's baa_capable=False/zdr="default" badge, publishing a false
     # HIPAA/ZDR claim. A miss is invisible: groq is a valid provider, so the
     # known-provider check still passes.
-    if (m.startswith("gpt-oss") or m.startswith("zai-") or m.startswith("gemma-4")
+    if (m.startswith("gpt-oss") or m.startswith("zai-")
             or m.startswith("qwen-")):
         return "cerebras"
     if m.startswith("gpt-") or m.startswith("o1-"):
         return "openai"
     if m.startswith("claude-"):
         return "anthropic"
-    if m.startswith("gemini-"):
+    if m.startswith("gemini-") or m.startswith("gemma-"):
         return "gemini"
     if m.startswith("deepseek-"):
         return "deepseek"

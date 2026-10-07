@@ -439,8 +439,10 @@ class BackgroundTasksMixin:
                 "model": model,
                 "messages": [{"role": "system", "content": system_prompt},
                              {"role": "user", "content": user_content}],
-                "temperature": temperature,
             }
+            from ..services.llm_provider import _is_openai_flagship
+            if not ("o1" in (model or "").lower() or "o3" in (model or "").lower() or _is_openai_flagship(model)):
+                params["temperature"] = temperature
             if json_mode:
                 params["response_format"] = {"type": "json_object"}
             resp = client.chat.completions.create(**params)

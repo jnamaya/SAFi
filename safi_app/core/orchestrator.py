@@ -140,8 +140,9 @@ def _render_history(messages, max_chars: int) -> str:
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 AUDIT_PARAM_MAXLEN = 120
-HARNESS_TOOL_REPEAT_LIMIT = 5
-HARNESS_PROGRESS_LABELS = {
+AGENTIC_TOOL_REPEAT_LIMIT = 5
+HARNESS_TOOL_REPEAT_LIMIT = AGENTIC_TOOL_REPEAT_LIMIT
+AGENTIC_PROGRESS_LABELS = {
     "checking_request": "Checking request safeguards…",
     "analyzing": "Analyzing the request…",
     "checking_tool": "Checking the proposed tool call…",
@@ -150,15 +151,19 @@ HARNESS_PROGRESS_LABELS = {
     "alignment": "Checking governance alignment…",
     "finalizing": "Finalizing the governed response…",
 }
+HARNESS_PROGRESS_LABELS = AGENTIC_PROGRESS_LABELS
 
 
-def record_harness_progress(store, message_id: str, code: str) -> None:
-    """Journal a fixed, non-reasoning progress phase for harness clients."""
-    label = HARNESS_PROGRESS_LABELS.get(code)
+def record_agentic_progress(store, message_id: str, code: str) -> None:
+    """Journal a fixed, non-reasoning progress phase for agentic clients."""
+    label = AGENTIC_PROGRESS_LABELS.get(code)
     if label:
         store.update_message_reasoning(
             message_id, label, phase="harness", extra={"progress_code": code}
         )
+
+
+record_harness_progress = record_agentic_progress
 
 
 def count_current_turn_tool_repeats(tool_results, tool_name, parameters,
@@ -604,8 +609,10 @@ class SAFi:
         return {"verdict": D_spirit, "stage": "spirit", "reason": E_spirit,
                 "ledger": ledger, "spirit_assessment": spirit_assessment, "draft": a_t}
 
-    def _record_harness_progress(self, message_id: str, code: str) -> None:
-        record_harness_progress(self.store, message_id, code)
+    def _record_agentic_progress(self, message_id: str, code: str) -> None:
+        record_agentic_progress(self.store, message_id, code)
+
+    _record_harness_progress = _record_agentic_progress
 
     async def _dispatch_server_tool(
         self, tool_name: str, parameters: dict, user_id: Optional[str] = None
@@ -671,11 +678,13 @@ class SAFi:
                     advertised_client_tool_names.update(CONNECTOR_TOOLS[name])
                 else:
                     advertised_client_tool_names.add(name)
-            # Client tools are proposed by the connected harness per request.
+            # Client tools are proposed by the connected agentic client per request.
             # The policy remains the upper bound: intersect the client catalogue
             # with its allow-list before offering schemas to Intellect. This also
             # makes the compiled profile the single source of Will authorization.
-            declared_harness_tools = set(CONNECTOR_TOOLS["coding_harness"])
+            declared_harness_tools = set(
+                CONNECTOR_TOOLS.get("agentic_coding") or CONNECTOR_TOOLS.get("coding_harness", ())
+            )
             valid_client_tools = (
                 advertised_client_tool_names & declared_harness_tools
                 & allowed_tool_names
@@ -810,8 +819,12 @@ class SAFi:
         recent_window = prior_turns[:-1]          # drop the current user message
         if turns:
             recent_window = recent_window[-(turns * 2):]
+        if memory_summary:
+            # When memory_summary anchors previous context, limit verbatim window
+            # to the most recent 2 turn pairs so future turns preserve token savings.
+            recent_window = recent_window[-4:]
         recent_turns_text = _render_history(recent_window, max_chars)
-        if client_owned and isinstance(client_recent_turns, str):
+        if client_owned and isinstance(client_recent_turns, str) and client_recent_turns.strip():
             recent_turns_text = client_recent_turns[-12000:]
             record_harness_progress(self.store, message_id, "checking_request")
         
@@ -1017,6 +1030,7 @@ class SAFi:
                         tool_name=tool_name,
                         parameters=parameters,
                         user_prompt=user_prompt,
+                        agent_reflection=r_t,
                     )
                 except Exception as exc:
                     self.log.warning(f"Antecedent tool preflight audit failed: {exc}")
@@ -1049,12 +1063,48 @@ class SAFi:
 
             if client_owned:
                 if tool_decision == "approve":
-                    safe_parameters = parameters or {}
-                    if tool_name == "read" and not safe_parameters.get("path"):
-                        safe_parameters = {
-                            **safe_parameters,
-                            "path": safe_parameters.get("filePath", ""),
-                        }
+                    safe_parameters = dict(parameters or {})
+                    if tool_name in ("read", "write", "edit", "patch", "delete", "remove") and not safe_parameters.get("path"):
+                        alt_path = safe_parameters.get("filePath") or safe_parameters.get("file_path") or ""
+                        if alt_path:
+                            safe_parameters["path"] = alt_path
+                    if tool_name == "edit":
+                        if not safe_parameters.get("target"):
+                            safe_parameters["target"] = (
+                                safe_parameters.get("oldString")
+                                or safe_parameters.get("old_string")
+                                or safe_parameters.get("old_str")
+                                or safe_parameters.get("oldText")
+                                or ""
+                            )
+                        if not safe_parameters.get("replacement"):
+                            safe_parameters["replacement"] = (
+                                safe_parameters.get("newString")
+                                or safe_parameters.get("new_string")
+                                or safe_parameters.get("new_str")
+                                or safe_parameters.get("newText")
+                                or ""
+                            )
+                    if tool_name in ("task", "delegate_subagent"):
+                        if not safe_parameters.get("description"):
+                            safe_parameters["description"] = (
+                                safe_parameters.get("task")
+                                or safe_parameters.get("summary")
+                                or safe_parameters.get("name")
+                                or "Delegated subagent task"
+                            )
+                        if not safe_parameters.get("prompt"):
+                            safe_parameters["prompt"] = (
+                                safe_parameters.get("goal")
+                                or safe_parameters.get("instruction")
+                                or safe_parameters.get("description")
+                                or ""
+                            )
+                        if not safe_parameters.get("subagent_type"):
+                            safe_parameters["subagent_type"] = (
+                                safe_parameters.get("role")
+                                or "researcher"
+                            )
                     server_result = None
                     if tool_name in server_tool_names:
                         try:
@@ -1078,7 +1128,7 @@ class SAFi:
                             tool_audit[-1]["result"] = str(server_result)[:300]
                     governance_record = {
                         "timestamp": datetime.now(timezone.utc).isoformat(),
-                        "mode": "harness_integration",
+                        "mode": "agentic_integration",
                         "turnKind": "tool_proposal",
                         "clientToolProposal": True,
                         "userPrompt": user_prompt,

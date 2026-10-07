@@ -756,10 +756,47 @@ def list_keys(policy_id):
     try:
         _policy, err = _load_policy_for_write(policy_id)
         if err: return err
-        keys = db.get_policy_keys(policy_id)
-        return jsonify({"ok": True, "keys": keys})
+        keys = db.get_policy_keys(policy_id) or []
+        formatted = []
+        for k in keys:
+            ca = k.get("created_at")
+            lu = k.get("last_used_at")
+            kh = k.get("key_hash") or ""
+            formatted.append({
+                "label": k.get("label") or "Default Key",
+                "key_hash": kh,
+                "key_hash_prefix": kh[:8] if kh else "",
+                "created_at": ca.isoformat() if hasattr(ca, "isoformat") else (str(ca) if ca else None),
+                "last_used_at": lu.isoformat() if hasattr(lu, "isoformat") else (str(lu) if lu else None),
+            })
+        return jsonify({"ok": True, "keys": formatted})
     except Exception as e:
         current_app.logger.error(f"list_keys error: {e}")
+        return jsonify({"error": "An internal error occurred."}), 500
+
+@policy_api_bp.route('/policies/<policy_id>/keys/<key_hash>', methods=['DELETE'], strict_slashes=False)
+@require_role('editor')
+def revoke_key(policy_id, key_hash):
+    try:
+        _policy, err = _load_policy_for_write(policy_id)
+        if err: return err
+
+        deleted = db.delete_policy_key(policy_id, key_hash)
+        if not deleted:
+            return jsonify({"ok": False, "error": "API key not found"}), 404
+
+        org_id = get_current_org_id()
+        user = session.get('user', {})
+        if hasattr(db, 'append_compliance_log'):
+            db.append_compliance_log(
+                org_id,
+                'api_key_revoked',
+                f"user:{user.get('id')}",
+                {"policy_id": policy_id, "key_hash_prefix": key_hash[:8]}
+            )
+        return jsonify({"ok": True})
+    except Exception as e:
+        current_app.logger.error(f"revoke_key error: {e}")
         return jsonify({"error": "An internal error occurred."}), 500
 
 @policy_api_bp.route('/policies/ai/generate', methods=['POST'], strict_slashes=False)
