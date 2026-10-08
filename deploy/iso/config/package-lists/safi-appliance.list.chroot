@@ -52,6 +52,8 @@ gcc
 git
 grub-pc
 grub-pc-bin
+grub-efi-amd64-bin
+efibootmgr
 hostname
 ifupdown
 isc-dhcp-client

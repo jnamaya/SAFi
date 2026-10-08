@@ -1,0 +1,56 @@
+#!/bin/sh
+# 045-grub-offline-repo.chroot — cache bootloader packages for offline UEFI/BIOS install.
+#
+# Debian-installer's grub-installer runs `apt-install $grub_package` into /target.
+# On BIOS systems, grub-pc is already baked into the rootfs.
+# On UEFI systems, grub-installer detects EFI mode, purges grub-pc, and calls
+# `apt-install grub-efi-amd64` and `apt-install shim-signed`.
+# Because the install is strictly offline (no network mirror), apt-install fails
+# unless the required bootloader packages are available locally on disk.
+#
+# Fix: download the UEFI & BIOS bootloader deb packages during the chroot build,
+# generate a local Packages index via apt-ftparchive, and configure
+# /etc/apt/sources.list.d/00-safi-offline.list pointing to file:/var/cache/safi-offline-debs.
+# This makes apt-install completely self-contained and succeed offline.
+set -eu
+
+echo "==> Caching bootloader packages for offline UEFI/BIOS installer support"
+
+REPO_DIR=/var/cache/safi-offline-debs
+mkdir -p "$REPO_DIR"
+
+cd "$REPO_DIR"
+
+apt-get update
+
+# Download packages needed for UEFI and BIOS bootloaders
+apt-get download \
+    grub-efi-amd64 \
+    grub-efi-amd64-bin \
+    grub-efi-amd64-signed \
+    grub-efi-amd64-unsigned \
+    shim-signed \
+    shim-signed-common \
+    shim-helpers-amd64-signed \
+    shim-unsigned \
+    efibootmgr \
+    libefivar1t64 \
+    libefiboot1t64 \
+    mokutil \
+    grub-pc \
+    grub-pc-bin \
+    grub-common \
+    grub2-common \
+    ucf || true
+
+# Generate Packages index
+apt-ftparchive packages . > Packages
+gzip -9c Packages > Packages.gz
+
+# Configure local repository
+cat > /etc/apt/sources.list.d/00-safi-offline.list <<'EOF'
+deb [trusted=yes] file:/var/cache/safi-offline-debs ./
+EOF
+
+# Update apt database to index the local offline repository
+apt-get update -o Dir::Etc::sourcelist=/dev/null || true
