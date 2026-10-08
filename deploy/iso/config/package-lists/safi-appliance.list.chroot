@@ -85,6 +85,5 @@ iw
 firmware-iwlwifi
 firmware-realtek
 firmware-misc-nonfree
-firmware-atheros
 
 syslinux-utils
