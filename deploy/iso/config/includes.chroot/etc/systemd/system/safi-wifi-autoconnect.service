@@ -1,0 +1,15 @@
+[Unit]
+Description=SAFi Wi-Fi Autoconnect
+Before=network.target network-online.target safi-net-prep.service safi-browser-setup.service
+After=systemd-udevd.service
+Wants=systemd-udevd.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/safi-wifi-autoconnect.sh
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

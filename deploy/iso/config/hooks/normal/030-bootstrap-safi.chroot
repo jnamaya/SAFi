@@ -81,6 +81,8 @@ ln -sf /etc/systemd/system/safi-browser-setup.service \
        /etc/systemd/system/multi-user.target.wants/safi-browser-setup.service
 ln -sf /etc/systemd/system/safi-net-prep.service \
        /etc/systemd/system/multi-user.target.wants/safi-net-prep.service
+ln -sf /etc/systemd/system/safi-wifi-autoconnect.service \
+       /etc/systemd/system/multi-user.target.wants/safi-wifi-autoconnect.service
 
 # Keep the post-setup status dashboard on tty1. It never accepts local login;
 # SSH is the only operator shell access path.
@@ -91,9 +93,11 @@ ln -sf /etc/systemd/system/safi-console.service \
 # whole first-boot path silently.
 chmod 0755 /usr/local/sbin/safi-browser-setup.py
 chmod 0755 /usr/local/sbin/safi-net-prep.py
+chmod 0755 /usr/local/sbin/safi-wifi-autoconnect.sh
 chmod 0755 /usr/local/sbin/safi-network.py
 chmod 0755 /usr/local/sbin/safi-console.py
 chmod 0755 /usr/local/sbin/safi
+[ -f /etc/wpa_supplicant/wpa_supplicant.conf ] && chmod 0600 /etc/wpa_supplicant/wpa_supplicant.conf
 
 # The browser-setup service owns tty1 (TTYPath=/dev/tty1) and prints the
 # one-time PIN banner there. Mask every getty so no virtual console offers a

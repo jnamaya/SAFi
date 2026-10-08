@@ -50,6 +50,7 @@ import sys
 INTERFACES = pathlib.Path("/etc/network/interfaces")
 STATE_DIR = pathlib.Path("/var/lib/safi-firstboot")
 MAC_STATE = STATE_DIR / "nic-macs"
+WPA_SUPPLICANT_CONF = pathlib.Path("/etc/wpa_supplicant/wpa_supplicant.conf")
 
 IFACE_RE = re.compile(
     r"^\s*(?:auto|allow-hotplug|iface)\s+([A-Za-z0-9_.:@-]+)\s")
@@ -59,6 +60,23 @@ IFACE_RE = re.compile(
 # the stanza is on disk either way, so the next boot (or the next link-up)
 # retries.
 IFUP_TIMEOUT = 30
+
+
+def is_wireless(nic: str) -> bool:
+    sys_path = pathlib.Path(f"/sys/class/net/{nic}")
+    return (
+        (sys_path / "wireless").is_dir()
+        or (sys_path / "phy80211").is_dir()
+        or nic.startswith("wl")
+    )
+
+
+def unblock_rfkill() -> None:
+    for cmd in (["rfkill", "unblock", "wifi"], ["rfkill", "unblock", "all"]):
+        try:
+            subprocess.run(cmd, timeout=5, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except (OSError, subprocess.SubprocessError):
+            pass
 
 
 def log(msg: str) -> None:
@@ -219,10 +237,33 @@ def ensure_dhcp_stanza() -> None:
                 "# address. Change with: safi network set <method> ... && "
                 "safi network apply\n")
             for nic in orphans:
-                handle.write(f"allow-hotplug {nic} inet dhcp\n")
+                if is_wireless(nic) and WPA_SUPPLICANT_CONF.is_file():
+                    handle.write(
+                        f"allow-hotplug {nic}\n"
+                        f"iface {nic} inet dhcp\n"
+                        f"    wpa-conf {WPA_SUPPLICANT_CONF}\n")
+                else:
+                    handle.write(f"allow-hotplug {nic} inet dhcp\n")
     except OSError as exc:
         log(f"WARNING: could not add DHCP stanzas: {exc}")
         return
+
+    # Also check if any configured wireless interface lacks WPA configuration
+    if WPA_SUPPLICANT_CONF.is_file():
+        stanzas = read_stanzas()
+        for name, block in stanzas:
+            if name != "lo" and is_wireless(name):
+                has_wpa = any(line.strip().startswith("wpa-") for line in block)
+                if not has_wpa:
+                    log(f"'{name}' is wireless without WPA config; attaching {WPA_SUPPLICANT_CONF}")
+                    try:
+                        with INTERFACES.open("a", encoding="utf-8") as handle:
+                            handle.write(
+                                f"\n# Added by safi-net-prep: wireless interface needs WPA authentication\n"
+                                f"iface {name} inet dhcp\n"
+                                f"    wpa-conf {WPA_SUPPLICANT_CONF}\n")
+                    except OSError as exc:
+                        log(f"WARNING: could not update wireless stanza: {exc}")
 
     # Try now so the current boot does not have to wait for a link toggle.
     # Bounded and best-effort: the stanza is on disk either way.
@@ -278,6 +319,7 @@ def ssh_keys() -> None:
 
 
 def main() -> int:
+    unblock_rfkill()
     check_interfaces()
     # After the report above (so the operator sees the "configured:" lines
     # describing the pre-existing state) but before report_addresses(), so the

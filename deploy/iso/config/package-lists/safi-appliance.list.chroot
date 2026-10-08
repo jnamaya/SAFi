@@ -78,5 +78,13 @@ sudo
 tesseract-ocr
 tesseract-ocr-eng
 wget
+wireless-regdb
+wpasupplicant
+rfkill
+iw
+firmware-iwlwifi
+firmware-realtek
+firmware-misc-nonfree
+firmware-atheros
 
 syslinux-utils

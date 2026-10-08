@@ -35,7 +35,7 @@ lb config noauto \
     --parent-distribution-binary "$DIST" \
     --parent-debian-installer-distribution "$DIST" \
     --debian-installer-distribution "$DIST" \
-    --archive-areas "main contrib" \
+    --archive-areas "main contrib non-free-firmware" \
     --security false \
     --updates false \
     --debian-installer live \
