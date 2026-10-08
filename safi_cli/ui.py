@@ -8,9 +8,11 @@ SAFi Color Palette Philosophy:
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from rich.console import Console, Group
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 from rich.markdown import Markdown
@@ -27,10 +29,10 @@ COLOR_BRAND_500 = "#22c55e"  # Accent green
 COLOR_BRAND_400 = "#4ade80"  # Light brand highlight / center rosetta
 COLOR_BRAND_700 = "#15803d"  # Dark green borders
 
-# Semantic Verdicts & Scores (matching SAFi web specification)
-COLOR_PASS = "#22c55e"       # Aligned (>= 8.0) / Rubric pass (>= 0.7)
-COLOR_WARN = "#eab308"       # Caution (5.0..7.9) / Rubric warning (0.0..0.7)
-COLOR_FAIL = "#ef4444"       # Concern (< 5.0) / Rubric violation (< 0.0)
+# Semantic Verdicts & Scores
+COLOR_PASS = "#22c55e"       # Alignment >= 7.0 / Rubric pass (>= 0.7)
+COLOR_WARN = "#eab308"       # Alignment 4.0..6.9 / Rubric caution (0.0..0.7)
+COLOR_FAIL = "#ef4444"       # Alignment < 4.0 / Rubric violation (< 0.0)
 COLOR_PENDING = "#a3a3a3"    # Neutral-400 / Audit pending
 COLOR_MUTED = "#737373"      # Neutral-500
 COLOR_BORDER = "#27272a"     # Dark border neutral
@@ -115,6 +117,42 @@ def get_input_prompt(agent: Optional[str] = None, user_name: Optional[str] = Non
 
 
 _spirit_history: List[float] = []
+_active_todos: List[Dict[str, Any]] = []
+
+
+def get_active_todos() -> List[Dict[str, Any]]:
+    """Return the currently tracked plan todos."""
+    return list(_active_todos)
+
+
+def set_active_todos(todos: List[Dict[str, Any]]) -> None:
+    """Set active plan todos."""
+    global _active_todos
+    _active_todos = list(todos) if todos else []
+
+
+def clear_active_todos() -> None:
+    """Clear active plan todos."""
+    global _active_todos
+    _active_todos = []
+
+
+def mark_active_todos_completed() -> None:
+    """Mark all pending or in_progress tasks as completed upon successful final response."""
+    global _active_todos
+    if not _active_todos:
+        return
+    for item in _active_todos:
+        status = (item.get("status") or "").lower()
+        if status in ("pending", "in_progress", "running"):
+            item["status"] = "completed"
+
+
+def clear_completed_todos() -> None:
+    """Clear active todos if all tasks have been completed."""
+    global _active_todos
+    if _active_todos and all((t.get("status") or "").lower() in ("completed", "done") for t in _active_todos):
+        _active_todos = []
 
 def _get_sparkline(data: List[float], width: int = 10) -> str:
     if not data:
@@ -135,6 +173,7 @@ PRICING_PER_1M = {
     "claude-3-opus": (15.00, 75.00),
     "claude-opus": (15.00, 75.00),
     "claude-3-haiku": (0.25, 1.25),
+    "claude-haiku-5-5": (1.00, 5.00),
     "claude-haiku": (0.25, 1.25),
     "gpt-4o-mini": (0.15, 0.60),
     "gpt-4o": (2.50, 10.00),
@@ -168,7 +207,7 @@ _session_active_context = 0
 
 def reset_session_telemetry():
     """Reset all session telemetry counters for a fresh conversation session."""
-    global _session_intellect, _session_conscience, _session_compression, _session_active_context
+    global _session_intellect, _session_conscience, _session_compression, _session_active_context, _active_todos
     _session_intellect = {"in": 0, "out": 0, "cost": 0.0, "model": ""}
     _session_conscience = {"in": 0, "out": 0, "cost": 0.0, "model": ""}
     _session_compression = {
@@ -179,6 +218,7 @@ def reset_session_telemetry():
         "active_context": 0,
     }
     _session_active_context = 0
+    _active_todos = []
 
 
 def record_compression_telemetry(
@@ -302,7 +342,9 @@ def build_telemetry_panel(
     sess_cost = _session_intellect["cost"]
     sess_cost_str = f" (${sess_cost:.4f})" if sess_cost >= 0.0001 else (" (<$0.0001)" if sess_cost > 0 else "")
 
-    stats_content.append(Text.from_markup(f"[bold white]Intellect:[/] [dim]{effective_i_model}[/]"))
+    t_intellect = Text("Intellect: ", style="bold white")
+    t_intellect.append(str(effective_i_model), style="dim")
+    stats_content.append(t_intellect)
 
     # Active Context Window
     active_ctx = in_t or _session_active_context or _session_compression.get("active_context", 0)
@@ -331,7 +373,9 @@ def build_telemetry_panel(
     c_sess_cost = _session_conscience["cost"]
     c_sess_cost_str = f" (${c_sess_cost:.4f})" if c_sess_cost >= 0.0001 else (" (<$0.0001)" if c_sess_cost > 0 else "")
 
-    stats_content.append(Text.from_markup(f"[bold white]Conscience:[/] [dim]{effective_c_model}[/]"))
+    t_conscience = Text("Conscience: ", style="bold white")
+    t_conscience.append(str(effective_c_model), style="dim")
+    stats_content.append(t_conscience)
     if c_in or c_out or _session_conscience["in"]:
         stats_content.append(Text(f"  Turn: {c_in:,} in | {c_out:,} out{c_cost_str}", style="dim"))
         stats_content.append(Text.from_markup(f"  Session: [bold white]{_session_conscience['in']:,}[/] in | {_session_conscience['out']:,} out{c_sess_cost_str}"))
@@ -366,12 +410,12 @@ def _build_scoreboard_panel(result: Dict[str, Any]) -> Any:
             _spirit_history.append(val)
             spark = _get_sparkline(_spirit_history, width=8)
 
-            # Thresholds: >= 8.0 Aligned (Green), 5.0..7.9 Caution (Amber), < 5.0 Concern (Red)
-            if val >= 8.0:
+            # Thresholds: >= 7.0 Aligned (Green), 4.0..6.9 Caution (Yellow), < 4.0 Concern (Red)
+            if val >= 7.0:
                 tier_label = "Aligned"
                 tier_color = COLOR_PASS
                 tier_icon = "●"
-            elif val >= 5.0:
+            elif val >= 4.0:
                 tier_label = "Caution"
                 tier_color = COLOR_WARN
                 tier_icon = "▲"
@@ -501,9 +545,95 @@ def _detect_lexer(path: str) -> str:
     return mapping.get(ext, "python" if not ext else "text")
 
 
+# ── Rendering helpers ────────────────────────────────────────────────────────
+
+MAX_PREVIEW_LINES = 40  # cap for diffs / file previews so one edit cannot flood the screen
+_EXIT_CODE_RE = re.compile(r"^exit code (-?\d+)", re.IGNORECASE)
+_ERROR_PREFIXES = ("error:", "tool execution error", "unknown tool", "rejected:", "the will gatekeeper rejected")
+
+
+def _safe_float(value: Any) -> Optional[float]:
+    """Parse a rubric score; malformed values are skipped instead of crashing the render."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _result_is_error(result: str) -> bool:
+    """Classify a tool result as a failure from its structure, not from words in the output.
+
+    The old heuristic flagged any grep hit containing the word "error" as a failed tool.
+    """
+    text = (result or "").strip()
+    m = _EXIT_CODE_RE.match(text)
+    if m:
+        return m.group(1) != "0"
+    return text.lower().startswith(_ERROR_PREFIXES)
+
+
+def _fit(text: str, width: int) -> str:
+    """Collapse to a single line and truncate to `width` visible characters."""
+    flat = " ".join((text or "").split())
+    width = max(8, width)
+    return flat if len(flat) <= width else flat[: width - 1] + "…"
+
+
+def _cap_lines(text: str, limit: int = MAX_PREVIEW_LINES) -> str:
+    lines = (text or "").splitlines()
+    if len(lines) <= limit:
+        return text
+    return "\n".join(lines[:limit]) + f"\n… {len(lines) - limit} more lines"
+
+
+def _summarize_args(tool_name: str, args: Dict[str, Any]) -> str:
+    """Human-oriented one-line summary of the arguments for a tool call."""
+    if tool_name in ("read", "write", "edit", "delete", "remove", "list"):
+        path = args.get("path") or args.get("filePath") or args.get("file_path") or "."
+        extra = ""
+        start = args.get("offset") or args.get("start_line") or args.get("line_start")
+        end = args.get("end_line") or args.get("line_end")
+        if start or end:
+            extra = f"  L{start or 1}-{end or '…'}"
+        return f"{path}{extra}"
+    if tool_name == "grep":
+        where = args.get("path") or "."
+        inc = f" ({args['include']})" if args.get("include") else ""
+        return f"/{args.get('pattern', '')}/ in {where}{inc}"
+    if tool_name == "glob":
+        return f"{args.get('pattern', '*')} in {args.get('path') or '.'}"
+    if tool_name == "bash":
+        return args.get("command") or ""
+    if tool_name == "git_diff":
+        return ("--staged " if args.get("staged") else "") + (args.get("path") or "")
+    return ", ".join(f"{k}={v!r}" for k, v in args.items())
+
+
+def _rubric_tags(ledger: List[Dict[str, Any]]) -> Optional[Text]:
+    """Inline preflight rubric badges (escaped, crash-safe)."""
+    line = Text("  ")
+    found = False
+    for entry in ledger or []:
+        s_val = _safe_float(entry.get("score"))
+        if s_val is None:
+            continue
+        val = str(entry.get("value") or "Standard")
+        if s_val >= 0.7:
+            line.append(f"✓ {val}  ", style=COLOR_PASS)
+        elif s_val >= 0.0:
+            line.append(f"⚠ {val}  ", style=COLOR_WARN)
+        else:
+            line.append(f"✗ {val}  ", style=COLOR_FAIL)
+        found = True
+    return line if found else None
+
+
 def print_tool_proposal(name: str, args: Dict[str, Any], res: Dict[str, Any]):
-    """Render a clean tool proposal without borders, applying SAFi colors directly."""
+    """Render a clean tool proposal inside the Workspace, with the Right Sidebar pinned alongside it."""
     _record_turn_telemetry(res)
+    if name in ("todowrite", "todo_write"):
+        return
+
     will_decision = res.get("willDecision", "approved")
     will_reason = res.get("willReason")
     is_approved = will_decision in ("approve", "approved")
@@ -525,21 +655,11 @@ def print_tool_proposal(name: str, args: Dict[str, Any], res: Dict[str, Any]):
 
     # Inline Policy Preflight Audit: Display rubric badges directly on the stream
     ledger = res.get("toolProposalLedger") or res.get("conscienceLedger") or []
-    audit_tags = []
-    for entry in ledger:
-        score = entry.get("score")
-        if score is not None:
-            val = entry.get("value", "")
-            s_val = float(score)
-            if s_val >= 0.7:
-                audit_tags.append(f"[{COLOR_PASS}]✓ {val}[/{COLOR_PASS}]")
-            elif s_val >= 0.0:
-                audit_tags.append(f"[{COLOR_WARN}]⚠ {val}[/{COLOR_WARN}]")
-            else:
-                audit_tags.append(f"[{COLOR_FAIL}]✗ {val}[/{COLOR_FAIL}]")
-
-    if audit_tags:
-        items.append(Text.from_markup("  [dim]Preflight:[/] " + "  ".join(audit_tags)))
+    rubric_tags = _rubric_tags(ledger)
+    if rubric_tags:
+        preflight_text = Text("  Preflight:", style="dim")
+        preflight_text.append_text(rubric_tags)
+        items.append(preflight_text)
 
     # Tool Arguments / Payloads with bounded margins and word-wrapping to prevent overflow
     if name == "bash":
@@ -550,17 +670,20 @@ def print_tool_proposal(name: str, args: Dict[str, Any], res: Dict[str, Any]):
             theme="monokai",
             line_numbers=False,
             word_wrap=True,
-            padding=(0, 2, 0, 2),
+            padding=(0, 1),
         )
-        items.append(Padding(syntax, (0, 3, 0, 3)))
+        items.append(syntax)
     elif name in ("edit", "write"):
         path = args.get("path", "")
+        file_line = Text("  File: ", style="dim")
+        file_line.append(path, style="bold white")
+        items.append(file_line)
         if name == "edit":
             target = args.get("target", "")
             replacement = args.get("replacement", "")
 
             import difflib
-            diff_lines = list(diff_lib := difflib.unified_diff(
+            diff_lines = list(difflib.unified_diff(
                 target.splitlines(keepends=True),
                 replacement.splitlines(keepends=True),
                 fromfile=f"a/{path}",
@@ -568,34 +691,35 @@ def print_tool_proposal(name: str, args: Dict[str, Any], res: Dict[str, Any]):
                 n=3,
             ))
             diff_text = "".join(diff_lines)
-            items.append(Text.from_markup(f"  [dim]File:[/] [bold white]{path}[/]"))
             syntax = Syntax(
                 diff_text if diff_text else replacement,
                 "diff",
                 theme="monokai",
                 word_wrap=True,
-                padding=(0, 2, 0, 2),
+                padding=(0, 1),
             )
-            items.append(Padding(syntax, (0, 3, 0, 3)))
+            items.append(syntax)
         else:
             code = args.get("content", "")
-            preview = code[:400] + ("\n... [truncated]" if len(code) > 400 else "")
+            preview = code[:600] + ("\n... [truncated]" if len(code) > 600 else "")
             lexer = _detect_lexer(path)
-            items.append(Text.from_markup(f"  [dim]File:[/] [bold white]{path}[/]"))
             syntax = Syntax(
                 preview,
                 lexer,
                 theme="monokai",
                 word_wrap=True,
-                padding=(0, 2, 0, 2),
+                padding=(0, 1),
             )
-            items.append(Padding(syntax, (0, 3, 0, 3)))
+            items.append(syntax)
     else:
         # Generic arguments with margin
-        args_str = ", ".join(f"{k}={repr(v)}" for k, v in args.items())
-        items.append(Padding(Text(f"Arguments: {args_str}", style="dim cyan"), (0, 3, 0, 2)))
+        args_str = _summarize_args(name, args)
+        if len(args_str) > 120:
+            args_str = args_str[:120] + "..."
+        items.append(Text(f"Arguments: {args_str}", style="dim cyan"))
 
     console.print(Group(*items))
+
 
 
 def prompt_user_permission(name: str, args: Dict[str, Any], auto_approve: bool = True) -> bool:
@@ -612,53 +736,284 @@ def prompt_user_permission(name: str, args: Dict[str, Any], auto_approve: bool =
         return False
 
 
-def print_tool_result_summary(name: str, result: str):
-    """Print a clean execution indicator for completed tool calls."""
-    preview = result.strip().splitlines()
-    first_line = preview[0] if preview else "(no output)"
-    if len(first_line) > 100:
-        first_line = first_line[:100] + "..."
-    line_count = len(preview)
+def prompt_question(question: str, options: Optional[List[str]] = None) -> str:
+    """Render an interactive question card for developer clarification and capture input."""
+    table = Table.grid(expand=True)
+    table.padding = (0, 1)
 
-    is_error = "exit code" in result.lower() and "exit code 0" not in result.lower() or "error" in first_line.lower()
+    card_items = []
+    card_items.append(Text(f"❓ {question}", style="bold white"))
+
+    if options and isinstance(options, list):
+        card_items.append(Text("\nOptions:", style="dim cyan"))
+        for idx, opt in enumerate(options, 1):
+            card_items.append(Text(f"  [{idx}] {opt}", style="cyan"))
+        card_items.append(Text("  [Enter a number or type your own response]", style="dim italic"))
+
+    panel = Panel(
+        Group(*card_items),
+        title=f"[bold {COLOR_BRAND_400}]SAFi Clarification[/]",
+        border_style=COLOR_BRAND_500,
+        box=box.ROUNDED,
+        padding=(1, 2),
+    )
+    console.print()
+    console.print(panel)
+
+    prompt_label = "Choice / Answer › "
+    try:
+        ans = input(prompt_label).strip()
+        if options and ans.isdigit():
+            idx = int(ans) - 1
+            if 0 <= idx < len(options):
+                return options[idx]
+        return ans if ans else (options[0] if options else "Acknowledged.")
+    except (KeyboardInterrupt, EOFError):
+        console.print(f"\n[{COLOR_WARN}]Clarification skipped by developer.[/]")
+        return "Developer skipped answering the question."
+
+
+def build_plan_panel(todos: Optional[List[Dict[str, Any]]] = None) -> Optional[Panel]:
+    """Build a styled Plan & Tasks panel showing checklist items and progress."""
+    active = todos if todos is not None else _active_todos
+    if not active:
+        return None
+
+    total = len(active)
+    completed = sum(1 for t in active if (t.get("status") or "").lower() in ("completed", "done"))
+    in_progress = sum(1 for t in active if (t.get("status") or "").lower() in ("in_progress", "running"))
+    failed = sum(1 for t in active if (t.get("status") or "").lower() in ("failed", "error"))
+
+    pct = int((completed / total) * 100) if total > 0 else 0
+
+    # Visual progress bar: e.g. [██████░░░░] 60%
+    bar_width = 10
+    filled = int(round((completed / total) * bar_width)) if total > 0 else 0
+    bar_str = "█" * filled + "░" * (bar_width - filled)
+
+    items = []
+    # Progress header line
+    prog_text = Text()
+    prog_text.append(f"Progress: [{bar_str}] ", style=f"bold {COLOR_BRAND_400}")
+    prog_text.append(f"{pct}% ", style="bold white")
+    prog_text.append(f"({completed}/{total})\n", style="dim")
+    items.append(prog_text)
+
+    for item in active:
+        task_text = item.get("task") or item.get("description") or ""
+        status = (item.get("status") or "pending").lower()
+        if status in ("completed", "done"):
+            badge = Text("  ✔ ", style=f"bold {COLOR_PASS}")
+            text = Text(task_text, style="dim white")
+        elif status in ("in_progress", "running"):
+            badge = Text("▶ ⏳ ", style=f"bold {COLOR_WARN}")
+            text = Text(task_text, style="bold #38bdf8")
+        elif status in ("failed", "error"):
+            badge = Text("  ✖ ", style=f"bold {COLOR_FAIL}")
+            text = Text(task_text, style="bold red")
+        else:
+            badge = Text("  ○ ", style="dim")
+            text = Text(task_text, style="white")
+
+        line = Text()
+        line.append_text(badge)
+        line.append_text(text)
+        items.append(line)
+
+    status_tag = f"[{completed}/{total} • {pct}%]"
+    return Panel(
+        Group(*items),
+        title=f"[bold {COLOR_BRAND_400}]Plan & Tasks[/] [dim]{status_tag}[/]",
+        border_style=COLOR_BRAND_600,
+        box=box.ROUNDED,
+        padding=(0, 1),
+    )
+
+
+
+def print_workspace_step(
+    tool_name: str,
+    args: Dict[str, Any],
+    proposal_res: Dict[str, Any],
+    result_str: str,
+):
+    """Render an executed tool step in the Workspace, with the Right Sidebar pinned alongside it."""
+    ws_items = []
+
+    # 1. Approval / proposal line
+    is_approved = proposal_res.get("willDecision", "approved") in ("approve", "approved")
+    title_line = Text()
+    if is_approved:
+        title_line.append("[✓ APPROVED] ", style=f"bold {COLOR_PASS}")
+    else:
+        title_line.append("[⛔ BLOCKED] ", style=f"bold {COLOR_FAIL}")
+    title_line.append("-> ", style="dim")
+    title_line.append(f"{tool_name}", style="bold white")
+    will_reason = proposal_res.get("willReason")
+    if will_reason:
+        title_line.append(f"  # {will_reason}", style="dim")
+    ws_items.append(title_line)
+
+    # 2. Inline preflight rubric tags if available
+    ledger = proposal_res.get("toolProposalLedger") or proposal_res.get("conscienceLedger") or []
+    rubric_tags = _rubric_tags(ledger)
+    if rubric_tags:
+        preflight_text = Text("  Preflight:", style="dim")
+        preflight_text.append_text(rubric_tags)
+        ws_items.append(preflight_text)
+
+    # 3. Arguments preview
+    if tool_name == "bash":
+        cmd = args.get("command", "")
+        syntax = Syntax(cmd, "bash", theme="monokai", line_numbers=False, word_wrap=True, padding=(0, 1))
+        ws_items.append(syntax)
+    elif tool_name in ("edit", "write"):
+        path = args.get("path", "")
+        file_line = Text("  File: ", style="dim")
+        file_line.append(path, style="bold white")
+        ws_items.append(file_line)
+    elif tool_name not in ("todowrite", "todo_write"):
+        args_str = _summarize_args(tool_name, args)
+        if len(args_str) > 90:
+            args_str = args_str[:90] + "..."
+        ws_items.append(Text(f"  Arguments: {args_str}", style="dim cyan"))
+
+    # 4. Result summary line
+    preview = result_str.strip().splitlines()
+    first_line = preview[0] if preview else "(no output)"
+    max_first_line = min(75, max(25, console.width - 45))
+    if len(first_line) > max_first_line:
+        first_line = first_line[:max_first_line - 3] + "..."
+    line_count = len(preview)
+    is_error = _result_is_error(result_str)
     icon = "✖" if is_error else "✔"
     icon_style = COLOR_FAIL if is_error else COLOR_PASS
     action_text = "Failed" if is_error else "Executed"
 
-    console.print(
-        f"  [bold {icon_style}]↳ {icon}[/] [dim]{action_text} [bold white]{name}[/]: {first_line} ({line_count} line{'s' if line_count != 1 else ''})[/dim]"
-    )
+    res_line = Text("  ")
+    res_line.append(f"↳ {icon} ", style=f"bold {icon_style}")
+    res_line.append(f"{action_text} ", style="dim")
+    res_line.append(f"{tool_name}", style="bold white")
+    res_line.append(f": {first_line} ({line_count} line{'s' if line_count != 1 else ''})", style="dim")
+    ws_items.append(res_line)
+
+    # 5. Dual-column render: Workspace on Left, Sidebar on Right
+    sidebar = build_plan_panel()
+    if sidebar and console.width >= 100:
+        ws_content = Group(*ws_items)
+        grid = Table.grid(expand=True, padding=(0, 1))
+        grid.add_column("workspace", ratio=2)
+        grid.add_column("sidebar", ratio=1)
+        grid.add_row(ws_content, sidebar)
+        console.print(grid)
+    else:
+        console.print(Group(*ws_items))
+
+
+def render_todo_list(todos: List[Dict[str, Any]], align_right: bool = True):
+    """Render an active plan/todo checklist in the terminal, placed on the right sidebar separated from the workspace."""
+    global _active_todos
+    if not todos:
+        return
+    _active_todos = list(todos)
+
+    panel = build_plan_panel(_active_todos)
+    if not panel:
+        return
+
+    total = len(_active_todos)
+    completed = sum(1 for t in _active_todos if (t.get("status") or "").lower() in ("completed", "done"))
+    in_prog = [t for t in _active_todos if (t.get("status") or "").lower() in ("in_progress", "running")]
+    pending = [t for t in _active_todos if (t.get("status") or "").lower() in ("pending", "todo")]
+    active_name = in_prog[0].get("task") or in_prog[0].get("description") if in_prog else (pending[0].get("task") if pending else "All tasks complete")
+
+    # Workspace status panel
+    ws_items = []
+    t1 = Text()
+    t1.append("✓ Plan & Tasks Initialized", style=f"bold {COLOR_PASS}")
+    t1.append(f" ({total} items)", style="dim")
+    ws_items.append(t1)
+
+    t2 = Text()
+    t2.append("  Active Task: ", style="bold white")
+    t2.append(str(active_name), style="bold #38bdf8")
+    ws_items.append(t2)
+
+    if pending and in_prog:
+        next_name = pending[0].get("task") or pending[0].get("description")
+        t3 = Text()
+        t3.append("  Next: ", style="dim")
+        t3.append(str(next_name), style="dim white")
+        ws_items.append(t3)
+
+    ws_content = Group(*ws_items)
+
+    if align_right and console.width >= 100:
+        grid = Table.grid(expand=True, padding=(0, 1))
+        grid.add_column("workspace", ratio=2)
+        grid.add_column("sidebar", ratio=1)
+        grid.add_row(ws_content, panel)
+        console.print()
+        console.print(grid)
+    else:
+        console.print()
+        console.print(ws_content)
+        console.print(panel)
+
+
+def print_tool_result_summary(name: str, result: str):
+    """Print a clean execution indicator for completed tool calls, with active plan progress."""
+    preview = result.strip().splitlines()
+    first_line = preview[0] if preview else "(no output)"
+    # Bounded preview width so the single line never wraps or spills into right margins
+    max_first_line = min(55, max(25, console.width - 45))
+    if len(first_line) > max_first_line:
+        first_line = first_line[:max_first_line - 3] + "..."
+    line_count = len(preview)
+
+    is_error = _result_is_error(result)
+    icon = "✖" if is_error else "✔"
+    icon_style = COLOR_FAIL if is_error else COLOR_PASS
+    action_text = "Failed" if is_error else "Executed"
+
+    line = Text("  ")
+    line.append(f"↳ {icon} ", style=f"bold {icon_style}")
+    line.append(f"{action_text} ", style="dim")
+    line.append(f"{name}", style="bold white")
+    line.append(f": {first_line} ({line_count} line{'s' if line_count != 1 else ''})", style="dim")
+
+    if _active_todos and name not in ("todowrite", "todo_write"):
+        total = len(_active_todos)
+        completed = sum(1 for t in _active_todos if (t.get("status") or "").lower() in ("completed", "done"))
+        pct = int((completed / total) * 100) if total > 0 else 0
+        line.append(f"  [Plan: {completed}/{total} • {pct}%]", style=f"dim {COLOR_BRAND_400}")
+
+    console.print(line)
 
 
 def print_subagent_start(role: str, description: str):
     """Print the launch indicator for a delegated subagent task."""
-    console.print(
-        f"  [bold #38bdf8]↳ [Subagent: {role}][/] [dim]Delegated: [bold white]\"{description}\"[/dim]"
-    )
+    line = Text("  ")
+    line.append(f"↳ [Subagent: {role}] ", style="bold #38bdf8")
+    line.append(f'Delegated: "{description}"', style="dim")
+    console.print(line)
 
 
 def print_subagent_step(role: str, tool_name: str, args: Dict[str, Any], result: str):
     """Print an inline progress step executed by a child subagent."""
-    args_summary = ""
-    if tool_name == "read":
-        args_summary = args.get("path") or ""
-    elif tool_name == "grep":
-        args_summary = f"'{args.get('pattern', '')}' in {args.get('path', '.')}"
-    elif tool_name == "glob":
-        args_summary = f"'{args.get('pattern', '')}'"
-    elif tool_name == "bash":
-        args_summary = (args.get("command") or "")[:40]
-    else:
-        args_summary = ", ".join(f"{k}={v}" for k, v in list(args.items())[:2])
+    args_summary = _summarize_args(tool_name, args)
 
     preview = result.strip().splitlines()
     first_line = preview[0] if preview else "(done)"
     if len(first_line) > 70:
-        first_line = first_line[:70] + "..."
+        first_line = first_line[:67] + "..."
 
-    console.print(
-        f"    [dim #38bdf8]↳[/dim #38bdf8] [dim]({role})[/dim] [bold white]{tool_name}[/]({args_summary}) -> [dim]{first_line}[/dim]"
-    )
+    line = Text("    ↳ ", style="dim #38bdf8")
+    line.append(f"({role}) ", style="dim")
+    line.append(f"{tool_name}", style="bold white")
+    line.append(f"({args_summary}) -> ", style="dim")
+    line.append(first_line, style="dim")
+    console.print(line)
 
 
 def print_subagent_done(role: str, summary: str, steps: int = 1):
@@ -666,14 +1021,15 @@ def print_subagent_done(role: str, summary: str, steps: int = 1):
     preview = summary.strip().splitlines()
     first_line = preview[0] if preview else "(synthesis complete)"
     if len(first_line) > 90:
-        first_line = first_line[:90] + "..."
-    console.print(
-        f"  [bold {COLOR_PASS}]↳ ✓ [Subagent: {role}][/] [dim]Completed in {steps} step{'s' if steps != 1 else ''}: {first_line}[/dim]"
-    )
+        first_line = first_line[:87] + "..."
+    line = Text("  ")
+    line.append(f"↳ ✓ [Subagent: {role}] ", style=f"bold {COLOR_PASS}")
+    line.append(f"Completed in {steps} step{'s' if steps != 1 else ''}: {first_line}", style="dim")
+    console.print(line)
 
 
 def print_final_output(text: str, res: Dict[str, Any]):
-    """Render the final governed markdown response with side-by-side or stacked scorecard."""
+    """Render the final governed markdown response with side-by-side or stacked scorecard and plan."""
     _record_turn_telemetry(res)
     left_renderable = Panel(
         Markdown(text),
@@ -682,21 +1038,31 @@ def print_final_output(text: str, res: Dict[str, Any]):
         box=box.ROUNDED,
         padding=(1, 2),
     )
-    right_panel = _build_scoreboard_panel(res)
+
+    right_items = []
+    # 1. Plan & Tasks Panel (if active)
+    plan_panel = build_plan_panel(res.get("todos") or _active_todos)
+    if plan_panel:
+        right_items.append(plan_panel)
+
+    # 2. Governance Audit Panel (Score, Policy rubric, Faculty telemetry)
+    audit_panel = _build_scoreboard_panel(res)
+    if audit_panel and (not isinstance(audit_panel, Text) or audit_panel.plain.strip()):
+        right_items.append(audit_panel)
+
+    right_renderable = Group(*right_items) if len(right_items) > 1 else (right_items[0] if right_items else None)
 
     console.print()
-    if right_panel and (not isinstance(right_panel, Text) or right_panel.plain.strip()):
-        # Responsive: use side-by-side grid if terminal width is wide enough
-        terminal_width = console.width
-        if terminal_width >= 110:
-            grid = Table.grid(expand=True, padding=(0, 1))
-            grid.add_column("left", ratio=3)
-            grid.add_column("right", ratio=1)
-            grid.add_row(left_renderable, right_panel)
-            console.print(grid)
-        else:
-            console.print(left_renderable)
-            console.print(right_panel)
+    terminal_width = console.width
+    if right_renderable and terminal_width >= 100:
+        grid = Table.grid(expand=True, padding=(0, 1))
+        grid.add_column("left", ratio=2)
+        grid.add_column("right", ratio=1)
+        grid.add_row(left_renderable, right_renderable)
+        console.print(grid)
+    elif right_renderable:
+        console.print(left_renderable)
+        console.print(right_renderable)
     else:
         console.print(left_renderable)
 

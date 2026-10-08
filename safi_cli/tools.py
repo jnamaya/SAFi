@@ -15,6 +15,8 @@ FORBIDDEN_NAMES = frozenset({".env", "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa
 FORBIDDEN_SUFFIXES = (
     ".pem", ".key", ".pkcs12", ".pfx", ".p12", ".kdbx", ".jks",
 )
+# `.env.*` files hold secrets (.env.local, .env.production); these templates do not.
+ENV_TEMPLATE_SUFFIXES = (".example", ".sample", ".template", ".dist")
 SKIP_DIRS = frozenset({
     ".git", ".venv", "venv", "node_modules", "__pycache__", ".mypy_cache",
     ".pytest_cache", ".ruff_cache", "dist", "build", ".tox", ".eggs",
@@ -39,8 +41,10 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
                 "type": "object",
                 "properties": {
                     "path": {"type": "string", "description": "File path relative to repository root."},
-                    "offset": {"type": "integer", "description": "1-indexed starting line number (default 1)."},
-                    "limit": {"type": "integer", "description": "Maximum number of lines to read (default 250)."}
+                    "offset": {"type": "integer", "description": "1-indexed starting line number (default 1). Alias: line_start."},
+                    "limit": {"type": "integer", "description": "Maximum number of lines to read (default 250)."},
+                    "line_start": {"type": "integer", "description": "1-indexed starting line number."},
+                    "line_end": {"type": "integer", "description": "1-indexed ending line number."}
                 },
                 "required": ["path"]
             }
@@ -168,8 +172,92 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
                 "required": ["description", "prompt"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "question",
+            "description": "Ask the user a clarifying question with optional multiple-choice options when requirements or architectural choices are ambiguous. Pauses the turn and returns the user's selected choice or written answer.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "question": {"type": "string", "description": "The question to ask the user."},
+                    "options": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional list of recommended choices for the user to select from."
+                    }
+                },
+                "required": ["question"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "todowrite",
+            "description": "Maintain and track a plan and task checklist in the right sidebar. ONLY call this tool when necessary for complex, multi-step tasks requiring multiple phases or file modifications. Do NOT call this tool for simple single-step queries, searches, lookups, or direct answers.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "todos": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string", "description": "Unique short identifier (e.g. '1', 'step-1')."},
+                                "task": {"type": "string", "description": "Short description of the task item."},
+                                "status": {
+                                    "type": "string",
+                                    "enum": ["pending", "in_progress", "completed", "failed"],
+                                    "description": "Current status of the todo item."
+                                }
+                            },
+                            "required": ["task", "status"]
+                        },
+                        "description": "The updated list of todo items."
+                    }
+                },
+                "required": ["todos"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "git_status",
+            "description": "Get structured git repository status showing branch, staged files, modified files, and untracked files.",
+            "parameters": {
+                "type": "object",
+                "properties": {}
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "git_diff",
+            "description": "Inspect uncommitted code changes in the repository. Optionally specify 'staged' (boolean) or a specific 'path'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "staged": {"type": "boolean", "description": "If true, shows staged changes (--staged). Default false."},
+                    "path": {"type": "string", "description": "Optional file or directory path relative to repository root."}
+                }
+            }
+        }
     }
 ]
+
+
+def _is_secret_name(name: str) -> bool:
+    """True for credential files: exact names, key suffixes, and .env.* variants (templates excepted)."""
+    lower = name.lower()
+    if name in FORBIDDEN_NAMES or any(lower.endswith(s) for s in FORBIDDEN_SUFFIXES):
+        return True
+    if lower.startswith(".env.") and not lower.endswith(ENV_TEMPLATE_SUFFIXES):
+        return True
+    return False
 
 
 def resolve_safe_path(rel_path: str, workspace_root: Path) -> Path:
@@ -180,7 +268,7 @@ def resolve_safe_path(rel_path: str, workspace_root: Path) -> Path:
         raise PermissionError(f"Access denied: '{rel_path}' resolves outside the repository root.")
 
     # Secrets check
-    if target.name in FORBIDDEN_NAMES or any(target.name.lower().endswith(s) for s in FORBIDDEN_SUFFIXES):
+    if _is_secret_name(target.name):
         raise PermissionError(f"Access denied: '{target.name}' is a secret/credential file and cannot be accessed.")
     return target
 
@@ -202,8 +290,20 @@ def execute_tool(
             if target.is_dir():
                 return f"Error: {path_str} is a directory. Use list instead."
 
-            offset = max(1, int(args.get("offset") or 1))
-            limit = max(1, min(int(args.get("limit") or 250), 2000))
+            # Robust parameter normalization for line slicing:
+            # Supports offset/limit, line_start/line_end, start_line/end_line
+            raw_start = args.get("offset") or args.get("line_start") or args.get("start_line") or args.get("startLine")
+            raw_end = args.get("line_end") or args.get("end_line") or args.get("endLine")
+            raw_limit = args.get("limit")
+
+            offset = max(1, int(raw_start or 1))
+            if raw_end is not None:
+                calc_limit = max(1, int(raw_end) - offset + 1)
+                limit = min(calc_limit, 2000)
+            elif raw_limit is not None:
+                limit = max(1, min(int(raw_limit), 2000))
+            else:
+                limit = 250
 
             with target.open("r", encoding="utf-8", errors="replace") as fh:
                 lines = fh.readlines()
@@ -250,6 +350,8 @@ def execute_tool(
                 or args.get("newText")
                 or ""
             )
+            if not target_str:
+                return f"Error: 'target' text is required for edit. Use 'write' to create or rewrite {path_str}."
             target = resolve_safe_path(path_str, workspace_root)
             if not target.exists():
                 return f"Error: No such file: {path_str}"
@@ -304,11 +406,14 @@ def execute_tool(
             # Fast path: use git grep if inside git repository
             if (workspace_root / ".git").is_dir():
                 try:
-                    cmd = ["git", "grep", "-n", "-I", "-E", pattern]
+                    # -e keeps a pattern like "-v" from being parsed as a git option.
+                    cmd = ["git", "grep", "-n", "-I", "-E", "-e", pattern, "--"]
+                    base = "" if sub_path in (".", "./", "") else sub_path.rstrip("/")
                     if include:
-                        cmd.extend(["--", f"*{include}*"])
-                    elif sub_path != ".":
-                        cmd.extend(["--", sub_path])
+                        glob_pat = include if any(c in include for c in "*?[") else f"*{include}"
+                        cmd.append(f":(glob){base + '/' if base else ''}**/{glob_pat}")
+                    elif base:
+                        cmd.append(base)
                     proc = subprocess.run(
                         cmd,
                         cwd=str(workspace_root),
@@ -318,7 +423,12 @@ def execute_tool(
                         timeout=5,
                     )
                     if proc.returncode == 0:
-                        lines = [l for l in proc.stdout.splitlines() if l.strip()]
+                        lines = [
+                            l for l in proc.stdout.splitlines()
+                            if l.strip() and not _is_secret_name(Path(l.split(":", 1)[0]).name)
+                        ]
+                        if not lines:
+                            return f"No matches found for pattern: '{pattern}'"
                         if len(lines) > max_matches:
                             return "\n".join(lines[:max_matches]) + f"\n... [reached {max_matches} match limit]"
                         return "\n".join(lines)
@@ -336,7 +446,7 @@ def execute_tool(
             for dirpath, dirnames, filenames in os.walk(search_dir):
                 dirnames[:] = [d for d in sorted(dirnames) if d not in SKIP_DIRS and not d.startswith(".")]
                 for f in sorted(filenames):
-                    if f.startswith(".") or f in FORBIDDEN_NAMES or any(f.endswith(s) for s in FORBIDDEN_SUFFIXES):
+                    if f.startswith(".") or _is_secret_name(f):
                         continue
                     if any(f.lower().endswith(ext) for ext in BINARY_EXTENSIONS):
                         continue
@@ -424,8 +534,56 @@ def execute_tool(
             desc = args.get("description", "")
             return f"Subagent task '{desc}' processed."
 
+        elif name in ("question", "ask_user"):
+            q_text = args.get("question") or ""
+            return f"Clarification requested: {q_text}"
+
+        elif name in ("todowrite", "todo_write"):
+            todos = args.get("todos") or []
+            return f"Updated plan with {len(todos)} task(s)."
+
+        elif name == "git_status":
+            proc = subprocess.run(
+                "git status --short --branch",
+                shell=True,
+                cwd=str(workspace_root),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                timeout=30,
+            )
+            out = proc.stdout.strip() if proc.stdout else "(clean working tree)"
+            return f"Git Status:\n{out}"
+
+        elif name == "git_diff":
+            staged = bool(args.get("staged", False))
+            path_arg = (args.get("path") or "").strip()
+            diff_cmd = ["git", "diff"]
+            if staged:
+                diff_cmd.append("--staged")
+            if path_arg:
+                # Confine and validate the path; never hand model input to a shell.
+                resolve_safe_path(path_arg, workspace_root)
+                diff_cmd.extend(["--", path_arg])
+            proc = subprocess.run(
+                diff_cmd,
+                cwd=str(workspace_root),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                timeout=60,
+            )
+            out = proc.stdout.strip() if proc.stdout else "(no diff)"
+            if len(out) > 20000:
+                out = out[:20000] + f"\n... [diff truncated, {len(out)} chars total]"
+            return out
+
         else:
             return f"Unknown tool: '{name}'"
 
+    except subprocess.TimeoutExpired as exc:
+        return f"Error: '{name}' timed out after {exc.timeout:.0f}s. Narrow the command or run it in smaller steps."
+    except PermissionError as exc:
+        return f"Error: {exc}"
     except Exception as exc:
         return f"Tool execution error: {exc}"

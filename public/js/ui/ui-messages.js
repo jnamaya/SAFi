@@ -323,10 +323,10 @@ export function _scoreTier(payload) {
     if (!hasScore) {
         tier = 'seg-pending';
         label = 'Audit pending';
-    } else if (numScore < 5.0) {
+    } else if (numScore < 4.0) {
         tier = 'seg-red';
         label = 'Concern';
-    } else if (numScore < 8.0) {
+    } else if (numScore < 7.0) {
         tier = 'seg-yellow';
         label = 'Caution';
     }

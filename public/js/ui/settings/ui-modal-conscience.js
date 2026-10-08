@@ -203,16 +203,16 @@ function renderScoreAndTrend(payload) {
     const circumference = 50 * 2 * Math.PI; // 314
     const offset = hasScore ? circumference - (score / 10) * circumference : circumference;
 
-    // Thresholds match the Audit Hub dashboard gauge (safi_dashboard.py)
+    // Thresholds: >= 7 Green, >= 4 Yellow, < 4 Red
     const getScoreColor = (s) => {
-        if (s > 7) return 'text-green-500';
-        if (s > 4) return 'text-yellow-500';
+        if (s >= 7) return 'text-green-500';
+        if (s >= 4) return 'text-yellow-500';
         return 'text-red-500';
     };
 
     const getGradId = (s) => {
-        if (s > 7) return 'gauge-grad-green';
-        if (s > 4) return 'gauge-grad-yellow';
+        if (s >= 7) return 'gauge-grad-green';
+        if (s >= 4) return 'gauge-grad-yellow';
         return 'gauge-grad-red';
     };
 

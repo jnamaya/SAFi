@@ -1,6 +1,7 @@
 """Unit tests for the native SAFi CLI local tools and configuration."""
 
 import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -571,7 +572,7 @@ class TestSafiClientToolPayload(unittest.TestCase):
         # Verify banner runs cleanly with and without intellect_model
         ui.print_banner("/tmp/repo", "software_engineer", "http://localhost:5000", user_name="Alice", intellect_model="claude-3-5-sonnet")
 
-        # Verify audit details formatting
+        # Verify audit details formatting for all score tiers
         test_payload = {
             "policyName": "Agentic Coding Policy",
             "conscienceLedger": [
@@ -584,6 +585,13 @@ class TestSafiClientToolPayload(unittest.TestCase):
         ui.print_audit_details(test_payload)
         self.assertIsNotNone(ui.COLOR_BRAND_600)
         self.assertEqual(ui.COLOR_BRAND_600, "#16a34a")
+
+        # Green tier (>= 7.0)
+        ui.print_audit_details({"policyName": "P", "conscienceLedger": [], "spirit_score": 7.0})
+        # Yellow tier (4.0 <= val < 7.0)
+        ui.print_audit_details({"policyName": "P", "conscienceLedger": [], "spirit_score": 4.0})
+        # Red tier (< 4.0)
+        ui.print_audit_details({"policyName": "P", "conscienceLedger": [], "spirit_score": 3.9})
 
 
 class TestSafiModelSelection(unittest.TestCase):
@@ -663,6 +671,7 @@ class TestSafiModelSelection(unittest.TestCase):
             ids = [m["id"] for m in discovered]
             self.assertIn("custom-model-1", ids)
             self.assertIn("claude-3-5-sonnet", ids)
+            self.assertIn("claude-haiku-5-5", ids)
 
     def test_prompt_switch_model_direct(self):
         from safi_cli.main import prompt_switch_model
@@ -932,6 +941,321 @@ class TestSafiSubagentDelegation(unittest.TestCase):
         self.assertEqual(client.send_turn.call_count, 2)
         second_call = client.send_turn.call_args_list[1].kwargs
         self.assertEqual(second_call["tool_results"][0]["result"], "Subagent found 2 files.")
+
+    @patch("safi_cli.ui.prompt_question")
+    def test_run_agent_turn_question_clarification(self, mock_prompt_q):
+        mock_prompt_q.return_value = "Option A"
+        client = MagicMock()
+        client.send_turn.side_effect = [
+            {
+                "type": "tool_call",
+                "tool_name": "question",
+                "parameters": {"question": "Which architecture?", "options": ["Option A", "Option B"]},
+                "willDecision": "approve",
+            },
+            {
+                "type": "response",
+                "finalOutput": "Proceeding with Option A.",
+                "willDecision": "approve",
+            },
+        ]
+        res = run_agent_turn(
+            client=client,
+            prompt="Plan architecture",
+            workspace_root=Path("."),
+            conversation_id="conv-1",
+            user_id="u-1",
+            agent="software_engineer",
+        )
+        self.assertIsNotNone(res)
+        mock_prompt_q.assert_called_once_with("Which architecture?", ["Option A", "Option B"])
+        second_call = client.send_turn.call_args_list[1].kwargs
+        self.assertIn("Option A", second_call["tool_results"][0]["result"])
+
+    @patch("safi_cli.ui.render_todo_list")
+    def test_run_agent_turn_todowrite(self, mock_render_todo):
+        client = MagicMock()
+        client.send_turn.side_effect = [
+            {
+                "type": "tool_call",
+                "tool_name": "todowrite",
+                "parameters": {"todos": [{"task": "Step 1", "status": "completed"}]},
+                "willDecision": "approve",
+            },
+            {
+                "type": "response",
+                "finalOutput": "Done.",
+                "willDecision": "approve",
+            },
+        ]
+        res = run_agent_turn(
+            client=client,
+            prompt="Do task",
+            workspace_root=Path("."),
+            conversation_id="conv-1",
+            user_id="u-1",
+            agent="software_engineer",
+        )
+        self.assertIsNotNone(res)
+        mock_render_todo.assert_called_once()
+        second_call = client.send_turn.call_args_list[1].kwargs
+        self.assertIn("Recorded plan with 1 task(s)", second_call["tool_results"][0]["result"])
+
+    def test_git_tools_execution(self):
+        from safi_cli.tools import execute_tool
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p = Path(tmpdir)
+            subprocess.run(["git", "init"], cwd=str(p), check=True, stdout=subprocess.DEVNULL)
+            status_out = execute_tool("git_status", {}, p)
+            self.assertIn("Git Status", status_out)
+            diff_out = execute_tool("git_diff", {}, p)
+            self.assertIn("(no diff)", diff_out)
+
+    def test_local_skill_discovery(self):
+        from safi_cli.skills import discover_skills
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p = Path(tmpdir)
+            skills_dir = p / ".safi" / "skills"
+            skills_dir.mkdir(parents=True)
+            skill_file = skills_dir / "audit.md"
+            skill_file.write_text("# Security Audit\nRun a thorough security audit on all endpoints.")
+            skills = discover_skills(p)
+            self.assertIn("audit", skills)
+            self.assertEqual(skills["audit"].description, "Security Audit")
+            self.assertIn("security audit on all endpoints", skills["audit"].render_prompt())
+
+    def test_plan_and_tasks_right_panel(self):
+        from safi_cli import ui
+        todos = [
+            {"id": "1", "task": "Investigate repo", "status": "completed"},
+            {"id": "2", "task": "Apply refactoring", "status": "in_progress"},
+            {"id": "3", "task": "Verify tests", "status": "pending"},
+        ]
+        ui.render_todo_list(todos)
+        panel = ui.build_plan_panel(todos)
+        self.assertIsNotNone(panel)
+        # Test progress calculation
+        self.assertEqual(len(ui.get_active_todos()), 3)
+
+        # Test tool result execution indicator with plan progress
+        ui.print_tool_result_summary("read", "file contents")
+
+        # Test print_final_output side-by-side with active plan
+        test_payload = {
+            "policyName": "Agentic Coding Policy",
+            "spirit_score": 8.0,
+            "conscienceLedger": [],
+        }
+        ui.print_final_output("Completed task.", test_payload)
+
+        # Test mark_active_todos_completed
+        ui.set_active_todos([{"task": "Step A", "status": "pending"}])
+        ui.mark_active_todos_completed()
+        self.assertEqual(ui.get_active_todos()[0]["status"], "completed")
+
+        # Test clear
+        ui.clear_active_todos()
+        self.assertEqual(len(ui.get_active_todos()), 0)
+        self.assertIsNone(ui.build_plan_panel([]))
+
+    def test_readline_auto_completion(self):
+        from safi_cli.main import _compute_completions, setup_readline_completer
+        # 1. Slash command completion
+        cmd_matches = _compute_completions("/ag", "/ag")
+        self.assertIn("/agent", cmd_matches)
+        self.assertIn("/agents", cmd_matches)
+
+        # 2. Agent persona auto-completion (e.g. /agents fid -> fiduciary)
+        agent_matches = _compute_completions("/agents fid", "fid")
+        self.assertEqual(agent_matches, ["fiduciary"])
+
+        agent_matches_singular = _compute_completions("/agent fid", "fid")
+        self.assertEqual(agent_matches_singular, ["fiduciary"])
+
+        all_agents = _compute_completions("/agents ", "")
+        self.assertIn("software_engineer", all_agents)
+        self.assertIn("fiduciary", all_agents)
+
+        # 3. Model auto-completion (e.g. /model claud)
+        model_matches = _compute_completions("/model claud", "claud")
+        self.assertTrue(any("claude" in m for m in model_matches))
+        self.assertIn("claude-haiku-5-5", model_matches)
+
+        # 4. Compress subcommands (e.g. /compress sh)
+        comp_matches = _compute_completions("/compress sh", "sh")
+        self.assertEqual(comp_matches, ["show"])
+
+        # 5. Verify setup runs without error
+        setup_readline_completer()
+
+
+class TestSafiCliHardeningAndUiFixes(unittest.TestCase):
+    def test_result_is_error_heuristic(self):
+        from safi_cli.ui import _result_is_error
+
+        # False positive checks: grep hits containing "error" or "handle_error" should NOT be classified as errors
+        self.assertFalse(_result_is_error("safi_app/config.py:25: handle_error(exception)"))
+        self.assertFalse(_result_is_error("def test_error_handling(): pass"))
+        self.assertFalse(_result_is_error("Exit code 0\nAll tests passed with 0 errors"))
+        self.assertFalse(_result_is_error("src/router.ts:4: import { ErrorBoundary } from 'react'"))
+
+        # Genuine failure checks:
+        self.assertTrue(_result_is_error("Exit code 1\nCommand not found"))
+        self.assertTrue(_result_is_error("exit code 127: bash: invalid command"))
+        self.assertTrue(_result_is_error("Error: 'path' parameter is required for read."))
+        self.assertTrue(_result_is_error("Tool execution error: file not found"))
+        self.assertTrue(_result_is_error("Unknown tool: 'foo'"))
+        self.assertTrue(_result_is_error("Rejected: The will gatekeeper rejected the proposal."))
+
+    def test_ui_markup_safety(self):
+        from safi_cli import ui
+
+        # Unescaped brackets that would crash rich.errors.MarkupError if parsed as markup
+        tricky_outputs = [
+            "src/components/[id].tsx:12: const { id } = useParams()",
+            "def parse[T](items: list[T]) -> dict[str, int]:",
+            "Tool stdout: [bold red]unescaped tags[/bold red] [/unexpected]",
+            "Line with unmatched [ bracket and ] closed bracket",
+        ]
+
+        for out in tricky_outputs:
+            # None of these should throw MarkupError or any exception
+            ui.print_tool_result_summary("grep", out)
+
+        # Test print_workspace_step with bracketed parameters and output
+        ui.print_workspace_step(
+            tool_name="edit",
+            args={"path": "pages/[id].tsx", "target": "a", "replacement": "b"},
+            proposal_res={
+                "willDecision": "approved",
+                "conscienceLedger": [
+                    {"value": "Type Safety [Strict]", "score": 0.95},
+                    {"value": "Security [Boundary]", "score": -0.2},
+                ],
+            },
+            result_str="Updated pages/[id].tsx with [0] changes",
+        )
+
+        # Test print_tool_proposal with bracketed path and diff
+        ui.print_tool_proposal(
+            name="write",
+            args={"path": "components/[slug].tsx", "content": "export default function Slug() {}"},
+            res={"willDecision": "approved"},
+        )
+
+        # Test subagent prints with bracketed names
+        ui.print_subagent_start("code_reviewer [v2]", "Reviewing [id].tsx changes")
+        ui.print_subagent_step("code_reviewer [v2]", "read", {"path": "pages/[id].tsx"}, "contents [0]")
+        ui.print_subagent_done("code_reviewer [v2]", "Review passed [100%]", steps=2)
+
+    def test_secrets_isolation(self):
+        from safi_cli.tools import _is_secret_name, execute_tool
+
+        # Secret filenames must be detected
+        self.assertTrue(_is_secret_name(".env"))
+        self.assertTrue(_is_secret_name(".env.local"))
+        self.assertTrue(_is_secret_name(".env.production"))
+        self.assertTrue(_is_secret_name(".env.development"))
+        self.assertTrue(_is_secret_name("id_rsa"))
+        self.assertTrue(_is_secret_name("id_ed25519"))
+        self.assertTrue(_is_secret_name("server.key"))
+        self.assertTrue(_is_secret_name("cert.pem"))
+
+        # Template/example files must NOT be blocked
+        self.assertFalse(_is_secret_name(".env.example"))
+        self.assertFalse(_is_secret_name(".env.sample"))
+        self.assertFalse(_is_secret_name(".env.template"))
+        self.assertFalse(_is_secret_name(".env.dist"))
+        self.assertFalse(_is_secret_name("environment.ts"))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p = Path(tmpdir)
+            (p / ".env.production").write_text("API_SECRET=12345")
+            (p / ".env.example").write_text("API_SECRET=your_key_here")
+
+            # Reading .env.production must be rejected
+            res_blocked = execute_tool("read", {"path": ".env.production"}, p)
+            self.assertIn("Access denied", res_blocked)
+            self.assertIn("secret/credential file", res_blocked)
+
+            # Reading .env.example must succeed
+            res_allowed = execute_tool("read", {"path": ".env.example"}, p)
+            self.assertIn("API_SECRET=your_key_here", res_allowed)
+
+    def test_git_diff_security_and_safe_arguments(self):
+        from safi_cli.tools import execute_tool
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p = Path(tmpdir)
+            subprocess.run(["git", "init"], cwd=str(p), check=True, stdout=subprocess.DEVNULL)
+
+            # Injection attempt in path parameter
+            malicious_path = "; touch pwned.txt"
+            res = execute_tool("git_diff", {"path": malicious_path}, p)
+            # Must safely report error / not execute touch
+            self.assertFalse((p / "pwned.txt").exists())
+
+    def test_edit_empty_target_safeguard(self):
+        from safi_cli.tools import execute_tool
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p = Path(tmpdir)
+            test_file = p / "sample.py"
+            test_file.write_text("print('hello')")
+
+            # Calling edit with empty target must fail gracefully, not replace empty boundaries
+            res = execute_tool("edit", {"path": "sample.py", "target": "", "replacement": "evil"}, p)
+            self.assertIn("Error", res)
+            self.assertIn("'target' text is required", res)
+            self.assertEqual(test_file.read_text(), "print('hello')")
+
+    def test_grep_with_dash_pattern(self):
+        from safi_cli.tools import execute_tool
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p = Path(tmpdir)
+            subprocess.run(["git", "init"], cwd=str(p), check=True, stdout=subprocess.DEVNULL)
+            test_file = p / "options.py"
+            test_file.write_text("parser.add_argument('-v', '--verbose')\n")
+            subprocess.run(["git", "add", "options.py"], cwd=str(p), check=True, stdout=subprocess.DEVNULL)
+
+            # Grepping for '-v' must be interpreted as a search pattern, not git grep flags
+            res = execute_tool("grep", {"pattern": "-v", "path": "."}, p)
+            self.assertIn("-v", res)
+
+    def test_slash_command_menu_rendering_and_options(self):
+        from safi_cli.main import prompt_command_menu
+        from safi_cli.client import SafiClient
+        client = SafiClient("http://mock-backend:5000", "test-key")
+
+        # 1. Test cancel on empty input (Enter key)
+        with patch("builtins.input", return_value=""):
+            agent, conv, should_exit = prompt_command_menu(
+                current_agent="software_engineer",
+                client=client,
+                workspace_root=Path("."),
+                current_conv="conv-1",
+            )
+            self.assertFalse(should_exit)
+            self.assertEqual(agent, "software_engineer")
+            self.assertEqual(conv, "conv-1")
+
+        # 2. Test selecting command by name with slash (e.g. "/help")
+        with patch("builtins.input", return_value="/help"):
+            agent, conv, should_exit = prompt_command_menu(
+                current_agent="software_engineer",
+                client=client,
+                workspace_root=Path("."),
+                current_conv="conv-1",
+            )
+            self.assertFalse(should_exit)
+
+        # 3. Test selecting command by name without slash (e.g. "clear")
+        with patch("builtins.input", return_value="clear"):
+            agent, conv, should_exit = prompt_command_menu(
+                current_agent="software_engineer",
+                client=client,
+                workspace_root=Path("."),
+                current_conv="conv-1",
+            )
+            self.assertFalse(should_exit)
 
 
 if __name__ == "__main__":

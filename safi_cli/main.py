@@ -1,4 +1,5 @@
 import argparse
+import glob
 import os
 import shutil
 import sys
@@ -90,11 +91,16 @@ def run_subagent_task(
 
     for step in range(max_steps):
         child_msg_id = str(uuid.uuid4())
+        step_prompt = child_initial_message if step == 0 else (
+            f"{child_initial_message}\n\n"
+            f"[Directive: Review the collected tool results and continue towards completing the goal. "
+            f"If you have gathered sufficient evidence, synthesize and return your final answer.]"
+        )
         try:
             res = client.send_turn(
                 user_id=user_id,
                 conversation_id=child_conv_id,
-                message=child_initial_message if step == 0 else "Continue task using available tool results.",
+                message=step_prompt,
                 workspace_root=str(workspace_root.resolve()),
                 agent="software_engineer",
                 model=model,
@@ -160,6 +166,7 @@ def run_agent_turn(
     subagents_run_count = 0
     recent_turns = ""
 
+    ui.clear_completed_todos()
     ui.print_user_prompt(prompt, agent=agent, user_name=user_name)
 
     try:
@@ -259,6 +266,35 @@ def run_agent_turn(
                     })
                     continue
 
+                # Interactive developer clarification tool (question / ask_user)
+                if tool_name in ("question", "ask_user"):
+                    q_text = args.get("question") or args.get("prompt") or ""
+                    opts = args.get("options") or []
+                    user_answer = ui.prompt_question(q_text, opts)
+                    ui.print_tool_result_summary(tool_name, f"Developer response: {user_answer}")
+                    tool_results.append({
+                        "tool_name": tool_name,
+                        "arguments": args,
+                        "result": f"Developer response: {user_answer}",
+                    })
+                    continue
+
+                # Plan & task list tracking tool (todowrite)
+                if tool_name in ("todowrite", "todo_write"):
+                    todos = args.get("todos") or []
+                    ui.render_todo_list(todos)
+                    total = len(todos)
+                    completed = sum(1 for t in todos if (t.get("status") or "").lower() in ("completed", "done"))
+                    pct = int((completed / total) * 100) if total > 0 else 0
+                    res_msg = f"Recorded plan with {total} task(s) ({completed}/{total} completed • {pct}%)."
+                    ui.print_tool_result_summary(tool_name, res_msg)
+                    tool_results.append({
+                        "tool_name": tool_name,
+                        "arguments": args,
+                        "result": res_msg,
+                    })
+                    continue
+
                 # Server-executed tool (e.g. fiduciary stock tools, web search)
                 if res.get("executed_by") == "server" or "result" in res:
                     result_str = str(res.get("result", ""))
@@ -313,6 +349,7 @@ def run_agent_turn(
                     ui.console.print(f"  [dim green]↳ ✓ Executed {t_name} (server MCP)[/dim green]")
 
             _last_turn_result = res
+            ui.mark_active_todos_completed()
             ui.print_final_output(final_text, res)
             return res
 
@@ -429,10 +466,22 @@ def prompt_switch_agent(
             table.add_row(str(idx), f"{k}{active_marker}", v["title"], key_status, v["description"])
 
         ui.console.print(table)
+        old_completer = readline.get_completer() if readline else None
+        if readline:
+            def agent_sub_completer(text: str, state: int) -> Optional[str]:
+                matches = [k for k in agent_keys if k.startswith(text)] + [k for k in agent_keys if text.lower() in k.lower() and not k.startswith(text)]
+                if state < len(matches):
+                    return matches[state]
+                return None
+            readline.set_completer(agent_sub_completer)
+
         try:
             choice = input("\nSelect an agent [# or name] (or press Enter to cancel): ").strip()
         except (KeyboardInterrupt, EOFError):
             return current_agent, config.resolve_session_id(str(workspace_root))
+        finally:
+            if readline and old_completer:
+                readline.set_completer(old_completer)
 
         if not choice:
             return current_agent, config.resolve_session_id(str(workspace_root))
@@ -484,6 +533,7 @@ def prompt_switch_agent(
 DEFAULT_MODELS = [
     {"id": "claude-3-5-sonnet", "label": "Claude 3.5 Sonnet", "provider": "Anthropic"},
     {"id": "claude-haiku-4-5-20251001", "label": "Claude Haiku", "provider": "Anthropic"},
+    {"id": "claude-haiku-5-5", "label": "Claude Haiku 5.5", "provider": "Anthropic"},
     {"id": "gpt-4o", "label": "GPT-4o", "provider": "OpenAI"},
     {"id": "gpt-4o-mini", "label": "GPT-4o Mini", "provider": "OpenAI"},
     {"id": "gpt-6-luna", "label": "GPT Luna", "provider": "OpenAI"},
@@ -592,11 +642,24 @@ def prompt_switch_model(
         ui.console.print(f"[dim]Current Intellect model:[/] [bold white]{resolved_active}[/]")
         ui.console.print("[dim]Enter number, model ID (or custom model name), or press Enter to cancel.[/dim]")
 
+        old_completer = readline.get_completer() if readline else None
+        if readline:
+            model_ids = [m["id"] for m in models if "id" in m]
+            def model_sub_completer(text: str, state: int) -> Optional[str]:
+                matches = [m for m in model_ids if m.startswith(text)] + [m for m in model_ids if text.lower() in m.lower() and not m.startswith(text)]
+                if state < len(matches):
+                    return matches[state]
+                return None
+            readline.set_completer(model_sub_completer)
+
         try:
             choice = input("\nSelect Intellect model: ").strip()
         except (KeyboardInterrupt, EOFError):
             ui.console.print("[dim]Model selection cancelled.[/dim]")
             return current_model
+        finally:
+            if readline and old_completer:
+                readline.set_completer(old_completer)
 
         if not choice:
             return current_model
@@ -626,7 +689,7 @@ def prompt_switch_model(
 
 
 COMMAND_OPTIONS = [
-    ("agents", "Switch Agent", "Select an agent (coding, fiduciary, health, etc.)"),
+    ("agents", "Switch Agent", "Select an agent (software_engineer, fiduciary, etc.)"),
     ("new", "New Session", "Start a fresh conversation session with a new session ID"),
     ("clear", "Clear Screen", "Clear the terminal screen and reprint the session header"),
     ("config", "View Configuration", "Show backend URL, active session, and Policy API keys"),
@@ -634,7 +697,9 @@ COMMAND_OPTIONS = [
     ("exit", "Exit CLI", "Exit SAFi interactive assistant"),
     ("audit", "Conscience Audit", "View full conscience audit ledger and rationales for the last turn"),
     ("models", "Intellect Model", "Select the LLM powering the agent's Intellect faculty"),
-    ("compress", "Compress Context", "Compact conversation history and save tokens (OpenCode style)"),
+    ("compress", "Compress Context", "Compact conversation history and save tokens"),
+    ("skills", "Project Skills", "List custom project skills defined in .safi/skills/"),
+    ("user", "User Profile", "View or set your display name"),
 ]
 
 
@@ -693,6 +758,7 @@ def print_help():
         ("/model <name>", "Switch directly to an Intellect LLM (e.g. /model gpt-4o)"),
         ("/compress", "Compact conversation history and save tokens (OpenCode style)"),
         ("/audit", "View detailed conscience audit ledger & rationales for the last turn"),
+        ("/skills", "List custom project skills defined in .safi/skills/"),
         ("/user <name>", "View or update your user display name"),
         ("/new", "Start a fresh conversation session with a new session ID"),
         ("/clear", "Clear the terminal screen and reprint the session header"),
@@ -726,11 +792,27 @@ def prompt_command_menu(
     for idx, (cmd, action, desc) in enumerate(COMMAND_OPTIONS, 1):
         table.add_row(str(idx), f"/{cmd}", action, desc)
 
+    ui.console.print()
     ui.console.print(table)
+
+    old_completer = readline.get_completer() if readline else None
+    if readline:
+        menu_cmds = [cmd for cmd, _, _ in COMMAND_OPTIONS]
+        def menu_sub_completer(text: str, state: int) -> Optional[str]:
+            clean_text = text.lstrip("/")
+            matches = [f"/{c}" if text.startswith("/") else c for c in menu_cmds if c.startswith(clean_text)]
+            if state < len(matches):
+                return matches[state]
+            return None
+        readline.set_completer(menu_sub_completer)
+
     try:
         choice = input("\nSelect an option [# or command] (or press Enter to cancel): ").strip()
     except (KeyboardInterrupt, EOFError):
         return current_agent, current_conv, False
+    finally:
+        if readline and old_completer:
+            readline.set_completer(old_completer)
 
     if not choice:
         return current_agent, current_conv, False
@@ -753,6 +835,8 @@ def prompt_command_menu(
 
     elif choice_clean == "new":
         new_conv = config.resolve_session_id(str(workspace_root), new_session=True)
+        ui.reset_session_telemetry()
+        ui.clear_active_todos()
         ui.console.print(f"[bold {ui.COLOR_PASS}]Started new conversation session:[/] [dim]{new_conv}[/]")
         return current_agent, new_conv, False
 
@@ -792,6 +876,32 @@ def prompt_command_menu(
         ui.print_compression_result(comp_res)
         return current_agent, current_conv, False
 
+    elif choice_clean in ("skills", "skill"):
+        from .skills import discover_skills
+        local_skills = discover_skills(workspace_root)
+        s_table = Table(title="Custom Project Skills (.safi/skills/)", box=box.ROUNDED, border_style=ui.COLOR_BRAND_600)
+        s_table.add_column("Command", style=f"bold {ui.COLOR_BRAND_400}")
+        s_table.add_column("Description", style="white")
+        s_table.add_column("Path", style="dim")
+        if local_skills:
+            for s_name, s_obj in local_skills.items():
+                s_table.add_row(f"/{s_name}", s_obj.description, str(s_obj.file_path.relative_to(workspace_root)))
+            ui.console.print(s_table)
+        else:
+            ui.console.print(f"[dim]No custom skills found in {workspace_root / '.safi' / 'skills'}. Create a .md file there to add skills![/dim]")
+        return current_agent, current_conv, False
+
+    elif choice_clean in ("user", "name"):
+        try:
+            curr = config.resolve_user_name() or "Unset"
+            new_name = input(f"Enter user name (currently '{curr}'): ").strip()
+            if new_name:
+                config.save_user_name(new_name)
+                ui.console.print(f"[bold {ui.COLOR_PASS}]✓ User name updated to:[/] [magenta]{new_name}[/]")
+        except (KeyboardInterrupt, EOFError):
+            pass
+        return current_agent, current_conv, False
+
     elif choice_clean in ("help", "?"):
         print_help()
         return current_agent, current_conv, False
@@ -803,6 +913,143 @@ def prompt_command_menu(
     else:
         ui.console.print(f"[bold {ui.COLOR_FAIL}]Unknown command:[/] '{choice}'. Type [bold]/[/] to see options.")
         return current_agent, current_conv, False
+
+
+SLASH_COMMANDS = [
+    "/agents",
+    "/agent",
+    "/models",
+    "/model",
+    "/compress",
+    "/skills",
+    "/audit",
+    "/ledger",
+    "/user",
+    "/name",
+    "/new",
+    "/clear",
+    "/config",
+    "/keys",
+    "/help",
+    "/exit",
+    "/quit",
+]
+
+
+def _compute_completions(
+    line: str,
+    text: str,
+    client: Optional[SafiClient] = None,
+    workspace_root: Optional[Path] = None,
+) -> List[str]:
+    """Compute auto-completion matches for the given input line and current token."""
+    line_clean = line.lstrip()
+
+    # 1. Slash commands & arguments
+    if line_clean.startswith("/"):
+        tokens = line_clean.split()
+
+        # If user is still typing the command itself (no space typed yet or cursor on first token)
+        if len(tokens) <= 1 and not line.endswith(" "):
+            commands = list(SLASH_COMMANDS)
+            if workspace_root:
+                try:
+                    from .skills import discover_skills
+                    local_skills = discover_skills(workspace_root)
+                    for s in local_skills.keys():
+                        commands.append(f"/{s}")
+                except Exception:
+                    pass
+            exact = [c for c in commands if c.startswith(text)]
+            sub = [c for c in commands if text.lower() in c.lower() and c not in exact]
+            return exact + sub
+
+        cmd = tokens[0].lower() if tokens else ""
+
+        # Auto-complete Agent personas: /agent <tab> or /agents <tab> or /switch <tab>
+        if cmd in ("/agent", "/agents", "/switch"):
+            agent_keys = list(AVAILABLE_AGENTS.keys())
+            exact = [k for k in agent_keys if k.startswith(text)]
+            sub = [k for k in agent_keys if text.lower() in k.lower() and k not in exact]
+            return exact + sub
+
+        # Auto-complete Models: /model <tab> or /models <tab>
+        if cmd in ("/model", "/models"):
+            model_ids = [m["id"] for m in AVAILABLE_MODELS if "id" in m]
+            exact = [m for m in model_ids if m.startswith(text)]
+            sub = [m for m in model_ids if text.lower() in m.lower() and m not in exact]
+            return exact + sub
+
+        # Auto-complete Compress subcommands: /compress <tab>
+        if cmd in ("/compress", "/compact", "/summarize"):
+            subcommands = ["compress", "show", "clear", "status", "view"]
+            return [sc for sc in subcommands if sc.startswith(text)]
+
+        return []
+
+    # 2. General workspace file path auto-completion
+    if text and workspace_root:
+        try:
+            root_str = str(workspace_root)
+            target = os.path.join(root_str, text)
+            matches = glob.glob(target + "*")
+            results = []
+            for m in matches:
+                rel = os.path.relpath(m, root_str)
+                if os.path.isdir(m):
+                    rel += "/"
+                results.append(rel)
+            return sorted(results)
+        except Exception:
+            return []
+
+    return []
+
+
+def setup_readline_completer(client: Optional[SafiClient] = None, workspace_root: Optional[Path] = None):
+    """Configure readline auto-completion for slash commands, agent names, model names, and file paths."""
+    if not readline:
+        return
+
+    # Use whitespace only as delimiters so slashes, hyphens, and paths are not truncated
+    try:
+        readline.set_completer_delims(" \t\n")
+    except Exception:
+        pass
+
+    # Bind Tab key for completion (GNU readline on Linux, libedit on macOS)
+    try:
+        if "libedit" in (getattr(readline, "__doc__", "") or ""):
+            readline.parse_and_bind("bind ^I rl_complete")
+        else:
+            readline.parse_and_bind("tab: complete")
+            readline.parse_and_bind("set show-all-if-ambiguous on")
+            readline.parse_and_bind("set completion-query-items 0")
+            readline.parse_and_bind("set page-completions off")
+    except Exception:
+        pass
+
+    try:
+        discover_agents(client)
+    except Exception:
+        pass
+
+    cached: List[str] = []
+
+    def cli_completer(text: str, state: int) -> Optional[str]:
+        nonlocal cached
+        if state == 0:
+            try:
+                line = readline.get_line_buffer()
+                cached = _compute_completions(line, text, client, workspace_root)
+            except Exception:
+                cached = []
+
+        if state < len(cached):
+            return cached[state]
+        return None
+
+    readline.set_completer(cli_completer)
 
 
 def interactive_repl(
@@ -831,7 +1078,7 @@ def interactive_repl(
         f"[dim]Commands: [bold {ui.COLOR_BRAND_400}]/[/] menu  •  [bold {ui.COLOR_BRAND_400}]/compress[/] compact tokens  •  [bold {ui.COLOR_BRAND_400}]/models[/] intellect model  •  [bold {ui.COLOR_BRAND_400}]/agents[/] switch agent  •  [bold {ui.COLOR_BRAND_400}]/new[/] fresh session[/dim]\n"
     )
 
-    # Setup readline history
+    # Setup readline history & auto-completer
     config.ensure_config_dir()
     hist_file = str(config.HISTORY_FILE)
     if readline and os.path.exists(hist_file):
@@ -839,6 +1086,9 @@ def interactive_repl(
             readline.read_history_file(hist_file)
         except OSError:
             pass
+
+    if readline:
+        setup_readline_completer(client, workspace_root)
 
     current_conv = conversation_id
     try:
@@ -856,7 +1106,7 @@ def interactive_repl(
                 ui.console.print("[dim]Goodbye.[/dim]")
                 break
 
-            if line == "/":
+            if line.lower() in ("/", "/menu", "/commands", "menu"):
                 current_agent, current_conv, should_exit = prompt_command_menu(
                     current_agent=current_agent,
                     client=client,
@@ -873,6 +1123,7 @@ def interactive_repl(
             if line.lower() == "/new":
                 current_conv = config.resolve_session_id(str(workspace_root), new_session=True)
                 ui.reset_session_telemetry()
+                ui.clear_active_todos()
                 ui.console.print(f"[bold green]Started new conversation session:[/] [cyan]{current_conv}[/]")
                 continue
 
@@ -927,7 +1178,7 @@ def interactive_repl(
                     ui.print_compression_result(comp_res)
                 continue
 
-            if line.lower() in ("/agents", "/list-agents"):
+            if line.lower().strip() in ("/agents", "/agent", "/switch", "/list-agents"):
                 current_agent, current_conv = prompt_switch_agent(
                     current_agent=current_agent,
                     client=client,
@@ -936,7 +1187,7 @@ def interactive_repl(
                 current_model = config.resolve_intellect_model(current_agent)
                 continue
 
-            if line.lower().startswith(("/agent", "/switch")):
+            if line.lower().startswith(("/agent ", "/agents ", "/switch ")):
                 parts = line.split(maxsplit=1)
                 req = parts[1].strip() if len(parts) > 1 else None
                 current_agent, current_conv = prompt_switch_agent(
@@ -948,7 +1199,15 @@ def interactive_repl(
                 current_model = config.resolve_intellect_model(current_agent)
                 continue
 
-            if line.lower().startswith(("/model", "/models")):
+            if line.lower().strip() in ("/models", "/model", "/list-models"):
+                current_model = prompt_switch_model(
+                    current_model=current_model,
+                    client=client,
+                    current_agent=current_agent,
+                )
+                continue
+
+            if line.lower().startswith(("/model ", "/models ")):
                 parts = line.split(maxsplit=1)
                 req = parts[1].strip() if len(parts) > 1 else None
                 current_model = prompt_switch_model(
@@ -972,9 +1231,52 @@ def interactive_repl(
                     )
                 continue
 
-            if line.lower() in ("/help", "/?"):
+            if line.lower() in ("/help", "/?", "help", "?"):
                 print_help()
                 continue
+
+            # Local project skills (.safi/skills/<name>.md) or slash command dispatch
+            if line.startswith("/"):
+                from .skills import discover_skills
+                local_skills = discover_skills(workspace_root)
+                cmd_parts = line[1:].split(maxsplit=1)
+                skill_trigger = cmd_parts[0].lower()
+                skill_args = cmd_parts[1].strip() if len(cmd_parts) > 1 else ""
+
+                if skill_trigger in local_skills:
+                    matched_skill = local_skills[skill_trigger]
+                    rendered_prompt = matched_skill.render_prompt(skill_args)
+                    ui.console.print(f"[bold {ui.COLOR_BRAND_400}]● Skill:[/] [bold white]{matched_skill.description}[/]")
+                    run_agent_turn(
+                        client=client,
+                        prompt=rendered_prompt,
+                        workspace_root=workspace_root,
+                        conversation_id=current_conv,
+                        user_id=user_id,
+                        agent=current_agent,
+                        user_name=current_user_name,
+                        model=current_model,
+                        auto_approve=auto_approve,
+                        max_steps=max_steps,
+                    )
+                    continue
+                elif skill_trigger in ("skills", "list-skills"):
+                    from rich.table import Table
+                    from rich import box
+                    s_table = Table(title="Custom Project Skills (.safi/skills/)", box=box.ROUNDED, border_style=ui.COLOR_BRAND_600)
+                    s_table.add_column("Command", style=f"bold {ui.COLOR_BRAND_400}")
+                    s_table.add_column("Description", style="white")
+                    s_table.add_column("Path", style="dim")
+                    if local_skills:
+                        for s_name, s_obj in local_skills.items():
+                            s_table.add_row(f"/{s_name}", s_obj.description, str(s_obj.file_path.relative_to(workspace_root)))
+                        ui.console.print(s_table)
+                    else:
+                        ui.console.print(f"[dim]No custom skills found in {workspace_root / '.safi' / 'skills'}. Create a .md file there to add skills![/dim]")
+                    continue
+                else:
+                    ui.console.print(f"[bold {ui.COLOR_FAIL}]Unknown command:[/] '{line}'. Type [bold]/[/] to see options.")
+                    continue
 
 
             if sys.stdout.isatty():
@@ -1019,7 +1321,7 @@ def main():
     parser.add_argument(
         "-m",
         "--model",
-        help="LLM model powering the Intellect faculty (e.g. claude-3-5-sonnet, gpt-4o, gemini-3.5-flash-lite).",
+        help="LLM model powering the Intellect faculty (e.g. claude-3-5-sonnet, claude-haiku-5-5, gpt-4o, gemini-3.5-flash-lite).",
     )
 
     parser.add_argument("-w", "--workspace", default=".", help="Workspace path (default: current directory).")

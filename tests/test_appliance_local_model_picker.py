@@ -359,7 +359,7 @@ def test_the_local_key_with_a_live_model_becomes_the_default(monkeypatch):
     monkeypatch.setenv("SAFI_LOCAL_MODEL_API_KEY", "local")
     for name in ("GROQ_API_KEY", "GEMINI_API_KEY", "ANTHROPIC_API_KEY",
                  "OPENAI_API_KEY", "MISTRAL_API_KEY", "DEEPSEEK_API_KEY",
-                 "ZHIPU_API_KEY", "CEREBRAS_API_KEY"):
+                 "ZHIPU_API_KEY", "CEREBRAS_API_KEY", "TYPESAFE_API_KEY"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(cm, "active_local_model", lambda: "safi-qwen3-8b")
 

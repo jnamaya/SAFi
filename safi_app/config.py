@@ -697,6 +697,7 @@ class Config:
 
         # Anthropic (Claude) Models
         {"id": "claude-haiku-4-5-20251001", "label": "Claude Haiku"},
+        {"id": "claude-haiku-5-5", "label": "Claude Haiku 5.5"},
 
         # Google Models. "Flash Lite" and "Flash" stay distinct on the tier
         # word alone, so neither needs its version back.
