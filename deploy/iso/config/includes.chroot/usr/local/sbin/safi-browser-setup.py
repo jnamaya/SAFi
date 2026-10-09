@@ -1189,8 +1189,11 @@ def run_interactive_console(pin: str, cert_path: Path) -> None:
             console_diagnostics()
 
         elif choice == "6":
-            print("\nOpening root diagnostic shell. Type 'exit' to return to setup console.")
-            subprocess.run(["/bin/bash"])
+            print("\nOpening root diagnostic shell. Type 'exit' to return to setup console.\n")
+            env = os.environ.copy()
+            env["PS1"] = "root@safi:~# "
+            env["TERM"] = "linux"
+            subprocess.run(["/bin/bash", "-i"], env=env)
             print("\nReturned from shell.")
 
         else:
