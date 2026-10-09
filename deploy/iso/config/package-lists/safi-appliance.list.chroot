@@ -28,12 +28,12 @@
 #                         (writes the token into /var/www/certbot; needs DNS
 #                         inbound port 80). certonly, so no --apache plugin.
 #   openssh-server       → operator console access
-#   grub-pc              → CRITICAL: the live rootfs becomes /target via the
-#                          live-installer. Without grub-install baked in, d-i's
-#                          grub-installer falls back to `in-target apt-get
-#                          install grub-pc`, which cannot resolve offline and
-#                          aborts with "grub-pc failed to install into /target".
-#                          grub-pc must therefore be in the rootfs itself.
+#   grub-efi-amd64       → CRITICAL: the live rootfs becomes /target via the
+#                          live-installer. Modern systems boot via UEFI (esp. NVMe).
+#                          Without grub-efi baked in, d-i's grub-installer attempts
+#                          `in-target apt-get install grub-efi-amd64`, which cannot
+#                          resolve offline. grub-efi-amd64 and shim-signed must
+#                          therefore be in the rootfs itself.
 # Plus the live system needs a kernel/init and tools; live-build supplies the
 # base. These are the additions:
 apt-utils
@@ -50,9 +50,10 @@ dnsutils
 g++
 gcc
 git
-grub-pc
-grub-pc-bin
+grub-efi-amd64
 grub-efi-amd64-bin
+grub-efi-amd64-signed
+shim-signed
 efibootmgr
 hostname
 ifupdown
