@@ -131,15 +131,32 @@ def render() -> str:
             "",
             "  Configured. The app serves at the Management UI address above.",
             "  The web admin and the 'admin' OS account share one password.",
+            "",
+            "  Console options: Type [s]+Enter for root shell, [n]+Enter for network status",
         ]
     lines += ["", ""]
     return "\r\n".join(lines) + "\r\n"
 
 
 def main() -> int:
+    import select
+    import sys
+
     while True:
         print(CLEAR + render(), end="", flush=True)
-        time.sleep(3)
+        if sys.stdin.isatty():
+            r, _, _ = select.select([sys.stdin], [], [], 3.0)
+            if r:
+                line = sys.stdin.readline().strip().lower()
+                if line == "s":
+                    print(CLEAR + "\nOpening root diagnostic shell. Type 'exit' to return to dashboard.\n")
+                    subprocess.run(["/bin/bash"])
+                elif line == "n":
+                    print(CLEAR + "\nOpening SAFi network status.\n")
+                    subprocess.run(["/usr/local/sbin/safi", "network", "show"])
+                    input("\nPress Enter to return to dashboard...")
+        else:
+            time.sleep(3)
 
 
 if __name__ == "__main__":

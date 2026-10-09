@@ -849,6 +849,355 @@ class Handler(BaseHTTPRequestHandler):
         return
 
 
+# --------------------------------------------------------------------------
+# interactive console network setup
+# --------------------------------------------------------------------------
+
+def find_all_interfaces() -> dict[str, str]:
+    """Return {iface_name: 'wireless' | 'ethernet'} for physical network devices."""
+    nics: dict[str, str] = {}
+    sys_net = Path("/sys/class/net")
+    if sys_net.exists():
+        for p in sorted(sys_net.iterdir()):
+            name = p.name
+            if name == "lo":
+                continue
+            if (p / "wireless").is_dir() or (p / "phy80211").is_dir() or name.startswith("wl"):
+                nics[name] = "wireless"
+            else:
+                nics[name] = "ethernet"
+    return nics
+
+
+def connect_wifi(iface: str, ssid: str, psk: str, cert_path: Path) -> None:
+    print(f"\nConfiguring wpa_supplicant on {iface} for '{ssid}'...")
+    wpa_conf = Path("/etc/wpa_supplicant/wpa_supplicant.conf")
+    wpa_conf.parent.mkdir(parents=True, exist_ok=True)
+    content = (
+        "ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev\n"
+        "update_config=1\n"
+        "country=US\n\n"
+        "network={\n"
+        f'    ssid="{ssid}"\n'
+        f'    psk="{psk}"\n'
+        "    key_mgmt=WPA-PSK WPA-PSK-SHA256\n"
+        "    priority=1\n"
+        "}\n"
+    )
+    wpa_conf.write_text(content, encoding="utf-8")
+    wpa_conf.chmod(0o600)
+
+    # Stop any conflicting wpa_supplicant
+    subprocess.run(["killall", "wpa_supplicant"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    sock = Path(f"/var/run/wpa_supplicant/{iface}")
+    if sock.exists():
+        try:
+            sock.unlink()
+        except OSError:
+            pass
+
+    print(f"Starting wpa_supplicant on {iface}...")
+    subprocess.run(["wpa_supplicant", "-B", "-i", iface, "-c", str(wpa_conf), "-D", "nl80211,wext"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    print("Waiting for Wi-Fi association (up to 15s)...")
+    connected = False
+    for i in range(15):
+        try:
+            status = subprocess.check_output(["wpa_cli", "-i", iface, "status"], text=True, stderr=subprocess.DEVNULL)
+            for line in status.splitlines():
+                if line.startswith("wpa_state="):
+                    state = line.split("=")[1].strip()
+                    print(f"  Attempt {i+1}/15: wpa_state={state}")
+                    if state == "COMPLETED":
+                        connected = True
+                        break
+        except Exception:
+            pass
+        if connected:
+            break
+        time.sleep(1)
+
+    if not connected:
+        print(f"[!] Warning: Association with '{ssid}' did not reach COMPLETED.")
+        print("    Attempting DHCP anyway in case link established...")
+    else:
+        print(f"[✓] Associated successfully with '{ssid}'! Requesting DHCP lease...")
+
+    # Run DHCP
+    print(f"Running dhclient on {iface}...")
+    subprocess.run(["dhclient", "-4", "-v", iface], check=False)
+    time.sleep(2)
+
+    new_ip = local_ip(5)
+    if new_ip != "<appliance-ip>":
+        print(f"\n[✓] SUCCESS! Acquired IP address: {new_ip}")
+        ensure_certificate(new_ip)
+        subprocess.run(["systemctl", "reload", "apache2"], check=False)
+        # Update /etc/network/interfaces permanently
+        try:
+            ifaces_file = Path("/etc/network/interfaces")
+            text = ifaces_file.read_text(encoding="utf-8", errors="replace")
+            if f"iface {iface}" not in text:
+                with ifaces_file.open("a", encoding="utf-8") as h:
+                    h.write(f"\nallow-hotplug {iface}\niface {iface} inet dhcp\n    wpa-conf /etc/wpa_supplicant/wpa_supplicant.conf\n")
+        except Exception as e:
+            print(f"Note: could not update /etc/network/interfaces: {e}")
+        print(f"\nAppliance is active at: https://{new_ip}/")
+    else:
+        print("\n[!] Could not acquire an IP address via DHCP.")
+
+
+def console_setup_wifi(cert_path: Path, nics: dict[str, str]) -> None:
+    wl_nics = [n for n, t in nics.items() if t == "wireless"]
+    if not wl_nics:
+        print("\n[!] No wireless network interfaces detected by kernel.")
+        print("    Check Option [5] (Diagnostics) to verify if Wi-Fi card requires driver.")
+        input("\nPress Enter to return to menu...")
+        return
+
+    if len(wl_nics) == 1:
+        iface = wl_nics[0]
+    else:
+        print("\nSelect wireless interface:")
+        for idx, n in enumerate(wl_nics, 1):
+            print(f"  {idx}) {n}")
+        sel = input("Enter choice [1]: ").strip() or "1"
+        try:
+            iface = wl_nics[int(sel) - 1]
+        except (ValueError, IndexError):
+            iface = wl_nics[0]
+
+    print(f"\nUnblocking radio and bringing up {iface}...")
+    subprocess.run(["rfkill", "unblock", "all"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["ip", "link", "set", iface, "up"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(1)
+
+    print("Scanning for wireless networks...")
+    ssids: list[str] = []
+    try:
+        scan_out = subprocess.check_output(
+            ["iw", "dev", iface, "scan"], text=True, stderr=subprocess.DEVNULL, timeout=10)
+        for line in scan_out.splitlines():
+            line = line.strip()
+            if line.startswith("SSID: ") and len(line) > 6:
+                s = line[6:].strip()
+                if s and s not in ssids:
+                    ssids.append(s)
+    except Exception:
+        pass
+
+    chosen_ssid = ""
+    if ssids:
+        print("\nDiscovered Wi-Fi Networks:")
+        for idx, s in enumerate(ssids, 1):
+            print(f"  {idx}) {s}")
+        print(f"  {len(ssids) + 1}) Enter custom or hidden SSID")
+        sel = input(f"Choose network [1-{len(ssids)+1}] or enter SSID [default: Amaya]: ").strip()
+        if not sel:
+            chosen_ssid = "Amaya"
+        elif sel.isdigit() and 1 <= int(sel) <= len(ssids):
+            chosen_ssid = ssids[int(sel) - 1]
+        elif sel.isdigit() and int(sel) == len(ssids) + 1:
+            chosen_ssid = input("Enter SSID: ").strip() or "Amaya"
+        else:
+            chosen_ssid = sel
+    else:
+        print("No networks automatically returned by scan.")
+        chosen_ssid = input("Enter Wi-Fi SSID [default: Amaya]: ").strip() or "Amaya"
+
+    psk = input(f"Enter Wi-Fi Password for '{chosen_ssid}' [default: sabino07]: ").strip()
+    if not psk:
+        psk = "sabino07"
+
+    connect_wifi(iface, chosen_ssid, psk, cert_path)
+    input("\nPress Enter to return to menu...")
+
+
+def console_autoconnect_wifi(cert_path: Path, nics: dict[str, str], ssid: str = "Amaya", psk: str = "sabino07") -> None:
+    wl_nics = [n for n, t in nics.items() if t == "wireless"]
+    if not wl_nics:
+        print("\n[!] No wireless interfaces found.")
+        input("Press Enter to return to menu...")
+        return
+    iface = wl_nics[0]
+    print(f"\nAuto-connecting {iface} to '{ssid}'...")
+    subprocess.run(["rfkill", "unblock", "all"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["ip", "link", "set", iface, "up"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    connect_wifi(iface, ssid, psk, cert_path)
+    input("\nPress Enter to return to menu...")
+
+
+def console_setup_ethernet(cert_path: Path, nics: dict[str, str]) -> None:
+    eth_nics = [n for n, t in nics.items() if t == "ethernet"]
+    if not eth_nics:
+        print("\n[!] No wired ethernet interfaces found.")
+        input("Press Enter to return to menu...")
+        return
+    if len(eth_nics) == 1:
+        iface = eth_nics[0]
+    else:
+        print("\nSelect ethernet interface:")
+        for idx, n in enumerate(eth_nics, 1):
+            print(f"  {idx}) {n}")
+        sel = input("Enter choice [1]: ").strip() or "1"
+        try:
+            iface = eth_nics[int(sel) - 1]
+        except (ValueError, IndexError):
+            iface = eth_nics[0]
+
+    print(f"\nBringing up {iface} and requesting DHCP...")
+    subprocess.run(["ip", "link", "set", iface, "up"], check=False)
+    subprocess.run(["dhclient", "-4", "-v", iface], check=False)
+    time.sleep(2)
+    new_ip = local_ip(5)
+    if new_ip != "<appliance-ip>":
+        print(f"\n[✓] SUCCESS! Acquired IP address: {new_ip}")
+        ensure_certificate(new_ip)
+        subprocess.run(["systemctl", "reload", "apache2"], check=False)
+        try:
+            ifaces_file = Path("/etc/network/interfaces")
+            text = ifaces_file.read_text(encoding="utf-8", errors="replace")
+            if f"iface {iface}" not in text:
+                with ifaces_file.open("a", encoding="utf-8") as h:
+                    h.write(f"\nallow-hotplug {iface} inet dhcp\n")
+        except Exception:
+            pass
+        print(f"\nAppliance is active at: https://{new_ip}/")
+    else:
+        print("\n[!] Could not acquire an IP address via DHCP. Check cable.")
+    input("\nPress Enter to return to menu...")
+
+
+def console_setup_static(cert_path: Path, nics: dict[str, str]) -> None:
+    all_nics = list(nics.keys())
+    if not all_nics:
+        print("\n[!] No network interfaces found.")
+        input("Press Enter to return to menu...")
+        return
+    print("\nAvailable interfaces:", ", ".join(all_nics))
+    iface = input(f"Interface name [{all_nics[0]}]: ").strip() or all_nics[0]
+    cidr = input("IP Address with CIDR (e.g. 192.168.1.150/24): ").strip()
+    if not cidr:
+        print("IP/CIDR is required.")
+        input("Press Enter to continue...")
+        return
+    gateway = input("Gateway IP (e.g. 192.168.1.1) [optional]: ").strip()
+    dns = input("DNS Server(s) (e.g. 1.1.1.1,8.8.8.8) [optional]: ").strip()
+
+    try:
+        subprocess.run(["ip", "link", "set", iface, "up"], check=True)
+        subprocess.run(["ip", "addr", "flush", "dev", iface], check=False)
+        subprocess.run(["ip", "addr", "add", cidr, "dev", iface], check=True)
+        if gateway:
+            subprocess.run(["ip", "route", "add", "default", "via", gateway, "dev", iface], check=False)
+        if dns:
+            resolv = Path("/etc/resolv.conf")
+            nameservers = [f"nameserver {d.strip()}" for d in dns.split(",")]
+            resolv.write_text("\n".join(nameservers) + "\n", encoding="utf-8")
+        ip_only = cidr.split("/")[0]
+        ensure_certificate(ip_only)
+        subprocess.run(["systemctl", "reload", "apache2"], check=False)
+        print(f"\n[✓] Static IP configured! Appliance reachable at: https://{ip_only}/")
+    except Exception as e:
+        print(f"\n[!] Failed to set static IP: {e}")
+    input("\nPress Enter to return to menu...")
+
+
+def console_diagnostics() -> None:
+    print("\n" + "=" * 76)
+    print("                     NETWORK & HARDWARE DIAGNOSTICS")
+    print("=" * 76)
+    print("--- Network Interfaces (ip -br a) ---")
+    subprocess.run(["ip", "-br", "a"])
+    print("\n--- Routing Table (ip r) ---")
+    subprocess.run(["ip", "r"])
+    print("\n--- RFKILL Status ---")
+    subprocess.run(["rfkill", "list"])
+    print("\n--- Network Hardware (lspci) ---")
+    subprocess.run("lspci -nnk | grep -iA3 -E 'network|wireless|ethernet'", shell=True)
+    print("\n--- Recent Wireless/Firmware Kernel Logs (dmesg) ---")
+    subprocess.run("dmesg | grep -iE 'wifi|wlan|ath|iwl|rtw|firmware' | tail -n 25", shell=True)
+    print("=" * 76)
+    input("\nPress Enter to return to menu...")
+
+
+def run_interactive_console(pin: str, cert_path: Path) -> None:
+    """Provides an interactive network setup console on tty1 while the web wizard is active."""
+    while not DONE_FILE.exists():
+        address = local_ip(1)
+        fp = certificate_fingerprint(cert_path)
+        nics = find_all_interfaces()
+
+        print("\n" + "=" * 76)
+        print("                 SAFi Appliance Setup & Network Console")
+        print("=" * 76)
+        if address != "<appliance-ip>":
+            print(f"  Web Setup URL : https://{address}/")
+            print(f"  Network State : Connected ({address})")
+        else:
+            print("  Web Setup URL : [Waiting for network address]")
+            print("  Network State : No IP configured yet")
+        print(f"  Setup PIN     : {pin}")
+        print(f"  TLS SHA-256   : {fp}")
+        print("-" * 76)
+        print("  Detected Interfaces:")
+        if not nics:
+            print("    (No physical network interfaces found by Linux kernel)")
+        else:
+            for n, t in nics.items():
+                try:
+                    ip_out = subprocess.check_output(
+                        ["ip", "-4", "-o", "addr", "show", "dev", n, "scope", "global"],
+                        text=True, stderr=subprocess.DEVNULL)
+                    ip_str = ip_out.split()[3] if ip_out.strip() else "no IP"
+                except Exception:
+                    ip_str = "no IP"
+                print(f"    - {n:<12} ({t:<8}) -> {ip_str}")
+        print("-" * 76)
+        print("  1) Connect to Wi-Fi (Scan / Select / Enter Password)")
+        print("  2) Auto-connect to Preconfigured Wi-Fi (\"Amaya\")")
+        print("  3) Configure Wired Network (DHCP)")
+        print("  4) Configure Static IP Address")
+        print("  5) Show Network Diagnostics & Driver Logs")
+        print("  6) Open Root Diagnostic Shell (bash)")
+        print("  7) Refresh Status")
+        print("=" * 76)
+
+        try:
+            choice = input("\nSelect option [1-7] (or press Enter to refresh): ").strip()
+        except (EOFError, KeyboardInterrupt):
+            time.sleep(2)
+            continue
+
+        if choice in ("", "7"):
+            continue
+
+        elif choice == "1":
+            console_setup_wifi(cert_path, nics)
+
+        elif choice == "2":
+            console_autoconnect_wifi(cert_path, nics, ssid="Amaya", psk="sabino07")
+
+        elif choice == "3":
+            console_setup_ethernet(cert_path, nics)
+
+        elif choice == "4":
+            console_setup_static(cert_path, nics)
+
+        elif choice == "5":
+            console_diagnostics()
+
+        elif choice == "6":
+            print("\nOpening root diagnostic shell. Type 'exit' to return to setup console.")
+            subprocess.run(["/bin/bash"])
+            print("\nReturned from shell.")
+
+        else:
+            print("Invalid option. Please choose 1 to 7.")
+            time.sleep(1)
+
+
 def main() -> int:
     if sys.argv[1:] == ["--refresh-certificate"]:
         address = local_ip(60)
@@ -862,7 +1211,7 @@ def main() -> int:
         print("Usage: safi-browser-setup.py [--refresh-certificate]", file=sys.stderr)
         return 2
 
-    address = local_ip(60)
+    address = local_ip(10)
     if DONE_FILE.exists():
         return 0
     STATE_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -879,43 +1228,34 @@ def main() -> int:
         server.hardware = safi_local.detect_hardware() if safi_local else None
     except Exception:
         server.hardware = None
-    # Print the banner FIRST: the PIN must reach the console even if apache has
-    # a hiccup, otherwise a boot looks frozen with no way in. Apache is what
-    # serves https://IP/ -> 127.0.0.1:5001; its failure must never be fatal
-    # here (a PIN worth of bricked console is worse than a retry).
-    # DHCP can finish just after network-online.target on appliances with more
-    # than one NIC. Wait briefly so the console shows a usable URL, not a
-    # permanent <appliance-ip> placeholder.
-    print(f"SAFi Appliance is Active. Complete configuration at: https://{address}/", flush=True)
-    print(f"TLS certificate SHA-256 fingerprint: {certificate_fingerprint(cert)}", flush=True)
-    print(f"Download certificate: https://{address}/appliance.crt", flush=True)
-    print("Trust it as a root certificate after comparing its SHA-256 fingerprint here.", flush=True)
-    if address == "<appliance-ip>":
-        # No DHCP lease (isolated lab, or a static site that has not been
-        # configured yet). The install is still fully usable over the console;
-        # be explicit about the commands that give it an address rather than
-        # leaving a bare placeholder on the screen.
-        print("", flush=True)
-        print("No network address yet - this appliance has no IP configured.", flush=True)
-        print("Inspect:   safi network show", flush=True)
-        print("Configure: safi network set dhcp <iface>", flush=True)
-        print("           safi network diff && safi network apply", flush=True)
-        print("Or static: safi network set static <iface> <cidr> <gateway> <dns>", flush=True)
-    print(f"One-time setup PIN: {pin}", flush=True)
+
     try:
         subprocess.run(["systemctl", "enable", "--now", "apache2"], check=True)
     except subprocess.CalledProcessError as exc:
         print(f"warning: apache2 could not be started ({exc.returncode}); "
               "https://<ip>/ will be unavailable until it is.", flush=True)
-    server.serve_forever()
+
+    # Run the HTTP server in a daemon thread so it responds while the console is active
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+
+    if sys.stdin.isatty():
+        run_interactive_console(pin, cert)
+    else:
+        # Non-interactive fallback
+        print(f"SAFi Appliance is Active. Complete configuration at: https://{address}/", flush=True)
+        print(f"TLS certificate SHA-256 fingerprint: {certificate_fingerprint(cert)}", flush=True)
+        print(f"One-time setup PIN: {pin}", flush=True)
+        while not DONE_FILE.exists():
+            time.sleep(1)
+
     subprocess.run(["systemctl", "daemon-reload"], check=True)
     subprocess.run(["systemctl", "enable", "--now", "safi", "safi-kb-indexer"], check=True)
     subprocess.run(["systemctl", "enable", "safi-retention-purge.timer", "safi-backup.timer", "safi-backup-verify.timer"], check=True)
-    # Keep the status dashboard on tty1 after first boot. It is informational
-    # only; local console login is intentionally disabled there.
     subprocess.run(["systemctl", "start", "safi-console"], check=False)
     return 0
 
 
 if __name__ == "__main__":
     sys.exit(main())
+

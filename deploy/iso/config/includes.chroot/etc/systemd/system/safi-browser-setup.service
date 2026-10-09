@@ -9,6 +9,7 @@ Before=safi.service
 Type=simple
 ExecStart=/usr/local/sbin/safi-browser-setup.py
 Restart=no
+StandardInput=tty
 StandardOutput=tty
 StandardError=journal
 TTYPath=/dev/tty1
