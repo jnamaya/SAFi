@@ -7,9 +7,16 @@ set -eu
 # Service account, exactly as deploy/systemd/*.service expect:
 #   User=safi  Group=www-data  WorkingDirectory=/var/www/safi
 # shell nologin: it runs services, nobody logs in as it.
+# The GPU render node is root:render (card0 is root:video); without these
+# groups llama-server cannot open /dev/dri/renderD128 and silently falls back
+# to CPU, making the appliance ~2x slower with no error in the journal.
+getent group render >/dev/null 2>&1 || groupadd --system render
+getent group video >/dev/null 2>&1 || groupadd --system video
 id safi >/dev/null 2>&1 || \
-    useradd --system --user-group --create-home \
+    useradd --system --user-group --create-home --groups render,video \
             --home-dir /home/safi --shell /usr/sbin/nologin safi
+# Existing accounts may predate the groups above, so ensure membership.
+usermod -aG render,video safi
 chown -R safi:safi /home/safi
 
 # Operator account (console + SSH), password LOCKED until the first-boot wizard
