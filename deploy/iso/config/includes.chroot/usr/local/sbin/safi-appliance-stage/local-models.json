@@ -36,6 +36,7 @@
       "gpu": false,
       "on_iso": true,
       "on_iso_comment": "The 070 hook already installs this tarball's contents into /opt/safi/bin, so a CPU fetch must not download it again. The asset entry is kept so a rebuild can re-derive the pinned digest from one place.",
+      "home": "/opt/safi/bin",
       "assets": [
         {
           "name": "llama-server (CPU)",
@@ -45,11 +46,31 @@
         }
       ]
     },
+    "vulkan": {
+      "id": "vulkan",
+      "label": "AMD GPU (Vulkan / RADV)",
+      "min_driver": 0,
+      "gpu": true,
+      "vendors": ["amd"],
+      "on_iso": false,
+      "home": "/opt/safi/vulkan",
+      "home_comment": "safi-model-fetch installs the llama-server archive here and points the systemd unit's LD_LIBRARY_PATH at it, the same way CUDA builds land in /opt/safi/cuda.",
+      "assets": [
+        {
+          "name": "llama-server (Vulkan)",
+          "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11205/llama-b11205-bin-ubuntu-vulkan-x64.tar.gz",
+          "size": 31346600,
+          "sha256": "14bb34d7058693f7679117ec3544a732e0a72405c6a08d60c8961b79393dd309"
+        }
+      ]
+    },
     "cuda-12.8": {
       "id": "cuda-12.8",
       "label": "NVIDIA GPU (CUDA 12.8)",
       "min_driver": 525,
       "gpu": true,
+      "vendors": ["nvidia"],
+      "home": "/opt/safi/cuda",
       "assets": [
         {
           "name": "llama-server (CUDA 12.8)",
@@ -70,6 +91,8 @@
       "label": "NVIDIA GPU (CUDA 13.4)",
       "min_driver": 580,
       "gpu": true,
+      "vendors": ["nvidia"],
+      "home": "/opt/safi/cuda",
       "assets": [
         {
           "name": "llama-server (CUDA 13.4)",
@@ -87,15 +110,17 @@
     }
   },
   "backend_note": [
+    "The CPU tarball ships on the ISO; a CUDA box pays the ~765 MB backend",
+    "download once, at setup. The Vulkan (AMD) backend is a 31 MB download that",
+    "runs on the Mesa RADV driver, which the ISO installs from Debian -- no",
+    "ROCm stack and no /dev/kfd needed, which is what makes it reliable on the",
+    "kernel trixie ships (6.12 even drives Strix Halo / gfx1151 iGPUs for this).",
+    "",
     "A CUDA backend needs BOTH assets above. llama.cpp split the CUDA runtime out",
     "of the server archive at b11205, so fetching only llama-server yields a",
     "build whose ggml-cuda.so cannot resolve libcudart, which fails at the first",
     "GPU layer load rather than at startup -- hence the two-entry list and the",
-    "combined 765 MB pre-flight, not 171 MB.",
-    "",
-    "Only the x64 CPU tarball ships on the ISO. A CUDA box pays the ~765 MB",
-    "backend download once, at setup, which keeps the ISO near 1.5 GB instead of",
-    "~3.3 GB for boxes that will never touch a GPU."
+    "combined 765 MB pre-flight, not 171 MB."
   ],
   "jev_local": {
     "id": "laya",
@@ -201,6 +226,65 @@
       "min_ram": 24500000000,
       "min_vram": 22000000000,
       "min_vram_comment": "Weights (19.8 GB) + KV (2.1 GB) at 8192 ctx, so a 24 GB card fits with little headroom. Prefer 32 GB+."
+    },
+    {
+      "id": "qwen3.8-27b",
+      "alias": "safi-qwen3.8-27b",
+      "file": "Qwen3.8-27B-Q4_K_M.gguf",
+      "label": "SAFi-Qwen3.8-27B",
+      "summary": "Flagship for AMD Strix Halo. Native MTP speculative decoding roughly doubles its token rate on a Vulkan iGPU; ~10 tok/s sustained on a Radeon 8060S with the stock Vulkan build (measured on the EVO-X2). Third-party GGUF because Qwen publish no GGUFs for this model.",
+      "url": "https://huggingface.co/lmstudio-community/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-Q4_K_M.gguf",
+      "sha256": "e00082f779fa385cee8c68a3ec8833a75778cc87272240b942f74e0b8243e520",
+      "size": 16810714336,
+      "kv_bytes_per_token": 65536,
+      "kv_bytes_per_token_comment": "Hybrid attention: only the 16 full-attention layers of the 64 produce KV (Qwen3.8-27B is 48 linear + 16 full). Q8 cache measured ~2.45 GiB at 32K ctx; at the shipped 64K window that doubles to ~4.9 GiB, and the f16 figure used below is 4.3 GB (4.0 GiB).",
+      "context_size": 65536,
+      "context_size_comment": "Per-model, not catalogue-global: this entry overrides context_size so the 27B runs a 64K window (YaRN 2x its native 32K, see llama_args) while smaller models keep the 8192 default. KV at 64K is 4.3 GB of the RAM/VRAM floors below.",
+      "reasoning": "on",
+      "reasoning_effort": "medium",
+      "reasoning_comment": "Qwen3 is a thinking model; medium effort is the balance between introspection and the cost of generating a chain-of-thought block before every answer. Rendered as --reasoning on --reasoning-effort medium by safi-model-fetch; other models default to off.",
+      "min_ram": 23800000000,
+      "min_vram": 21105681632,
+      "min_vram_comment": "16.8 GB weights + 4.3 GB KV at the configured 64K ctx (65536 * 65536). On an APU this is met through the TTM GTT pool (raised boot param), not the small UMA carve-out.",
+      "optimized_for": ["amd"],
+      "optimized_for_comment": "On an AMD GPU that fits it, this model is marked recommended ahead of a strictly larger generic model, so a Vulkan Strix Halo box pre-selects the engine this ISO is tuned around.",
+      "llama_args": [
+        "--spec-type", "draft-mtp", "--spec-draft-n-max", "3",
+        "-fa", "on", "-ctk", "q8_0", "-ctv", "q8_0",
+        "--rope-scaling", "yarn", "--rope-scale", "2", "--yarn-orig-ctx", "32768"
+      ],
+      "llama_args_comment": "Verified against the b11205 Vulkan build: native MTP draft head (no second model), flash attention, quantized KV, and YaRN at 2x for the 64K window. --spec-draft-n-max 3 is the measured optimum (5 dropped decode from ~10 to ~7.6 tok/s as draft acceptance collapsed). Reasoning effort comes from the reasoning fields above, not a hardcoded unit flag."
+    },
+    {
+      "id": "qwen3-coder-30b",
+      "alias": "safi-qwen3-coder-30b",
+      "file": "Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf",
+      "label": "SAFi-Qwen3-Coder-30B",
+      "summary": "MoE coder: 30B total but ~3B active per token, so decode is memory-bandwidth cheap rather than compute bound. Measured ~65 tok/s on the Radeon 8060S with the stock Vulkan build on the EVO-X2, roughly 2x the dense Qwen3.8-27B. Instruction/coding tuned, non-thinking, and has no MTP draft head.",
+      "url": "https://huggingface.co/unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF/resolve/main/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf",
+      "sha256": "fadc3e5f8d42bf7e894a785b05082e47daee4df26680389817e2093056f088ad",
+      "size": 18556689568,
+      "kv_bytes_per_token": 98304,
+      "kv_bytes_per_token_comment": "48 layers, 4 KV heads, head_dim 128, f16: 2 * 48 * 4 * 128 * 2 bytes.",
+      "min_ram": 24500000000,
+      "min_vram": 21800000000,
+      "context_size": 32768,
+      "reasoning": "off",
+      "llama_args": [
+        "-np",
+        "1",
+        "-b",
+        "2048",
+        "-ub",
+        "512",
+        "-fa",
+        "on",
+        "-ctk",
+        "q8_0",
+        "-ctv",
+        "q8_0"
+      ],
+      "llama_args_comment": "No MTP head on the coder, so no speculative flags. Flash attention plus quantized KV as on the 27B; -np 1 -b 2048 -ub 512 match the single-user tuning measured on the EVO-X2. Reasoning stays off: it is an instruction/coder model, not a thinking one."
     },
     {
       "id": "llama3.2-3b",

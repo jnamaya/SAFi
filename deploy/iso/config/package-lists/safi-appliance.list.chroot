@@ -95,5 +95,14 @@ firmware-misc-nonfree
 firmware-linux-nonfree
 amd64-microcode
 intel-microcode
+# AMD iGPU/dGPU compute & display userspace (RADV). Mesa RADV + the amdgpu
+# kernel driver is the on-box GPU path: the Vulkan llama.cpp backend offloads
+# to a Radeon 8060S / 700-series card with no ROCm install and no /dev/kfd.
+# libvulkan1 is the Vulkan loader llama-server needs at runtime; vulkan-tools
+# gives operators `vulkaninfo` for GPU debugging; mesa-utils provides glxinfo.
+mesa-vulkan-drivers
+libvulkan1
+vulkan-tools
+mesa-utils
 
 syslinux-utils

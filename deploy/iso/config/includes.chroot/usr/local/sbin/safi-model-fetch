@@ -38,6 +38,7 @@ CACHE_DIR = Path("/var/cache/safi-models")
 MODEL_ROOT = Path("/var/lib/safi/models")
 CPU_HOME = Path("/opt/safi/bin")
 CUDA_HOME = Path("/opt/safi/cuda")
+VULKAN_HOME = Path("/opt/safi/vulkan")
 
 ENV_FILE = Path("/etc/safi/llama-server.env")
 UNIT_PATH = Path("/etc/systemd/system/safi-llama-server.service")
@@ -112,6 +113,7 @@ def build_plan(catalogue: dict, model: dict, backend: dict) -> list[dict]:
                 "size": int(asset["size"]),
                 "sha256": asset["sha256"],
                 "archive": True,
+                "home": backend.get("home"),
             })
     steps.append({
         "kind": "model",
@@ -227,6 +229,20 @@ def download(step: dict, progress) -> Path:
 # install
 # --------------------------------------------------------------------------
 
+def _place(src: Path, dst: Path) -> None:
+    """Copy src into dst through a sibling temp file and an atomic rename.
+
+    A plain copy onto a live path fails with ETXTBSY when that path is the
+    running model server or one of its mapped .so files (re-activating the
+    backend that is currently serving hits exactly this). os.replace only swaps
+    the directory entry, so the running server keeps its old inode and the new
+    binary takes effect on the next start.
+    """
+    tmp = dst.with_name(dst.name + ".safi-new")
+    shutil.copy2(src, tmp)
+    os.replace(tmp, dst)
+
+
 def install_backend(archive: Path, dest: Path) -> None:
     """Flatten a llama.cpp release archive into one directory.
 
@@ -246,11 +262,11 @@ def install_backend(archive: Path, dest: Path) -> None:
             raise FetchError(
                 f"no llama-server binary inside {archive.name}; the pinned "
                 "release layout changed and this script needs updating.")
-        shutil.copy2(servers[0], dest / "llama-server")
+        _place(servers[0], dest / "llama-server")
         dest.joinpath("llama-server").chmod(0o755)
         for lib in tmp.rglob("*.so*"):
             if lib.is_file():
-                shutil.copy2(lib, dest / lib.name)
+                _place(lib, dest / lib.name)
 
 
 def _safe_extract(tar: tarfile.TarFile, dest: Path) -> None:
@@ -421,25 +437,41 @@ def physical_core_count() -> int:
     return max(1, os.cpu_count() or 1)
 
 
-def render_env_file(catalogue: dict, backend: dict) -> str:
+def render_env_file(catalogue: dict, backend: dict, model: dict | None = None) -> str:
     gpu_layers = 99 if backend.get("gpu") else 0
+    model = model or {}
+    ctx = int(model.get("context_size") or catalogue.get("context_size", 8192))
     return (
         "# Written by safi-model-fetch. Operators may retune these without\n"
         "# changing SAFi's provider configuration; the server stays loopback-only.\n"
-        f"SAFI_LOCAL_MODEL_CONTEXT={int(catalogue.get('context_size', 8192))}\n"
+        f"SAFI_LOCAL_MODEL_CONTEXT={ctx}\n"
         f"SAFI_LOCAL_MODEL_THREADS={physical_core_count()}\n"
         f"SAFI_LOCAL_MODEL_GPU_LAYERS={gpu_layers}\n"
     )
 
 
-def render_unit(binary: str, lib_dir: str, model_path: str, alias: str) -> str:
+def render_unit(binary: str, lib_dir: str, model_path: str, alias: str,
+                extra_args: list[str] | None = None, reasoning: str = "off",
+                reasoning_effort: str | None = None) -> str:
     """Render the model server unit.
 
     The readiness probe is inherited from the build-time unit deliberately: a
     20 GB model can take minutes to mmap and the KV cache to allocate, and
     without it systemd reports "started" for a process that is not yet
     answering, and the first SAFi request fails.
+
+    extra_args are per-model launch flags from the catalogue (e.g. the tuned
+    Qwen3.8-27B MTP/flash-attention/KV recipe), verified against the pinned
+    build before being added there.
+
+    reasoning is per-model data, defaulting to off: thinking spends tokens on
+    every answer, so only a model that earns it (the flagship Qwen3.8-27B,
+    medium effort) turns it on, and the effort level rides along only when on.
     """
+    tuned = " ".join(extra_args) if extra_args else ""
+    reasoning_flags = f"--reasoning {reasoning}"
+    if reasoning == "on" and reasoning_effort:
+        reasoning_flags += f" --reasoning-effort {reasoning_effort}"
     return f"""[Unit]
 Description=SAFi local OpenAI-compatible model server
 After=network.target local-fs.target
@@ -449,9 +481,10 @@ Before=safi.service safi-browser-setup.service
 Type=simple
 User=safi
 Group=safi
+SupplementaryGroups=render video
 EnvironmentFile={ENV_FILE}
 Environment=LD_LIBRARY_PATH={lib_dir}
-ExecStart={binary} --model {model_path} --host 127.0.0.1 --port 8081 --alias {alias} --ctx-size ${{SAFI_LOCAL_MODEL_CONTEXT}} --threads ${{SAFI_LOCAL_MODEL_THREADS}} --n-gpu-layers ${{SAFI_LOCAL_MODEL_GPU_LAYERS}} --reasoning off
+ExecStart={binary} --model {model_path} --host 127.0.0.1 --port 8081 --alias {alias} --ctx-size ${{SAFI_LOCAL_MODEL_CONTEXT}} --threads ${{SAFI_LOCAL_MODEL_THREADS}} --n-gpu-layers ${{SAFI_LOCAL_MODEL_GPU_LAYERS}} {tuned} {reasoning_flags}
 Restart=on-failure
 RestartSec=5
 TimeoutStartSec=900
@@ -465,17 +498,22 @@ WantedBy=multi-user.target
 
 
 def install_unit(catalogue: dict, model: dict, backend: dict, model_path: Path) -> None:
-    gpu = bool(backend.get("gpu"))
-    home = CUDA_HOME if gpu else CPU_HOME
+    # Each backend declares its own install home in the catalogue (the llm-app
+    # trees /opt/safi/bin|cuda|vulkan). Fall back to the historical constants
+    # so an older catalogue that predates the "home" field still works.
+    home = Path(backend.get("home") or (CUDA_HOME if backend.get("gpu") else CPU_HOME))
     binary = home / "llama-server"
     if not binary.exists():
         raise FetchError(f"expected llama-server at {binary}, which is missing")
 
     ENV_FILE.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
-    ENV_FILE.write_text(render_env_file(catalogue, backend), encoding="utf-8")
+    ENV_FILE.write_text(render_env_file(catalogue, backend, model), encoding="utf-8")
     ENV_FILE.chmod(0o644)
     UNIT_PATH.write_text(
-        render_unit(str(binary), str(home), str(model_path), model["alias"]),
+        render_unit(str(binary), str(home), str(model_path), model["alias"],
+                    model.get("llama_args"),
+                    reasoning=model.get("reasoning", "off"),
+                    reasoning_effort=model.get("reasoning_effort")),
         encoding="utf-8")
     UNIT_PATH.chmod(0o644)
 
@@ -593,7 +631,7 @@ def main(argv: list[str] | None = None) -> int:
             cached = download(step, progress)
             if step["kind"] == "backend":
                 write_status(phase="installing", label=f"Installing {step['name']}")
-                install_backend(cached, CUDA_HOME)
+                install_backend(cached, Path(step.get("home") or CUDA_HOME))
                 cached.unlink(missing_ok=True)
             elif step["kind"] == "jev_local":
                 # Held in the cache, not moved: the bundle is only coherent as a

@@ -156,6 +156,35 @@ to the preseeded default, historically used for debugging).
  | `↳ etc/systemd/system/safi-console.service` | owns tty1 after setup completes |
  | `↳ usr/local/sbin/safi` | operator CLI (status/health/logs/restart/backup/cert/update/doctor) |
 
+## AMD Strix Halo (GMKtec EVO-X2) support
+
+The appliance ships the Mesa RADV Vulkan stack and a Vulkan llama.cpp backend, so an
+AMD Strix Halo APU (Radeon 8060S / gfx1151) gets GPU inference with no ROCm install and
+no `/dev/kfd`. `safi_local` probes `/sys/class/drm` for an amdgpu-bound card, sizes GPU
+memory from the TTM GTT pool (not the small UMA carve-out), and the setup wizard picks
+the `vulkan` backend and pre-selects the tuned flagship **Qwen3.8-27B** (`Q4_K_M`,
+~16.8 GB). Its launch flags — native `draft-mtp` speculation, flash attention, Q8 KV —
+are part of the catalogue entry and are verified against the pinned b11205 build; the
+result is ~26 tok/s on this SoC, matching independent measurements on the same box.
+
+Machine notes:
+
+- **BIOS first.** The EVO-X2 defaults to a huge UMA Frame Buffer, which on the 64 GB
+  SKU leaves the OS seeing only ~32 GB. In BIOS set
+  `Advanced → AMD CBS → NBIO → GFX Configuration → UMA Frame Buffer Size` to minimum
+  (512 MB); the wizard's backend line also reports the carve-out when it is large so
+  the problem is visible on-box. This is not something the ISO can fix.
+- **GTT pool.** The kernel caps GPU-mappable memory at ~50% of RAM; the GRUB line
+  seeds `ttm.pages_limit=14680064` (~56 GiB, tuned for the 64 GB SKU) and a
+  `safi-gpu-tune` oneshot re-widens it to ~88% of RAM at every boot (handles the
+  newer `amdttm` module too). A 128 GB SKU needs no change: the tuner raises it past
+  the seed value; the 120 GiB ceiling lives in the script.
+- **ROCm is deliberately not shipped.** AMD's ROCm apt repository targets Ubuntu only;
+  Debian 13 (trixie) is unsupported, so a ROCm runtime would be a manual `.deb`
+  extraction. The Vulkan path needs none of it. The ROCmFPX fork + ROCm 10 "36 tok/s"
+  SGUF route (julianmb/q38rocm) is a valid research opt-in, but it binds the appliance
+  to a custom engine fork and a fork-locked FP4 quant, so it is out of the ISO.
+
 ## Design decisions
 
 - **Bare metal, not Docker.** Production runs bare metal

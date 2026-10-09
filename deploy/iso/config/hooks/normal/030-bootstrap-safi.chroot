@@ -83,6 +83,11 @@ ln -sf /etc/systemd/system/safi-net-prep.service \
        /etc/systemd/system/multi-user.target.wants/safi-net-prep.service
 ln -sf /etc/systemd/system/safi-wifi-autoconnect.service \
        /etc/systemd/system/multi-user.target.wants/safi-wifi-autoconnect.service
+# The GPU tuner must come up before the setup wizard or the local model server
+# so the widened TTM pool and locked clocks are in place before any fetch or
+# generation starts. Ordered via the unit's Before= on the services above.
+ln -sf /etc/systemd/system/safi-gpu-tune.service \
+       /etc/systemd/system/multi-user.target.wants/safi-gpu-tune.service
 
 # Keep the post-setup status dashboard on tty1. It never accepts local login;
 # SSH is the only operator shell access path.

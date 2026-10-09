@@ -57,10 +57,17 @@ ln -sf /usr/local/sbin/safi /usr/local/bin/safi
 # `safi network show` also reports a configured interface that has gone missing
 # and names the MAC that moved. (Proxmox additionally ships a .link pinning
 # tool for per-MAC names; that is the natural follow-up if we ever need it.)
+#
+# ttm.pages_limit raises the amdgpu TTM GTT pool from its 50%-of-RAM default so
+# an APU (Strix Halo iGPU) can use far more unified memory for llama.cpp Vulkan
+# offload. 14680064 pages = ~56 GiB, tuned for a 64 GB EVO-X2. safi-gpu-tune
+# re-widens it to ~88% of RAM on every boot anyway (it is a writable sysfs
+# knob), so this value only seeds the pre-boot early allocations; do NOT mirror
+# it to a 128 GB box without bumping it, that's the tuner's job once booted.
 if grep -q '^GRUB_CMDLINE_LINUX_DEFAULT=' /etc/default/grub; then
-    sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="quiet splash net.naming-scheme=v252"/' /etc/default/grub
+    sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="quiet splash net.naming-scheme=v252 ttm.pages_limit=14680064"/' /etc/default/grub
 else
-    printf '%s\n' 'GRUB_CMDLINE_LINUX_DEFAULT="quiet splash net.naming-scheme=v252"' >>/etc/default/grub
+    printf '%s\n' 'GRUB_CMDLINE_LINUX_DEFAULT="quiet splash net.naming-scheme=v252 ttm.pages_limit=14680064"' >>/etc/default/grub
 fi
 # Use the SAFi Plymouth theme in the installed system and include it in the
 # generated initramfs, so the branded splash is available from the first boot.

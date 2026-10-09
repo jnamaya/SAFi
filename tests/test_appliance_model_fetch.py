@@ -9,6 +9,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import shutil
 import tarfile
 from pathlib import Path
 
@@ -197,6 +198,30 @@ def test_unit_keeps_the_loopback_only_posture(catalogue):
     assert "0.0.0.0" not in unit
 
 
+def test_tuned_amd_model_gets_the_vulkan_tree_and_flags(catalogue):
+    # The EVO-X2 flagship must land in /opt/safi/vulkan with its per-model
+    # context (64K via YaRN), the verified b11205 MTP/flash/Q8-KV flags, and
+    # its reasoning settings read from the catalogue rather than hardcoded.
+    model = safi_local.model_by_id(catalogue, "qwen3.8-27b")
+    backend = catalogue["backends"]["vulkan"]
+    env = fetch.render_env_file(catalogue, backend, model)
+    assert "SAFI_LOCAL_MODEL_GPU_LAYERS=99" in env
+    assert "SAFI_LOCAL_MODEL_CONTEXT=65536" in env
+    unit = fetch.render_unit("/opt/safi/vulkan/llama-server", "/opt/safi/vulkan",
+                             "/var/lib/safi/models/qwen3.8-27b/m.gguf", model["alias"],
+                             model.get("llama_args"),
+                             reasoning=model.get("reasoning", "off"),
+                             reasoning_effort=model.get("reasoning_effort"))
+    assert "ExecStart=/opt/safi/vulkan/llama-server" in unit
+    assert "LD_LIBRARY_PATH=/opt/safi/vulkan" in unit
+    assert "--spec-type draft-mtp" in unit
+    assert "--spec-draft-n-max 3" in unit
+    assert "-fa on" in unit
+    assert "-ctk q8_0 -ctv q8_0" in unit
+    assert "--rope-scaling yarn --rope-scale 2 --yarn-orig-ctx 32768" in unit
+    assert "--reasoning on --reasoning-effort medium" in unit
+
+
 def test_unit_alias_is_the_detect_provider_prefix(catalogue):
     # Phase 1 made detect_provider route the whole safi- prefix to local. A unit
     # published under any other alias would silently be sent to groq.
@@ -221,6 +246,21 @@ def test_unit_expands_context_from_the_env_file(catalogue):
     assert "EnvironmentFile=" in unit
     assert "--ctx-size ${SAFI_LOCAL_MODEL_CONTEXT}" in unit
     assert "--reasoning off" in unit
+
+
+def test_reasoning_is_off_unless_the_catalogue_turns_it_on(catalogue):
+    # Thinking costs tokens on every answer, so off is the default, and a
+    # stale effort field must not smuggle reasoning flags in while off.
+    unit = fetch.render_unit("/b", "/l", "/m.gguf", "safi-qwen3-8b")
+    assert "--reasoning off" in unit
+    assert "--reasoning-effort" not in unit
+    unit = fetch.render_unit("/b", "/l", "/m.gguf", "safi-qwen3-8b",
+                             reasoning="off", reasoning_effort="high")
+    assert "--reasoning off" in unit
+    assert "--reasoning-effort" not in unit
+    unit = fetch.render_unit("/b", "/l", "/m.gguf", "safi-qwen3-8b",
+                             reasoning="on", reasoning_effort="high")
+    assert "--reasoning on --reasoning-effort high" in unit
 
 
 # --------------------------------------------------------------------------
@@ -248,6 +288,32 @@ def test_install_backend_flattens_server_and_libraries(tmp_path):
     assert (dest / "libllama.so").exists()
     assert (dest / "libggml-cpu-haswell.so").exists()
     assert not (dest / "build").exists()
+
+
+def test_install_backend_never_writes_the_live_path_in_place(tmp_path, monkeypatch):
+    # Re-activating the backend that is currently serving must not open the
+    # live binary (or its mapped .so files) for writing: that raises ETXTBSY.
+    # The new files land via a temp name and os.replace instead.
+    dest = tmp_path / "out"
+    dest.mkdir()
+    (dest / "llama-server").write_bytes(b"old")
+    archive = _make_archive(tmp_path / "llama.tar.gz", {
+        "llama-server": b"new",
+        "libllama.so": b"lib",
+    })
+    seen = []
+    real_copy2 = shutil.copy2
+
+    def spy(src, dst, *args, **kwargs):
+        seen.append(str(dst))
+        return real_copy2(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(fetch.shutil, "copy2", spy)
+    fetch.install_backend(archive, dest)
+    assert str(dest / "llama-server") not in seen
+    assert str(dest / "libllama.so") not in seen
+    assert (dest / "llama-server").read_bytes() == b"new"
+    assert not list(dest.glob("*.safi-new"))
 
 
 def test_install_backend_collects_libraries_from_a_sibling_tree(tmp_path):
@@ -417,6 +483,9 @@ def test_activating_an_already_downloaded_model_downloads_nothing(tmp_path, monk
     cpu_home = tmp_path / "opt/bin"
     cpu_home.mkdir(parents=True)
     (cpu_home / "llama-server").write_text("#!/bin/sh\n")
+    # install_unit resolves the install home from the backend's catalogue field
+    # now, so the test's temp tree must be the home the catalogue declares.
+    catalogue["backends"]["cpu"]["home"] = str(cpu_home)
     monkeypatch.setattr(fetch, "CPU_HOME", cpu_home)
 
     def _no_downloads(step, *a, **kw):

@@ -145,6 +145,85 @@ def test_broken_nvidia_driver_is_not_treated_as_cpu_only_quietly(catalogue):
 
 
 # --------------------------------------------------------------------------
+# AMD / Vulkan backend selection
+# --------------------------------------------------------------------------
+
+def _amd_hw(vram, carve=0):
+    hw = _hw(vram=vram, driver=0, usable=True, vendor="amd")
+    hw["gpu"]["name"] = "AMD Radeon 8060S"
+    hw["gpu"]["carve_out_bytes"] = carve
+    hw["gpu"]["ttm_pool_bytes"] = vram
+    return hw
+
+
+def test_amd_gpu_selects_vulkan(catalogue):
+    hw = _amd_hw(vram=56 << 30)
+    assert safi_local.select_backend(catalogue, hw) == "vulkan"
+
+
+def test_amd_vulkan_backend_is_fully_pinned(catalogue):
+    backend = catalogue["backends"]["vulkan"]
+    assert backend["id"] == "vulkan"
+    assert backend["on_iso"] is False
+    assert backend["vendors"] == ["amd"]
+    assert backend["home"] == "/opt/safi/vulkan"
+    assets = backend["assets"]
+    assert len(assets) == 1
+    assert "vulkan" in assets[0]["url"]
+    assert len(assets[0]["sha256"]) == 64
+    assert assets[0]["size"] == 31346600
+    assert safi_local.backend_download_bytes(catalogue, "vulkan") == assets[0]["size"]
+
+
+def test_cuda_backends_are_scoped_to_nvidia_and_carry_a_home(catalogue):
+    for key, backend in catalogue["backends"].items():
+        if key.startswith("cuda"):
+            assert backend["vendors"] == ["nvidia"], key
+            assert backend["home"].startswith("/opt/safi/"), key
+    assert catalogue["backends"]["cpu"]["home"] == "/opt/safi/bin"
+
+
+def test_amd_gpu_is_not_offered_cuda(catalogue):
+    # A CUDA backend for an nvidia vendor must not win for an AMD card even at
+    # an arbitrary high driver number: vendor scoping is the gate.
+    hw = _amd_hw(vram=56 << 30)
+    hw["gpu"]["driver_major"] = 595
+    assert safi_local.select_backend(catalogue, hw) == "vulkan"
+
+
+def test_huge_uma_carve_out_is_surfaced(catalogue):
+    hw = _amd_hw(vram=32 << 30, carve=28 << 30)
+    reason = safi_local.backend_reason(catalogue, hw, "vulkan")
+    assert "UMA Frame Buffer" in reason
+    assert "28 GiB" in reason
+
+
+def test_qwen3_8_27b_is_the_amd_flagship(catalogue):
+    entry = safi_local.model_by_id(catalogue, "qwen3.8-27b")
+    assert entry["optimized_for"] == ["amd"]
+    # Verified-compatible with the pinned b11205 Vulkan build.
+    assert entry["llama_args"][:2] == ["--spec-type", "draft-mtp"]
+    assert "-fa" in entry["llama_args"] and "-ctv" in entry["llama_args"]
+    hw = _amd_hw(vram=56 << 30)
+    hw2 = dict(hw)
+    hw2["ram_bytes"] = 60 << 30
+    hw2["disk_free_bytes"] = 100 << 30
+    backend = safi_local.select_backend(catalogue, hw2)
+    results = {r["id"]: r for r in safi_local.evaluate_models(catalogue, hw2, backend)}
+    assert results["qwen3.8-27b"]["fits"] is True
+    assert results["qwen3.8-27b"]["recommended"] is True
+
+
+def test_flagship_does_not_override_small_vm_tuning(catalogue):
+    hw = _hw(ram=8 << 30, disk=100 << 30)
+    results = {r["id"]: r for r in safi_local.evaluate_models(catalogue, hw, "cpu")}
+    assert results["qwen3.8-27b"]["fits"] is False
+    # Small-VM behaviour unchanged: only the largest fitting model is marked.
+    recommended = [r["id"] for r in results.values() if r["recommended"]]
+    assert recommended == ["qwen3-4b"]
+
+
+# --------------------------------------------------------------------------
 # fit evaluation
 # --------------------------------------------------------------------------
 

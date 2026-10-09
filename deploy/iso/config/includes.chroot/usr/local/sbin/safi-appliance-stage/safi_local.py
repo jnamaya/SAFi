@@ -203,6 +203,96 @@ def _cpu_flags() -> set[str]:
     return set()
 
 
+def _ttm_pool_bytes() -> int:
+    """Bytes of GPU-mappable shared RAM (the TTM GTT pool).
+
+    On an APU the Vulkan heap llama.cpp allocates is this pool, not the small
+    UMA carve-out reported as VRAM. The kernel ships the knob either as the
+    ttm module (6.12 era) or amdttm (newer); read whichever is present. Default
+    is ~50% of RAM, which is why a 64/128 GB Strix Halo still needs the boot
+    param raised to be offered a 27B at full context.
+    """
+    for param in ("/sys/module/ttm/parameters/pages_limit",
+                  "/sys/module/amdttm/parameters/pages_limit"):
+        try:
+            pages = int(Path(param).read_text().strip())
+        except (OSError, ValueError):
+            continue
+        page_size = os.sysconf("SC_PAGE_SIZE") if hasattr(os, "sysconf") else 4096
+        if pages > 0:
+            return pages * page_size
+    return 0
+
+
+def _amd_gpu() -> dict:
+    """Probe the first amdgpu-bound card via sysfs (RADV, no ROCm install).
+
+    AVX-friendly and offline-stable (no subprocesses), matching the "never
+    raises, degrade to zero" contract of the rest of the probe. vram_bytes is
+    deliberately NOT the UMA carve-out: an APU's usable GPU memory is max of the
+    carve-out and the TTM GTT pool, which is what Vulkan actually allocates.
+    """
+    drm = Path("/sys/class/drm")
+    if not drm.is_dir():
+        return {}
+    for card in sorted(drm.glob("card*")):
+        device = card / "device"
+        if not device.is_dir():
+            continue
+        try:
+            if (device / "vendor").read_text().strip() != "0x1002":
+                continue
+        except OSError:
+            continue
+        try:
+            driver = Path(os.readlink(device / "driver")).name
+        except OSError:
+            driver = ""
+        if driver != "amdgpu":
+            continue
+        vram_carve = 0
+        try:
+            with open(device / "mem_info_vram_total", encoding="utf-8") as handle:
+                vram_carve = int(handle.read().strip())
+        except (OSError, ValueError):
+            pass
+        name = "AMD Radeon"
+        for key in ("product_name", "product_number"):
+            try:
+                value = (device / key).read_text().strip()
+            except OSError:
+                continue
+            if value:
+                name = value
+                break
+        carve_gb = vram_carve // _GIB
+        gtt = _ttm_pool_bytes()
+        ram = _memtotal_bytes()
+        vram = max(vram_carve, gtt)
+        if ram and vram > ram:
+            vram = ram
+        reason = ""
+        if carve_gb > 4:
+            # Strix Halo BIOSes default to a huge UMA frame buffer. On a 64 GB
+            # EVO-X2 that is why the OS only sees ~32 GB: the rest is reserved
+            # for the GPU. It works, but it leaves half the machine unusable by
+            # anything else. Tell the operator how to get the RAM back.
+            reason = (f"BIOS reserves {carve_gb} GiB as GPU VRAM (UMA Frame Buffer); "
+                      "set Advanced > AMD CBS > NBIO > GFX Configuration > "
+                      "UMA Frame Buffer Size to minimum to reclaim RAM")
+        return {
+            "vendor": "amd",
+            "name": name,
+            "driver_major": 0,
+            "vram_bytes": vram,
+            "carve_out_bytes": vram_carve,
+            "ttm_pool_bytes": gtt,
+            "usable": True,
+            "reason": reason,
+        }
+    return {}
+
+
 def _nvidia_gpu() -> dict:
     """Probe NVIDIA via nvidia-smi.
 
@@ -265,11 +355,19 @@ def detect_hardware(disk_path: str = "/var/lib") -> dict:
         disk_free = 0
 
     gpu = _nvidia_gpu()
-    if not gpu.get("usable") and Path("/sys/class/kfd").exists():
-        # Detect it so the picker can say "AMD GPU seen, not supported by this
-        # build" instead of pretending the machine has no accelerator.
-        gpu = {"vendor": "amd", "usable": False, "vram_bytes": 0,
-               "reason": "AMD GPU detected; this appliance build ships an NVIDIA CUDA backend only"}
+    if not gpu.get("usable"):
+        amd = _amd_gpu()
+        if amd:
+            # AMD offload runs on the Mesa RADV Vulkan backend, which the ISO
+            # ships; no /dev/kfd or ROCm userspace is consulted here. A nvidia
+            # probe failure is still surfaced as vendor=="nvidia" upstream, and
+            # an amdgpu-bound card never reaches this branch.
+            gpu = amd
+        elif Path("/sys/class/kfd").exists():
+            # An AMD GPU panel is present but amdgpu did not bind a card (e.g.
+            # firmware missing). Say so instead of pretending there is none.
+            gpu = {"vendor": "amd", "usable": False, "vram_bytes": 0,
+                   "reason": "AMD GPU detected but the amdgpu driver bound no card"}
 
     return {
         "ram_bytes": _memtotal_bytes(),
@@ -293,9 +391,14 @@ def describe_hardware(hardware: dict) -> str:
         parts.append("no AVX2 (slow inference)")
     gpu = hardware.get("gpu") or {}
     if gpu.get("usable"):
-        parts.append(f"{gpu.get('name', 'GPU')} {ram_gb(gpu.get('vram_bytes', 0))} VRAM")
+        label = "GPU memory" if gpu.get("vendor") == "amd" else "VRAM"
+        parts.append(f"{gpu.get('name', 'GPU')} {ram_gb(gpu.get('vram_bytes', 0))} {label}")
+        if gpu.get("reason"):
+            # The UMA carve-out complaint is the one hardware finding the
+            # operator can act on, and it is short enough for the strip.
+            parts.append(gpu.get("reason"))
     elif gpu.get("vendor") == "amd":
-        parts.append("AMD GPU (unsupported)")
+        parts.append("AMD GPU (not usable)")
     else:
         parts.append("no usable GPU")
     return " · ".join(parts)
@@ -308,9 +411,12 @@ def describe_hardware(hardware: dict) -> str:
 def select_backend(catalogue: dict, hardware: dict, prefer_cpu: bool = False) -> str:
     """Pick the richest backend this box can actually load.
 
-    Thresholds come from each backend's min_driver in the catalogue, so adding
-    a CUDA 14 tier is a data change. The newest satisfied tier wins, which is
-    what makes a r580+ host take 13.4 while a r535 host takes 12.8.
+    Thresholds come from each backend's min_driver in the catalogue, plus the
+    GPU's vendor: a CUDA backend is only eligible for an nvidia card and the
+    Vulkan backend only for an amd one, so an AMD Strix Halo iGPU lands on
+    Vulkan instead of being told the "strongest" backend needs a driver it can
+    never have. Adding a tier is a data change. The newest satisfied tier wins,
+    which is what makes a r580+ host take 13.4 while a r535 host takes 12.8.
     """
     if prefer_cpu:
         return "cpu"
@@ -318,10 +424,13 @@ def select_backend(catalogue: dict, hardware: dict, prefer_cpu: bool = False) ->
     if not gpu.get("usable"):
         return "cpu"
     driver = gpu.get("driver_major") or 0
+    vendor = gpu.get("vendor")
     eligible = [
         (int(spec.get("min_driver", 0)), backend_id)
         for backend_id, spec in catalogue.get("backends", {}).items()
-        if spec.get("gpu") and driver >= int(spec.get("min_driver", 0))
+        if spec.get("gpu")
+        and driver >= int(spec.get("min_driver", 0))
+        and (not spec.get("vendors") or vendor in spec.get("vendors"))
     ]
     if not eligible:
         return "cpu"
@@ -336,11 +445,19 @@ def backend_reason(catalogue: dict, hardware: dict, backend_id: str) -> str:
         if gpu.get("usable"):
             return f"CPU only (driver {gpu.get('driver_major', '?')} below this backend's minimum)"
         return gpu.get("reason") or "CPU only"
-    return f"{backend.get('label', backend_id)} on {gpu.get('name', 'GPU')}"
+    label = backend.get("label", backend_id)
+    if gpu.get("vendor") == "amd":
+        text = f"{label} on {gpu.get('name', 'AMD GPU')}"
+        carve = gpu.get("carve_out_bytes") or 0
+        if carve // _GIB > 4:
+            text += (f" · BIOS reserves {carve // _GIB} GiB as VRAM; "
+                     "set UMA Frame Buffer Size to minimum to reclaim RAM")
+        return text
+    return f"{label} on {gpu.get('name', 'GPU')}"
 
 
 def estimate_ram(model: dict, catalogue: dict) -> int:
-    ctx = int(catalogue.get("context_size", 8192))
+    ctx = int(model.get("context_size") or catalogue.get("context_size", 8192))
     return int(model["size"]) + int(model["kv_bytes_per_token"]) * ctx \
         + int(catalogue.get("overhead_bytes", 0))
 
@@ -354,7 +471,7 @@ def estimate_vram(model: dict, catalogue: dict) -> int:
     must not be read as "any GPU will do", or a 2 GB card would be offered full
     offload of a 2.5 GB model.
     """
-    ctx = int(catalogue.get("context_size", 8192))
+    ctx = int(model.get("context_size") or catalogue.get("context_size", 8192))
     return int(model["size"]) + int(model["kv_bytes_per_token"]) * ctx
 
 
@@ -422,6 +539,34 @@ def evaluate_models(catalogue: dict, hardware: dict, backend_id: str) -> list[di
 
     fitting = [r for r in results if r["fits"]]
     if fitting:
-        largest = max(fitting, key=lambda r: r["size"])
+        # A model explicitly tuned for a GPU vendor (optimized_for) wins the
+        # recommendation on a matching box, so an AMD Strix Halo pre-selects
+        # the engine this ISO is tuned around (Qwen3.8-27B) rather than the
+        # biggest file that fits. On any other box those vendor-targeted
+        # flagships are excluded from the recommendation pool entirely: they
+        # stay selectable, but a 27B "recommended" on a CPU-only appliance
+        # would be technically true and practically useless. Falls back to the
+        # plain largest-fits rule otherwise, keeping the small-VM behaviour.
+        by_id = {m["id"]: m for m in models(catalogue)}
+        gpu_vendor = (hardware.get("gpu") or {}).get("vendor")
+        if gpu_ok and gpu_vendor:
+            flagship = [
+                r for r in fitting
+                if gpu_vendor in (by_id.get(r["id"], {}).get("optimized_for") or [])
+            ]
+            if flagship:
+                largest = max(flagship, key=lambda r: r["size"])
+            else:
+                def _suppressed(r):
+                    targets = by_id.get(r["id"], {}).get("optimized_for") or []
+                    return targets and gpu_vendor not in targets
+                pool = [r for r in fitting if not _suppressed(r)] or fitting
+                largest = max(pool, key=lambda r: r["size"])
+        else:
+            pool = [
+                r for r in fitting
+                if not (by_id.get(r["id"], {}).get("optimized_for") or [])
+            ] or fitting
+            largest = max(pool, key=lambda r: r["size"])
         largest["recommended"] = True
     return results
