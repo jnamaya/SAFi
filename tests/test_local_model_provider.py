@@ -1,6 +1,8 @@
 """Pure routing tests for the bundled OpenAI-compatible appliance model."""
 from types import SimpleNamespace
 
+import pytest
+
 from safi_app.core.services.model_routing import (
     build_providers_config,
     detect_provider,
@@ -155,3 +157,119 @@ def test_the_ceiling_is_configurable(monkeypatch):
     monkeypatch.setattr(mod, "LOCAL_MAX_TOKENS", 2048)
     provider, sink = _provider_for("local")
     assert _call(provider, sink, 8192) == 2048
+
+
+# --------------------------------------------------------------------------
+# malformed / truncated tool calls
+# --------------------------------------------------------------------------
+
+class _StubFunction:
+    def __init__(self, name, arguments):
+        self.name = name
+        self.arguments = arguments
+
+
+class _StubToolCall:
+    def __init__(self, name, arguments):
+        self.id = "call_1"
+        self.function = _StubFunction(name, arguments)
+
+
+class _ToolCallMessage:
+    def __init__(self, name, arguments):
+        self.content = None
+        self.tool_calls = [_StubToolCall(name, arguments)]
+
+
+class _ToolCallChoice:
+    def __init__(self, name, arguments, finish_reason):
+        self.message = _ToolCallMessage(name, arguments)
+        self.finish_reason = finish_reason
+
+
+class _ToolCallResponse:
+    def __init__(self, name, arguments, finish_reason):
+        self.choices = [_ToolCallChoice(name, arguments, finish_reason)]
+        self.usage = _StubUsage()
+
+
+class _ToolCallCompletions:
+    def __init__(self, name, arguments, finish_reason):
+        self._name = name
+        self._arguments = arguments
+        self._finish_reason = finish_reason
+
+    async def create(self, **params):
+        return _ToolCallResponse(self._name, self._arguments, self._finish_reason)
+
+
+class _ToolCallClient:
+    def __init__(self, name, arguments, finish_reason):
+        completions = _ToolCallCompletions(name, arguments, finish_reason)
+        self.chat = type("_Chat", (), {"completions": completions})()
+
+
+def _provider_returning_tool_call(name, arguments, finish_reason):
+    import logging
+
+    from safi_app.core.services.llm_provider import LLMProvider
+
+    provider = LLMProvider.__new__(LLMProvider)
+    provider.config = {
+        "providers": {"local": {"type": "openai", "api_key": "x", "base_url": "http://x/v1"}},
+        "routes": {"intellect": {"provider": "local", "model": "m"}},
+    }
+    provider.log = logging.getLogger("test")
+    provider.clients = {"local": _ToolCallClient(name, arguments, finish_reason)}
+    provider._org_clients = {}
+    return provider
+
+
+def _run(provider):
+    import asyncio
+
+    return asyncio.run(
+        provider._chat_completion(
+            route="intellect", system_prompt="s", user_prompt="u", max_tokens=8192
+        )
+    )
+
+
+def test_a_valid_tool_call_is_returned_as_json():
+    provider = _provider_returning_tool_call("write_file", '{"path": "/tmp/foo"}', "tool_calls")
+    result = _run(provider)
+    import json
+
+    payload = json.loads(result)
+    assert payload["tool_calls"][0]["name"] == "write_file"
+    assert payload["tool_calls"][0]["arguments"] == {"path": "/tmp/foo"}
+
+
+def test_truncated_tool_call_arguments_raise_an_actionable_error():
+    # The exact shape the coder emits when the output cap cuts it off mid-string:
+    # json.loads used to die here with an opaque JSONDecodeError that surfaced as
+    # "could not reach the language model".
+    provider = _provider_returning_tool_call("write_file", '{"path": "/tmp/foo', "length")
+    with pytest.raises(RuntimeError) as exc:
+        _run(provider)
+    assert "tool call arguments" in str(exc.value).lower()
+    assert "truncated" in str(exc.value).lower()
+
+
+def test_malformed_tool_call_arguments_report_a_parse_failure():
+    provider = _provider_returning_tool_call("write_file", "not json at all", "stop")
+    with pytest.raises(RuntimeError) as exc:
+        _run(provider)
+    assert "tool call arguments" in str(exc.value).lower()
+
+
+def test_explain_provider_error_maps_a_bad_tool_call_to_the_output_cap():
+    from safi_app.core.services.llm_provider import LLMProvider
+
+    exc = RuntimeError(
+        "the model's tool call arguments were not valid JSON (empty); the generation "
+        "was truncated at the output-token cap before the arguments closed"
+    )
+    message = LLMProvider.explain_provider_error(exc)
+    assert "tool call" in message.lower()
+    assert "SAFI_LOCAL_MAX_TOKENS" in message

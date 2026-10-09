@@ -25,7 +25,8 @@ import httpx
 from .parsing_utils import (
     parse_intellect_response,
     parse_will_response,
-    parse_conscience_response
+    parse_conscience_response,
+    robust_json_parse,
 )
 
 # The Conscience's sampling temperature is a governance parameter, not a
@@ -660,15 +661,32 @@ class LLMProvider:
 
             msg = resp.choices[0].message
             if msg.tool_calls:
-                return json.dumps({
-                    "tool_calls": [
-                        {
-                            "id": tc.id,
-                            "name": tc.function.name,
-                            "arguments": json.loads(tc.function.arguments)
-                        } for tc in msg.tool_calls
-                    ]
-                })
+                finish_reason = getattr(resp.choices[0], "finish_reason", None)
+                calls = []
+                for tc in msg.tool_calls:
+                    # Parse through the module's single JSON authority rather
+                    # than raw json.loads: a tool-call's arguments arrive as a
+                    # string the model may malform (LaTeX escapes, trailing
+                    # commas) or, when the output cap is hit, never close at all.
+                    # Raw json.loads turned that last case into an opaque
+                    # "Unterminated string" that read as an unreachable provider
+                    # (see explain_provider_error's tool-call branch).
+                    arguments = robust_json_parse(tc.function.arguments or "", self.log)
+                    if "error" in arguments:
+                        raise RuntimeError(
+                            "the model's tool call arguments were not valid JSON "
+                            f"({arguments.get('error')}); "
+                            + ("the generation was truncated at the output-token cap "
+                               "before the arguments closed"
+                               if finish_reason == "length"
+                               else "the model emitted malformed tool-call JSON")
+                        )
+                    calls.append({
+                        "id": tc.id,
+                        "name": tc.function.name,
+                        "arguments": arguments,
+                    })
+                return json.dumps({"tool_calls": calls})
 
             return msg.content or "{}"
 
@@ -918,6 +936,11 @@ class LLMProvider:
         if "insufficient" in low or "quota" in low or "billing" in low:
             return ("the provider rejected the request for quota or billing reasons. Check the "
                     "account behind the configured API key.")
+        if "tool call arguments" in low or "tool-call" in low:
+            return ("the model returned a tool call the governance layer could not parse, "
+                    "usually because the generation was cut off at the output-token cap before "
+                    "the arguments closed. Raise SAFI_LOCAL_MAX_TOKENS / SAFI_MAX_INTELLECT_TOKENS "
+                    "and retry.")
         return f"the model provider call failed — {text[:200]}"
 
     @staticmethod
