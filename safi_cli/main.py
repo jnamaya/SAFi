@@ -590,6 +590,61 @@ def discover_models(client: SafiClient) -> List[Dict[str, Any]]:
     return AVAILABLE_MODELS
 
 
+# A saved Intellect model preference of "@serving" (aliases below) means "follow
+# whatever model the appliance is currently serving", rather than pinning an id
+# that goes stale the moment the operator switches models on the box. Resolved
+# to a concrete id on every launch, so a model swap needs no CLI reconfigure.
+SERVING_MODEL_ALIASES = frozenset({"@serving", "serving", "auto", "@local", "@active"})
+
+
+def is_serving_alias(value: Optional[str]) -> bool:
+    """True when a model preference is the 'follow the served model' sentinel."""
+    return bool(value) and value.strip().lower() in SERVING_MODEL_ALIASES
+
+
+def serving_model_id(models: List[Dict[str, Any]]) -> Optional[str]:
+    """Id of the served model within an available-models list, else None.
+
+    Appliance-served models are the ones the backend tags provider "local":
+    every appliance alias carries the reserved "safi-" prefix and routes there.
+    None means this backend serves no local model (e.g. a cloud-only
+    deployment), which callers treat as "no override".
+    """
+    for m in models or []:
+        if str(m.get("provider") or "").lower() == "local":
+            return m.get("id") or None
+    return None
+
+
+def discover_serving_model(client: SafiClient) -> Optional[str]:
+    """Fetch the available models and return the served local model's id."""
+    return serving_model_id(discover_models(client))
+
+
+def resolve_model_preference(
+    client: SafiClient,
+    agent: Optional[str] = None,
+    explicit: Optional[str] = None,
+) -> Optional[str]:
+    """Concrete Intellect model id for this session, resolving "@serving".
+
+    Mirrors config.resolve_intellect_model's precedence, then maps the sentinel
+    to the backend's live local model. Returns None when nothing is pinned, in
+    which case the backend's policy default decides.
+    """
+    resolved = config.resolve_intellect_model(agent, explicit)
+    if not is_serving_alias(resolved):
+        return resolved
+    serving = discover_serving_model(client)
+    if serving:
+        return serving
+    ui.console.print(
+        f"[bold {ui.COLOR_WARN}]⚠ No locally-served model found on {client.api_url}; "
+        "using the backend policy default.[/]"
+    )
+    return None
+
+
 def prompt_switch_model(
     current_model: Optional[str],
     client: SafiClient,
@@ -623,7 +678,10 @@ def prompt_switch_model(
         table.add_column("Provider", style="dim")
         table.add_column("Status", justify="center")
 
-        resolved_active = current_model or config.resolve_intellect_model(current_agent) or "(policy default)"
+        pref = config.resolve_intellect_model(current_agent)
+        if not current_model and is_serving_alias(pref):
+            pref = serving_model_id(models)
+        resolved_active = current_model or pref or "(policy default)"
 
         for idx, m in enumerate(models, 1):
             is_active = (current_model and m["id"].lower() == current_model.lower()) or (
@@ -664,6 +722,10 @@ def prompt_switch_model(
         if not choice:
             return current_model
 
+        if choice.lower() in ("exit", "quit", "cancel", ":q", "/cancel"):
+            ui.console.print("[dim]Model selection cancelled.[/dim]")
+            return current_model
+
         if choice.isdigit():
             idx = int(choice) - 1
             if 0 <= idx < len(models):
@@ -681,6 +743,14 @@ def prompt_switch_model(
                 target_model = choice
 
     config.save_intellect_model(target_model, current_agent)
+    if is_serving_alias(target_model):
+        serving = serving_model_id(models)
+        ui.console.print(
+            f"[bold {ui.COLOR_PASS}]✓ Intellect AI now follows the served model:[/] "
+            f"[bold {ui.COLOR_BRAND_400}]{serving or 'backend policy default'}[/]"
+            + (f" [dim](for persona '{current_agent}')[/dim]" if current_agent else "")
+        )
+        return serving
     ui.console.print(
         f"[bold {ui.COLOR_PASS}]✓ Switched Intellect AI model to:[/] [bold {ui.COLOR_BRAND_400}]{target_model}[/]"
         + (f" [dim](for persona '{current_agent}')[/dim]" if current_agent else "")
@@ -715,7 +785,10 @@ def show_config(
     from rich import box
 
     discover_agents(client)
-    resolved_model = current_model or config.resolve_intellect_model(current_agent) or "(policy default)"
+    pref = config.resolve_intellect_model(current_agent)
+    if not current_model and is_serving_alias(pref):
+        pref = discover_serving_model(client)
+    resolved_model = current_model or pref or "(policy default)"
     ui.console.print(f"\n[bold {ui.COLOR_BRAND_400}]● SAFi CLI Configuration[/]")
     ui.console.print(f"  [dim]Backend URL:[/]     {client.api_url}")
     ui.console.print(f"  [dim]Workspace:[/]       {workspace_root}")
@@ -1066,7 +1139,7 @@ def interactive_repl(
     """Start an interactive command-line session."""
     current_agent = agent
     current_user_name = user_name
-    current_model = model or config.resolve_intellect_model(current_agent)
+    current_model = resolve_model_preference(client, current_agent, model)
     ui.print_banner(
         str(workspace_root),
         current_agent,
@@ -1115,7 +1188,7 @@ def interactive_repl(
                     current_model=current_model,
                     user_id=user_id,
                 )
-                current_model = config.resolve_intellect_model(current_agent, current_model)
+                current_model = resolve_model_preference(client, current_agent, current_model)
                 if should_exit:
                     break
                 continue
@@ -1184,7 +1257,7 @@ def interactive_repl(
                     client=client,
                     workspace_root=workspace_root,
                 )
-                current_model = config.resolve_intellect_model(current_agent)
+                current_model = resolve_model_preference(client, current_agent)
                 continue
 
             if line.lower().startswith(("/agent ", "/agents ", "/switch ")):
@@ -1196,7 +1269,7 @@ def interactive_repl(
                     workspace_root=workspace_root,
                     requested_agent=req,
                 )
-                current_model = config.resolve_intellect_model(current_agent)
+                current_model = resolve_model_preference(client, current_agent)
                 continue
 
             if line.lower().strip() in ("/models", "/model", "/list-models"):
@@ -1321,7 +1394,7 @@ def main():
     parser.add_argument(
         "-m",
         "--model",
-        help="LLM model powering the Intellect faculty (e.g. claude-3-5-sonnet, claude-haiku-5-5, gpt-4o, gemini-3.5-flash-lite).",
+        help="LLM model powering the Intellect faculty (e.g. claude-3-5-sonnet, claude-haiku-5-5, gpt-4o, gemini-3.5-flash-lite). Use '@serving' to always follow the model the appliance is serving.",
     )
 
     parser.add_argument("-w", "--workspace", default=".", help="Workspace path (default: current directory).")
@@ -1351,7 +1424,7 @@ def main():
     parser.add_argument("--set-url", help="Save the given backend URL to ~/.config/safi/config.json and exit.")
     parser.add_argument(
         "--set-model",
-        help="Save default Intellect AI model to ~/.config/safi/config.json and exit.",
+        help="Save default Intellect AI model to ~/.config/safi/config.json and exit. Pass '@serving' to always follow the model the appliance is serving.",
     )
     parser.add_argument("--user-name", help="Display name of the user for the agent to address.")
     parser.add_argument("--set-user", help="Save the default user display name to ~/.config/safi/config.json and exit.")
@@ -1392,7 +1465,6 @@ def main():
     target_agent = args.agent
     api_key = config.resolve_agent_api_key(target_agent, args.api_key)
     user_name = config.resolve_user_name(args.user_name)
-    intellect_model = config.resolve_intellect_model(target_agent, args.model)
 
     client = SafiClient(api_url, api_key or "")
     discover_agents(client)
@@ -1419,6 +1491,10 @@ def main():
         client.api_key = api_key
         ui.console.print(f"[bold green]✓ Saved Policy API Key for {target_agent} to {config.CONFIG_FILE}[/]")
         discover_agents(client)
+
+    # Resolve the Intellect model now that the key is in hand: the "@serving"
+    # sentinel needs /api/models to identify the model the appliance serves.
+    intellect_model = resolve_model_preference(client, target_agent, args.model)
 
     workspace_root = Path(args.workspace).resolve()
     conv_id = config.resolve_session_id(str(workspace_root), new_session=args.new)

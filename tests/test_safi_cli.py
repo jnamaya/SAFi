@@ -673,6 +673,45 @@ class TestSafiModelSelection(unittest.TestCase):
             self.assertIn("claude-3-5-sonnet", ids)
             self.assertIn("claude-haiku-5-5", ids)
 
+    def test_serving_alias_resolves_to_local_model(self):
+        from safi_cli.main import resolve_model_preference, is_serving_alias
+        from safi_cli.client import SafiClient
+        client = SafiClient("http://mock-backend:5000", "test-key")
+        remote = [
+            {"id": "gpt-4o", "label": "GPT-4o", "provider": "OpenAI"},
+            {"id": "safi-qwen3-coder-30b", "label": "Coder", "provider": "local"},
+        ]
+        with unittest.mock.patch.object(client, "get_available_models", return_value=remote):
+            self.assertTrue(is_serving_alias("@serving"))
+            self.assertTrue(is_serving_alias("auto"))
+            self.assertFalse(is_serving_alias("gpt-4o"))
+            self.assertEqual(
+                resolve_model_preference(client, "software_engineer", "@serving"),
+                "safi-qwen3-coder-30b",
+            )
+
+    def test_serving_alias_falls_back_when_no_local_model(self):
+        from safi_cli.main import resolve_model_preference
+        from safi_cli.client import SafiClient
+        client = SafiClient("http://mock-backend:5000", "test-key")
+        remote = [{"id": "gpt-4o", "label": "GPT-4o", "provider": "OpenAI"}]
+        with unittest.mock.patch.object(client, "get_available_models", return_value=remote):
+            self.assertIsNone(resolve_model_preference(client, "software_engineer", "@serving"))
+
+    def test_serving_alias_switch_persists_sentinel(self):
+        from safi_cli.main import prompt_switch_model
+        from safi_cli.client import SafiClient
+        client = SafiClient("http://mock-backend:5000", "test-key")
+        remote = [{"id": "safi-qwen3-coder-30b", "label": "Coder", "provider": "local"}]
+        with unittest.mock.patch.object(client, "get_available_models", return_value=remote):
+            chosen = prompt_switch_model(
+                None, client, requested_model="@serving", current_agent="software_engineer"
+            )
+            self.assertEqual(chosen, "safi-qwen3-coder-30b")
+            # The sentinel is what persists, so the CLI keeps following the box
+            # even after the served model is swapped.
+            self.assertEqual(config.resolve_intellect_model("software_engineer"), "@serving")
+
     def test_prompt_switch_model_direct(self):
         from safi_cli.main import prompt_switch_model
         from safi_cli.client import SafiClient
