@@ -275,6 +275,17 @@ def test_commit_keeps_sso_off(env_paths):
     assert "SAFI_SSO_ENABLED=false" in text
 
 
+def test_commit_makes_software_engineer_the_default_agent(env_paths):
+    """The appliance ships the Software Engineer agent: it must be both
+    enabled (SAFI_BUILTIN_AGENTS) and the default profile (SAFI_PROFILE). A
+    default profile that is not enabled is absent from the active catalog and
+    every conversation would reset to it in a KeyError/fallback loop."""
+    text = _commit(env_paths, {"mode": "cloud", "provider": "GROQ_API_KEY",
+                               "api_key": "sk-test"})
+    assert "SAFI_PROFILE=software_engineer" in text
+    assert "SAFI_BUILTIN_AGENTS=fiduciary,tutor,safi,software_engineer" in text
+
+
 def test_commit_uses_https_and_secure_cookie_for_appliance_access(env_paths):
     text = _commit(env_paths, {"mode": "cloud", "provider": "GROQ_API_KEY",
                                "api_key": "sk-test"})

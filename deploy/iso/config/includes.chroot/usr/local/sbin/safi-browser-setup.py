@@ -428,7 +428,7 @@ def page_choose(error: str = "", hardware: dict | None = None, values: dict | No
             + _model_options(choices["models"], model_id, show_vram)
             + "</select>")
         if choices.get("local_only"):
-            local_block += ('<p><small>No CUDA-capable GPU was detected, so every model here '
+            local_block += ('<p><small>No GPU accelerator was detected, so every model here '
                             'runs on the CPU. Larger models are slow without a GPU.</small></p>')
     else:
         local_block = ('<h2>Run a model on this appliance</h2>'
@@ -613,8 +613,26 @@ def initialize(state: dict, setup) -> None:
         values[choice["provider"]] = choice["api_key"]
 
     values.update(setup.generated_secrets())
+    # The Software Engineer agent ships in the package but is not one of the
+    # enabled-by-default demo trio (config.py BUILTIN_AGENTS = fiduciary,
+    # tutor, safi). The appliance turns it on and makes it the default profile
+    # so a fresh box is a coding agent out of the box. The two must move
+    # together: a default profile that is not in BUILTIN_AGENTS would not be
+    # in the active catalog and every conversation would fall back and loop.
+    values["SAFI_PROFILE"] = "software_engineer"
     tmp = ENV_FILE.with_suffix(".env.tmp")
-    tmp.write_text(setup.render(lines, index, values), encoding="utf-8")
+    final = setup.render(lines, index, values)
+    # SAFI_BUILTIN_AGENTS is only documented, never defined, in the upstream
+    # .env.example (commented-out examples are not settable — see
+    # parse_template), so render() cannot carry it. The appliance appends it
+    # instead; config.py loads .env with load_dotenv(override=True), so the
+    # last assignment wins even if a future template defines the key.
+    final += (
+        "# Agents enabled on the appliance: the demo trio plus the Software "
+        "Engineer, which is the default profile.\n"
+        "SAFI_BUILTIN_AGENTS=fiduciary,tutor,safi,software_engineer\n"
+    )
+    tmp.write_text(final, encoding="utf-8")
     tmp.chmod(0o600)
     os.replace(tmp, ENV_FILE)
     # This service writes .env as root, but safi.service / safi-kb-indexer run
