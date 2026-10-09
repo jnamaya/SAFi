@@ -269,6 +269,16 @@ def ensure_dhcp_stanza() -> None:
     # Bounded and best-effort: the stanza is on disk either way.
     for nic in orphans:
         try:
+            out = subprocess.check_output(
+                ["ip", "-4", "-o", "addr", "show", "dev", nic, "scope", "global"],
+                text=True, stderr=subprocess.DEVNULL)
+            if out.strip():
+                log(f"'{nic}' already has IP address, skipping ifup")
+                continue
+        except (OSError, subprocess.SubprocessError):
+            pass
+
+        try:
             subprocess.run(["ifup", nic], timeout=IFUP_TIMEOUT,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except (OSError, subprocess.SubprocessError):

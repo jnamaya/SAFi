@@ -7,6 +7,8 @@ Wants=systemd-udevd.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
+KillMode=process
+TimeoutSec=60
 ExecStart=/usr/local/sbin/safi-wifi-autoconnect.sh
 StandardOutput=journal
 StandardError=journal

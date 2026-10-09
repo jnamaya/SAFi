@@ -3,8 +3,3 @@
 # The loopback network interface
 auto lo
 iface lo inet loopback
-
-# Primary Wi-Fi interface (standard naming)
-allow-hotplug wlan0
-iface wlan0 inet dhcp
-    wpa-conf /etc/wpa_supplicant/wpa_supplicant.conf

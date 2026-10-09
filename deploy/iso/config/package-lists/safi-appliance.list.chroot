@@ -87,6 +87,12 @@ rfkill
 iw
 firmware-iwlwifi
 firmware-realtek
+firmware-atheros
+firmware-brcm80211
+firmware-amd-graphics
 firmware-misc-nonfree
+firmware-linux-nonfree
+amd64-microcode
+intel-microcode
 
 syslinux-utils
