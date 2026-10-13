@@ -25,7 +25,7 @@ from pathlib import Path
 
 sys.path.insert(0, "/app")
 
-from safi_app.core.mcp_servers.coding_harness import (  # noqa: E402
+from safi_app.core.mcp_servers.coding_tools import (  # noqa: E402
     CODING_HARNESS_TOOL_NAMES,
     OPENCODE_TOOL_NAMES,
     SAFI_EXECUTED_TOOLS,
@@ -134,7 +134,7 @@ class PathConfinementTests(unittest.TestCase):
         self._root = "/app" if Path("/app/safi_app").exists() else str(Path(__file__).resolve().parent.parent)
         os.environ["SAFI_CODE_REVIEW_ROOT"] = self._root
         import importlib
-        import safi_app.core.mcp_servers.coding_harness as mod
+        import safi_app.core.mcp_servers.coding_tools as mod
         self.mod = importlib.reload(mod)
 
     def tearDown(self):
@@ -143,21 +143,21 @@ class PathConfinementTests(unittest.TestCase):
         else:
             os.environ["SAFI_CODE_REVIEW_ROOT"] = self._saved
         import importlib
-        import safi_app.core.mcp_servers.coding_harness as mod
+        import safi_app.core.mcp_servers.coding_tools as mod
         importlib.reload(mod)
 
     def test_reads_a_real_file(self):
-        out = json.loads(asyncio.run(read_file(f"{self._root}/safi_app/core/mcp_servers/coding_harness.py")))
-        self.assertIn("Coding-harness MCP server", out["content"])
+        out = json.loads(asyncio.run(read_file(f"{self._root}/safi_app/core/mcp_servers/coding_tools.py")))
+        self.assertIn("Coding-tools MCP connector", out["content"])
 
     def test_lists_a_real_directory(self):
         out = json.loads(asyncio.run(list_directory(f"{self._root}/safi_app/core/mcp_servers")))
-        self.assertTrue(any(e["name"] == "coding_harness.py" for e in out["entries"]))
+        self.assertTrue(any(e["name"] == "coding_tools.py" for e in out["entries"]))
 
     def test_glob_and_grep_find_real_content(self):
         out = json.loads(asyncio.run(glob_files("**/*.py", f"{self._root}/safi_app/core/mcp_servers")))
         self.assertGreater(out["file_count"], 0)
-        self.assertTrue(any(f.endswith("coding_harness.py") for f in out["files"]))
+        self.assertTrue(any(f.endswith("coding_tools.py") for f in out["files"]))
         found = json.loads(asyncio.run(grep("SAFI_EXECUTED_TOOLS", f"{self._root}/safi_app/core/mcp_servers")))
         self.assertGreater(found["match_count"], 0)
 
@@ -165,7 +165,7 @@ class PathConfinementTests(unittest.TestCase):
         """`**/` means zero or more directories.
 
         Regression: `_walk` matches against the path relative to the SEARCH
-        SCOPE, so `**/*.py` was asked to match "coding_harness.py" — no separator,
+        SCOPE, so `**/*.py` was asked to match "coding_tools.py" — no separator,
         no match, zero results, while `*.py` found the same files. The pattern a
         model reaches for first silently returned nothing.
         """

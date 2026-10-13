@@ -50,10 +50,10 @@ def agentic_declaration_only() -> frozenset:
     """Names the agentic_coding connector declares but SAFi does not execute.
 
     Agentic coding vocabulary minus the four repository tools implemented in
-    core/mcp_servers/coding_harness.py. Kept as a helper rather than inlined so
+    core/mcp_servers/coding_tools.py. Kept as a helper rather than inlined so
     dispatch and the catalog agree on the split from one definition.
     """
-    from ..mcp_servers.coding_harness import (
+    from ..mcp_servers.coding_tools import (
         CODING_HARNESS_TOOL_NAMES, SAFI_EXECUTED_TOOLS,
     )
     return frozenset(CODING_HARNESS_TOOL_NAMES) - SAFI_EXECUTED_TOOLS
@@ -849,7 +849,7 @@ class MCPManager:
         self.log.info(f"Executing tool '{tool_name}' with args {arguments}")
         
         if tool_name == "read":
-            from ..mcp_servers.coding_harness import read_file
+            from ..mcp_servers.coding_tools import read_file
             return await read_file(
                 arguments.get("path", ""),
                 arguments.get("offset", 1),
@@ -857,7 +857,7 @@ class MCPManager:
             )
 
         if tool_name == "grep":
-            from ..mcp_servers.coding_harness import grep
+            from ..mcp_servers.coding_tools import grep
             return await grep(
                 arguments.get("pattern", ""),
                 arguments.get("path", "."),
@@ -866,12 +866,12 @@ class MCPManager:
             )
 
         if tool_name == "glob":
-            from ..mcp_servers.coding_harness import glob_files
+            from ..mcp_servers.coding_tools import glob_files
             return await glob_files(
                 arguments.get("pattern", ""), arguments.get("path", "."))
 
         if tool_name == "list":
-            from ..mcp_servers.coding_harness import list_directory
+            from ..mcp_servers.coding_tools import list_directory
             return await list_directory(arguments.get("path", "."))
 
         # The remainder of the coding harness vocabulary is DECLARED by the
