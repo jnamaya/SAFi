@@ -17,12 +17,24 @@ except ImportError:
     except ImportError:
         readline = None
 
-from . import config, tools, ui
+from . import config, prompt_input, tools, ui
 from .client import SafiClient, SafiClientError
 
 
-DEFAULT_MAX_STEPS = 25
+# Tool-loop ceiling per turn. 25 was hit constantly by real repository work (a
+# read/grep/edit/test cycle is easily a dozen steps), and the loop abandoned the
+# turn with nothing. Raised, and overridable so a heavy session can go further
+# without a code change.
+DEFAULT_MAX_STEPS = int(os.environ.get("SAFI_CLI_MAX_STEPS", "100"))
 _last_turn_result: Optional[Dict[str, Any]] = None
+
+
+def _collect_multiline(initial: str) -> str:
+    """Join backslash-continued input lines so users can compose/paste multi-line prompts.
+
+    Kept as a thin alias for the readline fallback implemented in ``prompt_input``.
+    """
+    return prompt_input.collect_multiline(initial)
 
 
 def run_subagent_task(
@@ -148,6 +160,132 @@ def run_subagent_task(
     return fallback_out
 
 
+def _handle_tool_proposal(
+    proposal: Dict[str, Any],
+    *,
+    client: SafiClient,
+    workspace_root: Path,
+    conversation_id: str,
+    user_id: str,
+    model: Optional[str],
+    auto_approve: bool,
+    tool_results: list,
+    subagents_run_count: int,
+) -> int:
+    """Execute one Will-approved tool proposal and record its result.
+
+    Returns the updated subagent run count. Mirrors the single-proposal logic so a
+    batched turn (several proposals in one server response) executes each call
+    exactly as it always did one at a time.
+    """
+    tool_name = proposal.get("tool_name") or proposal.get("tool") or ""
+    args = proposal.get("parameters") or proposal.get("params") or proposal.get("arguments") or {}
+    will_decision = proposal.get("willDecision") or proposal.get("decision") or "approve"
+    will_reason = proposal.get("willReason") or proposal.get("reason")
+
+    ui.print_tool_proposal(tool_name, args, proposal)
+
+    # If WillGate blocked the proposal, SAFi does not expect client execution
+    if will_decision not in ("approve", "approved"):
+        tool_results.append({
+            "tool_name": tool_name,
+            "arguments": args,
+            "result": f"The Will Gatekeeper rejected '{tool_name}' ({will_reason}).",
+        })
+        return subagents_run_count
+
+    # Subagent delegation (task / delegate_subagent)
+    if tool_name in ("task", "delegate_subagent"):
+        subagents_run_count += 1
+        result_str = run_subagent_task(
+            client=client,
+            args=args,
+            workspace_root=workspace_root,
+            parent_conv_id=conversation_id,
+            user_id=user_id,
+            model=model,
+            max_steps=6,
+        )
+        # If the agent has run 2 or more subagents in this turn, advise it to finalize
+        if subagents_run_count >= 2:
+            result_str += (
+                "\n\n[System note: Delegation budget reached (2 subagents executed). "
+                "Please synthesize the available findings into your final answer now "
+                "instead of delegating further.]"
+            )
+        tool_results.append({
+            "tool_name": tool_name,
+            "arguments": args,
+            "result": result_str,
+        })
+        return subagents_run_count
+
+    # Interactive developer clarification tool (question / ask_user)
+    if tool_name in ("question", "ask_user"):
+        q_text = args.get("question") or args.get("prompt") or ""
+        opts = args.get("options") or []
+        user_answer = ui.prompt_question(q_text, opts)
+        ui.print_tool_result_summary(tool_name, f"Developer response: {user_answer}")
+        tool_results.append({
+            "tool_name": tool_name,
+            "arguments": args,
+            "result": f"Developer response: {user_answer}",
+        })
+        return subagents_run_count
+
+    # Plan & task list tracking tool (todowrite)
+    if tool_name in ("todowrite", "todo_write"):
+        todos = args.get("todos") or []
+        ui.render_todo_list(todos)
+        total = len(todos)
+        completed = sum(1 for t in todos if (t.get("status") or "").lower() in ("completed", "done"))
+        pct = int((completed / total) * 100) if total > 0 else 0
+        in_prog = [t for t in todos if (t.get("status") or "").lower() in ("in_progress", "running")]
+        curr_item = in_prog[0].get("task") if in_prog else (todos[0].get("task") if todos else "first step")
+        res_msg = (
+            f"Recorded plan with {total} task(s) ({completed}/{total} completed • {pct}%). "
+            f"Now execute the current task ('{curr_item}') using action tools (read, write, edit, bash). "
+            f"DO NOT call todowrite again until you have executed real tool actions."
+        )
+        ui.print_tool_result_summary(tool_name, res_msg)
+        tool_results.append({
+            "tool_name": tool_name,
+            "arguments": args,
+            "result": res_msg,
+        })
+        return subagents_run_count
+
+    # Server-executed tool (e.g. fiduciary stock tools, web search).
+    # The backend only marks a tool as server-executed explicitly; a
+    # stray "result" key on a client tool must not skip local execution.
+    if proposal.get("executed_by") == "server":
+        result_str = str(proposal.get("result", ""))
+        ui.print_tool_result_summary(tool_name, result_str)
+        tool_results.append({
+            "tool_name": tool_name,
+            "arguments": args,
+            "result": result_str,
+        })
+        return subagents_run_count
+
+    # Permission check for mutating/shell tools
+    allowed = ui.prompt_user_permission(tool_name, args, auto_approve=auto_approve)
+    if not allowed:
+        result_str = f"Execution of '{tool_name}' was declined by the developer."
+    else:
+        result_str = tools.execute_tool(tool_name, args, workspace_root)
+        is_err = ui._result_is_error(result_str)
+        ui.advance_active_todo(tool_name, args, is_success=(not is_err))
+        ui.print_tool_result_summary(tool_name, result_str)
+
+    tool_results.append({
+        "tool_name": tool_name,
+        "arguments": args,
+        "result": result_str,
+    })
+    return subagents_run_count
+
+
 def run_agent_turn(
     client: SafiClient,
     prompt: str,
@@ -172,37 +310,56 @@ def run_agent_turn(
     try:
         for step in range(max_steps):
             turn_msg_id = str(uuid.uuid4())
+            last_status_markup = ui.build_progress_line(None, None, 0.0, model=model)
             try:
-                with ui.console.status(f"[bold {ui.COLOR_BRAND_400}]● SAFi[/] [dim]Governing turn...[/]", spinner="dots") as status_indicator:
+                with ui.console.status(
+                    last_status_markup,
+                    spinner="dots",
+                ) as status_indicator:
                     stop_poller = threading.Event()
                     start_time = time.time()
 
+                    seen_steps = set()
                     def _poll_progress():
+                        nonlocal last_status_markup
                         current_step_text = "Governing turn"
-                        while not stop_poller.wait(0.3):
+                        progress_codes: List[str] = []
+                        while not stop_poller.wait(0.25):
                             try:
                                 progress_data = client.get_turn_progress(turn_msg_id, user_id=user_id)
                                 if isinstance(progress_data, dict):
+                                    codes = progress_data.get("progress")
+                                    if isinstance(codes, list):
+                                        progress_codes = [c for c in codes if isinstance(c, str)]
                                     raw_step = progress_data.get("latest_step")
-                                    if raw_step:
-                                        current_step_text = raw_step.rstrip(".…").strip()
+                                    if raw_step and raw_step != current_step_text:
+                                        # When a phase completes and moves to a new step, print the completed step
+                                        if current_step_text not in seen_steps and current_step_text != "Governing turn":
+                                            seen_steps.add(current_step_text)
+                                            ui.print_governance_step(current_step_text, time.time() - start_time)
+                                        current_step_text = raw_step
                             except Exception:
                                 pass
                             elapsed = time.time() - start_time
-                            step_lower = current_step_text.lower()
-                            if step_lower.startswith("drafting"):
-                                model_suffix = f" with {model}" if model else ""
-                                status_indicator.update(
-                                    f"[bold {ui.COLOR_BRAND_400}]● SAFi[/] [dim]Drafting response{model_suffix}...[/] [dim]({elapsed:.1f}s)[/]"
-                                )
-                            else:
-                                status_indicator.update(
-                                    f"[bold {ui.COLOR_BRAND_400}]● SAFi[/] [dim]{current_step_text}...[/] [dim]({elapsed:.1f}s)[/]"
-                                )
+                            last_status_markup = ui.build_progress_line(
+                                progress_codes or None,
+                                current_step_text,
+                                elapsed,
+                                model=model,
+                            )
+                            status_indicator.update(last_status_markup)
 
                     poller = threading.Thread(target=_poll_progress, daemon=True)
                     poller.start()
                     try:
+                        # Once a plan has already been recorded in this turn, omit todowrite from available
+                        # tools so the model is forced to call action tools (read, write, edit, bash).
+                        plan_recorded = any(tr.get("tool_name") in ("todowrite", "todo_write") for tr in tool_results)
+                        active_tools = [
+                            t for t in tools.TOOL_SCHEMAS
+                            if not (plan_recorded and t.get("function", {}).get("name") in ("todowrite", "todo_write"))
+                        ] if agent == "software_engineer" else None
+
                         res = client.send_turn(
                             user_id=user_id,
                             conversation_id=conversation_id,
@@ -211,6 +368,7 @@ def run_agent_turn(
                             agent=agent,
                             user_name=user_name,
                             model=model,
+                            tools=active_tools,
                             tool_results=tool_results,
                             recent_turns=recent_turns,
                             message_id=turn_msg_id,
@@ -219,106 +377,45 @@ def run_agent_turn(
                         stop_poller.set()
                         poller.join(timeout=0.3)
             except SafiClientError as err:
+                ui.clear_live_status_tail(last_status_markup)
                 ui.print_error(str(err))
                 return None
+            # Rich's Status pads each frame past the terminal width and only
+            # erases one row on exit, which left the frozen spinner on screen
+            # above the answer. Lift the residual rows before printing the turn.
+            ui.clear_live_status_tail(last_status_markup)
 
-            # Handle tool call proposal
+            # Handle tool call proposal(s). The server may approve several
+            # independent calls in one governed turn (batched tool calls); older
+            # servers return a single flat proposal, which we still accept.
             if res.get("type") == "tool_call":
-                tool_name = res.get("tool_name", "")
-                args = res.get("parameters") or {}
-                will_decision = res.get("willDecision", "approved")
-                will_reason = res.get("willReason")
-
-                ui.print_tool_proposal(tool_name, args, res)
-
-                # If WillGate blocked the proposal, SAFi does not expect client execution
-                if will_decision not in ("approve", "approved"):
-                    tool_results.append({
-                        "tool_name": tool_name,
-                        "arguments": args,
-                        "result": f"The Will Gatekeeper rejected '{tool_name}' ({will_reason}).",
-                    })
-                    continue
-
-                # Subagent delegation (task / delegate_subagent)
-                if tool_name in ("task", "delegate_subagent"):
-                    subagents_run_count += 1
-                    result_str = run_subagent_task(
+                batch = res.get("tool_calls")
+                if isinstance(batch, list) and batch:
+                    for proposal in batch:
+                        if isinstance(proposal, dict):
+                            subagents_run_count = _handle_tool_proposal(
+                                proposal,
+                                client=client,
+                                workspace_root=workspace_root,
+                                conversation_id=conversation_id,
+                                user_id=user_id,
+                                model=model,
+                                auto_approve=auto_approve,
+                                tool_results=tool_results,
+                                subagents_run_count=subagents_run_count,
+                            )
+                else:
+                    subagents_run_count = _handle_tool_proposal(
+                        res,
                         client=client,
-                        args=args,
                         workspace_root=workspace_root,
-                        parent_conv_id=conversation_id,
+                        conversation_id=conversation_id,
                         user_id=user_id,
                         model=model,
-                        max_steps=6,
+                        auto_approve=auto_approve,
+                        tool_results=tool_results,
+                        subagents_run_count=subagents_run_count,
                     )
-                    # If the agent has run 2 or more subagents in this turn, advise it to finalize
-                    if subagents_run_count >= 2:
-                        result_str += (
-                            "\n\n[System note: Delegation budget reached (2 subagents executed). "
-                            "Please synthesize the available findings into your final answer now "
-                            "instead of delegating further.]"
-                        )
-                    tool_results.append({
-                        "tool_name": tool_name,
-                        "arguments": args,
-                        "result": result_str,
-                    })
-                    continue
-
-                # Interactive developer clarification tool (question / ask_user)
-                if tool_name in ("question", "ask_user"):
-                    q_text = args.get("question") or args.get("prompt") or ""
-                    opts = args.get("options") or []
-                    user_answer = ui.prompt_question(q_text, opts)
-                    ui.print_tool_result_summary(tool_name, f"Developer response: {user_answer}")
-                    tool_results.append({
-                        "tool_name": tool_name,
-                        "arguments": args,
-                        "result": f"Developer response: {user_answer}",
-                    })
-                    continue
-
-                # Plan & task list tracking tool (todowrite)
-                if tool_name in ("todowrite", "todo_write"):
-                    todos = args.get("todos") or []
-                    ui.render_todo_list(todos)
-                    total = len(todos)
-                    completed = sum(1 for t in todos if (t.get("status") or "").lower() in ("completed", "done"))
-                    pct = int((completed / total) * 100) if total > 0 else 0
-                    res_msg = f"Recorded plan with {total} task(s) ({completed}/{total} completed • {pct}%)."
-                    ui.print_tool_result_summary(tool_name, res_msg)
-                    tool_results.append({
-                        "tool_name": tool_name,
-                        "arguments": args,
-                        "result": res_msg,
-                    })
-                    continue
-
-                # Server-executed tool (e.g. fiduciary stock tools, web search)
-                if res.get("executed_by") == "server" or "result" in res:
-                    result_str = str(res.get("result", ""))
-                    ui.print_tool_result_summary(tool_name, result_str)
-                    tool_results.append({
-                        "tool_name": tool_name,
-                        "arguments": args,
-                        "result": result_str,
-                    })
-                    continue
-
-                # Permission check for mutating/shell tools
-                allowed = ui.prompt_user_permission(tool_name, args, auto_approve=auto_approve)
-                if not allowed:
-                    result_str = f"Execution of '{tool_name}' was declined by the developer."
-                else:
-                    result_str = tools.execute_tool(tool_name, args, workspace_root)
-                    ui.print_tool_result_summary(tool_name, result_str)
-
-                tool_results.append({
-                    "tool_name": tool_name,
-                    "arguments": args,
-                    "result": result_str,
-                })
                 continue
 
             # Terminal answer reached
@@ -353,7 +450,38 @@ def run_agent_turn(
             ui.print_final_output(final_text, res)
             return res
 
-        ui.print_error(f"Reached maximum tool loop iterations ({max_steps}).")
+        # Hit the tool-loop ceiling. Abandoning the turn here threw away every
+        # collected tool result, so make one final governed pass with tools
+        # disabled: the model can no longer propose a tool and must fold what it
+        # has into an answer.
+        if tool_results:
+            try:
+                res = client.send_turn(
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    message=prompt,
+                    workspace_root=str(workspace_root.resolve()),
+                    agent=agent,
+                    user_name=user_name,
+                    model=model,
+                    tool_results=tool_results,
+                    recent_turns=recent_turns,
+                    message_id=str(uuid.uuid4()),
+                    tools=[],
+                )
+            except SafiClientError as err:
+                ui.print_error(str(err))
+                return None
+            final_text = res.get("finalOutput") or ""
+            if final_text:
+                _last_turn_result = res
+                ui.mark_active_todos_completed()
+                ui.print_final_output(final_text, res)
+                return res
+        ui.print_error(
+            f"Reached the tool-loop ceiling ({max_steps} iterations) without a final "
+            "answer. Raise it with --max-steps or SAFI_CLI_MAX_STEPS and retry."
+        )
         return None
     except KeyboardInterrupt:
         ui.console.print("\n[bold yellow]Turn cancelled (Ctrl+C).[/bold yellow]")
@@ -566,8 +694,8 @@ def _infer_provider(model_id: str) -> str:
     return "Cloud Provider"
 
 
-def discover_models(client: SafiClient) -> List[Dict[str, Any]]:
-    """Discover available AI models from the SAFi backend policy, caching results."""
+def discover_models(client: SafiClient, force_refresh: bool = False) -> List[Dict[str, Any]]:
+    """Discover available AI models from the SAFi backend policy, updating cache."""
     global AVAILABLE_MODELS
     remote = client.get_available_models()
     if remote:
@@ -581,6 +709,8 @@ def discover_models(client: SafiClient) -> List[Dict[str, Any]]:
                     "id": m_id,
                     "label": m.get("label") or m.get("name") or m_id,
                     "provider": m.get("provider") or _infer_provider(m_id),
+                    "active": bool(m.get("active")),
+                    "local": bool(m.get("local")),
                 })
         for m in DEFAULT_MODELS:
             if m["id"] not in seen:
@@ -607,41 +737,45 @@ def serving_model_id(models: List[Dict[str, Any]]) -> Optional[str]:
 
     Appliance-served models are the ones the backend tags provider "local":
     every appliance alias carries the reserved "safi-" prefix and routes there.
-    None means this backend serves no local model (e.g. a cloud-only
-    deployment), which callers treat as "no override".
+    When multiple local models are downloaded, this returns whichever model is
+    currently active/loaded on the server.
     """
-    for m in models or []:
-        if str(m.get("provider") or "").lower() == "local":
+    local_models = [m for m in (models or []) if str(m.get("provider") or "").lower() == "local"]
+    for m in local_models:
+        if m.get("active"):
             return m.get("id") or None
+    if local_models:
+        return local_models[0].get("id") or None
     return None
 
 
-def discover_serving_model(client: SafiClient) -> Optional[str]:
+def discover_serving_model(client: SafiClient, force_refresh: bool = False) -> Optional[str]:
     """Fetch the available models and return the served local model's id."""
-    return serving_model_id(discover_models(client))
+    return serving_model_id(discover_models(client, force_refresh=force_refresh))
 
 
 def resolve_model_preference(
     client: SafiClient,
     agent: Optional[str] = None,
     explicit: Optional[str] = None,
+    force_refresh: bool = False,
 ) -> Optional[str]:
-    """Concrete Intellect model id for this session, resolving "@serving".
+    """Concrete Intellect model id for this session.
 
-    Mirrors config.resolve_intellect_model's precedence, then maps the sentinel
-    to the backend's live local model. Returns None when nothing is pinned, in
-    which case the backend's policy default decides.
+    Resolves "@serving" or unconfigured preferences to whatever model is
+    currently served/active on the appliance.
     """
     resolved = config.resolve_intellect_model(agent, explicit)
-    if not is_serving_alias(resolved):
+    if resolved and not is_serving_alias(resolved):
         return resolved
-    serving = discover_serving_model(client)
+    serving = discover_serving_model(client, force_refresh=force_refresh)
     if serving:
         return serving
-    ui.console.print(
-        f"[bold {ui.COLOR_WARN}]⚠ No locally-served model found on {client.api_url}; "
-        "using the backend policy default.[/]"
-    )
+    if is_serving_alias(resolved):
+        ui.console.print(
+            f"[bold {ui.COLOR_WARN}]⚠ No locally-served model found on {client.api_url}; "
+            "using the backend policy default.[/]"
+        )
     return None
 
 
@@ -770,6 +904,10 @@ COMMAND_OPTIONS = [
     ("compress", "Compress Context", "Compact conversation history and save tokens"),
     ("skills", "Project Skills", "List custom project skills defined in .safi/skills/"),
     ("user", "User Profile", "View or set your display name"),
+    ("usage", "Session Usage", "Show session token, cost, and compaction totals"),
+    ("last", "Last Tool Output", "Page through the full output of the most recent tool result"),
+    ("compact-ui", "Toggle Audit Line", "Hide or show the compact governance audit line on responses"),
+    ("sessions", "Resume Session", "List stored sessions and resume one in this workspace"),
 ]
 
 
@@ -816,13 +954,6 @@ def show_config(
 
 def print_help():
     """Print help menu."""
-    from rich.table import Table
-    from rich import box
-
-    table = Table(title="Available Slash Commands", box=box.ROUNDED, border_style=ui.COLOR_BRAND_600)
-    table.add_column("Command", style=f"bold {ui.COLOR_BRAND_400}")
-    table.add_column("Description", style="dim white")
-
     commands = [
         ("/", "Open interactive command menu"),
         ("/agents", "Interactive agent selector & Policy API key status"),
@@ -831,6 +962,10 @@ def print_help():
         ("/model <name>", "Switch directly to an Intellect LLM (e.g. /model gpt-4o)"),
         ("/compress", "Compact conversation history and save tokens (OpenCode style)"),
         ("/audit", "View detailed conscience audit ledger & rationales for the last turn"),
+        ("/usage", "Show session token, cost, and compaction totals"),
+        ("/last [tool]", "Page through the full output of the last tool result"),
+        ("/compact-ui", "Hide or show the compact governance audit line on responses"),
+        ("/sessions", "List stored sessions and resume one in this workspace"),
         ("/skills", "List custom project skills defined in .safi/skills/"),
         ("/user <name>", "View or update your user display name"),
         ("/new", "Start a fresh conversation session with a new session ID"),
@@ -839,9 +974,56 @@ def print_help():
         ("/help", "Show this help menu"),
         ("exit, quit, :q", "Exit SAFi CLI"),
     ]
-    for cmd, desc in commands:
-        table.add_row(cmd, desc)
-    ui.console.print(table)
+    ui.render_menu(
+        "Available Slash Commands",
+        [
+            {"name": "Command", "style": f"bold {ui.COLOR_BRAND_400}"},
+            {"name": "Description", "style": "dim white"},
+        ],
+        [list(row) for row in commands],
+    )
+
+
+def prompt_resume_session(current_conv: str, workspace_root: Path) -> str:
+    """List stored conversation sessions and resume a selected one."""
+    sessions = config.list_sessions()
+    if not sessions:
+        ui.console.print(f"[{ui.COLOR_WARN}]No stored sessions yet. Start a conversation to create one.[/]")
+        return current_conv
+
+    paths = config.session_paths()
+    entries = list(sessions.items())
+    rows = []
+    for idx, (key, conv_id) in enumerate(entries, 1):
+        active = f" [bold {ui.COLOR_BRAND_500}](active)[/]" if conv_id == current_conv else ""
+        ws = paths.get(conv_id) or f"…{key}"
+        rows.append([str(idx), conv_id, ws + active])
+
+    ui.render_menu(
+        "Stored Sessions",
+        [
+            {"name": "#", "style": f"bold {ui.COLOR_WARN}", "width": 3, "justify": "right"},
+            {"name": "Session ID", "style": f"bold {ui.COLOR_BRAND_400}"},
+            {"name": "Workspace", "style": "dim"},
+        ],
+        rows,
+    )
+
+    try:
+        choice = input("\nResume session [#] (or press Enter to cancel): ").strip()
+    except (KeyboardInterrupt, EOFError):
+        return current_conv
+
+    if not choice:
+        return current_conv
+    if choice.isdigit() and 1 <= int(choice) <= len(entries):
+        conv_id = entries[int(choice) - 1][1]
+        config.set_workspace_session(str(workspace_root), conv_id)
+        ui.console.print(f"[bold {ui.COLOR_PASS}]✓ Resumed session:[/] [dim]{conv_id}[/]")
+        return conv_id
+
+    ui.console.print(f"[bold {ui.COLOR_FAIL}]Invalid selection:[/] '{choice}'.")
+    return current_conv
 
 
 def prompt_command_menu(
@@ -853,20 +1035,21 @@ def prompt_command_menu(
     user_id: str = "cli_user",
 ) -> tuple[str, str, bool]:
     """Display the interactive slash command menu when the user types '/'."""
-    from rich.table import Table
-    from rich import box
-
-    table = Table(title="SAFi Command Menu", box=box.ROUNDED, border_style=ui.COLOR_BRAND_600)
-    table.add_column("#", style=f"bold {ui.COLOR_WARN}", width=3, justify="right")
-    table.add_column("Command", style=f"bold {ui.COLOR_BRAND_400}")
-    table.add_column("Action", style="bold white")
-    table.add_column("Description", style="dim")
-
-    for idx, (cmd, action, desc) in enumerate(COMMAND_OPTIONS, 1):
-        table.add_row(str(idx), f"/{cmd}", action, desc)
-
+    rows = [
+        [str(idx), f"/{cmd}", action, desc]
+        for idx, (cmd, action, desc) in enumerate(COMMAND_OPTIONS, 1)
+    ]
     ui.console.print()
-    ui.console.print(table)
+    ui.render_menu(
+        "SAFi Command Menu",
+        [
+            {"name": "#", "style": f"bold {ui.COLOR_WARN}", "width": 3, "justify": "right"},
+            {"name": "Command", "style": f"bold {ui.COLOR_BRAND_400}"},
+            {"name": "Action", "style": "bold white"},
+            {"name": "Description", "style": "dim"},
+        ],
+        rows,
+    )
 
     old_completer = readline.get_completer() if readline else None
     if readline:
@@ -952,14 +1135,19 @@ def prompt_command_menu(
     elif choice_clean in ("skills", "skill"):
         from .skills import discover_skills
         local_skills = discover_skills(workspace_root)
-        s_table = Table(title="Custom Project Skills (.safi/skills/)", box=box.ROUNDED, border_style=ui.COLOR_BRAND_600)
-        s_table.add_column("Command", style=f"bold {ui.COLOR_BRAND_400}")
-        s_table.add_column("Description", style="white")
-        s_table.add_column("Path", style="dim")
         if local_skills:
-            for s_name, s_obj in local_skills.items():
-                s_table.add_row(f"/{s_name}", s_obj.description, str(s_obj.file_path.relative_to(workspace_root)))
-            ui.console.print(s_table)
+            ui.render_menu(
+                "Custom Project Skills (.safi/skills/)",
+                [
+                    {"name": "Command", "style": f"bold {ui.COLOR_BRAND_400}"},
+                    {"name": "Description", "style": "white"},
+                    {"name": "Path", "style": "dim"},
+                ],
+                [
+                    [f"/{s_name}", s_obj.description, str(s_obj.file_path.relative_to(workspace_root))]
+                    for s_name, s_obj in local_skills.items()
+                ],
+            )
         else:
             ui.console.print(f"[dim]No custom skills found in {workspace_root / '.safi' / 'skills'}. Create a .md file there to add skills![/dim]")
         return current_agent, current_conv, False
@@ -974,6 +1162,26 @@ def prompt_command_menu(
         except (KeyboardInterrupt, EOFError):
             pass
         return current_agent, current_conv, False
+
+    elif choice_clean in ("usage", "totals"):
+        ui.console.print()
+        ui.console.print(ui.build_session_usage_panel())
+        return current_agent, current_conv, False
+
+    elif choice_clean in ("last", "last-result"):
+        ui.print_full_tool_result()
+        return current_agent, current_conv, False
+
+    elif choice_clean in ("compact-ui", "density", "toggle-ui"):
+        new_flag = not ui.get_show_audit_panel()
+        ui.set_show_audit_panel(new_flag)
+        state = "shown" if new_flag else "hidden"
+        ui.console.print(f"[bold {ui.COLOR_PASS}]✓ Governance audit line is now {state}.[/]")
+        return current_agent, current_conv, False
+
+    elif choice_clean in ("sessions", "resume"):
+        new_conv = prompt_resume_session(current_conv, workspace_root)
+        return current_agent, new_conv, False
 
     elif choice_clean in ("help", "?"):
         print_help()
@@ -1003,6 +1211,10 @@ SLASH_COMMANDS = [
     "/clear",
     "/config",
     "/keys",
+    "/usage",
+    "/last",
+    "/compact-ui",
+    "/sessions",
     "/help",
     "/exit",
     "/quit",
@@ -1057,6 +1269,11 @@ def _compute_completions(
         if cmd in ("/compress", "/compact", "/summarize"):
             subcommands = ["compress", "show", "clear", "status", "view"]
             return [sc for sc in subcommands if sc.startswith(text)]
+
+        # Auto-complete tool names for /last <tab>
+        if cmd in ("/last", "/last-result"):
+            tool_names = [t["function"]["name"] for t in tools.TOOL_SCHEMAS]
+            return [n for n in tool_names if n.startswith(text)]
 
         return []
 
@@ -1148,27 +1365,46 @@ def interactive_repl(
         intellect_model=current_model,
     )
     ui.console.print(
-        f"[dim]Commands: [bold {ui.COLOR_BRAND_400}]/[/] menu  •  [bold {ui.COLOR_BRAND_400}]/compress[/] compact tokens  •  [bold {ui.COLOR_BRAND_400}]/models[/] intellect model  •  [bold {ui.COLOR_BRAND_400}]/agents[/] switch agent  •  [bold {ui.COLOR_BRAND_400}]/new[/] fresh session[/dim]\n"
+        f"[dim]Commands: [bold {ui.COLOR_BRAND_400}]/[/] menu  •  [bold {ui.COLOR_BRAND_400}]/compress[/] compact tokens  •  [bold {ui.COLOR_BRAND_400}]/models[/] intellect model  •  [bold {ui.COLOR_BRAND_400}]/agents[/] switch agent  •  [bold {ui.COLOR_BRAND_400}]/new[/] fresh session[/dim]"
     )
+    rich_input = prompt_input.using_prompt_toolkit()
+    if rich_input:
+        ui.console.print(
+            f"[dim]Tip: [bold {ui.COLOR_BRAND_400}]Enter[/] sends  •  "
+            f"[bold {ui.COLOR_BRAND_400}]Alt+Enter[/] / [bold {ui.COLOR_BRAND_400}]Ctrl+J[/] add a line  •  "
+            f"multi-line pastes just work.[/dim]\n"
+        )
+    else:
+        ui.console.print(
+            f"[dim]Tip: end a line with [bold {ui.COLOR_BRAND_400}]\\[/] to continue on the next line (multi-line prompts).[/dim]\n"
+        )
 
-    # Setup readline history & auto-completer
+    # Setup history & auto-completer. With prompt_toolkit the history is owned by
+    # its FileHistory; otherwise fall back to a GNU readline history file.
     config.ensure_config_dir()
     hist_file = str(config.HISTORY_FILE)
-    if readline and os.path.exists(hist_file):
-        try:
-            readline.read_history_file(hist_file)
-        except OSError:
-            pass
 
     if readline:
         setup_readline_completer(client, workspace_root)
+        if not rich_input and os.path.exists(hist_file):
+            try:
+                readline.read_history_file(hist_file)
+            except OSError:
+                pass
 
     current_conv = conversation_id
     try:
         while True:
             try:
-                prompt_label = ui.get_input_prompt(agent=current_agent, user_name=current_user_name)
-                line = input(prompt_label).strip()
+                raw_line = prompt_input.read_prompt(
+                    agent_label=current_agent,
+                    completions_fn=lambda ln, tok: _compute_completions(ln, tok, client, workspace_root),
+                    history_path=hist_file if rich_input else None,
+                )
+                if raw_line is None:
+                    ui.console.print("\n[dim]Session terminated.[/dim]")
+                    break
+                line = raw_line.strip()
             except (KeyboardInterrupt, EOFError):
                 ui.console.print("\n[dim]Session terminated.[/dim]")
                 break
@@ -1304,6 +1540,28 @@ def interactive_repl(
                     )
                 continue
 
+            if line.lower() in ("/usage", "/totals"):
+                ui.console.print()
+                ui.console.print(ui.build_session_usage_panel())
+                continue
+
+            if line.lower().startswith("/last"):
+                parts = line.split(maxsplit=1)
+                target_tool = parts[1].strip() if len(parts) > 1 else None
+                ui.print_full_tool_result(target_tool or None)
+                continue
+
+            if line.lower() in ("/compact-ui", "/density", "/toggle-ui"):
+                new_flag = not ui.get_show_audit_panel()
+                ui.set_show_audit_panel(new_flag)
+                state = "shown" if new_flag else "hidden"
+                ui.console.print(f"[bold {ui.COLOR_PASS}]✓ Governance audit line is now {state}.[/]")
+                continue
+
+            if line.lower() in ("/sessions", "/resume"):
+                current_conv = prompt_resume_session(current_conv, workspace_root)
+                continue
+
             if line.lower() in ("/help", "/?", "help", "?"):
                 print_help()
                 continue
@@ -1334,16 +1592,19 @@ def interactive_repl(
                     )
                     continue
                 elif skill_trigger in ("skills", "list-skills"):
-                    from rich.table import Table
-                    from rich import box
-                    s_table = Table(title="Custom Project Skills (.safi/skills/)", box=box.ROUNDED, border_style=ui.COLOR_BRAND_600)
-                    s_table.add_column("Command", style=f"bold {ui.COLOR_BRAND_400}")
-                    s_table.add_column("Description", style="white")
-                    s_table.add_column("Path", style="dim")
                     if local_skills:
-                        for s_name, s_obj in local_skills.items():
-                            s_table.add_row(f"/{s_name}", s_obj.description, str(s_obj.file_path.relative_to(workspace_root)))
-                        ui.console.print(s_table)
+                        ui.render_menu(
+                            "Custom Project Skills (.safi/skills/)",
+                            [
+                                {"name": "Command", "style": f"bold {ui.COLOR_BRAND_400}"},
+                                {"name": "Description", "style": "white"},
+                                {"name": "Path", "style": "dim"},
+                            ],
+                            [
+                                [f"/{s_name}", s_obj.description, str(s_obj.file_path.relative_to(workspace_root))]
+                                for s_name, s_obj in local_skills.items()
+                            ],
+                        )
                     else:
                         ui.console.print(f"[dim]No custom skills found in {workspace_root / '.safi' / 'skills'}. Create a .md file there to add skills![/dim]")
                     continue
@@ -1355,11 +1616,15 @@ def interactive_repl(
             if sys.stdout.isatty():
                 cols = shutil.get_terminal_size((80, 24)).columns
                 prompt_vis_len = len(f" SAFi [{current_agent}] › ")
-                total_len = prompt_vis_len + len(line)
+                last_input_line = line.splitlines()[-1] if line else ""
+                total_len = prompt_vis_len + len(last_input_line)
                 lines_count = max(1, ((total_len - 1) // cols) + 1) if cols > 0 else 1
                 for _ in range(lines_count):
                     sys.stdout.write("\033[F\033[2K")
                 sys.stdout.flush()
+
+            if is_serving_alias(config.resolve_intellect_model(current_agent)):
+                current_model = resolve_model_preference(client, current_agent, force_refresh=True)
 
             run_agent_turn(
                 client=client,
@@ -1375,7 +1640,7 @@ def interactive_repl(
             )
 
     finally:
-        if readline:
+        if readline and not rich_input:
             try:
                 readline.write_history_file(hist_file)
             except OSError:

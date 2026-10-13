@@ -1,0 +1,45 @@
+[Unit]
+# Dedicated Conscience model server. The appliance's main server
+# (safi-llama-server.service) serves one --alias, so Intellect and Conscience
+# would otherwise share a single model. This unit runs a SECOND llama-server so
+# a deployment can pair a strong Intellect with a cheaper/faster judge served
+# from its own port.
+#
+# WIRE-UP
+# -------
+#   1. Ship the model (safi-model-fetch works for any catalogue entry) or place
+#      the GGUF under /var/lib/safi/models/<id>/.
+#   2. Install this unit and its env file:
+#        install -m 0644 /etc/safi/conscience-llama-server.env
+#        systemctl enable --now safi-llama-conscience-server.service
+#   3. Point the Conscience at it in /var/www/safi/.env:
+#        SAFI_CONSCIENCE_MODEL=safi-llama3.1-8b
+#        SAFI_CONSCIENCE_BASE_URL=http://127.0.0.1:8082/v1
+#      then restart safi.service. The provider stays "local" on the app side, so
+#      org allow-lists and the on-box output ceiling are unchanged.
+#
+# The env file is separate from the main server's on purpose: the judge does not
+# need the 64K context the answering model gets, and coupling the two would make
+# one context tuning change both servers. The default below (16K) keeps the KV
+# cache modest so both models fit the appliance's shared memory pool.
+Description=SAFi local Conscience model server (second llama-server)
+After=network.target local-fs.target
+Before=safi.service
+
+[Service]
+Type=simple
+User=safi
+Group=safi
+SupplementaryGroups=render video
+EnvironmentFile=/etc/safi/conscience-llama-server.env
+Environment=LD_LIBRARY_PATH=/opt/safi/vulkan
+ExecStart=/opt/safi/vulkan/llama-server --model /var/lib/safi/models/qwen3-coder-30b/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf --host 127.0.0.1 --port 8082 --alias safi-qwen3-coder-30b --ctx-size ${SAFI_CONSCIENCE_MODEL_CONTEXT} --threads ${SAFI_CONSCIENCE_MODEL_THREADS} --n-gpu-layers ${SAFI_CONSCIENCE_MODEL_GPU_LAYERS} -np 1 -b 2048 -ub 512 -fa on -ctk q8_0 -ctv q8_0 --reasoning off
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=900
+ExecStartPost=/bin/sh -c 'n=0; while [ "$$n" -lt 900 ]; do if curl -sf -m 5 http://127.0.0.1:8082/v1/models >/dev/null 2>&1; then exit 0; fi; n=$$((n+1)); sleep 1; done; echo "safi-llama-conscience-server: model server not answering on 127.0.0.1:8082 after 900s; check the journal for OOM or a failed model load" >&2; exit 1'
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

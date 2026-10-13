@@ -234,7 +234,7 @@ def test_local_commit_writes_the_chosen_alias_to_every_faculty(env_paths):
     for faculty in ("INTELLECT", "BACKEND", "NOTETAKER", "SUMMARIZER"):
         assert f"SAFI_{faculty}_MODEL=safi-qwen3-32b" in text
     assert "SAFI_LOCAL_MODEL_API_KEY=local" in text
-    assert "SAFI_MAX_INTELLECT_TOKENS=1024" in text
+    assert "SAFI_MAX_INTELLECT_TOKENS=8192" in text
 
 
 def test_local_commit_leaves_conscience_unpinned(env_paths):

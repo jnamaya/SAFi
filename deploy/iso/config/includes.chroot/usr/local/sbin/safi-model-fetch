@@ -594,14 +594,20 @@ def main(argv: list[str] | None = None) -> int:
         installed = installed_model_path(model, catalogue)
         if installed is not None:
             plan = [step for step in plan if step["kind"] != "model"]
-        # The local Jev bundle is a mandatory step, not an operator choice: an ISO
-        # that cannot audit itself offline is not a working appliance. Appended to
-        # the plan up front so the progress bar accounts for it from the start --
-        # adding steps later would make the percentage jump backwards.
-        installed_jev = installed_jev_dir(catalogue)
-        if installed_jev is None and safi_local.jev_local(catalogue):
-            plan.extend(dict(f, kind="jev_local")
-                        for f in safi_local.jev_local_files(catalogue))
+        # Ensure the dedicated Qwen3-Coder-30B Conscience model is planned and fetched alongside Intellect
+        conscience_model = safi_local.model_by_id(catalogue, "qwen3-coder-30b")
+        if conscience_model and conscience_model["id"] != model["id"]:
+            if installed_model_path(conscience_model, catalogue) is None:
+                plan.append({
+                    "kind": "conscience_model",
+                    "name": conscience_model["label"],
+                    "url": conscience_model["url"],
+                    "size": int(conscience_model["size"]),
+                    "sha256": conscience_model["sha256"],
+                    "archive": False,
+                    "model_obj": conscience_model,
+                })
+
         total = plan_total_bytes(plan)
 
         write_status(state="running", phase="starting", model=model["id"],
@@ -626,27 +632,18 @@ def main(argv: list[str] | None = None) -> int:
                 step_size=step["size"])
 
         model_path = installed
-        jev_cached: list[tuple[Path, dict]] = []
         for step in plan:
             cached = download(step, progress)
             if step["kind"] == "backend":
                 write_status(phase="installing", label=f"Installing {step['name']}")
                 install_backend(cached, Path(step.get("home") or CUDA_HOME))
                 cached.unlink(missing_ok=True)
-            elif step["kind"] == "jev_local":
-                # Held in the cache, not moved: the bundle is only coherent as a
-                # set, so a partial install would pass is_available() and then
-                # fail on a missing weights file. install_jev_local() renames the
-                # whole staging directory in one step.
-                jev_cached.append((cached, step))
+            elif step["kind"] == "conscience_model":
+                write_status(phase="installing", label=f"Installing {step['name']} weights")
+                install_model(cached, step["model_obj"], catalogue)
             else:
                 write_status(phase="installing", label="Installing model weights")
                 model_path = install_model(cached, model, catalogue)
-
-        jev_dir = installed_jev
-        if jev_cached:
-            write_status(phase="installing", label="Installing local Jev bundle")
-            jev_dir = install_jev_local(jev_cached, catalogue)
 
         if model_path is None:
             raise FetchError("the model was never installed")
@@ -657,12 +654,20 @@ def main(argv: list[str] | None = None) -> int:
             install_unit(catalogue, model, backend, model_path)
             write_status(phase="starting", label="Starting the model server", percent=99)
             activate_unit()
+            # Start and enable the dedicated conscience model server if its weights exist
+            conscience_weights = model_root(catalogue or {}) / "qwen3-coder-30b" / "Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"
+            if conscience_weights.exists():
+                try:
+                    subprocess.run(["systemctl", "daemon-reload"], check=True, capture_output=True)
+                    subprocess.run(["systemctl", "restart", "safi-llama-conscience-server.service"], check=False, capture_output=True)
+                    subprocess.run(["systemctl", "enable", "safi-llama-conscience-server.service"], check=False, capture_output=True)
+                except Exception as exc:
+                    print(f"note: could not start conscience server unit: {exc}", file=sys.stderr)
 
         write_status(state="done", phase="done", percent=100,
                      label="Model ready" if activated else "Model downloaded",
                      model_path=str(model_path), alias=model["alias"],
                      backend=backend["id"], activated=activated,
-                     jev_local_path=str(jev_dir) if jev_dir else "",
                      finished=time.time())
         return 0
     except FetchError as exc:

@@ -82,13 +82,15 @@ class _StubClient:
         elif kind == "anthropic":
             self.messages = self
         elif kind == "gemini":
-            self.aio = type("A", (), {"models": self})()
+            # The sync genai.Client exposes models.generate_content directly;
+            # the async surface was .aio.models and is no longer used.
+            self.models = self
 
-    async def create(self, **kwargs):
+    def create(self, **kwargs):
         self.last_kwargs = kwargs
         return self._resp
 
-    async def generate_content(self, **kwargs):
+    def generate_content(self, **kwargs):
         self.last_kwargs = kwargs
         return self._resp
 

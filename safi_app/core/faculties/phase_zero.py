@@ -120,7 +120,12 @@ class PhaseZeroGate:
 
         return True, "pass"
 
-    def evaluate_tool_result(self, tool_result: str) -> Tuple[bool, str]:
+    def evaluate_tool_result(self, tool_result: str, is_trusted_local: bool = False) -> Tuple[bool, str]:
+        """
+        Phase Zero deterministic scan for tool results / content entering context.
+        Untrusted external content receives full signature and entropy heuristic scans.
+        Trusted local read-only content uses a fast signature-only scan.
+        """
         text = str(tool_result or "")
         text_lower = text.lower()
 
@@ -133,6 +138,10 @@ class PhaseZeroGate:
                     )
                     return False, f"injection:{category}"
 
+        # Fast deterministic scan for trusted local read-only content skips embedded entropy heuristic
+        if is_trusted_local:
+            return True, "pass"
+
         if self._has_embedded_instruction(text):
             self.log.warning(
                 "PhaseZeroGate: Embedded instruction heuristic triggered in tool result."
@@ -140,6 +149,10 @@ class PhaseZeroGate:
             return False, "injection:embedded_instruction"
 
         return True, "pass"
+
+    def evaluate_untrusted_content(self, content: str) -> Tuple[bool, str]:
+        """Explicit deterministic scan for untrusted external content entering context."""
+        return self.evaluate_tool_result(content, is_trusted_local=False)
 
     def _probes_internals(self, prompt_lower: str):
         """

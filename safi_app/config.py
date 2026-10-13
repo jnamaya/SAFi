@@ -94,7 +94,9 @@ def active_local_model() -> str:
     if unit:
         match = _re.search(r"--alias\s+(\S+)", unit)
         if match:
-            return match.group(1).strip()
+            # If multiple comma-separated aliases are provided (e.g. for backwards compatibility),
+            # the primary served model alias is the first one.
+            return match.group(1).split(",")[0].strip()
     return ""
 
 
@@ -353,10 +355,21 @@ class Config:
     ZHIPU_API_KEY = os.environ.get("ZHIPU_API_KEY")
     CEREBRAS_API_KEY = os.environ.get("CEREBRAS_API_KEY")
     TYPESAFE_API_KEY = os.environ.get("TYPESAFE_API_KEY", "").strip()
+    TYPESAFE_BASE_URL = os.environ.get("TYPESAFE_BASE_URL", "").strip()
     # The appliance uses the harmless value "local". It remains an
     # API-key-shaped setting because the existing OpenAI client uses the same
     # initialization path for every OpenAI-compatible endpoint.
     LOCAL_MODEL_API_KEY = os.environ.get("SAFI_LOCAL_MODEL_API_KEY", "").strip()
+    # A dedicated on-box endpoint for the Conscience, so a deployment can pair a
+    # strong Intellect with a cheaper/faster judge running on its own
+    # llama-server. The main local provider points at the single server the
+    # appliance ships (one --alias), so Intellect and Conscience otherwise share
+    # one model. Consumed by runtime_factory for any Conscience model that
+    # resolves to the local provider; empty (the default) = share the main
+    # server. Transport only: it moves the address, never the provider, so
+    # provider governance, org allow-lists and the on-box output ceiling still
+    # key on the one provider name "local".
+    CONSCIENCE_BASE_URL = os.environ.get("SAFI_CONSCIENCE_BASE_URL", "").strip()
     # There is deliberately no LOCAL_JEV_PATH field here. The directory of a
     # verified Laya bundle is read straight from the environment by jev_local,
     # because that lookup has to tell "absent" (probe the default location) from

@@ -44,6 +44,26 @@ class ApplicationSAFi(SAFi, BackgroundTasksMixin):
             )
 
 
+def build_conscience_route(config, conscience_model: str) -> dict:
+    """The Conscience route: provider, model, and optional dedicated base_url.
+
+    The Conscience may run on its own local endpoint
+    (SAFI_CONSCIENCE_BASE_URL), separate from the Intellect's model server, so a
+    deployment can pair a strong answering model with a cheaper, faster judge.
+    The override applies only when the Conscience resolves to the local
+    provider: it relocates a transport address, it never changes which provider
+    is chosen, so a cloud Conscience keeps its provider's own endpoint — an
+    override must not silently move a hosted audit off its configured provider.
+    """
+    provider = getattr(config, "CONSCIENCE_PROVIDER", detect_provider(conscience_model))
+    route = {"provider": provider, "model": conscience_model}
+    if provider == "local":
+        base_url = (getattr(config, "CONSCIENCE_BASE_URL", "") or "").strip()
+        if base_url:
+            route["base_url"] = base_url
+    return route
+
+
 def build_safi(
     *,
     config,
@@ -63,10 +83,7 @@ def build_safi(
                 "provider": getattr(config, "INTELLECT_PROVIDER", detect_provider(intellect_model)),
                 "model": intellect_model,
             },
-            "conscience": {
-                "provider": getattr(config, "CONSCIENCE_PROVIDER", detect_provider(conscience_model)),
-                "model": conscience_model,
-            },
+            "conscience": build_conscience_route(config, conscience_model),
         },
     }
     llm_provider = LLMProvider(llm_config)

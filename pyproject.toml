@@ -14,6 +14,13 @@ dependencies = [
     "rich>=13.0.0",
 ]
 
+[project.optional-dependencies]
+# Rich multi-line prompt input (Alt+Enter / Ctrl+J newlines, bracketed paste,
+# inline completion). Optional: the CLI falls back to GNU readline when absent.
+interactive = [
+    "prompt_toolkit>=3.0.0",
+]
+
 [project.scripts]
 safi = "safi_cli.main:main"
 

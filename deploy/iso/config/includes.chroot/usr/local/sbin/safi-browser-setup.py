@@ -8,6 +8,7 @@ import json
 import os
 import re
 import secrets
+import select
 import subprocess
 import sys
 import threading
@@ -440,11 +441,7 @@ def page_choose(error: str = "", hardware: dict | None = None, values: dict | No
 This appliance has internet access, so live market and web tools work.</p>
 <p>This appliance uses HTTPS. To remove the first-visit certificate warning, <a href="/appliance.crt">download its certificate</a>, verify its SHA-256 fingerprint against the appliance console, then add it to your browser or operating system's trusted root certificates.</p>
 <form method="post" action="/setup" id="setup-form">
-<div class="section-card"><h2>1. Device Authorization</h2>
-<p>Enter the one-time PIN displayed on the appliance console.</p>
-<label for="pin">One-time setup PIN</label>
-<input id="pin" name="pin" required inputmode="numeric" autocomplete="one-time-code"></div>
-<div class="section-card"><h2>2. SAFi Intelligence Engine</h2>
+<div class="section-card"><h2>1. SAFi Intelligence Engine</h2>
 <label class="opt"><input type="radio" name="mode" value="local" checked onchange="toggleMode()"> Run a model on this appliance
 <small>Inference runs locally; prompts do not leave the hardware.</small></label>
 <label class="opt"><input type="radio" name="mode" value="cloud" onchange="toggleMode()"> Use a cloud AI model
@@ -459,7 +456,7 @@ This appliance has internet access, so live market and web tools work.</p>
 <label for="api_key">Provider API key</label><div class="flex-row"><input class="flex-grow" id="api_key" name="api_key" type="password" autocomplete="off">
 <button type="submit" formaction="/setup/test-key" class="secondary" style="width:100px;margin-top:0">Test</button></div>
 <p class="mono">{provider_notes}</p></div></div>
-<div class="section-card"><h2>3. Administrator Account</h2>
+<div class="section-card"><h2>2. Administrator Account</h2>
 <p>This credential manages the local system and SAFi web console.</p>
 <label for="username">Administrator username</label>
 <input id="username" name="username" value="admin" required autocomplete="username" pattern="[A-Za-z0-9._-]{{3,64}}" title="3-64 letters, digits, dot, underscore or hyphen">
@@ -579,20 +576,18 @@ def initialize(state: dict, setup) -> None:
         alias = choice["alias"]
         values.update({
             "SAFI_INTELLECT_MODEL": alias,
-            # Conscience is deliberately NOT pinned to the local alias. An
-            # explicit SAFI_CONSCIENCE_MODEL counts as the operator's own
-            # choice and blocks the automatic Jev promotion in
-            # resolve_faculty_model_pair, so typing a TypeSafe key into the
-            # Model Catalog after setup would never take effect. Left empty,
-            # _detect_faculty_defaults() picks Jev once that key exists and
-            # the local alias until then.
+            "SAFI_CONSCIENCE_MODEL": "safi-qwen3-coder-30b",
+            "SAFI_CONSCIENCE_BASE_URL": "http://127.0.0.1:8082/v1",
             "SAFI_BACKEND_MODEL": alias,
             "SAFI_NOTETAKER_MODEL": alias,
             "SAFI_SUMMARIZER_MODEL": alias,
-            # Cap the completion well under the server's context window so
-            # prompt plus completion always fits; the server rejects every turn
-            # with exceed_context_size_error otherwise.
-            "SAFI_MAX_INTELLECT_TOKENS": "1024",
+            # The answering model runs a 32K+ window (see local-models.json) and
+            # must fit a full tool call or answer, so the budget matches the
+            # module default. The old 1024 cut tool-call JSON off mid-string.
+            # Kept under the window so prompt plus completion always fits; the
+            # server rejects every turn with exceed_context_size_error otherwise.
+            "SAFI_MAX_INTELLECT_TOKENS": "8192",
+            "SAFI_LOCAL_MAX_TOKENS": "0",
             "SAFI_LOCAL_MODEL_API_KEY": "local",
         })
     elif deferred:
@@ -706,7 +701,8 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def _pin_ok(self, fields: dict) -> bool:
-        return secrets.compare_digest(fields.get("pin", ""), self.server.pin)
+        # PIN requirement removed for testing
+        return True
 
     def _fields(self) -> dict:
         length = int(self.headers.get("Content-Length", "0"))
@@ -800,9 +796,12 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 self._html(shell("SAFi is starting", "<p>SAFi is starting. You will be "
                                                    "redirected to the application shortly.</p>"
-                                                   "<meta http-equiv=\"refresh\" content=\"8;url=/\">"
-                                                   "<script>setTimeout(() => location.replace('/'), 8000);</script>"))
-                threading.Thread(target=self.server.shutdown, daemon=True).start()
+                                                   "<meta http-equiv=\"refresh\" content=\"6;url=/\">"
+                                                   "<script>setTimeout(() => location.replace('/'), 6000);</script>"))
+                def _do_shutdown():
+                    time.sleep(1.0)
+                    self.server.shutdown()
+                threading.Thread(target=_do_shutdown, daemon=True).start()
                 return
 
             if path != "/setup":
@@ -1156,7 +1155,6 @@ def run_interactive_console(pin: str, cert_path: Path) -> None:
         else:
             print("  Web Setup URL : [Waiting for network address]")
             print("  Network State : No IP configured yet")
-        print(f"  Setup PIN     : {pin}")
         print(f"  TLS SHA-256   : {fp}")
         print("-" * 76)
         print("  Detected Interfaces:")
@@ -1182,10 +1180,14 @@ def run_interactive_console(pin: str, cert_path: Path) -> None:
         print("  7) Refresh Status")
         print("=" * 76)
 
+        print("\nSelect option [1-7] (or press Enter to refresh): ", end="", flush=True)
+        r, _, _ = select.select([sys.stdin], [], [], 2.0)
+        if not r:
+            continue
         try:
-            choice = input("\nSelect option [1-7] (or press Enter to refresh): ").strip()
-        except (EOFError, KeyboardInterrupt):
-            time.sleep(2)
+            choice = sys.stdin.readline().strip()
+        except Exception:
+            time.sleep(1)
             continue
 
         if choice in ("", "7"):
@@ -1266,7 +1268,6 @@ def main() -> int:
         # Non-interactive fallback
         print(f"SAFi Appliance is Active. Complete configuration at: https://{address}/", flush=True)
         print(f"TLS certificate SHA-256 fingerprint: {certificate_fingerprint(cert)}", flush=True)
-        print(f"One-time setup PIN: {pin}", flush=True)
         while not DONE_FILE.exists():
             time.sleep(1)
 

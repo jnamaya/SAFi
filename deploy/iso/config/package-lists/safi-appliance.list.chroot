@@ -106,3 +106,4 @@ vulkan-tools
 mesa-utils
 
 syslinux-utils
+systemd-timesyncd

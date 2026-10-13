@@ -6,6 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import requests
+
 from safi_cli.tools import execute_tool, resolve_safe_path
 from safi_cli import config
 
@@ -95,13 +97,29 @@ from safi_cli.main import run_agent_turn, DEFAULT_MAX_STEPS
 class TestSafiCliTurn(unittest.TestCase):
     def test_run_agent_turn_respects_max_steps(self):
         client = MagicMock()
-        # Simulate continuous tool calls without a terminal answer
-        client.send_turn.return_value = {
-            "type": "tool_call",
-            "tool_name": "list",
-            "parameters": {"path": "."},
+        # Endless tool calls, then a final answer when the loop forces one with
+        # tools disabled.
+        final = {
+            "type": "response",
+            "finalOutput": "Summarised after the loop.",
             "willDecision": "approve",
+            "conscienceLedger": [],
         }
+        client.send_turn.side_effect = [
+            {
+                "type": "tool_call",
+                "tool_name": "list",
+                "parameters": {"path": "."},
+                "willDecision": "approve",
+            },
+            {
+                "type": "tool_call",
+                "tool_name": "list",
+                "parameters": {"path": "."},
+                "willDecision": "approve",
+            },
+            final,
+        ]
         res = run_agent_turn(
             client=client,
             prompt="test prompt",
@@ -112,8 +130,11 @@ class TestSafiCliTurn(unittest.TestCase):
             auto_approve=True,
             max_steps=2,
         )
-        self.assertIsNone(res)
-        self.assertEqual(client.send_turn.call_count, 2)
+        # 2 loop iterations + 1 forced finalization pass.
+        self.assertEqual(client.send_turn.call_count, 3)
+        self.assertEqual(client.send_turn.call_args.kwargs.get("tools"), [])
+        self.assertIsNotNone(res)
+        self.assertEqual(res.get("finalOutput"), "Summarised after the loop.")
 
     def test_run_agent_turn_terminal_response(self):
         client = MagicMock()
@@ -333,7 +354,7 @@ class TestSafiCliDynamicAgentDiscovery(unittest.TestCase):
         AVAILABLE_AGENTS.clear()
         AVAILABLE_AGENTS.update(DEFAULT_AGENTS)
 
-    @patch("requests.get")
+    @patch.object(requests.Session, "get")
     def test_client_get_available_agents_success(self, mock_get):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -357,7 +378,7 @@ class TestSafiCliDynamicAgentDiscovery(unittest.TestCase):
             timeout=5,
         )
 
-    @patch("requests.get")
+    @patch.object(requests.Session, "get")
     def test_client_get_available_agents_fallback_route(self, mock_get):
         mock_404 = MagicMock()
         mock_404.status_code = 404
@@ -377,7 +398,7 @@ class TestSafiCliDynamicAgentDiscovery(unittest.TestCase):
         self.assertEqual(agents[0]["key"], "remote_agent")
         self.assertEqual(mock_get.call_count, 2)
 
-    @patch("requests.get", side_effect=Exception("Connection refused"))
+    @patch.object(requests.Session, "get", side_effect=Exception("Connection refused"))
     def test_client_get_available_agents_error_returns_empty(self, mock_get):
         client = SafiClient("https://offline-instance.local")
         agents = client.get_available_agents()
@@ -441,7 +462,7 @@ class TestSafiCliDynamicAgentDiscovery(unittest.TestCase):
 
 
 class TestSafiClientToolPayload(unittest.TestCase):
-    @patch("requests.post")
+    @patch.object(requests.Session, "post")
     def test_send_turn_includes_tools_for_software_engineer(self, mock_post):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -464,7 +485,7 @@ class TestSafiClientToolPayload(unittest.TestCase):
         self.assertIn("read", tool_names)
         self.assertIn("write", tool_names)
 
-    @patch("requests.post")
+    @patch.object(requests.Session, "post")
     def test_send_turn_sends_empty_tools_for_fiduciary(self, mock_post):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -632,7 +653,7 @@ class TestSafiModelSelection(unittest.TestCase):
     def test_client_send_turn_passes_model(self):
         from safi_cli.client import SafiClient
         client = SafiClient("http://mock-backend:5000", "test-key")
-        with unittest.mock.patch("requests.post") as mock_post:
+        with unittest.mock.patch.object(requests.Session, "post") as mock_post:
             mock_post.return_value.status_code = 200
             mock_post.return_value.json.return_value = {"ok": True, "type": "final_output", "finalOutput": "Hello"}
             client.send_turn(
@@ -651,7 +672,7 @@ class TestSafiModelSelection(unittest.TestCase):
     def test_client_get_available_models(self):
         from safi_cli.client import SafiClient
         client = SafiClient("http://mock-backend:5000", "test-key")
-        with unittest.mock.patch("requests.get") as mock_get:
+        with unittest.mock.patch.object(requests.Session, "get") as mock_get:
             mock_get.return_value.status_code = 200
             mock_get.return_value.json.return_value = {
                 "ok": True,
@@ -747,7 +768,7 @@ class TestSafiModelSelection(unittest.TestCase):
                 self.assertFalse(should_exit)
                 mock_switch.assert_called_once()
 
-    @patch("requests.get")
+    @patch.object(requests.Session, "get")
     def test_get_turn_progress(self, mock_get):
         from safi_cli.client import SafiClient
         mock_resp = MagicMock()
@@ -770,7 +791,7 @@ class TestSafiModelSelection(unittest.TestCase):
             timeout=2.0,
         )
 
-    @patch("requests.post")
+    @patch.object(requests.Session, "post")
     def test_compress_conversation_client(self, mock_post):
         from safi_cli.client import SafiClient
         mock_resp = MagicMock()
@@ -1092,6 +1113,16 @@ class TestSafiSubagentDelegation(unittest.TestCase):
         ui.mark_active_todos_completed()
         self.assertEqual(ui.get_active_todos()[0]["status"], "completed")
 
+        # Test advance_active_todo
+        ui.set_active_todos([
+            {"task": "Step 1", "status": "in_progress"},
+            {"task": "Step 2", "status": "pending"},
+        ])
+        ui.advance_active_todo("write", {"path": "a.py"}, is_success=True)
+        active = ui.get_active_todos()
+        self.assertEqual(active[0]["status"], "completed")
+        self.assertEqual(active[1]["status"], "in_progress")
+
         # Test clear
         ui.clear_active_todos()
         self.assertEqual(len(ui.get_active_todos()), 0)
@@ -1295,6 +1326,202 @@ class TestSafiCliHardeningAndUiFixes(unittest.TestCase):
                 current_conv="conv-1",
             )
             self.assertFalse(should_exit)
+
+
+class TestSafiUiEnhancements(unittest.TestCase):
+    def test_build_progress_line_phases(self):
+        from safi_cli.ui import build_progress_line
+
+        # Early phase with elapsed time
+        line = build_progress_line(["checking_request", "analyzing"], "Analyzing the request", 4.2)
+        self.assertIn("Analyzing the request", line)
+        self.assertIn("4.2s", line)
+
+        # Drafting override respects model
+        line = build_progress_line(None, "Drafting response", 1.5, model="gpt-4o")
+        self.assertIn("Drafting response with gpt-4o", line)
+
+        # No data yet falls back to a sensible label
+        line = build_progress_line(None, None, 0.0)
+        self.assertIn("Governing turn", line)
+
+    def test_audit_panel_density_toggle(self):
+        from safi_cli.ui import get_show_audit_panel, set_show_audit_panel
+
+        original = get_show_audit_panel()
+        set_show_audit_panel(False)
+        self.assertFalse(get_show_audit_panel())
+        set_show_audit_panel(True)
+        self.assertTrue(get_show_audit_panel())
+        set_show_audit_panel(original)
+
+    def test_progress_line_render_and_exit_branch(self):
+        from safi_cli.ui import build_progress_line
+        l1 = build_progress_line(["checking_request"], None, 1.0)
+        l2 = build_progress_line(["checking_request", "analyzing", "auditing"], None, 1.0)
+        self.assertIn("Checking request safeguards", l1)
+        self.assertIn("Auditing the response against policy", l2)
+
+    def test_render_menu_helper(self):
+        from safi_cli.ui import render_menu
+
+        table = render_menu(
+            "Test Menu",
+            [
+                {"name": "#", "justify": "right", "width": 3},
+                {"name": "Name", "style": "bold white"},
+            ],
+            [["1", "item"], ["2", "item"]],
+        )
+        self.assertIsNotNone(table)
+        self.assertEqual(table.columns[1].header, "Name")
+
+    def test_session_usage_panel(self):
+        from safi_cli.ui import build_session_usage_panel, reset_session_telemetry
+
+        reset_session_telemetry()
+        panel = build_session_usage_panel()
+        self.assertIsNotNone(panel)
+
+    def test_diff_stats_line_in_proposal(self):
+        from safi_cli.ui import print_tool_proposal
+
+        # A large edit must render without crashing and be preview-capped.
+        target = "\n".join(f"line {i}" for i in range(200))
+        replacement = "\n".join(f"line {i} changed" for i in range(200))
+        print_tool_proposal(
+            "edit",
+            {"path": "big.py", "target": target, "replacement": replacement},
+            {"willDecision": "approved"},
+        )
+
+    def test_full_tool_result_flow(self):
+        from safi_cli import ui
+
+        ui.record_tool_result("grep", "src/a.py:1: needle")
+        entry = ui.get_last_tool_result("grep")
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry["result"], "src/a.py:1: needle")
+
+        ui.print_full_tool_result("missing_tool")  # no exception
+        ui.record_tool_result("todowrite", "internal")  # ignored by recorder
+        self.assertNotEqual(ui.get_last_tool_result()["tool"], "todowrite")
+
+
+class TestSafiMultilineInput(unittest.TestCase):
+    def test_continuation_joins_lines(self):
+        from safi_cli.main import _collect_multiline
+
+        with patch("builtins.input", side_effect=["second"]):
+            out = _collect_multiline("first\\")
+            self.assertEqual(out, "first\nsecond")
+
+    def test_single_line_passthrough(self):
+        from safi_cli.main import _collect_multiline
+
+        with patch("builtins.input", side_effect=["no-backslash"]):
+            out = _collect_multiline("plain")
+            self.assertEqual(out, "plain")
+
+    def test_multiline_stops_on_non_continuation(self):
+        from safi_cli.main import _collect_multiline
+
+        with patch("builtins.input", side_effect=["continued", "unused"]):
+            out = _collect_multiline("first\\")
+            self.assertEqual(out, "first\ncontinued")
+
+
+class TestPromptInputFallback(unittest.TestCase):
+    def test_using_prompt_toolkit_returns_bool(self):
+        from safi_cli import prompt_input
+
+        self.assertIsInstance(prompt_input.using_prompt_toolkit(), bool)
+
+    def test_read_prompt_fallback_collects_multiline(self):
+        from safi_cli import prompt_input
+
+        with patch("safi_cli.prompt_input.using_prompt_toolkit", return_value=False):
+            with patch("builtins.input", side_effect=["first\\", "second"]):
+                out = prompt_input.read_prompt("software_engineer")
+        self.assertEqual(out, "first\nsecond")
+
+    def test_read_prompt_fallback_single_line(self):
+        from safi_cli import prompt_input
+
+        with patch("safi_cli.prompt_input.using_prompt_toolkit", return_value=False):
+            with patch("builtins.input", return_value="hello world"):
+                out = prompt_input.read_prompt("software_engineer")
+        self.assertEqual(out, "hello world")
+
+    def test_read_prompt_fallback_eof_returns_none(self):
+        from safi_cli import prompt_input
+
+        with patch("safi_cli.prompt_input.using_prompt_toolkit", return_value=False):
+            with patch("builtins.input", side_effect=EOFError):
+                out = prompt_input.read_prompt("software_engineer")
+        self.assertIsNone(out)
+
+    def test_collect_multiline_alias_matches(self):
+        from safi_cli.main import _collect_multiline
+
+        with patch("builtins.input", side_effect=["next"]):
+            self.assertEqual(_collect_multiline("a\\"), "a\nnext")
+
+    def test_callback_completer_if_available(self):
+        from safi_cli import prompt_input
+
+        if not prompt_input._HAS_PROMPT_TOOLKIT:
+            self.skipTest("prompt_toolkit not installed")
+
+        from prompt_toolkit.document import Document
+
+        class _Event:
+            pass
+
+        completer = prompt_input._CallbackCompleter(
+            lambda line, text: ["/agent", "/agents"] if text.startswith("/a") else []
+        )
+        results = list(completer.get_completions(Document("/ag", cursor_position=3), _Event()))
+        self.assertEqual([c.text for c in results], ["/agent", "/agents"])
+
+
+class TestSafiSessionResume(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.sessions_file = Path(self.temp_dir.name) / "sessions.json"
+        self.orig = config.SESSIONS_FILE
+        config.SESSIONS_FILE = self.sessions_file
+        self.orig_dir = config.SESSIONS_FILE  # no-op alias for clarity
+
+    def tearDown(self):
+        config.SESSIONS_FILE = self.orig
+        self.temp_dir.cleanup()
+
+    def test_set_and_list_sessions(self):
+        config.set_workspace_session("/tmp/repo-a", "conv-aaa")
+        config.set_workspace_session("/tmp/repo-b", "conv-bbb")
+        sessions = config.list_sessions()
+        # Metadata key excluded from session list
+        self.assertNotIn("_paths", sessions)
+        self.assertIn("conv-aaa", sessions.values())
+        self.assertIn("conv-bbb", sessions.values())
+        # Path map populated for friendly display
+        self.assertEqual(config.session_paths()["conv-aaa"], "/tmp/repo-a")
+
+    def test_session_for_workspace(self):
+        config.set_workspace_session("/tmp/repo-x", "conv-xyz")
+        self.assertEqual(config.session_for_workspace("/tmp/repo-x"), "conv-xyz")
+
+    def test_resolve_session_id_stores_path(self):
+        conv = config.resolve_session_id("/tmp/repo-new", new_session=True)
+        self.assertEqual(config.session_paths().get(conv), "/tmp/repo-new")
+
+    def test_prompt_resume_session_cancelled(self):
+        from safi_cli.main import prompt_resume_session
+
+        with patch("builtins.input", return_value=""):
+            conv = prompt_resume_session("conv-current", Path("/tmp/repo-resume"))
+        self.assertEqual(conv, "conv-current")
 
 
 if __name__ == "__main__":

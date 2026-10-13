@@ -18,12 +18,10 @@
     "window: 2 (K and V) * layers * kv_heads * head_dim * 2 bytes. For Qwen3 that",
     "is 144 KiB/token for 4B and 8B (36 layers), 160 KiB/token for 14B (40) and",
     "256 KiB/token for 32B (64). Cross-checked against llama.cpp's reported KV",
-    "size for Qwen3-0.6B (112 KiB/token) and Qwen3-8B (144 KiB/token) at 8192.",
-    "",
-    "jev_local is a separate block because it is not a chat model: the 'models' list is what the wizard offers as Intellect, and every entry there is a GGUF for llama.cpp. Laya is a fixed component -- there is nothing for the operator to choose -- so putting it in that list would show a 1.7 GB encoder in the model picker and let a fetch of it try to start a llama-server that cannot load the file. safi-model-fetch reads it as a mandatory step of first-boot setup instead, alongside the selected model."
+    "size for Qwen3-0.6B (112 KiB/token) and Qwen3-8B (144 KiB/token) at 8192."
   ],
   "context_size": 8192,
-  "max_output_tokens": 1024,
+  "max_output_tokens": 8192,
   "model_root": "/var/lib/safi/models",
   "model_root_comment": "Installed weights live at <model_root>/<model id>/<file>. Stated here rather than hardcoded so safi-model-fetch (which writes) and the app (which reports what is installed) cannot drift apart. 'file' is given per model for the same reason: deriving it from the url's basename is a convention, and a convention shared across two codebases is a drift waiting to happen.",
   "overhead_bytes": 2684354560,
@@ -51,7 +49,9 @@
       "label": "AMD GPU (Vulkan / RADV)",
       "min_driver": 0,
       "gpu": true,
-      "vendors": ["amd"],
+      "vendors": [
+        "amd"
+      ],
       "on_iso": false,
       "home": "/opt/safi/vulkan",
       "home_comment": "safi-model-fetch installs the llama-server archive here and points the systemd unit's LD_LIBRARY_PATH at it, the same way CUDA builds land in /opt/safi/cuda.",
@@ -69,7 +69,9 @@
       "label": "NVIDIA GPU (CUDA 12.8)",
       "min_driver": 525,
       "gpu": true,
-      "vendors": ["nvidia"],
+      "vendors": [
+        "nvidia"
+      ],
       "home": "/opt/safi/cuda",
       "assets": [
         {
@@ -91,7 +93,9 @@
       "label": "NVIDIA GPU (CUDA 13.4)",
       "min_driver": 580,
       "gpu": true,
-      "vendors": ["nvidia"],
+      "vendors": [
+        "nvidia"
+      ],
       "home": "/opt/safi/cuda",
       "assets": [
         {
@@ -122,111 +126,7 @@
     "GPU layer load rather than at startup -- hence the two-entry list and the",
     "combined 765 MB pre-flight, not 171 MB."
   ],
-  "jev_local": {
-    "id": "laya",
-    "label": "Laya (local typed reasoning)",
-    "model": "jev-1.13.0",
-    "summary": "Serves Jev's typed-decision API locally, so Conscience works with no API key and no internet. Not a chat model: Intellect still does the writing.",
-    "url_base_comment": "Pinned to a commit, not to a branch or a tag, so a rebuild cannot silently pick up different weights: a mutable ref would make the ISO's supply chain unverifiable between releases.",
-    "revision": "68f27dfe5a27a54fb2b1fefc432f43f972e90868",
-    "min_ram": 2147483648,
-    "min_ram_comment": "2 GiB while resident; loaded into each app worker, not shared.",
-    "files": [
-      {
-        "name": "laya.onnx",
-        "url": "https://huggingface.co/receptron/laya-onnx/resolve/68f27dfe5a27a54fb2b1fefc432f43f972e90868/laya.onnx",
-        "size": 3807291,
-        "sha256": "a874eb254b58b0fcb1e7ad56fbb188c29d64e08c9a46b689433e1f52c66dba1e",
-        "note": "ONNX graph. Tensors are in laya.onnx.data."
-      },
-      {
-        "name": "laya.onnx.data",
-        "url": "https://huggingface.co/receptron/laya-onnx/resolve/68f27dfe5a27a54fb2b1fefc432f43f972e90868/laya.onnx.data",
-        "size": 1685258240,
-        "sha256": "487746363a8da57bcadb4345352997d22a0fb90d70aa22c6856668d023242aba",
-        "note": "External tensor weights. Nearly all of the download."
-      },
-      {
-        "name": "laya_config.json",
-        "url": "https://huggingface.co/receptron/laya-onnx/resolve/68f27dfe5a27a54fb2b1fefc432f43f972e90868/laya_config.json",
-        "size": 369,
-        "sha256": "5049005dc6ae3ca5e82cc7d85c421357d5c543817300c8e8c5281ddbc69bb561",
-        "note": "max_len, head_max_len and the fitted temperatures."
-      },
-      {
-        "name": "tokenizer/tokenizer.json",
-        "url": "https://huggingface.co/receptron/laya-onnx/resolve/68f27dfe5a27a54fb2b1fefc432f43f972e90868/tokenizer/tokenizer.json",
-        "size": 3583228,
-        "sha256": "6c8aaa9a542084f2457eab775d4eeb51f92a70c0fd9de28d5edb0ddec3c08d30",
-        "note": "WordPiece vocabulary."
-      },
-      {
-        "name": "tokenizer/tokenizer_config.json",
-        "url": "https://huggingface.co/receptron/laya-onnx/resolve/68f27dfe5a27a54fb2b1fefc432f43f972e90868/tokenizer/tokenizer_config.json",
-        "size": 308,
-        "sha256": "50044de60daaa73df97d262e15a40d4faf0160e7d742df64b377877a1320dd12",
-        "note": "Special-token names."
-      }
-    ],
-    "install_note": "Installed to <model_root>/laya so the weights sit beside the chat models; safi-model-fetch writes SAFI_LOCAL_JEV_PATH into the env file only after every file has verified, and clears it if the directory is ever removed."
-  },
   "models": [
-    {
-      "id": "qwen3-4b",
-      "alias": "safi-qwen3-4b",
-      "file": "Qwen3-4B-Q4_K_M.gguf",
-      "label": "SAFi-Qwen3-4B",
-      "summary": "Smallest useful local model. Fits a 6 GB VM.",
-      "url": "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf",
-      "sha256": "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5",
-      "size": 2497280256,
-      "kv_bytes_per_token": 147456,
-      "min_ram": 6250000000,
-      "min_vram": 0,
-      "min_vram_comment": "0 = runs acceptably on CPU; a GPU only makes it faster."
-    },
-    {
-      "id": "qwen3-8b",
-      "alias": "safi-qwen3-8b",
-      "file": "Qwen3-8B-Q4_K_M.gguf",
-      "label": "SAFi-Qwen3-8B",
-      "summary": "Recommended default. Follows SAFi's reflection contract and uses the fiduciary tools.",
-      "url": "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q4_K_M.gguf",
-      "sha256": "d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785",
-      "size": 5027783488,
-      "kv_bytes_per_token": 147456,
-      "min_ram": 9000000000,
-      "min_vram": 0,
-      "min_vram_comment": "0 = runs acceptably on CPU; a GPU only makes it faster."
-    },
-    {
-      "id": "qwen3-14b",
-      "alias": "safi-qwen3-14b",
-      "file": "Qwen3-14B-Q4_K_M.gguf",
-      "label": "SAFi-Qwen3-14B",
-      "summary": "Noticeably better reasoning. Wants 16 GB RAM, or a GPU to keep it responsive.",
-      "url": "https://huggingface.co/Qwen/Qwen3-14B-GGUF/resolve/main/Qwen3-14B-Q4_K_M.gguf",
-      "sha256": "500a8806e85ee9c83f3ae08420295592451379b4f8cf2d0f41c15dffeb6b81f0",
-      "size": 9001752960,
-      "kv_bytes_per_token": 163840,
-      "min_ram": 13000000000,
-      "min_vram": 10350000000,
-      "min_vram_comment": "Roughly weights + KV at 8192 ctx. Below this, expect partial layer offload: it still runs, on CPU, slowly."
-    },
-    {
-      "id": "qwen3-32b",
-      "alias": "safi-qwen3-32b",
-      "file": "Qwen3-32B-Q4_K_M.gguf",
-      "label": "SAFi-Qwen3-32B",
-      "summary": "Largest offered. Effectively GPU-only: 20 GB of weights does not fit a CPU VM comfortably.",
-      "url": "https://huggingface.co/Qwen/Qwen3-32B-GGUF/resolve/main/Qwen3-32B-Q4_K_M.gguf",
-      "sha256": "efd971561896866f0e910cce52761ca77b1b138090c7f15fe284676d57d1f689",
-      "size": 19762149024,
-      "kv_bytes_per_token": 262144,
-      "min_ram": 24500000000,
-      "min_vram": 22000000000,
-      "min_vram_comment": "Weights (19.8 GB) + KV (2.1 GB) at 8192 ctx, so a 24 GB card fits with little headroom. Prefer 32 GB+."
-    },
     {
       "id": "qwen3.8-27b",
       "alias": "safi-qwen3.8-27b",
@@ -240,18 +140,33 @@
       "kv_bytes_per_token_comment": "Hybrid attention: only the 16 full-attention layers of the 64 produce KV (Qwen3.8-27B is 48 linear + 16 full). Q8 cache measured ~2.45 GiB at 32K ctx; at the shipped 64K window that doubles to ~4.9 GiB, and the f16 figure used below is 4.3 GB (4.0 GiB).",
       "context_size": 65536,
       "context_size_comment": "Per-model, not catalogue-global: this entry overrides context_size so the 27B runs a 64K window (YaRN 2x its native 32K, see llama_args) while smaller models keep the 8192 default. KV at 64K is 4.3 GB of the RAM/VRAM floors below.",
-      "reasoning": "on",
+      "reasoning": "off",
       "reasoning_effort": "medium",
-      "reasoning_comment": "Qwen3 is a thinking model; medium effort is the balance between introspection and the cost of generating a chain-of-thought block before every answer. Rendered as --reasoning on --reasoning-effort medium by safi-model-fetch; other models default to off.",
+      "reasoning_comment": "Qwen3 supports thinking but defaults to --reasoning off to avoid spending thousands of chain-of-thought tokens per turn and timing out.",
       "min_ram": 23800000000,
       "min_vram": 21105681632,
       "min_vram_comment": "16.8 GB weights + 4.3 GB KV at the configured 64K ctx (65536 * 65536). On an APU this is met through the TTM GTT pool (raised boot param), not the small UMA carve-out.",
-      "optimized_for": ["amd"],
+      "optimized_for": [
+        "amd"
+      ],
       "optimized_for_comment": "On an AMD GPU that fits it, this model is marked recommended ahead of a strictly larger generic model, so a Vulkan Strix Halo box pre-selects the engine this ISO is tuned around.",
       "llama_args": [
-        "--spec-type", "draft-mtp", "--spec-draft-n-max", "3",
-        "-fa", "on", "-ctk", "q8_0", "-ctv", "q8_0",
-        "--rope-scaling", "yarn", "--rope-scale", "2", "--yarn-orig-ctx", "32768"
+        "--spec-type",
+        "draft-mtp",
+        "--spec-draft-n-max",
+        "3",
+        "-fa",
+        "on",
+        "-ctk",
+        "q8_0",
+        "-ctv",
+        "q8_0",
+        "--rope-scaling",
+        "yarn",
+        "--rope-scale",
+        "2",
+        "--yarn-orig-ctx",
+        "32768"
       ],
       "llama_args_comment": "Verified against the b11205 Vulkan build: native MTP draft head (no second model), flash attention, quantized KV, and YaRN at 2x for the 64K window. --spec-draft-n-max 3 is the measured optimum (5 dropped decode from ~10 to ~7.6 tok/s as draft acceptance collapsed). Reasoning effort comes from the reasoning fields above, not a hardcoded unit flag."
     },
@@ -287,32 +202,42 @@
       "llama_args_comment": "No MTP head on the coder, so no speculative flags. Flash attention plus quantized KV as on the 27B; -np 1 -b 2048 -ub 512 match the single-user tuning measured on the EVO-X2. Reasoning stays off: it is an instruction/coder model, not a thinking one."
     },
     {
-      "id": "llama3.2-3b",
-      "alias": "safi-llama3.2-3b",
-      "file": "Llama-3.2-3B-Instruct-Q4_K_M.gguf",
-      "label": "SAFi-Llama3.2-3B",
-      "summary": "Fast CPU-oriented instruction model for smaller appliances.",
-      "url": "https://huggingface.co/lmstudio-community/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf",
-      "sha256": "e4f1a04d927b09ec18eb2f233d85ecd760fc2d35cec97e37f8604d3632210d9a",
-      "size": 2019377440,
-      "kv_bytes_per_token": 114688,
-      "min_ram": 5800000000,
-      "min_vram": 0,
-      "min_vram_comment": "0 = runs acceptably on CPU; a GPU only makes it faster."
-    },
-    {
-      "id": "phi4-mini",
-      "alias": "safi-phi4-mini",
-      "file": "Phi-4-mini-instruct-Q4_K_M.gguf",
-      "label": "SAFi-Phi4-Mini",
-      "summary": "Compact reasoning and coding model for CPU or low-memory GPU use.",
-      "url": "https://huggingface.co/lmstudio-community/Phi-4-mini-instruct-GGUF/resolve/main/Phi-4-mini-instruct-Q4_K_M.gguf",
-      "sha256": "3c4d3cbdf3006d81444f6c7a5a56eb93d8e0f0e2ba5963b8ab62f9fd42604233",
-      "size": 2491874400,
-      "kv_bytes_per_token": 98304,
-      "min_ram": 6200000000,
-      "min_vram": 0,
-      "min_vram_comment": "0 = runs acceptably on CPU; a GPU only makes it faster."
+      "id": "qwen3.6-35b-a3b",
+      "alias": "safi-qwen3.6-35b-a3b",
+      "file": "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",
+      "label": "SAFi-Qwen3.6-35B-A3B",
+      "summary": "Qwen3.6 MoE: 35B total / ~3B active, hybrid Gated DeltaNet + attention, ships a native MTP head so speculation needs no separate draft model. Measured 77.7 tok/s on the Radeon 8060S (EVO-X2, Vulkan b11205) with --spec-type draft-mtp --spec-draft-n-max 3; the same file without the MTP flags drops to 58.6, so the flags are load-bearing.",
+      "url": "https://huggingface.co/unsloth/Qwen3.6-35B-A3B-MTP-GGUF/resolve/main/Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",
+      "sha256": "0b21525e972670ed59e1812e170b27c26355381f0656ecc4e25617ece7dac58b",
+      "size": 22663387424,
+      "kv_bytes_per_token": 20480,
+      "kv_bytes_per_token_comment": "Only the 10 full-attention layers of the 40 produce context KV (30 are Gated DeltaNet with constant state): 2 * 10 * 2 KV heads * 256 head_dim * 2 bytes = 20480 B/tok. KV at the shipped 32K ctx is just 0.67 GB.",
+      "min_ram": 25000000000,
+      "min_vram": 23334476064,
+      "min_vram_comment": "22.66 GB weights + 0.67 GB KV (20480 B/tok at 32768 ctx) = 23.33 GB, far under the Strix Halo 53 GiB TTM pool.",
+      "context_size": 65536,
+      "context_size_comment": "Doubled from 32768 after a 34,768-token request overflowed the 32K window: KV is only 20480 B/tok (10 attention layers), so 64K costs just 0.67 GB more. Well inside the model native 262144 and the Strix Halo 53 GiB pool.",
+      "reasoning": "off",
+      "reasoning_comment": "Qwen3.6 supports thinking but ships here as a non-thinking engine via --reasoning off; no chain-of-thought tokens before each answer.",
+      "llama_args": [
+        "--spec-type",
+        "draft-mtp",
+        "--spec-draft-n-max",
+        "3",
+        "-np",
+        "1",
+        "-b",
+        "2048",
+        "-ub",
+        "512",
+        "-fa",
+        "on",
+        "-ctk",
+        "q8_0",
+        "-ctv",
+        "q8_0"
+      ],
+      "llama_args_comment": "Native MTP speculative decoding at depth 3 hit 77.7 tok/s on the Radeon 8060S with the stock Vulkan b11205 bundle (58.6 spec-less, 60.8 at n_max 5). Flash attention plus quantized KV, matching the rest of the catalogue."
     },
     {
       "id": "llama3.1-8b",

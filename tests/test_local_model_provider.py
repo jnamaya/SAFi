@@ -81,7 +81,7 @@ class _StubCompletions:
     def __init__(self, sink):
         self._sink = sink
 
-    async def create(self, **params):
+    def create(self, **params):
         self._sink.update(params)
         return _StubResponse("{}")
 
@@ -91,7 +91,7 @@ class _StubClient:
         self.chat = type("_Chat", (), {"completions": _StubCompletions(sink)})()
 
 
-def _provider_for(provider_name):
+def _provider_for(provider_name, routes=None):
     """An LLMProvider whose single provider records the params it was called with."""
     from safi_app.core.services.llm_provider import LLMProvider
 
@@ -99,7 +99,7 @@ def _provider_for(provider_name):
         "providers": {
             provider_name: {"type": "openai", "api_key": "x", "base_url": "http://x/v1"}
         },
-        "routes": {"conscience": {"provider": provider_name, "model": "m"}},
+        "routes": routes or {"conscience": {"provider": provider_name, "model": "m"}},
     }
     provider = LLMProvider.__new__(LLMProvider)
     provider.config = config
@@ -159,6 +159,69 @@ def test_the_ceiling_is_configurable(monkeypatch):
     assert _call(provider, sink, 8192) == 2048
 
 
+def _call_route(provider, sink, route, max_tokens):
+    import asyncio
+
+    sink.clear()
+    asyncio.run(
+        provider._chat_completion(
+            route=route, system_prompt="s", user_prompt="u", max_tokens=max_tokens
+        )
+    )
+    return sink["max_tokens"]
+
+
+def _both_routes(provider_name):
+    return {
+        "intellect": {"provider": provider_name, "model": "m"},
+        "conscience": {"provider": provider_name, "model": "m"},
+    }
+
+
+def test_the_answering_route_gets_a_larger_ceiling_than_the_judge(monkeypatch):
+    # The same local provider serves both. The Intellect must be able to finish
+    # a tool call (a whole file body or diff); the Conscience stays small so
+    # raising the answering budget never loosens the audit.
+    from safi_app.core.services import llm_provider as mod
+
+    monkeypatch.setattr(mod, "LOCAL_INTELLECT_MAX_TOKENS", 8192)
+    monkeypatch.setattr(mod, "LOCAL_MAX_TOKENS", 1024)
+    provider, sink = _provider_for("local", routes=_both_routes("local"))
+    assert _call_route(provider, sink, "intellect", 8192) == 8192
+    assert _call_route(provider, sink, "intellect", 16384) == 8192
+    assert _call_route(provider, sink, "conscience", 8192) == 1024
+
+
+def test_the_intellect_ceiling_defaults_to_the_configured_budget():
+    # Out of the box the on-box Intellect is not squeezed below
+    # SAFI_MAX_INTELLECT_TOKENS: raising that budget is not silently undone by
+    # the local cap. Lower it explicitly (e.g. a CPU-only box) if needed.
+    from safi_app.core.services import llm_provider as mod
+
+    assert mod.LOCAL_INTELLECT_MAX_TOKENS == mod.MAX_INTELLECT_TOKENS
+
+
+def test_the_intellect_ceiling_is_configurable(monkeypatch):
+    from safi_app.core.services import llm_provider as mod
+
+    monkeypatch.setattr(mod, "LOCAL_INTELLECT_MAX_TOKENS", 4096)
+    provider, sink = _provider_for("local", routes=_both_routes("local"))
+    assert _call_route(provider, sink, "intellect", 8192) == 4096
+
+
+def test_the_intellect_ceiling_can_be_disabled(monkeypatch):
+    from safi_app.core.services import llm_provider as mod
+
+    monkeypatch.setattr(mod, "LOCAL_INTELLECT_MAX_TOKENS", 0)
+    provider, sink = _provider_for("local", routes=_both_routes("local"))
+    assert _call_route(provider, sink, "intellect", 8192) == 8192
+
+
+def test_a_cloud_intellect_keeps_the_full_budget():
+    provider, sink = _provider_for("groq", routes=_both_routes("groq"))
+    assert _call_route(provider, sink, "intellect", 16384) == 16384
+
+
 # --------------------------------------------------------------------------
 # malformed / truncated tool calls
 # --------------------------------------------------------------------------
@@ -199,7 +262,7 @@ class _ToolCallCompletions:
         self._arguments = arguments
         self._finish_reason = finish_reason
 
-    async def create(self, **params):
+    def create(self, **params):
         return _ToolCallResponse(self._name, self._arguments, self._finish_reason)
 
 

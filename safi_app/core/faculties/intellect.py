@@ -128,6 +128,37 @@ def _apply_context_budget(chunks: List[str], max_context_chars: int = 0) -> str:
         f"from memory — state plainly that only part of the passage was retrieved.]"
     )
 
+
+def normalize_tool_calls(tool_calls: Any) -> List[Dict[str, Any]]:
+    """Normalise a provider tool_calls array into [{tool_name, parameters}].
+
+    Keeps EVERY call (the orchestrator may batch several per turn). Argument
+    shapes vary by provider — a dict (OpenAI SDK, Anthropic input, Gemini args),
+    or a raw JSON string — so coerce strings and drop malformed/nameless entries.
+    """
+    normalized: List[Dict[str, Any]] = []
+    if not isinstance(tool_calls, list):
+        return normalized
+    for tc in tool_calls:
+        if not isinstance(tc, dict):
+            continue
+        name = tc.get("name") or tc.get("tool_name")
+        if not name:
+            continue
+        args = tc.get("arguments")
+        if args is None:
+            args = tc.get("parameters")
+        if isinstance(args, str):
+            try:
+                args = json.loads(args) if args.strip() else {}
+            except (json.JSONDecodeError, TypeError):
+                args = {}
+        if not isinstance(args, dict):
+            args = {}
+        normalized.append({"tool_name": str(name), "parameters": args})
+    return normalized
+
+
 class IntellectEngine:
     """
     Core cognitive faculty.
@@ -193,8 +224,10 @@ class IntellectEngine:
         cannot reach.
 
         tool_results_supplied is the count of tool outputs the caller has
-        already embedded in user_prompt for this turn. It only changes how the
-        tool catalogue is framed; it never executes anything.
+        already embedded in user_prompt for this turn. It appends a "use the
+        results, do not repeat the call" note to the USER turn (never the system
+        prompt, whose byte-stability is what preserves the KV-cache prefix); it
+        never executes anything.
         """
 
         self.last_error = None
@@ -311,7 +344,14 @@ class IntellectEngine:
             if memory_summary else ""
         )
 
-        recent_turns_injection = (
+        # Recent verbatim history is NOT placed in the system prompt. The
+        # system prompt is the cached KV prefix, and for a client-owned loop the
+        # server's history fallback grows between steps (step 0's own rows are
+        # committed before step 1), which changed the system prompt and forced a
+        # full ~9.5k-token re-evaluation every step. Appending it to the USER
+        # turn instead keeps the system prompt byte-stable while the history
+        # still reaches the model.
+        recent_turns_block = (
             f"RECENT CONVERSATION (last few turns verbatim):\n<recent_turns>{recent_turns}</recent_turns>"
             if recent_turns else ""
         )
@@ -354,23 +394,20 @@ class IntellectEngine:
 
         tools_injection = ""
         if tools:
-            # A harness re-sends the same catalogue on the follow-up turn that
-            # already carries the tool output. Telling the model it "MUST use"
-            # the tools at that point makes it re-issue the identical call
-            # forever, because the tool result arrives as plain prompt text and
-            # nothing marks it as already collected. When results are present,
-            # the instruction becomes "use what you have, do not re-request".
-            if tool_results_supplied:
-                tools_injection = (
-                    f"AVAILABLE TOOLS ({tool_results_supplied} result(s) for this turn are ALREADY "
-                    "included above under 'TOOL RESULT'):\n"
-                    + "\n".join([f"- {t['name']}: {t['description']}" for t in tools])
-                    + "\nAnswer the user now using that output. Do NOT call a tool whose result is "
-                    "already present. Only call a tool if something genuinely still missing is needed, "
-                    "and never repeat a call already answered above."
-                )
-            else:
-                tools_injection = "AVAILABLE TOOLS (You MUST use these tools if the user needs them):\n" + "\n".join([f"- {t['name']}: {t['description']}" for t in tools])
+            # This catalogue sits at the very START of the prompt, so it must be
+            # byte-identical across every step of a turn. A per-step variation
+            # (e.g. "results already present") changes the prefix and makes the
+            # server discard its KV cache and re-evaluate the entire prompt on
+            # each step. The "do not repeat an answered call" rule is therefore
+            # stated unconditionally here; the per-step reminder that results are
+            # present is appended to the USER turn below, where appending cannot
+            # invalidate the cached prefix.
+            tools_injection = (
+                "AVAILABLE TOOLS (You MUST use these tools if the user needs them):\n"
+                + "\n".join([f"- {t['name']}: {t['description']}" for t in tools])
+                + "\nIf a tool result for a call is already present in this conversation under "
+                "'TOOL RESULT', use it and do NOT repeat that call."
+            )
 
         system_prompt = "\n\n".join(filter(None, [
             worldview,
@@ -379,7 +416,6 @@ class IntellectEngine:
             user_profile_injection,
             agent_context_injection,
             memory_injection,
-            recent_turns_injection,
             spirit_injection,
             tools_injection,
             formatting_instructions
@@ -394,7 +430,31 @@ class IntellectEngine:
                 current_user_prompt.append(formatting_reminder)
         else:
             current_user_prompt = user_prompt
-        
+
+        # Per-step reminder that tool output is already in the turn. Kept in the
+        # USER message (appended) rather than the system prompt so the cached
+        # prefix stays intact between steps; see tools_injection above.
+        if tool_results_supplied:
+            results_note = (
+                f"\n\nSYSTEM NOTE: {tool_results_supplied} tool result(s) for this turn are "
+                "already included above under 'TOOL RESULT'. Answer using that output; do NOT "
+                "repeat a call already answered above. Only call a tool if something genuinely "
+                "still missing is needed."
+            )
+            if isinstance(current_user_prompt, str):
+                current_user_prompt = current_user_prompt + results_note
+            elif isinstance(current_user_prompt, list):
+                current_user_prompt.append(results_note)
+
+        # Recent verbatim history rides the USER turn (appended last) so the
+        # cached system-prompt prefix is never invalidated by its growth between
+        # steps. See recent_turns_block above.
+        if recent_turns_block:
+            if isinstance(current_user_prompt, str):
+                current_user_prompt = current_user_prompt + "\n\n" + recent_turns_block
+            elif isinstance(current_user_prompt, list):
+                current_user_prompt.append(recent_turns_block)
+
         final_context_for_audit = full_context_injection if full_context_injection else (retrieved_context_string or "")
 
         # --- 3. Single LLM Call — No Tool Execution ---
@@ -429,20 +489,33 @@ class IntellectEngine:
                 payload = json.loads(answer)
                 tool_calls = payload.get("tool_calls")
                 if tool_calls and isinstance(tool_calls, list):
-                    first_tc = tool_calls[0]
-                    tool_name: str = first_tc.get("name", "")
-                    parameters: Dict[str, Any] = first_tc.get("arguments") or {}
-                    self.log.info(f"Intellect: Tool call intercepted (not executed): {tool_name}")
-                    
-                    intent = {"type": "tool_call", "tool_name": tool_name, "parameters": parameters}
-                    if raw_turn is not None:
-                        intent["_provider_raw_turn"] = raw_turn
+                    # The provider parses the WHOLE tool_calls array; keep every
+                    # call here instead of only the first. The orchestrator decides
+                    # how many to actually run per turn (a batch of independent
+                    # reads, or list+grep+read). Each call still passes the
+                    # deterministic WillGate individually and each result is
+                    # scanned by Phase Zero, so batching never loosens governance.
+                    normalized = normalize_tool_calls(tool_calls)
+                    if normalized:
+                        first = normalized[0]
+                        self.log.info(
+                            "Intellect: Tool call(s) intercepted (not executed): "
+                            + ", ".join(c["tool_name"] for c in normalized)
+                        )
+                        intent = {
+                            "type": "tool_call",
+                            "tool_name": first["tool_name"],
+                            "parameters": first["parameters"],
+                            "tool_calls": normalized,
+                        }
+                        if raw_turn is not None:
+                            intent["_provider_raw_turn"] = raw_turn
 
-                    return (
-                        intent,
-                        r_t,
-                        context,
-                    )
+                        return (
+                            intent,
+                            r_t,
+                            context,
+                        )
             except (json.JSONDecodeError, AttributeError, TypeError):
                 pass
 

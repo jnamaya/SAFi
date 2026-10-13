@@ -21,6 +21,12 @@ rm -f /etc/systemd/system/sockets.target.wants/apache2.socket
 # package's own postinst couldn't promise it under policy-rc.d.
 if [ -d /var/lib/mysql ]; then chown -R mysql:mysql /var/lib/mysql || true; fi
 
+# Network time synchronization: ensure systemd-timesyncd and safi-timesync are enabled on the installed box
+if command -v systemctl >/dev/null 2>&1; then
+    systemctl enable systemd-timesyncd >/dev/null 2>&1 || true
+    systemctl enable safi-timesync.service >/dev/null 2>&1 || true
+fi
+
 # Brand the console. /etc/issue shows pre-login; /etc/motd after.
 cat >/etc/motd <<'EOF'
 

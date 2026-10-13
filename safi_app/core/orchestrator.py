@@ -28,6 +28,7 @@ client for execution. Its next request re-enters this method with the tool
 result; final drafts still use the same `_finalize_draft` path as web chat.
 """
 from __future__ import annotations
+import os
 import json
 import uuid
 import asyncio
@@ -41,6 +42,7 @@ from pathlib import Path
 import logging
 from concurrent.futures import ThreadPoolExecutor
 
+from enum import Enum
 from collections import deque
 from .faculties.spirit import build_spirit_feedback
 from . import pii_validators
@@ -60,6 +62,41 @@ from .tool_connectors import CONNECTOR_TOOLS
 # pathological query. The character budget below is the real constraint; this
 # only stops the query itself being pathological.
 _HISTORY_FETCH_ALL = 400
+
+
+class AgenticEventKind(str, Enum):
+    """Canonical classification for agentic loop events (Requirement 1)."""
+    USER_INPUT = "user_input"
+    UNTRUSTED_EXTERNAL_CONTENT = "untrusted_external_content"
+    TOOL_INTENT = "tool_intent"
+    TOOL_RECEIPT = "tool_receipt"
+    FINAL_USER_FACING_OUTPUT = "final_user_facing_output"
+    INTERNAL_REASONING = "internal_reasoning"
+
+
+def classify_agentic_event(
+    event_kind: Union[str, AgenticEventKind],
+    content: Any,
+    **metadata
+) -> Dict[str, Any]:
+    """
+    Explicitly classifies and formats an agentic event into the SAFi event ontology:
+      - user_input
+      - untrusted_external_content
+      - tool_intent
+      - tool_receipt
+      - final_user_facing_output
+      - internal_reasoning
+    """
+    kind_str = event_kind.value if hasattr(event_kind, "value") else str(event_kind)
+    event_record = {
+        "event_kind": kind_str,
+        "content": content,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    if metadata:
+        event_record.update(metadata)
+    return event_record
 
 
 def _current_date_line(now_utc: datetime, user_timezone: Optional[str] = None) -> str:
@@ -190,20 +227,151 @@ def count_current_turn_tool_repeats(tool_results, tool_name, parameters,
     return seen
 
 
-def _tool_audit_entry(tool_name, parameters, decision, reason, agent_turn=None):
-    """One tool call as it is recorded, for BOTH the hash chain and the capture.
+# Tools that MODIFY a file path. A write/edit/patch to a path resets that
+# path's same-file read counter, so a legitimate read -> edit -> re-read-to-
+# verify cycle is never blocked by stale reads.
+MODIFICATION_TOOL_NAMES = {"write", "edit", "patch", "str_replace", "multi_edit"}
 
-    Built in one place so the chain entry and the governance record cannot
-    describe the same call differently — the chain is the tamper-evident copy and
-    the capture is what the Audit Hub and the examiner export actually show, so a
-    divergence between them would be the worst kind: verifiable and wrong.
+DEFAULT_MAX_SAME_FILE_READS = 3
+
+
+def same_file_read_limit(profile: Optional[Dict[str, Any]] = None) -> int:
+    """Reads allowed per file path in one turn.
+
+    Resolution order: agent-profile key ``max_same_file_reads``, then the
+    ``SAFI_MAX_SAME_FILE_READS`` env var, then ``DEFAULT_MAX_SAME_FILE_READS``.
     """
+    if isinstance(profile, dict):
+        override = profile.get("max_same_file_reads")
+        if override is not None:
+            try:
+                return int(override)
+            except (TypeError, ValueError):
+                pass
+    try:
+        return int(os.environ.get("SAFI_MAX_SAME_FILE_READS", str(DEFAULT_MAX_SAME_FILE_READS)))
+    except (TypeError, ValueError):
+        return DEFAULT_MAX_SAME_FILE_READS
+
+
+def _norm_window_value(value):
+    """Normalize an offset/limit value so window keys compare consistently."""
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _read_window(parameters) -> tuple:
+    """``(start, end, limit)`` window key for a read call.
+
+    Recognizes every alias the read tool accepts (offset/line_start/start_line,
+    line_end/end_line, limit) so a re-read of the same range is recognized as a
+    repeat regardless of which spelling the model chose. Two reads of the same
+    path are the *same read* only when their window matches; reading a different
+    range is progress through the file, not a repeated read.
+    """
+    if not isinstance(parameters, dict):
+        return (None, None, None)
+    start = next(
+        (parameters[k] for k in ("offset", "line_start", "start_line", "startLine", "start")
+         if parameters.get(k) is not None),
+        None,
+    )
+    end = next(
+        (parameters[k] for k in ("line_end", "end_line", "endLine", "end")
+         if parameters.get(k) is not None),
+        None,
+    )
+    limit = next(
+        (parameters[k] for k in ("limit", "lines", "count")
+         if parameters.get(k) is not None),
+        None,
+    )
+    return (_norm_window_value(start), _norm_window_value(end), _norm_window_value(limit))
+
+
+def count_current_turn_path_reads(tool_results, path: str, parameters=None) -> int:
+    """Prior reads of the SAME window (path + offset + limit) since ``path`` was
+    last MODIFIED in this turn.
+
+    Window-aware on purpose: paging through different sections of a large file
+    is legitimate progress, so only re-requesting the identical window counts
+    toward the circuit breaker (which stops a model re-reading the same content
+    forever, without punishing it for exploring a file it has not finished
+    reading). A write/edit/patch to the path resets the count.
+    """
+    if not isinstance(tool_results, list) or not path:
+        return 0
+    norm_target = path.strip().lower()
+    target_window = _read_window(parameters)
+    seen = 0
+    for result in tool_results:
+        if not isinstance(result, dict):
+            continue
+        t_name = result.get("tool_name") or result.get("tool")
+        args = result.get("arguments") or result.get("parameters") or result.get("params") or {}
+        p = str(args.get("path") or args.get("filePath") or args.get("file_path") or "").strip().lower()
+        if p != norm_target:
+            continue
+        if t_name in MODIFICATION_TOOL_NAMES:
+            seen = 0
+        elif t_name == "read" and _read_window(args) == target_window:
+            seen += 1
+    return seen
+
+
+def _tool_audit_entry(
+    tool_name,
+    parameters,
+    decision,
+    reason,
+    agent_turn=None,
+    status="executed",
+    duration_ms=0,
+    changed_resources=None,
+    error_summary=None,
+    result=None,
+):
+    """One tool call structured receipt as it is recorded for BOTH the hash chain and capture.
+
+    Returns a structured receipt containing:
+      - tool name
+      - normalized parameters
+      - status (approved, blocked, executed, failed)
+      - risk class (R0-R4)
+      - changed resources
+      - error summary
+      - duration
+    """
+    from .faculties.will import WillGate
+    risk_class, risk_reason = WillGate.classify_tool_risk(tool_name, parameters or {})
+
+    # Derive changed resources from common params
+    resources = list(changed_resources or [])
+    if not resources and isinstance(parameters, dict):
+        for path_key in ("path", "filePath", "file_path", "target", "file"):
+            if parameters.get(path_key):
+                resources.append(str(parameters[path_key]))
+
     entry = {
+        "event_kind": "tool_receipt",
         "tool": tool_name,
+        "tool_name": tool_name,
         "decision": decision,
         "reason": reason,
+        "status": status if decision == "approve" else "blocked",
+        "risk_class": risk_class,
+        "risk_reason": risk_reason,
+        "changed_resources": resources,
+        "error_summary": error_summary,
+        "duration_ms": duration_ms,
         "params": _audit_params(parameters),
     }
+    if result is not None:
+        entry["result"] = str(result)[:300]
     if agent_turn is not None:
         entry["agent_turn"] = agent_turn
     return entry
@@ -624,6 +792,230 @@ class SAFi:
             tool_name, parameters, user_id=user_id
         )
 
+    @staticmethod
+    def _batch_tools_enabled() -> bool:
+        """Whether one Intellect response may yield several tool proposals.
+
+        On by default; set SAFI_AGENTIC_BATCH_TOOLS=0 to fall back to exactly one
+        tool per loop hop (the pre-batching behaviour)."""
+        return os.environ.get("SAFI_AGENTIC_BATCH_TOOLS", "1").strip().lower() not in (
+            "0", "false", "no", "off",
+        )
+
+    @staticmethod
+    def _sanitize_client_tool_parameters(
+        tool_name: str, parameters: Optional[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Normalise the common parameter aliases a model emits for client tools.
+
+        Extracted verbatim from the single-proposal path so the batch path accepts
+        exactly the same shapes — path/filePath, target/oldString, task/prompt.
+        """
+        safe_parameters = dict(parameters or {})
+        if tool_name in ("read", "write", "edit", "patch", "delete", "remove") and not safe_parameters.get("path"):
+            alt_path = safe_parameters.get("filePath") or safe_parameters.get("file_path") or ""
+            if alt_path:
+                safe_parameters["path"] = alt_path
+        if tool_name == "edit":
+            if not safe_parameters.get("target"):
+                safe_parameters["target"] = (
+                    safe_parameters.get("oldString")
+                    or safe_parameters.get("old_string")
+                    or safe_parameters.get("old_str")
+                    or safe_parameters.get("oldText")
+                    or ""
+                )
+            if not safe_parameters.get("replacement"):
+                safe_parameters["replacement"] = (
+                    safe_parameters.get("newString")
+                    or safe_parameters.get("new_string")
+                    or safe_parameters.get("new_str")
+                    or safe_parameters.get("newText")
+                    or ""
+                )
+        if tool_name in ("task", "delegate_subagent"):
+            if not safe_parameters.get("description"):
+                safe_parameters["description"] = (
+                    safe_parameters.get("task")
+                    or safe_parameters.get("summary")
+                    or safe_parameters.get("name")
+                    or "Delegated subagent task"
+                )
+            if not safe_parameters.get("prompt"):
+                safe_parameters["prompt"] = (
+                    safe_parameters.get("goal")
+                    or safe_parameters.get("instruction")
+                    or safe_parameters.get("description")
+                    or ""
+                )
+            if not safe_parameters.get("subagent_type"):
+                safe_parameters["subagent_type"] = (
+                    safe_parameters.get("role")
+                    or "researcher"
+                )
+        return safe_parameters
+
+    async def _propose_tools_batch(
+        self,
+        proposed_calls: List[Dict[str, Any]],
+        *,
+        profile_for_turn: Dict[str, Any],
+        client_tool_results: List[Dict[str, Any]],
+        server_tool_names: set,
+        user_prompt: str,
+        user_id: Optional[str],
+        message_id: str,
+        new_title: Optional[str],
+        recent_turns_text: str,
+        tool_audit: list,
+    ) -> Optional[Dict[str, Any]]:
+        """Approve and return several client tool proposals from ONE Intellect turn.
+
+        Returns a payload with a `tool_calls` list, or None to fall back to the
+        single-proposal path (which owns the blocked/reflexion/redirect behaviour).
+
+        Integrity is unchanged: every call is gated by the same deterministic
+        WillGate as a single proposal, the same repeat/same-file circuit breakers
+        apply, and each approved call gets its own structured tool receipt. The
+        Conscience/Spirit audit still runs only on the final synthesised answer.
+        Only the ALL-APPROVED case batches — any blocked call drops to the single
+        path so a rejection keeps its existing reflexion/redirect handling. Turns
+        that opt into an LLM tool-intent preflight never batch, so each intent
+        keeps its own audited hop.
+        """
+        # An explicit policy preflight is an LLM call per intent; batching it would
+        # either double-count or skip it. Leave those turns to the single path.
+        audit_tool_trigger = (
+            isinstance(self.profile.get("will_rules"), dict)
+            and self.profile.get("will_rules", {}).get("audit_tool_intents") is True
+        )
+        if audit_tool_trigger:
+            return None
+
+        max_batch = int(os.environ.get("SAFI_AGENTIC_MAX_BATCH_TOOLS", "8"))
+        proposed_calls = proposed_calls[:max_batch]
+
+        # --- Evaluate everything with NO side effects first. ---
+        decisions: List[Tuple[str, Dict[str, Any], str, str]] = []
+        for call in proposed_calls:
+            if not isinstance(call, dict):
+                return None
+            name = call.get("tool_name")
+            if not name or not isinstance(name, str):
+                return None
+            params = self._sanitize_client_tool_parameters(name, call.get("parameters") or {})
+            decision, reason = await self.will_gate.evaluate_tool_intent(
+                tool_name=name, parameters=params, profile=profile_for_turn
+            )
+            if decision != "approve":
+                return None
+            repeats = count_current_turn_tool_repeats(
+                client_tool_results, name, params, HARNESS_TOOL_REPEAT_LIMIT
+            )
+            if repeats >= HARNESS_TOOL_REPEAT_LIMIT:
+                return None
+            if name == "read":
+                target_path = str(
+                    params.get("path")
+                    or params.get("filePath")
+                    or params.get("file_path")
+                    or ""
+                )
+                path_limit = same_file_read_limit(profile_for_turn)
+                if count_current_turn_path_reads(
+                    client_tool_results, target_path, parameters=params
+                ) >= path_limit:
+                    return None
+            decisions.append((name, params, decision, reason))
+
+        # --- All approved: apply the side effects once. ---
+        entries: List[Dict[str, Any]] = []
+        for name, params, decision, reason in decisions:
+            _entry = _tool_audit_entry(name, params, decision, reason)
+            tool_audit.append(_entry)
+            self.store.update_message_reasoning(
+                message_id, _tool_status(name), phase="gather", extra=_entry,
+            )
+            server_result = None
+            if name in server_tool_names:
+                try:
+                    server_result = await self._dispatch_server_tool(
+                        name, params, user_id=user_id
+                    )
+                except Exception as exc:
+                    self.log.error(f"Orchestrator: Server tool '{name}' raised: {exc}")
+                    server_result = f"ERROR: tool execution failed — {exc}"
+            entry: Dict[str, Any] = {
+                "tool_name": name,
+                "parameters": params,
+                "decision": decision,
+                "reason": reason,
+            }
+            if server_result is not None:
+                entry["executed_by"] = "server"
+                entry["result"] = (
+                    json.dumps(server_result, ensure_ascii=False)
+                    if isinstance(server_result, (dict, list))
+                    else str(server_result)
+                )
+                _entry["result"] = str(server_result)[:300]
+            entries.append(entry)
+
+        self._record_harness_progress(message_id, "finalizing")
+        batch_summary = "[tool_calls] " + ", ".join(e["tool_name"] for e in entries)
+        governance_record = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "mode": "agentic_integration",
+            "turnKind": "tool_proposal",
+            "clientToolProposal": True,
+            "userPrompt": user_prompt,
+            "recentTurns": recent_turns_text,
+            "intellectDraft": batch_summary,
+            "finalOutput": batch_summary,
+            "willDecision": "approve",
+            "willReason": f"Batch tool intent gate: approve ({len(entries)} calls)",
+            "profileValues": self.values,
+            "conscienceLedger": [],
+            "toolProposalLedger": [],
+            "spiritScore": None,
+            "toolCalls": entries,
+            "policyId": (self.profile or {}).get("policy_id"),
+            "policyVersion": (self.profile or {}).get("policy_version"),
+            "orgId": (self.profile or {}).get("org_id"),
+            "userId": user_id,
+            "agentName": self.active_profile_name,
+            "intellectModel": self.intellect_model,
+            "conscienceModel": self.conscience_model,
+        }
+        self.store.update_audit_results(
+            message_id, [], None,
+            f"Tool intent gate: approve — batch of {len(entries)}",
+            self.active_profile_name, self.values, None,
+            policy_id=(self.profile or {}).get("policy_id"),
+            policy_version=(self.profile or {}).get("policy_version"),
+            model_attribution=self.model_attribution,
+            will_decision="approve",
+            will_stage="tool_intent",
+            governance_record=governance_record,
+        )
+        self.store.update_message_content(message_id, batch_summary, audit_status="complete")
+        self._append_log(governance_record)
+
+        first = entries[0]
+        return {
+            "type": "tool_call",
+            "tool_calls": entries,
+            "tool_name": first["tool_name"],
+            "parameters": first["parameters"],
+            "messageId": message_id,
+            "newTitle": new_title,
+            "willDecision": "approve",
+            "willReason": f"Batch of {len(entries)} tool calls approved.",
+            "audit_status": "complete",
+            "conscienceLedger": [],
+            "toolProposalLedger": [],
+        }
+
     async def process_prompt(
         self,
         user_prompt: str,
@@ -736,14 +1128,22 @@ class SAFi:
                 )
             def _bound_result(val: Any, max_chars: int = 16_000) -> str:
                 s = val if isinstance(val, str) else (json.dumps(val, default=str) if val is not None else "")
-                if len(s) > max_chars:
-                    return s[:max_chars] + f"\n... [tool result truncated ({len(s)} characters total)]"
+                bound_cap = int(os.environ.get("SAFI_TOOL_RESULT_MAX_CHARS", str(max_chars)))
+                if len(s) > bound_cap:
+                    return s[:bound_cap] + (
+                        f"\n... [tool result truncated ({len(s)} characters total). "
+                        "You have sufficient context; proceed directly to 'edit', 'write', or your response.]"
+                    )
                 return s
 
+            # Retain up to the last 10 tool results in verbatim context to avoid prompt blowups
+            # while preventing amnesia of earlier reference reads in the same turn.
+            tool_window = int(os.environ.get("SAFI_TOOL_RESULTS_WINDOW", "10"))
+            recent_tool_results = client_tool_results[-tool_window:] if len(client_tool_results) > tool_window else client_tool_results
             tool_history = "\n\n".join(
                 f"TOOL RESULT — {item.get('tool_name', 'unknown')} called with "
                 f"{item.get('arguments', {})}\n{_bound_result(item.get('result', ''))}"
-                for item in client_tool_results
+                for item in recent_tool_results
             )
             if tool_history:
                 prompt_for_intellect = f"{prompt_for_intellect}\n\n{tool_history}"
@@ -826,6 +1226,11 @@ class SAFi:
         recent_turns_text = _render_history(recent_window, max_chars)
         if client_owned and isinstance(client_recent_turns, str) and client_recent_turns.strip():
             recent_turns_text = client_recent_turns[-12000:]
+        # Journal the first pipeline phase for every client-owned turn. This used to
+        # sit inside the recent-turns branch above, so a harness turn that sends no
+        # verbatim history (the common first-loop case) never recorded it — the live
+        # progress bar then sat on "analyzing" alone for the whole wait.
+        if client_owned:
             record_harness_progress(self.store, message_id, "checking_request")
         
         # Read-only snapshot for the coaching feedback below. The authoritative
@@ -990,6 +1395,39 @@ class SAFi:
             tool_name = intent["tool_name"]
             parameters = intent["parameters"]
 
+            # Several independent calls in one Intellect turn (e.g. read four
+            # files, or list+grep+read). Handled as a batch only when every call
+            # is approved; otherwise we fall through to the single-proposal path
+            # below, which owns the blocked/reflexion/redirect handling.
+            proposed_calls = intent.get("tool_calls")
+            if (
+                client_owned
+                and self._batch_tools_enabled()
+                and isinstance(proposed_calls, list)
+                and len(proposed_calls) > 1
+            ):
+                batch_payload = await self._propose_tools_batch(
+                    proposed_calls,
+                    profile_for_turn=profile_for_turn,
+                    client_tool_results=client_tool_results,
+                    server_tool_names=server_tool_names,
+                    user_prompt=user_prompt,
+                    user_id=user_id,
+                    message_id=message_id,
+                    new_title=new_title,
+                    recent_turns_text=recent_turns_text,
+                    tool_audit=tool_audit,
+                )
+                if batch_payload is not None:
+                    return batch_payload
+
+            # Publish progressive thought/step to the live UI feed
+            if r_t and r_t.strip():
+                short_thought = r_t.strip().split("\n")[0][:80]
+                self.store.update_message_reasoning(message_id, f"Intent: {short_thought}")
+            else:
+                self.store.update_message_reasoning(message_id, f"Proposing action: {tool_name}")
+
             tool_decision, tool_reason = await self.will_gate.evaluate_tool_intent(
                 tool_name=tool_name,
                 parameters=parameters,
@@ -1014,12 +1452,32 @@ class SAFi:
                         f"in this user turn without progress (circuit breaker limit "
                         f"{HARNESS_TOOL_REPEAT_LIMIT})."
                     )
+                elif tool_name == "read":
+                    target_path = str(
+                        parameters.get("path")
+                        or parameters.get("filePath")
+                        or parameters.get("file_path")
+                        or ""
+                    )
+                    path_limit = same_file_read_limit(self.profile)
+                    path_reads = count_current_turn_path_reads(client_tool_results, target_path, parameters=parameters)
+                    if path_reads >= path_limit:
+                        loop_stopped = True
+                        tool_decision = "violation"
+                        tool_reason = (
+                            f"Refused: '{target_path}' has already been read {path_reads} times for the same range in this turn without modifying it. "
+                            "You already have that content in context. Proceed directly to 'edit', 'write', or your response — or read a different section."
+                        )
 
-            # Antecedent Conscience Pre-Flight:
-            # Operative / Mutating actions (e.g. edit, write, bash) undergo an antecedent
-            # policy audit before execution is authorized. Speculative/inquisitive actions
-            # (read, grep, glob, list) pass through WillGate deterministically without latency.
-            if tool_decision == "approve" and tool_name in ("edit", "write", "bash"):
+            # Deterministic Tool-Intent Gate (Requirements 2, 3 & 7):
+            # Routine tool calls are governed deterministically by WillGate without latency.
+            # Full SAFi / Conscience preflight is reserved strictly for explicit high-risk
+            # policy triggers (e.g. will_rules.audit_tool_intents=True or R2/R3 triggers).
+            audit_tool_trigger = (
+                isinstance(self.profile.get("will_rules"), dict)
+                and self.profile.get("will_rules", {}).get("audit_tool_intents") is True
+            )
+            if tool_decision == "approve" and audit_tool_trigger:
                 self.store.update_message_reasoning(
                     message_id,
                     f"Auditing policy compliance for '{tool_name}'...",
@@ -1063,48 +1521,7 @@ class SAFi:
 
             if client_owned:
                 if tool_decision == "approve":
-                    safe_parameters = dict(parameters or {})
-                    if tool_name in ("read", "write", "edit", "patch", "delete", "remove") and not safe_parameters.get("path"):
-                        alt_path = safe_parameters.get("filePath") or safe_parameters.get("file_path") or ""
-                        if alt_path:
-                            safe_parameters["path"] = alt_path
-                    if tool_name == "edit":
-                        if not safe_parameters.get("target"):
-                            safe_parameters["target"] = (
-                                safe_parameters.get("oldString")
-                                or safe_parameters.get("old_string")
-                                or safe_parameters.get("old_str")
-                                or safe_parameters.get("oldText")
-                                or ""
-                            )
-                        if not safe_parameters.get("replacement"):
-                            safe_parameters["replacement"] = (
-                                safe_parameters.get("newString")
-                                or safe_parameters.get("new_string")
-                                or safe_parameters.get("new_str")
-                                or safe_parameters.get("newText")
-                                or ""
-                            )
-                    if tool_name in ("task", "delegate_subagent"):
-                        if not safe_parameters.get("description"):
-                            safe_parameters["description"] = (
-                                safe_parameters.get("task")
-                                or safe_parameters.get("summary")
-                                or safe_parameters.get("name")
-                                or "Delegated subagent task"
-                            )
-                        if not safe_parameters.get("prompt"):
-                            safe_parameters["prompt"] = (
-                                safe_parameters.get("goal")
-                                or safe_parameters.get("instruction")
-                                or safe_parameters.get("description")
-                                or ""
-                            )
-                        if not safe_parameters.get("subagent_type"):
-                            safe_parameters["subagent_type"] = (
-                                safe_parameters.get("role")
-                                or "researcher"
-                            )
+                    safe_parameters = self._sanitize_client_tool_parameters(tool_name, parameters)
                     server_result = None
                     if tool_name in server_tool_names:
                         try:
@@ -1208,6 +1625,23 @@ class SAFi:
                 # without advertising tools again. SAFi never dispatches client
                 # tools through its own MCP executor.
                 self.log.warning(f"WillGate blocked client tool '{tool_name}'. Reason: {tool_reason}")
+                redirect_on_tool_block = bool(
+                    isinstance(self.profile.get("will_rules"), dict)
+                    and self.profile.get("will_rules", {}).get("redirect_on_tool_block") is True
+                )
+                if redirect_on_tool_block:
+                    return await self.trigger_agent_redirect(
+                        original_prompt=user_prompt,
+                        violation_type=f"blocked_tool:{tool_name}",
+                        conversation_id=conversation_id,
+                        message_id=message_id,
+                        new_title=new_title,
+                        user_id=user_id,
+                        org_id=org_id,
+                        will_stage="tool_intent",
+                        agent_context=agent_context_for_prompt,
+                    )
+
                 observation = (
                     f"SYSTEM OBSERVATION: The Will gatekeeper rejected the client tool "
                     f"'{tool_name}'. Reason: {tool_reason}. Do not attempt to call it again. "
@@ -1264,23 +1698,35 @@ class SAFi:
                         current_tool_name, _args_str, raw_turn
                     ))
 
+                    _tool_start_time = datetime.now(timezone.utc)
+                    _tool_error = None
                     try:
                         tool_result = await self.mcp_manager.execute_tool(
                             current_tool_name, current_parameters, user_id=user_id
                         )
                     except Exception as exc:
                         self.log.error(f"Orchestrator: Tool '{current_tool_name}' raised: {exc}")
+                        _tool_error = str(exc)
                         tool_result = f"ERROR: tool execution failed — {exc}"
 
-                    result_safe, result_reason = self.phase_zero.evaluate_tool_result(tool_result)
+                    _tool_duration_ms = int((datetime.now(timezone.utc) - _tool_start_time).total_seconds() * 1000)
+
+                    is_trusted_local = current_tool_name in ("read", "grep", "glob", "list", "view", "show", "cat")
+                    result_safe, result_reason = self.phase_zero.evaluate_tool_result(
+                        tool_result, is_trusted_local=is_trusted_local
+                    )
                     if not result_safe:
                         self.log.warning(
                             f"Orchestrator: Tool '{current_tool_name}' output withheld by Phase Zero: {result_reason}"
                         )
+                        _tool_error = f"withheld_by_security_gate:{result_reason}"
                         tool_audit.append(_tool_audit_entry(
                             current_tool_name, current_parameters,
                             "block", f"tool_result:{result_reason}",
                             agent_turn=agent_turn,
+                            status="withheld",
+                            duration_ms=_tool_duration_ms,
+                            error_summary=_tool_error,
                         ))
                         tool_result = (
                             "ERROR: the tool output was withheld by the security gate "
@@ -1289,11 +1735,15 @@ class SAFi:
                         )
 
                     self.log.info(
-                        f"Orchestrator: Tool '{current_tool_name}' executed. "
+                        f"Orchestrator: Tool '{current_tool_name}' executed in {_tool_duration_ms}ms. "
                         f"Result snippet: {str(tool_result)[:120]}"
                     )
                     if tool_audit:
                         tool_audit[-1]["result"] = str(tool_result)[:300]
+                        tool_audit[-1]["duration_ms"] = _tool_duration_ms
+                        if _tool_error:
+                            tool_audit[-1]["error_summary"] = _tool_error
+                            tool_audit[-1]["status"] = "failed" if result_safe else "withheld"
 
                     # Evidence for the audit. Labelled with the tool AND its
                     # arguments, because "which search produced this" is the first
@@ -1304,8 +1754,10 @@ class SAFi:
                         f"{tool_result}"
                     )
 
+                    # Feed compressed receipt into Intellect context (Requirement 6)
+                    receipt_summary = f"[RECEIPT: {current_tool_name} | status: {tool_audit[-1].get('status', 'executed')} | risk: {tool_audit[-1].get('risk_class', 'R1')} | duration: {_tool_duration_ms}ms]\n{tool_result}"
                     agent_history.append(
-                        self.llm_provider.tool_result_history_entry(current_tool_name, tool_result)
+                        self.llm_provider.tool_result_history_entry(current_tool_name, receipt_summary)
                     )
 
                     next_intent, r_t, retrieved_context = await self.intellect_engine.generate(
@@ -1333,6 +1785,21 @@ class SAFi:
                         parameters=current_parameters,
                         profile=profile_for_turn
                     )
+                    if follow_decision == "approve" and current_tool_name == "read":
+                        target_path = str(
+                            current_parameters.get("path")
+                            or current_parameters.get("filePath")
+                            or current_parameters.get("file_path")
+                            or ""
+                        )
+                        path_limit = same_file_read_limit(profile_for_turn)
+                        path_reads = count_current_turn_path_reads(tool_audit, target_path, parameters=current_parameters)
+                        if path_reads >= path_limit:
+                            follow_decision = "violation"
+                            follow_reason = (
+                                f"Refused: '{target_path}' has already been read {path_reads} times for the same range in this turn without modifying it. "
+                                "You already have that content in context. Proceed directly to 'edit', 'write', or your response — or read a different section."
+                            )
                     _entry = _tool_audit_entry(current_tool_name, current_parameters,
                                                follow_decision, follow_reason,
                                                agent_turn=agent_turn + 1)
@@ -1396,6 +1863,23 @@ class SAFi:
 
             else:
                 self.log.warning(f"WillGate blocked tool '{tool_name}'. Reason: {tool_reason}")
+                redirect_on_tool_block = bool(
+                    isinstance(self.profile.get("will_rules"), dict)
+                    and self.profile.get("will_rules", {}).get("redirect_on_tool_block") is True
+                )
+                if redirect_on_tool_block:
+                    return await self.trigger_agent_redirect(
+                        original_prompt=user_prompt,
+                        violation_type=f"blocked_tool:{tool_name}",
+                        conversation_id=conversation_id,
+                        message_id=message_id,
+                        new_title=new_title,
+                        user_id=user_id,
+                        org_id=org_id,
+                        will_stage="tool_intent",
+                        agent_context=agent_context_for_prompt,
+                    )
+
                 observation = (
                     f"SYSTEM OBSERVATION: The Will gatekeeper rejected the command '{tool_name}'. "
                     f"Reason: {tool_reason}. Do not attempt to call this tool again. Apologize to the user and suggest a compliant alternative."
@@ -1581,6 +2065,10 @@ class SAFi:
                 retry_result = await self._finalize_draft(
                     a_t_spirit, user_prompt, r_t_spirit, context_spirit, message_id, label="Retry",
                     recent_history=recent_turns_text,
+                    progress_callback=(
+                        (lambda code: self._record_harness_progress(message_id, code))
+                        if client_owned else None
+                    ),
                 )
                 a_t_spirit = retry_result.get("draft", a_t_spirit)
 

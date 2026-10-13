@@ -86,13 +86,12 @@ def test_only_the_downloaded_one_of_two_is_offered(catalogue, served):
     assert [m["id"] for m in pg.installed_local_models()] == ["safi-qwen3-8b"]
 
 
-def test_a_downloaded_but_unserved_model_is_not_offered(catalogue, served):
-    # The old safi-demo bug in a different guise: weights on disk, but the
-    # server was started with a different --alias, so this one would 404.
+def test_a_downloaded_but_unserved_model_is_offered_for_on_demand_serving(catalogue, served):
+    # A downloaded model is offered in the picker because SAFi swaps it on demand when selected.
     catalogue.populate("qwen3-8b", "Qwen3-8B-Q4_K_M.gguf", 5027783488)
     served("safi-qwen3-32b")
-    assert pg.installed_local_models() == []
-    # ...but the catalog UI still shows it as installed.
+    assert [m["id"] for m in pg.installed_local_models()] == ["safi-qwen3-8b"]
+    # ...and the catalog UI shows it as installed but not currently active.
     entry = next(m for m in pg.local_model_inventory() if m["id"] == "qwen3-8b")
     assert entry["installed"] is True
     assert entry["active"] is False

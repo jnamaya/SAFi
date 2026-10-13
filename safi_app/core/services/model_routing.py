@@ -112,7 +112,13 @@ def detect_provider(model_name: str) -> str:
         return custom
     if m.startswith("models/"):
         m = m[7:]
-    if m.startswith("jev-") or m.startswith("typesafe/jev"):
+    if (
+        m.startswith("jev-")
+        or m.startswith("typesafe/")
+        or m.startswith("kev-")
+        or "kev-4b" in m
+        or m == "jaredpalmer/kev-4b"
+    ):
         return "typesafe"
     # Cerebras serves gpt-oss WITHOUT the vendor prefix (Groq's id is
     # "openai/gpt-oss-*"), so this must precede the bare "gpt-" rule.
@@ -208,7 +214,7 @@ def build_providers_config(config) -> dict:
             # stored, so nothing that reads TYPESAFE_API_KEY as a bearer token can
             # mistake it for a real credential and attempt an authenticated call.
             "api_key": getattr(config, "TYPESAFE_API_KEY", ""),
-            "base_url": "https://api.typesafe.ai/v1",
+            "base_url": getattr(config, "TYPESAFE_BASE_URL", "") or "https://api.typesafe.ai/v1",
         },
     }
 
@@ -292,6 +298,8 @@ def resolve_faculty_model_pair(
     llm_models = list(dict.fromkeys(llm_models))
     if jev_available:
         by_id[JEV_CONSCIENCE_MODEL.casefold()] = (JEV_CONSCIENCE_MODEL, "typesafe")
+        by_id["kev-4b"] = ("kev-4b", "typesafe")
+        by_id["jaredpalmer/kev-4b"] = ("jaredpalmer/kev-4b", "typesafe")
 
     intellect = intellect_model or ""
     conscience = conscience_model or ""
@@ -347,6 +355,8 @@ def resolve_effective_faculty_models(
     available = list_models_for_org(org_id)
     if jev_available:
         available.append({"id": JEV_CONSCIENCE_MODEL, "provider": "typesafe"})
+        available.append({"id": "kev-4b", "provider": "typesafe"})
+        available.append({"id": "jaredpalmer/kev-4b", "provider": "typesafe"})
     return resolve_faculty_model_pair(
         intellect_model,
         conscience_model,

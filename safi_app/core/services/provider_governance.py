@@ -200,27 +200,24 @@ def local_catalog_payload(catalogue_path: str | None = None) -> dict:
 
 
 def installed_local_models(catalogue_path: str | None = None) -> List[dict]:
-    """Local (safi-*) models that can actually be dispatched right now.
+    """Local (safi-*) models that can be dispatched on this appliance.
 
-    Synthesized rather than stored: the operator picks a model in the setup
-    wizard, and a DB row would have to be written and rewritten on every change.
-    Reading the catalogue means a model swap shows up on the next request with no
-    write path at all, and there is no second source of truth to fall out of step
-    with the file the downloader used.
+    Synthesized rather than stored: reading the catalogue and checking disk
+    means newly downloaded models show up immediately in model pickers without
+    requiring manual database modifications.
 
-    Only the model the server is actually serving is returned. The rest of this
-    module's contract is that a model which cannot be dispatched is never
-    offered, and llama-server answers to exactly one --alias: offering a second
-    downloaded model would store a selection that 404s on first use. The catalog
-    UI shows the rest via local_model_inventory().
+    All downloaded models (m['installed']) are offered. When a turn selects an
+    installed local model that is not currently active in llama-server, SAFi
+    swaps the model into VRAM on demand before dispatching.
 
-    Returns [] on any problem, or when no model is live.
+    Returns [] on any problem, or when no models are installed on disk.
     """
     return [{"id": m["alias"], "label": m["label"], "provider": "local",
              "local": True, "size_bytes": m["size"],
              "size_human": m["size_human"],
-             "context_window": m["context_window"]}
-            for m in local_model_inventory(catalogue_path) if m["active"]]
+             "context_window": m["context_window"],
+             "active": bool(m.get("active"))}
+            for m in local_model_inventory(catalogue_path) if m.get("installed") or m.get("active")]
 
 
 def list_models_for_org(org_id) -> List[dict]:
@@ -265,3 +262,73 @@ def list_models_for_org(org_id) -> List[dict]:
             "eu_hostable": bool(meta.get("eu_hostable")),
         })
     return out
+
+
+def get_model_id_for_alias(alias: str, catalogue_path: str | None = None) -> Optional[str]:
+    """Find the catalogue model id corresponding to a local model alias."""
+    for m in local_model_inventory(catalogue_path):
+        if m.get("alias") == alias or m.get("id") == alias:
+            return m.get("id")
+    return None
+
+
+async def ensure_local_model(target_alias: str, catalogue_path: str | None = None, timeout: float = 60.0) -> bool:
+    """Ensure that the local llama-server on port 8081 is serving target_alias.
+
+    If target_alias is already live and answering, returns True immediately.
+    If target_alias is installed on disk but not active, triggers
+    `safi-model-manage <model_id> --activate` via sudo and polls until the model
+    is initialized and answering on /v1/models.
+    """
+    import asyncio
+    import subprocess
+    import urllib.request
+    from ...config import active_local_model
+
+    current_live = active_local_model()
+    if current_live == target_alias:
+        return True
+
+    model_id = get_model_id_for_alias(target_alias, catalogue_path)
+    if not model_id:
+        return False
+
+    def _activate():
+        try:
+            res = subprocess.run(
+                ["sudo", "/usr/local/sbin/safi-model-manage", model_id, "--activate"],
+                capture_output=True, text=True, timeout=15, check=False
+            )
+            return res.returncode == 0
+        except Exception:
+            return False
+
+    success = await asyncio.to_thread(_activate)
+    if not success:
+        return False
+
+    # Poll 127.0.0.1:8081/v1/models until target_alias is served
+    start_time = time.monotonic()
+    while time.monotonic() - start_time < timeout:
+        await asyncio.sleep(1.0)
+        try:
+            def _check_models():
+                req = urllib.request.Request("http://127.0.0.1:8081/v1/models", headers={"User-Agent": "SAFi-Local-Check"})
+                with urllib.request.urlopen(req, timeout=2.0) as resp:
+                    if resp.status == 200:
+                        data = json.loads(resp.read().decode("utf-8"))
+                        for item in data.get("data", []):
+                            if item.get("id") == target_alias or target_alias in item.get("aliases", []):
+                                return True
+                        for m in data.get("models", []):
+                            if m.get("name") == target_alias or m.get("model") == target_alias:
+                                return True
+                return False
+            is_ready = await asyncio.to_thread(_check_models)
+            if is_ready:
+                return True
+        except Exception:
+            pass
+
+    return False
+

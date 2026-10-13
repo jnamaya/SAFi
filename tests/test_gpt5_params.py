@@ -48,7 +48,7 @@ class _CapturingCompletions:
     def __init__(self, sink):
         self._sink = sink
 
-    async def create(self, **kwargs):
+    def create(self, **kwargs):
         self._sink.append(kwargs)
         return SimpleNamespace(
             choices=[SimpleNamespace(

@@ -110,26 +110,73 @@ def resolve_api_url(explicit_url: Optional[str] = None) -> str:
     return cfg.get("api_url", "http://localhost:5000").rstrip("/")
 
 
-def resolve_session_id(workspace_root: str, new_session: bool = False) -> str:
+def _workspace_key(workspace_root: str) -> str:
     import hashlib
+
+    norm = str(Path(workspace_root).resolve())
+    return hashlib.sha256(norm.encode()).hexdigest()[:16]
+
+
+SESSIONS_PATH_MAP_KEY = "_paths"
+
+
+def _load_sessions() -> Dict[str, str]:
+    if SESSIONS_FILE.exists():
+        try:
+            data = json.loads(SESSIONS_FILE.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return data
+        except (OSError, json.JSONDecodeError):
+            pass
+    return {}
+
+
+def list_sessions() -> Dict[str, str]:
+    """Return the workspace-key -> conversation-id session map (metadata keys excluded)."""
+    return {k: v for k, v in _load_sessions().items() if not k.startswith("_")}
+
+
+def session_paths() -> Dict[str, str]:
+    """Return the conversation-id -> workspace-path map for friendly /sessions display."""
+    data = _load_sessions()
+    return data.get(SESSIONS_PATH_MAP_KEY) if isinstance(data.get(SESSIONS_PATH_MAP_KEY), dict) else {}
+
+
+def session_for_workspace(workspace_root: str) -> Optional[str]:
+    """Return the conversation id currently bound to a workspace, if any."""
+    return _load_sessions().get(_workspace_key(workspace_root))
+
+
+def set_workspace_session(workspace_root: str, conversation_id: str) -> None:
+    """Bind a workspace to an existing conversation id so /sessions can resume it."""
+    ensure_config_dir()
+    sessions = _load_sessions()
+    sessions[_workspace_key(workspace_root)] = conversation_id
+    paths = dict(sessions.get(SESSIONS_PATH_MAP_KEY) or {})
+    paths[conversation_id] = str(Path(workspace_root).resolve())
+    sessions[SESSIONS_PATH_MAP_KEY] = paths
+    try:
+        SESSIONS_FILE.write_text(json.dumps(sessions, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def resolve_session_id(workspace_root: str, new_session: bool = False) -> str:
     import uuid
 
     ensure_config_dir()
-    norm = str(Path(workspace_root).resolve())
-    h = hashlib.sha256(norm.encode()).hexdigest()[:16]
+    sessions = _load_sessions()
 
-    sessions: Dict[str, str] = {}
-    if SESSIONS_FILE.exists():
-        try:
-            sessions = json.loads(SESSIONS_FILE.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            sessions = {}
-
-    if not new_session and h in sessions:
-        return sessions[h]
+    if not new_session:
+        existing = _load_sessions().get(_workspace_key(workspace_root))
+        if existing:
+            return existing
 
     new_id = str(uuid.uuid4())
-    sessions[h] = new_id
+    sessions[_workspace_key(workspace_root)] = new_id
+    paths = dict(sessions.get(SESSIONS_PATH_MAP_KEY) or {})
+    paths[new_id] = str(Path(workspace_root).resolve())
+    sessions[SESSIONS_PATH_MAP_KEY] = paths
     try:
         SESSIONS_FILE.write_text(json.dumps(sessions, indent=2), encoding="utf-8")
     except OSError:

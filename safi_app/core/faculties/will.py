@@ -192,6 +192,60 @@ class WillGate:
             return ("violation", "low_alignment_score")
         return ("approve", "alignment_within_threshold")
 
+    @staticmethod
+    def classify_tool_risk(tool_name: str, parameters: dict) -> Tuple[str, str]:
+        """
+        Classify tool intent into deterministic risk classes:
+          R0: read-only query (read, grep, glob, list, etc.)
+          R1: reversible local workspace modification (edit, write, patch)
+          R2: destructive or high-impact local change (delete, remove, wipe, drop)
+          R3: external side effect (network send, external mutations)
+          R4: privileged or forbidden operation (credentials access, sudo, chmod, uncontained disk wipe)
+        """
+        lowered = tool_name.lower().strip()
+        params_str = json.dumps(parameters or {}, default=str).lower()
+
+        # Check R4 Privileged / Forbidden patterns
+        forbidden_indicators = (
+            "/etc/shadow", "/etc/passwd", ".ssh/id_", "id_rsa", "rm -rf /",
+            "sudo ", "chmod 777", "curl | bash", "wget | bash"
+        )
+        if any(ind in params_str for ind in forbidden_indicators):
+            return "R4", "Privileged or forbidden system command/path"
+
+        # Check R2 Destructive local operations
+        if lowered in ("delete", "remove", "drop", "wipe", "rm", "unlink") or \
+           any(action in lowered for action in ("drop_table", "truncate_table", "delete_file")):
+            return "R2", "Destructive or high-impact local action"
+
+        # Check R3 External side effects
+        if any(ext in lowered for ext in ("send_", "post_", "publish_", "deploy_", "broadcast_")) or \
+           lowered in ("send_email", "post_webhook", "external_api"):
+            return "R3", "External action with external side effects"
+
+        # Check R1 Reversible local modifications
+        if lowered in ("write", "edit", "patch", "create", "append", "update", "task", "delegate_subagent"):
+            return "R1", "Reversible local modification"
+
+        # Check R0 Read-only
+        if lowered in ("read", "grep", "glob", "list", "search", "find", "status", "view", "show", "cat") or \
+           "read" in lowered or "search" in lowered or "query" in lowered:
+            return "R0", "Read-only query"
+
+        # Default bash inspection
+        if lowered in ("bash", "sh", "exec", "terminal", "command"):
+            cmd = str(parameters.get("command") or parameters.get("cmd") or "").strip().lower()
+            if any(f in cmd for f in ("rm -rf", "mkfs", "dd if=", ":(){ :|:& };:")):
+                return "R4", "Forbidden destructive shell payload"
+            if any(w in cmd for w in ("rm ", "unlink ", "truncate ", ">")):
+                return "R2", "Destructive shell command"
+            if any(w in cmd for w in ("cat", "grep", "ls", "echo", "pwd", "git status", "git log", "git diff", "find")):
+                return "R0", "Read-only shell command"
+            return "R1", "Shell execution"
+
+        # Unclassified default fallback
+        return "R1", "Standard operational tool call"
+
     async def evaluate_tool_intent(
         self,
         tool_name: str,
@@ -201,18 +255,21 @@ class WillGate:
         """
         Gate a proposed tool call before any execution. No LLM calls.
 
-        Order is a security property, not a style choice: the allow-list runs
-        BEFORE the read-only fast pass, so a policy that narrows web_search can
-        still block it, and parameter constraints run last because they are
-        per-tool and only meaningful for tools that get that far.
+        Order is a security property, not a style choice:
+          1. Allowed tools check (T_allow = T_advertised ∩ T_charter ∩ T_policy)
+          2. Risk classification (R0-R4) and policy risk gating
+          3. Parameter constraints (default-deny)
         """
+        # 0. Validate tool name and typed parameters
+        if not tool_name or not isinstance(tool_name, str):
+            self.log.warning("WillGate: Blocked tool intent — tool_name must be a non-empty string.")
+            return ("violation", "Tool name must be a non-empty string.")
+
+        if not isinstance(parameters, dict):
+            self.log.warning(f"WillGate: Blocked '{tool_name}' — parameters must be a dictionary.")
+            return ("violation", f"Invalid parameters type for tool '{tool_name}': expected dictionary.")
+
         # 1. Profile allow-list.
-        # Compiled profiles always carry allowed_tools:
-        # the advertised tool list, optionally narrowed by the policy's
-        # will_rules.allowed_tools. An empty list is deny-all — an agent that
-        # was offered no tools has no legitimate tool intents (a name arriving
-        # here anyway means hallucination or injection). Only a profile with no
-        # key at all (not built by the compiler) skips the check.
         allowed_tools: Optional[List[str]] = profile.get("allowed_tools")
         if allowed_tools is not None and tool_name not in allowed_tools:
             self.log.warning(f"WillGate: Blocked '{tool_name}' — not in agent's allowed_tools.")
@@ -221,7 +278,33 @@ class WillGate:
                 f"Tool '{tool_name}' is not authorized for this agent profile.",
             )
 
-        # 2. Parameter constraints apply uniformly to all authorized tools.
+        # 2. Risk classification and enforcement
+        risk_class, risk_reason = self.classify_tool_risk(tool_name, parameters)
+        if risk_class == "R4":
+            self.log.warning(f"WillGate: Blocked '{tool_name}' — R4 Privileged/Forbidden ({risk_reason}).")
+            return (
+                "violation",
+                f"Tool intent blocked: privileged or forbidden operation ({risk_reason}).",
+            )
+
+        # Check policy risk limits if configured
+        max_allowed_risk = (
+            profile.get("will_rules", {})
+            .get("max_tool_risk_class", "R3")
+            if isinstance(profile.get("will_rules"), dict)
+            else "R3"
+        )
+        risk_hierarchy = {"R0": 0, "R1": 1, "R2": 2, "R3": 3, "R4": 4}
+        if risk_hierarchy.get(risk_class, 1) > risk_hierarchy.get(max_allowed_risk, 3):
+            self.log.warning(
+                f"WillGate: Blocked '{tool_name}' — risk class {risk_class} exceeds limit {max_allowed_risk}."
+            )
+            return (
+                "violation",
+                f"Tool intent blocked: risk level {risk_class} exceeds policy limit {max_allowed_risk}.",
+            )
+
+        # 3. Parameter constraints apply uniformly to all authorized tools.
         parameter_constraints: Dict[str, List[Any]] = (
             profile.get("tool_parameter_constraints", {}).get(tool_name, {})
         )
@@ -248,5 +331,5 @@ class WillGate:
                     f"Parameter '{param_key}={param_val}' is not permitted for tool '{tool_name}'.",
                 )
 
-        self.log.info(f"WillGate: Deterministically approved authorized tool '{tool_name}'.")
-        return ("approve", "Passed structural and allow-list constraints.")
+        self.log.info(f"WillGate: Deterministically approved authorized tool '{tool_name}' [{risk_class}].")
+        return ("approve", "Passed structural, risk, and allow-list constraints.")

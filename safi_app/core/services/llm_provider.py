@@ -16,8 +16,18 @@ import asyncio
 from typing import List, Dict, Any, Tuple, Optional
 from contextvars import ContextVar
 
-from openai import AsyncOpenAI
-from anthropic import AsyncAnthropic
+# Sync SDK clients, invoked from async code through asyncio.to_thread in
+# _chat_completion. The async clients were structurally incompatible with this
+# deployment: Flask bridges each async view through asgiref, which runs the
+# request on a NEW event loop in a NEW thread and closes it when the request
+# ends. A cached AsyncOpenAI/AsyncAnthropic holds an httpx pool bound to the
+# loop of whichever request used it first, so every later request's model call
+# died with RuntimeError("Event loop is closed") — ~90% of Intellect attempts
+# failed instantly and the retry wrappers made each turn several times slower.
+# Sync clients own no event loop, so they are safe to cache and share across
+# the gthread worker's threads.
+from openai import OpenAI
+from anthropic import Anthropic
 from google import genai
 from google.genai import types
 import httpx
@@ -73,6 +83,19 @@ MAX_INTELLECT_TOKENS = int(os.environ.get("SAFI_MAX_INTELLECT_TOKENS", "8192"))
 # model-name substring, so it cannot change how strictly any agent is audited.
 # See run_conscience's docstring for why that distinction matters there.
 LOCAL_MAX_TOKENS = int(os.environ.get("SAFI_LOCAL_MAX_TOKENS", "1024"))
+
+
+# The answering route needs its own on-box ceiling. It used to share the judge's
+# 1024-token cap, which cut the Intellect off while it was still emitting a tool
+# call (a whole file body or diff is easily thousands of tokens) — the arguments
+# never closed and every edit appeared to fail. By default it tracks
+# SAFI_MAX_INTELLECT_TOKENS, so raising the answering budget is not silently
+# undone by the on-box cap; set SAFI_LOCAL_INTELLECT_MAX_TOKENS to impose a
+# lower ceiling (e.g. a CPU-only box) and 0 to remove it entirely. The judge
+# keeps LOCAL_MAX_TOKENS, so raising the answering budget never loosens an audit.
+LOCAL_INTELLECT_MAX_TOKENS = int(
+    os.environ.get("SAFI_LOCAL_INTELLECT_MAX_TOKENS", str(MAX_INTELLECT_TOKENS))
+)
 
 
 class ProviderRequestError(RuntimeError):
@@ -169,6 +192,12 @@ class LLMProvider:
         # (provider, key) so a rotated key gets a fresh client. Bounded in
         # practice by providers x orgs that stored a key.
         self._org_clients: Dict[Any, Any] = {}
+        # Clients for routes whose provider is reached at a different base_url
+        # than the provider's own (SAFI_CONSCIENCE_BASE_URL: a second on-box
+        # llama-server serving the Conscience apart from the Intellect). Keyed
+        # (route, provider) so the override applies to one route only. Populated
+        # in _initialize_clients.
+        self._route_override_clients: Dict[Any, Any] = {}
         self._initialize_clients()
 
     def _initialize_clients(self):
@@ -184,7 +213,7 @@ class LLMProvider:
 
             try:
                 if p_type == "openai":
-                    self.clients[name] = AsyncOpenAI(
+                    self.clients[name] = OpenAI(
                         api_key=api_key,
                         # base_url is what makes Groq/DeepSeek/Mistral/Zhipu/
                         # Cerebras/local-llama.cpp work through one SDK.
@@ -192,7 +221,7 @@ class LLMProvider:
                         timeout=LLM_TIMEOUT_SECONDS,
                     )
                 elif p_type == "anthropic":
-                    self.clients[name] = AsyncAnthropic(api_key=api_key, timeout=LLM_TIMEOUT_SECONDS)
+                    self.clients[name] = Anthropic(api_key=api_key, timeout=LLM_TIMEOUT_SECONDS)
                 elif p_type == "gemini":
                     self.clients[name] = genai.Client(
                         api_key=api_key,
@@ -207,6 +236,41 @@ class LLMProvider:
                     self.log.error(f"Unknown provider type '{p_type}' for '{name}'")
             except Exception as e:
                 self.log.error(f"Failed to initialize provider '{name}': {e}")
+        self._init_route_override_clients(providers)
+
+    def _init_route_override_clients(self, providers: Dict[str, Any]) -> None:
+        """Open a client for a route that reaches its provider at a different
+        base_url than the provider's own.
+
+        Currently this is the Conscience on a second on-box model server
+        (SAFI_CONSCIENCE_BASE_URL). The provider name stays the same — typically
+        `local` — so provider governance, org allow-lists and the on-box output
+        ceiling key on the same name as before, and only the transport address
+        moves. A route with no override, or one identical to the provider's own
+        endpoint, keeps sharing the cached provider client.
+        """
+        for route_name, route in (self.config.get("routes") or {}).items():
+            if not isinstance(route, dict):
+                continue
+            override = (route.get("base_url") or "").strip()
+            if not override:
+                continue
+            provider_name = route.get("provider")
+            details = providers.get(provider_name) or {}
+            if (details.get("type") != "openai"
+                    or (details.get("base_url") or "").strip() == override
+                    or not details.get("api_key")):
+                continue
+            try:
+                self._route_override_clients[(route_name, provider_name)] = OpenAI(
+                    api_key=details["api_key"],
+                    base_url=override,
+                    timeout=LLM_TIMEOUT_SECONDS,
+                )
+            except Exception as e:
+                self.log.error(
+                    f"Failed to initialize base_url override for route '{route_name}': {e}"
+                )
 
     def uses_typed_conscience(self) -> bool:
         route = self.config.get("routes", {}).get("conscience", {})
@@ -445,9 +509,9 @@ class LLMProvider:
         try:
             p_type = provider_details.get("type")
             if p_type == "openai":
-                client = AsyncOpenAI(api_key=key, base_url=provider_details.get("base_url"), timeout=LLM_TIMEOUT_SECONDS)
+                client = OpenAI(api_key=key, base_url=provider_details.get("base_url"), timeout=LLM_TIMEOUT_SECONDS)
             elif p_type == "anthropic":
-                client = AsyncAnthropic(api_key=key, timeout=LLM_TIMEOUT_SECONDS)
+                client = Anthropic(api_key=key, timeout=LLM_TIMEOUT_SECONDS)
             elif p_type == "gemini":
                 client = genai.Client(api_key=key, http_options=types.HttpOptions(timeout=LLM_TIMEOUT_SECONDS * 1000))
             else:
@@ -530,20 +594,44 @@ class LLMProvider:
         # The on-box model server cannot serve a cloud-scale token budget inside
         # the per-call timeout; see LOCAL_MAX_TOKENS. Applied here rather than at
         # the call sites so no route has to know which provider it will reach.
-        if provider_name == "local" and LOCAL_MAX_TOKENS > 0:
-            if max_tokens > LOCAL_MAX_TOKENS:
+        # The answering route gets a larger, separate ceiling: the judge's cap
+        # truncated the Intellect's tool-call JSON mid-string.
+        if provider_name == "local":
+            ceiling = LOCAL_INTELLECT_MAX_TOKENS if route == "intellect" else LOCAL_MAX_TOKENS
+            if ceiling > 0 and max_tokens > ceiling:
                 self.log.info(
                     "Capping %s route output at %d tokens for the local provider "
-                    "(requested %d); set SAFI_LOCAL_MAX_TOKENS=0 to disable.",
-                    route, LOCAL_MAX_TOKENS, max_tokens,
+                    "(requested %d); set SAFI_LOCAL_INTELLECT_MAX_TOKENS=0 (Intellect) "
+                    "or SAFI_LOCAL_MAX_TOKENS=0 (other routes) to disable.",
+                    route, ceiling, max_tokens,
                 )
-                max_tokens = LOCAL_MAX_TOKENS
+                max_tokens = ceiling
+
+            # On-demand model activation: if an installed local model is requested for Intellect,
+            # make sure llama-server on port 8081 is serving it.
+            if route == "intellect" and model_name.startswith("safi-"):
+                try:
+                    from .provider_governance import ensure_local_model
+                    ready = await ensure_local_model(model_name)
+                    if not ready:
+                        self.log.warning(
+                            "ensure_local_model timed out or failed to activate %s on 8081",
+                            model_name,
+                        )
+                except Exception as exc:
+                    self.log.error("Failed during on-demand model activation for %s: %exc", model_name, exc)
         # Cleared per call: the agent loop makes several, and only the one that
         # produced the text the user sees should be able to flag it.
         _TRUNCATED.set(False)
         # The active org's own key wins over the deployment client (backlog
-        # 64) — and makes a provider usable that has no .env key at all.
-        client = self._org_override_client(provider_name, provider_details) \
+        # 64) — and makes a provider usable that has no .env key at all. A
+        # route-level base_url override (SAFI_CONSCIENCE_BASE_URL) wins over
+        # both: it pins this route to a specific endpoint, so it must come first
+        # or a cloud/org key client would carry the provider's default address.
+        # getattr keeps __new__-constructed stubs (tests) working untouched.
+        route_override = getattr(self, "_route_override_clients", {}).get((route, provider_name))
+        client = route_override \
+            or self._org_override_client(provider_name, provider_details) \
             or self.clients.get(provider_name)
 
         if not client:
@@ -647,7 +735,11 @@ class LLMProvider:
             else:
                  params["max_tokens"] = max_tokens
 
-            resp = await client.chat.completions.create(**params)
+            # Sync client off the event loop's thread pool. The blocking call
+            # must not run inline in the request coroutine; to_thread keeps the
+            # loop free and, because the client owns no loop, is safe however
+            # many per-request loops asgiref has opened and closed.
+            resp = await asyncio.to_thread(client.chat.completions.create, **params)
             self._capture_usage(route, provider_name, model_name, provider_type, resp)
 
             # finish_reason "length" means the response hit max_tokens. Standard
@@ -709,17 +801,45 @@ class LLMProvider:
                     })
                 kwargs["tools"] = anthropic_tools
 
+            # Control Anthropic thinking/reasoning effort.
+            # Default to turning thinking off so models (especially Haiku) respond immediately (2-7s)
+            # instead of burning thousands of hidden reasoning tokens and truncating.
+            thinking_env = os.environ.get("SAFI_ANTHROPIC_THINKING", "disabled").lower()
+            if thinking_env == "disabled":
+                # Model-specific thinking deactivation based on Anthropic API requirements:
+                # - haiku supports {"type": "disabled"}
+                # - sonnet-5-5 requires {"type": "between_tools"} to skip pre-response reasoning
+                # - opus-5-5 requires {"type": "adaptive"} with effort "low"
+                if "sonnet" in model_name:
+                    kwargs["thinking"] = {"type": "between_tools"}
+                elif "opus" in model_name:
+                    kwargs["thinking"] = {"type": "adaptive"}
+                    kwargs["output_config"] = {"effort": "low"}
+                else:
+                    kwargs["thinking"] = {"type": "disabled"}
+            elif thinking_env == "low":
+                kwargs["thinking"] = {"type": "adaptive"}
+                kwargs["output_config"] = {"effort": "low"}
+
             try:
-                resp = await client.messages.create(**kwargs)
-            except TypeError as exc:
-                # Anthropic SDK releases have not all exposed the same keyword
-                # set on AsyncMessages.create. A local signature mismatch is
-                # safe to retry once without temperature; the first call fails
-                # before any network request is made.
-                if "unexpected keyword argument 'temperature'" not in str(exc):
+                resp = await asyncio.to_thread(client.messages.create, **kwargs)
+            except Exception as exc:
+                # If thinking param isn't supported for this model/tier, retry cleanly without it
+                if "thinking" in str(exc).lower() and "thinking" in kwargs:
+                    kwargs.pop("thinking", None)
+                    kwargs.pop("output_config", None)
+                    try:
+                        resp = await asyncio.to_thread(client.messages.create, **kwargs)
+                    except TypeError as t_exc:
+                        if "unexpected keyword argument 'temperature'" not in str(t_exc):
+                            raise
+                        kwargs.pop("temperature", None)
+                        resp = await asyncio.to_thread(client.messages.create, **kwargs)
+                elif isinstance(exc, TypeError) and "unexpected keyword argument 'temperature'" in str(exc):
+                    kwargs.pop("temperature", None)
+                    resp = await asyncio.to_thread(client.messages.create, **kwargs)
+                else:
                     raise
-                kwargs.pop("temperature", None)
-                resp = await client.messages.create(**kwargs)
             self._capture_usage(route, provider_name, model_name, provider_type, resp)
 
             if resp.stop_reason == "tool_use":
@@ -801,10 +921,13 @@ class LLMProvider:
             )
 
             try:
-                resp = await client.aio.models.generate_content(
+                # The sync genai.Client off the loop thread (the async surface
+                # was client.aio; see the import note on the event-loop bug).
+                resp = await asyncio.to_thread(
+                    client.models.generate_content,
                     model=model_name,
                     contents=user_prompt,
-                    config=config
+                    config=config,
                 )
             except Exception as e:
                 self.log.error(f"Gemini generation failed: {e}")
@@ -900,6 +1023,15 @@ class LLMProvider:
         return any(k in text for k in ("429", "rate limit", "ratelimit", "resource_exhausted", "quota"))
 
     @staticmethod
+    def _is_truncation_error(exc: Exception) -> bool:
+        """True when the model's generation ran out of tokens (output-token cap hit)
+        while producing tool call arguments or content. Retrying the identical prompt
+        would deterministically generate the exact same long output and fail again,
+        burning minutes of inference time."""
+        text = f"{type(exc).__name__}: {exc}".lower()
+        return "truncated" in text and ("token cap" in text or "tool call arguments" in text)
+
+    @staticmethod
     def explain_provider_error(exc: Exception) -> str:
         """Turn a provider exception into something an operator can act on.
 
@@ -939,7 +1071,8 @@ class LLMProvider:
         if "tool call arguments" in low or "tool-call" in low:
             return ("the model returned a tool call the governance layer could not parse, "
                     "usually because the generation was cut off at the output-token cap before "
-                    "the arguments closed. Raise SAFI_LOCAL_MAX_TOKENS / SAFI_MAX_INTELLECT_TOKENS "
+                    "the arguments closed. Raise SAFI_LOCAL_INTELLECT_MAX_TOKENS "
+                    "(or SAFI_LOCAL_MAX_TOKENS on older configs) / SAFI_MAX_INTELLECT_TOKENS "
                     "and retry.")
         return f"the model provider call failed — {text[:200]}"
 
@@ -1026,6 +1159,9 @@ class LLMProvider:
                     break
                 if self._is_rate_limit_error(e):
                     self.log.warning("Intellect provider rate-limited the call; failing fast without retry.")
+                    break
+                if self._is_truncation_error(e):
+                    self.log.warning("Intellect generation exceeded output token cap; failing fast without retry.")
                     break
                 continue
 

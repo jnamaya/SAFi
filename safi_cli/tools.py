@@ -36,13 +36,13 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "read",
-            "description": "Read file contents with 1-indexed line numbers. Path is relative to the repository root.",
+            "description": "Read file contents with 1-indexed line numbers. Path is relative to the repository root. Avoid redundant re-reads; use offset/limit to paginate if a file is long.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "path": {"type": "string", "description": "File path relative to repository root."},
                     "offset": {"type": "integer", "description": "1-indexed starting line number (default 1). Alias: line_start."},
-                    "limit": {"type": "integer", "description": "Maximum number of lines to read (default 250)."},
+                    "limit": {"type": "integer", "description": "Maximum number of lines to read (default 1000)."},
                     "line_start": {"type": "integer", "description": "1-indexed starting line number."},
                     "line_end": {"type": "integer", "description": "1-indexed ending line number."}
                 },
@@ -54,12 +54,12 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "write",
-            "description": "Create or overwrite a file with full content. Path is relative to the repository root.",
+            "description": "Create a brand-new file that DOES NOT exist yet. DO NOT use this on existing files — use 'edit' instead to avoid output truncation. Path is relative to the repository root.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "path": {"type": "string", "description": "File path relative to repository root."},
-                    "content": {"type": "string", "description": "New content to write to the file."}
+                    "content": {"type": "string", "description": "New content to write to the new file."}
                 },
                 "required": ["path", "content"]
             }
@@ -69,7 +69,7 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "edit",
-            "description": "Replace an exact target text sequence in a file with replacement content.",
+            "description": "Modify, fix, or update an existing file by replacing an exact contiguous block of text. MANDATORY for existing files.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -196,7 +196,7 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "todowrite",
-            "description": "Maintain and track a plan and task checklist in the right sidebar. ONLY call this tool when necessary for complex, multi-step tasks requiring multiple phases or file modifications. Do NOT call this tool for simple single-step queries, searches, lookups, or direct answers.",
+            "description": "Maintain and track an inline task checklist. ONLY call this tool when necessary for complex, multi-step tasks that require breaking down into distinct phases. Do NOT call this repeatedly or as a substitute for taking action with real tools (read, edit, write, bash). Progress the actual work rather than continuously rewriting the plan.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -303,7 +303,7 @@ def execute_tool(
             elif raw_limit is not None:
                 limit = max(1, min(int(raw_limit), 2000))
             else:
-                limit = 250
+                limit = 1000
 
             with target.open("r", encoding="utf-8", errors="replace") as fh:
                 lines = fh.readlines()
@@ -315,7 +315,11 @@ def execute_tool(
             slice_lines = lines[offset - 1 : offset - 1 + limit]
             body = "".join(f"{offset + i}: {line}" for i, line in enumerate(slice_lines))
             truncated = (offset - 1 + len(slice_lines)) < total
-            note = f"\n... [truncated, {total} lines total]" if truncated else ""
+            note = (
+                f"\n... [file truncated at line {offset - 1 + len(slice_lines)} of {total} lines total. "
+                "You have sufficient context; proceed directly to 'edit', 'write', or your response unless specific lines are needed.]"
+                if truncated else ""
+            )
             return body + note
 
         elif name == "write":
