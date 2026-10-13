@@ -164,14 +164,17 @@ class SafiClient:
             "Content-Type": "application/json",
         }
 
-        # Client-owned repository tools are only used for software engineering tasks.
-        # Informational and advisory personas (e.g. fiduciary, health_navigator)
-        # use governed server-side MCP tools (stock market data, web search, etc.).
+        # Client-owned tools are advertised only for personas that operate a
+        # workspace/operator shell. Informational and advisory personas (e.g.
+        # fiduciary, health_navigator) use governed server-side MCP tools
+        # (stock market data, web search, etc.). The server still intersects
+        # whatever we advertise with the agent's policy allowed_tools, so
+        # advertising here can never widen an agent's grant.
         if tools is not None:
             tools_payload = tools
         else:
-            is_coding_agent = (agent == "software_engineer")
-            tools_payload = TOOL_SCHEMAS if is_coding_agent else []
+            is_client_tool_agent = agent in ("software_engineer", "sysadmin")
+            tools_payload = TOOL_SCHEMAS if is_client_tool_agent else []
 
         payload: Dict[str, Any] = {
             "user_id": user_id,

@@ -493,6 +493,10 @@ DEFAULT_AGENTS = {
         "title": "Software Engineer",
         "description": "Direct, audited repository engineering & software development",
     },
+    "sysadmin": {
+        "title": "Systems Administrator",
+        "description": "Governed, evidence-based operations across servers, network, identity & cloud",
+    },
     "fiduciary": {
         "title": "The Fiduciary",
         "description": "Market-aware financial analyst, portfolio educator & data-driven guide",
