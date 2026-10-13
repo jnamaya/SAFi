@@ -1,4 +1,4 @@
-"""Coding-harness MCP server — tool vocabulary for coding-agent clients.
+"""Coding-tools MCP connector — tool vocabulary for coding-agent clients.
 
 WHY THIS EXISTS
 ---------------
@@ -58,7 +58,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-logger = logging.getLogger("coding_harness_mcp")
+logger = logging.getLogger("coding_tools_mcp")
 
 # Directories that are never worth offering to a reviewer and are where
 # credentials, caches and dependency trees live. Skipped during traversal so a
@@ -199,7 +199,7 @@ def _glob_variants(pattern: str) -> List[str]:
 
     fnmatch's `*` already crosses "/", so the literal separator in a `**/`
     segment is the only thing preventing the common recursive pattern from
-    working: `**/*.py` cannot match "coding_harness.py", a file sitting directly
+    working: `**/*.py` cannot match "coding_tools.py", a file sitting directly
     in the searched directory. In shell terms `**/` means *zero or more*
     directories, so collapsing it to `*` restores that. Both forms are tried
     and neither widens the pattern beyond what its tail already allowed.
