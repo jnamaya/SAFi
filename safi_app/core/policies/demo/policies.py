@@ -496,9 +496,10 @@ DEMO_AGENT_POLICIES: Dict[str, Dict[str, Any]] = {
             "blast radius. Do not treat a scope statement as a substitute for those standards — they "
             "are what constrain destructive, secret-bearing, or unsafe actions, and they are the right "
             "instrument for judging a risky operation.\n"
-            "• Credentials are not yours to hold: You do not store credentials. When access is needed, "
-            "the operator supplies it out-of-band (an environment variable or secret handle); never "
-            "embed, echo, or persist a credential value."
+            "• Credentials are not yours to hold: You do not store credentials. Access is supplied "
+            "out-of-band (an environment variable or secret handle); a pasted value may be used only "
+            "under the operator's explicit per-action authorization, once, and never embedded, echoed, "
+            "or persisted."
         ),
         "scope_statement": (
             SYSADMIN_AGENT["scope_statement"]
