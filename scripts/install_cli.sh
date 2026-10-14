@@ -70,19 +70,166 @@ if [ "${USE_VENV}" -eq 0 ]; then
     fi
 fi
 
-# 4. Create launcher script
+# 4. Check & Install Sysadmin CLI dependencies (openssh, sshpass, nmap, jq)
+echo "Checking sysadmin operational tooling..."
+SYS_PKGS=()
+for tool in ssh sshpass nmap jq; do
+    if ! command -v "$tool" &>/dev/null; then
+        SYS_PKGS+=("$tool")
+    fi
+done
+
+if [ ${#SYS_PKGS[@]} -gt 0 ]; then
+    echo "Optional sysadmin utilities missing: ${SYS_PKGS[*]}"
+    if command -v apt-get &>/dev/null && [ "$(id -u)" -eq 0 ]; then
+        apt-get update -qq && apt-get install -y -qq openssh-client sshpass nmap jq || true
+    elif command -v apt-get &>/dev/null && command -v sudo &>/dev/null; then
+        echo "Attempting to install missing sysadmin tools via sudo apt-get..."
+        sudo apt-get update -qq && sudo apt-get install -y -qq openssh-client sshpass nmap jq || echo "Notice: Could not auto-install via sudo. Please install manually: sudo apt install ${SYS_PKGS[*]}"
+    fi
+fi
+
+# 5. Create launcher script
 echo "Writing launcher to ${BIN_DIR}/safi..."
 cat << EOF > "${BIN_DIR}/safi"
 #!/usr/bin/env bash
 export PYTHONPATH="${INSTALL_DIR}:\${PYTHONPATH}"
 exec "${TARGET_PYTHON}" -m safi_cli.main "\$@"
 EOF
-
 chmod +x "${BIN_DIR}/safi"
+
+# 6. Create sys-exec infrastructure runner
+echo "Writing sys-exec runner to ${BIN_DIR}/sys-exec..."
+cat << 'EOF' > "${BIN_DIR}/sys-exec"
+#!/usr/bin/env bash
+set -eo pipefail
+
+CONFIG_DIR="${HOME}/.config/safi"
+INVENTORY_FILE="${CONFIG_DIR}/inventory.json"
+SECRETS_FILE="${CONFIG_DIR}/secrets.json"
+
+usage() {
+    cat << 'HELP'
+Usage:
+  sys-exec --list                      List all managed inventory hosts
+  sys-exec <target-alias> <command>    Execute command on the target host
+
+Examples:
+  sys-exec --list
+  sys-exec web-server "uptime; free -h"
+  sys-exec db-cluster "systemctl status mariadb"
+HELP
+    exit 1
+}
+
+if [ $# -eq 0 ] || [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+    usage
+fi
+
+if [ ! -f "$INVENTORY_FILE" ]; then
+    echo "Error: Inventory file not found at $INVENTORY_FILE" >&2
+    exit 1
+fi
+
+if [ "$1" = "--list" ] || [ "$1" = "-l" ]; then
+    echo "Managed Infrastructure Inventory ($INVENTORY_FILE):"
+    jq -r 'to_entries[] | "  - \(.key): \(.value.user)@\(.value.host) (auth: \(.value.auth)) — \(.value.description // "")"' "$INVENTORY_FILE"
+    exit 0
+fi
+
+if [ $# -lt 2 ]; then
+    echo "Error: Missing command to execute." >&2
+    usage
+fi
+
+TARGET="$1"
+shift
+CMD="$*"
+
+TARGET_CONFIG=$(jq -r --arg t "$TARGET" '.[$t] // empty' "$INVENTORY_FILE")
+if [ -z "$TARGET_CONFIG" ]; then
+    echo "Error: Unknown host alias '$TARGET'. Available hosts:" >&2
+    jq -r 'keys[] | "  - \(.)"' "$INVENTORY_FILE" >&2
+    exit 1
+fi
+
+HOST=$(echo "$TARGET_CONFIG" | jq -r '.host')
+USER=$(echo "$TARGET_CONFIG" | jq -r '.user // "root"')
+PORT=$(echo "$TARGET_CONFIG" | jq -r '.port // 22')
+AUTH=$(echo "$TARGET_CONFIG" | jq -r '.auth // "key"')
+
+if [ "$PORT" = "null" ] || [ -z "$PORT" ]; then
+    PORT=22
+fi
+
+SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 -p "$PORT")
+
+if [ "$AUTH" = "key" ]; then
+    if ssh -o BatchMode=yes "${SSH_OPTS[@]}" "${USER}@${HOST}" "$CMD"; then
+        exit 0
+    else
+        EXIT_CODE=$?
+        if [ -f "$SECRETS_FILE" ]; then
+            PASS=$(jq -r --arg t "$TARGET" '.[$t] // empty' "$SECRETS_FILE")
+            if [ -n "$PASS" ] && [ "$PASS" != "null" ]; then
+                SSHPASS="$PASS" sshpass -e ssh "${SSH_OPTS[@]}" "${USER}@${HOST}" "$CMD"
+                exit $?
+            fi
+        fi
+        exit $EXIT_CODE
+    fi
+elif [ "$AUTH" = "password" ]; then
+    if [ ! -f "$SECRETS_FILE" ]; then
+        echo "Error: Password auth requested for '$TARGET' but secrets file not found ($SECRETS_FILE)" >&2
+        exit 1
+    fi
+    PASS=$(jq -r --arg t "$TARGET" '.[$t] // empty' "$SECRETS_FILE")
+    if [ -z "$PASS" ] || [ "$PASS" = "null" ]; then
+        echo "Error: Password for '$TARGET' not found in $SECRETS_FILE" >&2
+        exit 1
+    fi
+    SSHPASS="$PASS" sshpass -e ssh "${SSH_OPTS[@]}" "${USER}@${HOST}" "$CMD"
+    exit $?
+else
+    echo "Error: Unsupported auth method '$AUTH' for '$TARGET'" >&2
+    exit 1
+fi
+EOF
+chmod +x "${BIN_DIR}/sys-exec"
+
+# 7. Scaffold inventory and secrets template if missing
+CONFIG_DIR="${HOME}/.config/safi"
+mkdir -p "${CONFIG_DIR}"
+
+if [ ! -f "${CONFIG_DIR}/inventory.json" ]; then
+    cat << 'EOF' > "${CONFIG_DIR}/inventory.json"
+{
+  "example-server": {
+    "host": "192.168.1.100",
+    "user": "admin",
+    "port": 22,
+    "auth": "key",
+    "description": "Example target server"
+  }
+}
+EOF
+    echo "Created sample inventory at ${CONFIG_DIR}/inventory.json"
+fi
+
+if [ ! -f "${CONFIG_DIR}/secrets.json" ]; then
+    cat << 'EOF' > "${CONFIG_DIR}/secrets.json"
+{
+  "_comment": "Store passwords here for targets configured with 'auth': 'password'. File permissions are 0600.",
+  "example-password-switch": "YourPasswordHere"
+}
+EOF
+    chmod 600 "${CONFIG_DIR}/secrets.json"
+    echo "Created sample secrets file at ${CONFIG_DIR}/secrets.json"
+fi
 
 echo ""
 echo "=========================================================="
-echo "✓ SAFi CLI installed successfully to ${BIN_DIR}/safi"
+echo "✓ SAFi CLI & sys-exec installed successfully to ${BIN_DIR}"
 echo "=========================================================="
 echo ""
 echo "Quick Setup:"
@@ -92,6 +239,9 @@ echo ""
 echo "  2. Save your API key:"
 echo "     safi --set-key sk-safi-..."
 echo ""
-echo "  3. Start using SAFi:"
-echo "     safi"
+echo "  3. Manage servers via ~/.config/safi/inventory.json:"
+echo "     sys-exec --list"
+echo ""
+echo "  4. Start using the Sysadmin Agent:"
+echo "     safi --agent sysadmin"
 echo ""

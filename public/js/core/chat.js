@@ -898,6 +898,7 @@ async function showConscienceAuditModal(payload) {
         will_reason: payload.will_reason ?? context.will_reason ?? null,
         is_redirect: payload.is_redirect ?? context.is_redirect ?? false,
         final_output: context.final_output ?? payload.final_output ?? null,
+        conscience_model: context.conscience_model ?? payload.conscience_model ?? null,
     });
 }
 

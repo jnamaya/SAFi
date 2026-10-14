@@ -1,6 +1,7 @@
 import argparse
 import glob
 import os
+import re
 import shutil
 import sys
 import threading
@@ -21,20 +22,38 @@ from . import config, prompt_input, tools, ui
 from .client import SafiClient, SafiClientError
 
 
-# Tool-loop ceiling per turn. 25 was hit constantly by real repository work (a
-# read/grep/edit/test cycle is easily a dozen steps), and the loop abandoned the
-# turn with nothing. Raised, and overridable so a heavy session can go further
-# without a code change.
 DEFAULT_MAX_STEPS = int(os.environ.get("SAFI_CLI_MAX_STEPS", "100"))
 _last_turn_result: Optional[Dict[str, Any]] = None
 
 
 def _collect_multiline(initial: str) -> str:
-    """Join backslash-continued input lines so users can compose/paste multi-line prompts.
-
-    Kept as a thin alias for the readline fallback implemented in ``prompt_input``.
-    """
+    """Join backslash-continued input lines so users can compose/paste multi-line prompts."""
     return prompt_input.collect_multiline(initial)
+
+
+MAX_SUBAGENTS_PER_TURN = 3
+
+_MUTATION_VERBS_RE = re.compile(
+    r"\b(?:"
+    r"convert|rewrite|implement|refactor|migrate|modify|edit|write|create|"
+    r"delete|remove|patch|upgrade|redesign|replace|modernize|"
+    r"generate the|apply the|make the change|build the page|update the"
+    r")\b",
+    re.IGNORECASE,
+)
+_READ_ONLY_DISCLAIMERS = (
+    "do not modify", "do not edit", "do not change", "do not write", "do not alter",
+    "do not implement", "without modifying", "without editing", "without changing",
+    "read-only", "read only", "no edits", "non-destructive",
+)
+
+
+def _looks_like_mutation_request(text: str) -> bool:
+    """True when a delegation prompt asks the subagent to change files."""
+    low = (text or "").lower()
+    if any(d in low for d in _READ_ONLY_DISCLAIMERS):
+        return False
+    return bool(_MUTATION_VERBS_RE.search(low))
 
 
 def run_subagent_task(
@@ -43,6 +62,7 @@ def run_subagent_task(
     workspace_root: Path,
     parent_conv_id: str,
     user_id: str,
+    parent_agent: str = "software_engineer",
     model: Optional[str] = None,
     max_steps: int = 6,
 ) -> str:
@@ -65,34 +85,46 @@ def run_subagent_task(
         or "researcher"
     ).strip().lower()
 
-    ui.print_subagent_start(subagent_type, description)
-
-    # Monotonic Confinement: Map role to strictly permitted tools and instructions
     if subagent_type == "researcher":
-        allowed_tool_names = ("read", "grep", "glob", "list")
+        allowed_tool_names = ("read", "grep", "glob", "list", "git_status", "git_diff")
         role_prompt = (
             "You are a focused, read-only Research Subagent for SAFi. "
             "Your objective is to inspect repository files, search patterns, and return a concise, factual summary of findings. "
             "Do NOT propose write, edit, delete, or bash commands. Be specific with file paths and line numbers."
         )
     elif subagent_type == "tester":
-        allowed_tool_names = ("bash", "read")
+        allowed_tool_names = ("bash", "read", "grep", "list")
         role_prompt = (
             "You are a focused Test Runner Subagent for SAFi. "
             "Run relevant test commands using 'bash', inspect results, and report pass/fail status and failure causes."
         )
     elif subagent_type == "code_reviewer":
-        allowed_tool_names = ("read", "grep", "list")
+        allowed_tool_names = ("read", "grep", "glob", "list", "git_status", "git_diff")
         role_prompt = (
             "You are a Code Review Subagent for SAFi. "
-            "Inspect files to identify bugs, potential edge cases, security flaws, or architectural discrepancies."
+            "Inspect files and diffs to identify bugs, potential edge cases, security flaws, or architectural discrepancies."
         )
     else:
-        allowed_tool_names = ("read", "grep", "glob", "list")
+        allowed_tool_names = ("read", "grep", "glob", "list", "git_status", "git_diff")
         role_prompt = f"You are a specialized subagent for SAFi focused on: {subagent_type}."
 
+    if (
+        subagent_type not in ("tester", "code_reviewer")
+        and not ({"edit", "write"} & set(allowed_tool_names))
+        and _looks_like_mutation_request(f"{description}\n{prompt}")
+    ):
+        refusal = (
+            f"Refused: subagent type '{subagent_type}' is read-only and cannot modify files, "
+            "so this delegation cannot complete the requested change. Do not delegate "
+            "implementation to subagents. Make the change yourself now with the 'edit' tool "
+            "(existing files) or 'write' (new files), then continue the task."
+        )
+        ui.print_subagent_done(subagent_type, refusal, steps=0)
+        return refusal
+
+    ui.print_subagent_start(subagent_type, description)
+
     child_tools = [t for t in tools.TOOL_SCHEMAS if t["function"]["name"] in allowed_tool_names]
-    # Database enforces CONVERSATION_ID_MAX_LEN = 36. Keep prefix for lineage while guaranteeing <= 36 chars.
     sub_suffix = f"_sub_{uuid.uuid4().hex[:6]}"
     max_parent_prefix_len = 36 - len(sub_suffix)
     child_conv_id = f"{parent_conv_id[:max_parent_prefix_len]}{sub_suffix}"
@@ -114,7 +146,7 @@ def run_subagent_task(
                 conversation_id=child_conv_id,
                 message=step_prompt,
                 workspace_root=str(workspace_root.resolve()),
-                agent="software_engineer",
+                agent=parent_agent,
                 model=model,
                 tool_results=child_tool_results,
                 tools=child_tools,
@@ -126,31 +158,34 @@ def run_subagent_task(
             return err
 
         if res.get("type") == "tool_call":
-            t_name = res.get("tool_name", "")
-            t_args = res.get("parameters") or {}
+            batch = res.get("tool_calls")
+            proposals = batch if (isinstance(batch, list) and batch) else [res]
+            for prop in proposals:
+                if not isinstance(prop, dict):
+                    continue
+                t_name = prop.get("tool_name") or prop.get("tool") or ""
+                t_args = prop.get("parameters") or prop.get("params") or prop.get("arguments") or {}
 
-            # Strict role sub-policy enforcement
-            if t_name not in allowed_tool_names:
-                blocked_msg = f"Rejected: Subagent role '{subagent_type}' is restricted and not permitted to execute '{t_name}'."
-                ui.print_subagent_step(subagent_type, t_name, t_args, "Blocked by role sub-policy")
+                if t_name not in allowed_tool_names:
+                    blocked_msg = f"Rejected: Subagent role '{subagent_type}' is restricted and not permitted to execute '{t_name}'."
+                    ui.print_subagent_step(subagent_type, t_name, t_args, "Blocked by role sub-policy")
+                    child_tool_results.append({
+                        "tool_name": t_name,
+                        "arguments": t_args,
+                        "result": blocked_msg,
+                    })
+                    continue
+
+                t_out = tools.execute_tool(t_name, t_args, workspace_root)
+                last_snippet = t_out[:200]
+                ui.print_subagent_step(subagent_type, t_name, t_args, t_out)
                 child_tool_results.append({
                     "tool_name": t_name,
                     "arguments": t_args,
-                    "result": blocked_msg,
+                    "result": t_out,
                 })
-                continue
-
-            t_out = tools.execute_tool(t_name, t_args, workspace_root)
-            last_snippet = t_out[:200]
-            ui.print_subagent_step(subagent_type, t_name, t_args, t_out)
-            child_tool_results.append({
-                "tool_name": t_name,
-                "arguments": t_args,
-                "result": t_out,
-            })
             continue
 
-        # Terminal answer reached
         final_out = res.get("finalOutput") or ""
         ui.print_subagent_done(subagent_type, final_out, steps=step + 1)
         return f"Subagent ({subagent_type}) findings for '{description}':\n{final_out}"
@@ -167,17 +202,13 @@ def _handle_tool_proposal(
     workspace_root: Path,
     conversation_id: str,
     user_id: str,
+    agent: str,
     model: Optional[str],
     auto_approve: bool,
     tool_results: list,
     subagents_run_count: int,
 ) -> int:
-    """Execute one Will-approved tool proposal and record its result.
-
-    Returns the updated subagent run count. Mirrors the single-proposal logic so a
-    batched turn (several proposals in one server response) executes each call
-    exactly as it always did one at a time.
-    """
+    """Execute one Will-approved tool proposal and record its result."""
     tool_name = proposal.get("tool_name") or proposal.get("tool") or ""
     args = proposal.get("parameters") or proposal.get("params") or proposal.get("arguments") or {}
     will_decision = proposal.get("willDecision") or proposal.get("decision") or "approve"
@@ -185,7 +216,6 @@ def _handle_tool_proposal(
 
     ui.print_tool_proposal(tool_name, args, proposal)
 
-    # If WillGate blocked the proposal, SAFi does not expect client execution
     if will_decision not in ("approve", "approved"):
         tool_results.append({
             "tool_name": tool_name,
@@ -194,8 +224,19 @@ def _handle_tool_proposal(
         })
         return subagents_run_count
 
-    # Subagent delegation (task / delegate_subagent)
     if tool_name in ("task", "delegate_subagent"):
+        if subagents_run_count >= MAX_SUBAGENTS_PER_TURN:
+            tool_results.append({
+                "tool_name": tool_name,
+                "arguments": args,
+                "result": (
+                    f"[Refused] Delegation budget exhausted for this turn "
+                    f"({subagents_run_count} subagents already run). Do not delegate again. "
+                    "Complete the work yourself now using edit/write/bash, then give your "
+                    "final answer."
+                ),
+            })
+            return subagents_run_count
         subagents_run_count += 1
         result_str = run_subagent_task(
             client=client,
@@ -203,15 +244,16 @@ def _handle_tool_proposal(
             workspace_root=workspace_root,
             parent_conv_id=conversation_id,
             user_id=user_id,
+            parent_agent=agent,
             model=model,
             max_steps=6,
         )
-        # If the agent has run 2 or more subagents in this turn, advise it to finalize
-        if subagents_run_count >= 2:
+        if subagents_run_count >= MAX_SUBAGENTS_PER_TURN:
             result_str += (
-                "\n\n[System note: Delegation budget reached (2 subagents executed). "
-                "Please synthesize the available findings into your final answer now "
-                "instead of delegating further.]"
+                f"\n\n[System note: Delegation budget reached "
+                f"({MAX_SUBAGENTS_PER_TURN} subagents executed). No further delegations "
+                "are permitted this turn. Act on the findings yourself now (edit/write/bash) "
+                "and then give your final answer.]"
             )
         tool_results.append({
             "tool_name": tool_name,
@@ -220,7 +262,6 @@ def _handle_tool_proposal(
         })
         return subagents_run_count
 
-    # Interactive developer clarification tool (question / ask_user)
     if tool_name in ("question", "ask_user"):
         q_text = args.get("question") or args.get("prompt") or ""
         opts = args.get("options") or []
@@ -233,7 +274,6 @@ def _handle_tool_proposal(
         })
         return subagents_run_count
 
-    # Plan & task list tracking tool (todowrite)
     if tool_name in ("todowrite", "todo_write"):
         todos = args.get("todos") or []
         ui.render_todo_list(todos)
@@ -255,9 +295,6 @@ def _handle_tool_proposal(
         })
         return subagents_run_count
 
-    # Server-executed tool (e.g. fiduciary stock tools, web search).
-    # The backend only marks a tool as server-executed explicitly; a
-    # stray "result" key on a client tool must not skip local execution.
     if proposal.get("executed_by") == "server":
         result_str = str(proposal.get("result", ""))
         ui.print_tool_result_summary(tool_name, result_str)
@@ -268,7 +305,6 @@ def _handle_tool_proposal(
         })
         return subagents_run_count
 
-    # Permission check for mutating/shell tools
     allowed = ui.prompt_user_permission(tool_name, args, auto_approve=auto_approve)
     if not allowed:
         result_str = f"Execution of '{tool_name}' was declined by the developer."
@@ -307,6 +343,8 @@ def run_agent_turn(
     ui.clear_completed_todos()
     ui.print_user_prompt(prompt, agent=agent, user_name=user_name)
 
+    resume_budget = 3
+
     try:
         for step in range(max_steps):
             turn_msg_id = str(uuid.uuid4())
@@ -320,6 +358,7 @@ def run_agent_turn(
                     start_time = time.time()
 
                     seen_steps = set()
+
                     def _poll_progress():
                         nonlocal last_status_markup
                         current_step_text = "Governing turn"
@@ -327,19 +366,23 @@ def run_agent_turn(
                         while not stop_poller.wait(0.25):
                             try:
                                 progress_data = client.get_turn_progress(turn_msg_id, user_id=user_id)
+                                if stop_poller.is_set():
+                                    break
                                 if isinstance(progress_data, dict):
                                     codes = progress_data.get("progress")
                                     if isinstance(codes, list):
                                         progress_codes = [c for c in codes if isinstance(c, str)]
                                     raw_step = progress_data.get("latest_step")
                                     if raw_step and raw_step != current_step_text:
-                                        # When a phase completes and moves to a new step, print the completed step
                                         if current_step_text not in seen_steps and current_step_text != "Governing turn":
                                             seen_steps.add(current_step_text)
                                             ui.print_governance_step(current_step_text, time.time() - start_time)
                                         current_step_text = raw_step
                             except Exception:
-                                pass
+                                if stop_poller.is_set():
+                                    break
+                            if stop_poller.is_set():
+                                break
                             elapsed = time.time() - start_time
                             last_status_markup = ui.build_progress_line(
                                 progress_codes or None,
@@ -352,13 +395,22 @@ def run_agent_turn(
                     poller = threading.Thread(target=_poll_progress, daemon=True)
                     poller.start()
                     try:
-                        # Once a plan has already been recorded in this turn, omit todowrite from available
-                        # tools so the model is forced to call action tools (read, write, edit, bash).
                         plan_recorded = any(tr.get("tool_name") in ("todowrite", "todo_write") for tr in tool_results)
-                        active_tools = [
-                            t for t in tools.TOOL_SCHEMAS
-                            if not (plan_recorded and t.get("function", {}).get("name") in ("todowrite", "todo_write"))
-                        ] if agent == "software_engineer" else None
+                        delegations_spent = subagents_run_count >= MAX_SUBAGENTS_PER_TURN
+
+                        def _tool_ok(t: Dict[str, Any]) -> bool:
+                            name = t.get("function", {}).get("name")
+                            if plan_recorded and name in ("todowrite", "todo_write"):
+                                return False
+                            if delegations_spent and name in ("task", "delegate_subagent"):
+                                return False
+                            return True
+
+                        active_tools = (
+                            [t for t in tools.TOOL_SCHEMAS if _tool_ok(t)]
+                            if agent in ("software_engineer", "sysadmin")
+                            else None
+                        )
 
                         res = client.send_turn(
                             user_id=user_id,
@@ -375,19 +427,14 @@ def run_agent_turn(
                         )
                     finally:
                         stop_poller.set()
-                        poller.join(timeout=0.3)
+                        poller.join(timeout=0.5)
             except SafiClientError as err:
                 ui.clear_live_status_tail(last_status_markup)
                 ui.print_error(str(err))
                 return None
-            # Rich's Status pads each frame past the terminal width and only
-            # erases one row on exit, which left the frozen spinner on screen
-            # above the answer. Lift the residual rows before printing the turn.
+
             ui.clear_live_status_tail(last_status_markup)
 
-            # Handle tool call proposal(s). The server may approve several
-            # independent calls in one governed turn (batched tool calls); older
-            # servers return a single flat proposal, which we still accept.
             if res.get("type") == "tool_call":
                 batch = res.get("tool_calls")
                 if isinstance(batch, list) and batch:
@@ -399,6 +446,7 @@ def run_agent_turn(
                                 workspace_root=workspace_root,
                                 conversation_id=conversation_id,
                                 user_id=user_id,
+                                agent=agent,
                                 model=model,
                                 auto_approve=auto_approve,
                                 tool_results=tool_results,
@@ -411,17 +459,42 @@ def run_agent_turn(
                         workspace_root=workspace_root,
                         conversation_id=conversation_id,
                         user_id=user_id,
+                        agent=agent,
                         model=model,
                         auto_approve=auto_approve,
                         tool_results=tool_results,
                         subagents_run_count=subagents_run_count,
                     )
+                resume_budget = 3
                 continue
 
-            # Terminal answer reached
             final_text = res.get("finalOutput") or ""
 
-            # Display any server-executed tool calls not already displayed step-by-step
+            unfinished_todos = [
+                t for t in ui.get_active_todos()
+                if (t.get("status") or "pending").lower() not in ("completed", "done")
+            ]
+            if unfinished_todos and resume_budget > 0 and step < max_steps - 1:
+                resume_budget -= 1
+                remaining = "; ".join(
+                    str(t.get("task") or t.get("content") or t.get("description") or "step")
+                    for t in unfinished_todos
+                )[:500]
+                pause_note = " ".join((final_text or "").split())[:500]
+                tool_results.append({
+                    "tool_name": "harness_note",
+                    "arguments": {},
+                    "result": (
+                        "[Harness] Your last message was a mid-task status note, not "
+                        "the final answer. The plan still has unfinished steps: "
+                        f"{remaining}. Do not ask the user for permission. Continue "
+                        "now with the appropriate tools, or, if the work is genuinely "
+                        f"done, mark the remaining steps complete. (Your note: {pause_note})"
+                    ),
+                })
+                ui.console.print("[dim yellow]↳ Plan incomplete — continuing autonomously…[/dim yellow]")
+                continue
+
             executed_tools = res.get("toolCalls") or res.get("tool_calls") or []
             displayed_tools_count = len(tool_results)
             unseen_tools = executed_tools[displayed_tools_count:] if len(executed_tools) >= displayed_tools_count else []
@@ -450,10 +523,6 @@ def run_agent_turn(
             ui.print_final_output(final_text, res)
             return res
 
-        # Hit the tool-loop ceiling. Abandoning the turn here threw away every
-        # collected tool result, so make one final governed pass with tools
-        # disabled: the model can no longer propose a tool and must fold what it
-        # has into an answer.
         if tool_results:
             try:
                 res = client.send_turn(
@@ -633,7 +702,6 @@ def prompt_switch_agent(
             ui.console.print(f"[bold red]Invalid selection:[/] '{choice}'.")
             return current_agent, config.resolve_session_id(str(workspace_root))
 
-    # Check Policy API key for target_agent
     agent_info = AVAILABLE_AGENTS.get(target_agent, {})
     agent_title = agent_info.get("title", target_agent)
     agent_key_val = config.resolve_agent_api_key(target_agent)
@@ -724,10 +792,6 @@ def discover_models(client: SafiClient, force_refresh: bool = False) -> List[Dic
     return AVAILABLE_MODELS
 
 
-# A saved Intellect model preference of "@serving" (aliases below) means "follow
-# whatever model the appliance is currently serving", rather than pinning an id
-# that goes stale the moment the operator switches models on the box. Resolved
-# to a concrete id on every launch, so a model swap needs no CLI reconfigure.
 SERVING_MODEL_ALIASES = frozenset({"@serving", "serving", "auto", "@local", "@active"})
 
 
@@ -737,13 +801,7 @@ def is_serving_alias(value: Optional[str]) -> bool:
 
 
 def serving_model_id(models: List[Dict[str, Any]]) -> Optional[str]:
-    """Id of the served model within an available-models list, else None.
-
-    Appliance-served models are the ones the backend tags provider "local":
-    every appliance alias carries the reserved "safi-" prefix and routes there.
-    When multiple local models are downloaded, this returns whichever model is
-    currently active/loaded on the server.
-    """
+    """Id of the served model within an available-models list, else None."""
     local_models = [m for m in (models or []) if str(m.get("provider") or "").lower() == "local"]
     for m in local_models:
         if m.get("active"):
@@ -764,11 +822,7 @@ def resolve_model_preference(
     explicit: Optional[str] = None,
     force_refresh: bool = False,
 ) -> Optional[str]:
-    """Concrete Intellect model id for this session.
-
-    Resolves "@serving" or unconfigured preferences to whatever model is
-    currently served/active on the appliance.
-    """
+    """Concrete Intellect model id for this session."""
     resolved = config.resolve_intellect_model(agent, explicit)
     if resolved and not is_serving_alias(resolved):
         return resolved
@@ -1036,8 +1090,9 @@ def prompt_command_menu(
     workspace_root: Path,
     current_conv: str,
     current_model: Optional[str] = None,
+    current_user_name: Optional[str] = None,
     user_id: str = "cli_user",
-) -> tuple[str, str, bool]:
+) -> tuple[str, str, Optional[str], Optional[str], bool]:
     """Display the interactive slash command menu when the user types '/'."""
     rows = [
         [str(idx), f"/{cmd}", action, desc]
@@ -1069,17 +1124,16 @@ def prompt_command_menu(
     try:
         choice = input("\nSelect an option [# or command] (or press Enter to cancel): ").strip()
     except (KeyboardInterrupt, EOFError):
-        return current_agent, current_conv, False
+        return current_agent, current_conv, current_model, current_user_name, False
     finally:
         if readline and old_completer:
             readline.set_completer(old_completer)
 
     if not choice:
-        return current_agent, current_conv, False
+        return current_agent, current_conv, current_model, current_user_name, False
 
     choice_clean = choice.lstrip("/").lower().strip()
 
-    # Map number choice to command
     if choice_clean.isdigit():
         idx = int(choice_clean) - 1
         if 0 <= idx < len(COMMAND_OPTIONS):
@@ -1091,38 +1145,49 @@ def prompt_command_menu(
             client=client,
             workspace_root=workspace_root,
         )
-        return new_agent, new_conv, False
+        new_model = resolve_model_preference(client, new_agent)
+        return new_agent, new_conv, new_model, current_user_name, False
 
     elif choice_clean == "new":
         new_conv = config.resolve_session_id(str(workspace_root), new_session=True)
+        try:
+            client.clear_agent_memory(new_conv, user_id=user_id, agent=current_agent)
+        except Exception:
+            pass
         ui.reset_session_telemetry()
         ui.clear_active_todos()
         ui.console.print(f"[bold {ui.COLOR_PASS}]Started new conversation session:[/] [dim]{new_conv}[/]")
-        return current_agent, new_conv, False
+        return current_agent, new_conv, current_model, current_user_name, False
 
     elif choice_clean == "clear":
         os.system("cls" if os.name == "nt" else "clear")
-        ui.print_banner(str(workspace_root), current_agent, client.api_url, intellect_model=current_model)
-        return current_agent, current_conv, False
+        ui.print_banner(
+            str(workspace_root),
+            current_agent,
+            client.api_url,
+            user_name=current_user_name,
+            intellect_model=current_model,
+        )
+        return current_agent, current_conv, current_model, current_user_name, False
 
     elif choice_clean in ("config", "keys"):
         show_config(client, workspace_root, current_agent, current_conv, current_model=current_model)
-        return current_agent, current_conv, False
+        return current_agent, current_conv, current_model, current_user_name, False
 
     elif choice_clean in ("audit", "ledger"):
         if _last_turn_result:
             ui.print_audit_details(_last_turn_result)
         else:
             ui.console.print(f"[{ui.COLOR_WARN}]No recent turn audit available yet. Run a prompt first.[/]")
-        return current_agent, current_conv, False
+        return current_agent, current_conv, current_model, current_user_name, False
 
     elif choice_clean in ("models", "model"):
-        prompt_switch_model(
+        updated_model = prompt_switch_model(
             current_model=current_model,
             client=client,
             current_agent=current_agent,
         )
-        return current_agent, current_conv, False
+        return current_agent, current_conv, updated_model, current_user_name, False
 
     elif choice_clean in ("compress", "summarize", "compact"):
         with ui.console.status(f"[bold {ui.COLOR_BRAND_400}]● SAFi[/] [dim]Compressing conversation tokens...[/]", spinner="dots"):
@@ -1133,8 +1198,16 @@ def prompt_command_menu(
                 model=current_model,
                 action="compress",
             )
+        if comp_res.get("ok") and comp_res.get("compressed"):
+            ui.record_compression_telemetry(
+                tokens_before=comp_res.get("tokens_before", 0),
+                tokens_after=comp_res.get("tokens_after", 0),
+                tokens_saved=comp_res.get("tokens_saved", 0),
+                reduction_pct=comp_res.get("reduction_pct", 0.0),
+                intellect_model=current_model,
+            )
         ui.print_compression_result(comp_res)
-        return current_agent, current_conv, False
+        return current_agent, current_conv, current_model, current_user_name, False
 
     elif choice_clean in ("skills", "skill"):
         from .skills import discover_skills
@@ -1154,50 +1227,51 @@ def prompt_command_menu(
             )
         else:
             ui.console.print(f"[dim]No custom skills found in {workspace_root / '.safi' / 'skills'}. Create a .md file there to add skills![/dim]")
-        return current_agent, current_conv, False
+        return current_agent, current_conv, current_model, current_user_name, False
 
     elif choice_clean in ("user", "name"):
         try:
-            curr = config.resolve_user_name() or "Unset"
+            curr = current_user_name or config.resolve_user_name() or "Unset"
             new_name = input(f"Enter user name (currently '{curr}'): ").strip()
             if new_name:
                 config.save_user_name(new_name)
+                current_user_name = new_name
                 ui.console.print(f"[bold {ui.COLOR_PASS}]✓ User name updated to:[/] [magenta]{new_name}[/]")
         except (KeyboardInterrupt, EOFError):
             pass
-        return current_agent, current_conv, False
+        return current_agent, current_conv, current_model, current_user_name, False
 
     elif choice_clean in ("usage", "totals"):
         ui.console.print()
         ui.console.print(ui.build_session_usage_panel())
-        return current_agent, current_conv, False
+        return current_agent, current_conv, current_model, current_user_name, False
 
     elif choice_clean in ("last", "last-result"):
         ui.print_full_tool_result()
-        return current_agent, current_conv, False
+        return current_agent, current_conv, current_model, current_user_name, False
 
     elif choice_clean in ("compact-ui", "density", "toggle-ui"):
         new_flag = not ui.get_show_audit_panel()
         ui.set_show_audit_panel(new_flag)
         state = "shown" if new_flag else "hidden"
         ui.console.print(f"[bold {ui.COLOR_PASS}]✓ Governance audit line is now {state}.[/]")
-        return current_agent, current_conv, False
+        return current_agent, current_conv, current_model, current_user_name, False
 
     elif choice_clean in ("sessions", "resume"):
         new_conv = prompt_resume_session(current_conv, workspace_root)
-        return current_agent, new_conv, False
+        return current_agent, new_conv, current_model, current_user_name, False
 
     elif choice_clean in ("help", "?"):
         print_help()
-        return current_agent, current_conv, False
+        return current_agent, current_conv, current_model, current_user_name, False
 
     elif choice_clean in ("exit", "quit", ":q"):
         ui.console.print("[dim]Goodbye.[/dim]")
-        return current_agent, current_conv, True
+        return current_agent, current_conv, current_model, current_user_name, True
 
     else:
         ui.console.print(f"[bold {ui.COLOR_FAIL}]Unknown command:[/] '{choice}'. Type [bold]/[/] to see options.")
-        return current_agent, current_conv, False
+        return current_agent, current_conv, current_model, current_user_name, False
 
 
 SLASH_COMMANDS = [
@@ -1234,11 +1308,9 @@ def _compute_completions(
     """Compute auto-completion matches for the given input line and current token."""
     line_clean = line.lstrip()
 
-    # 1. Slash commands & arguments
     if line_clean.startswith("/"):
         tokens = line_clean.split()
 
-        # If user is still typing the command itself (no space typed yet or cursor on first token)
         if len(tokens) <= 1 and not line.endswith(" "):
             commands = list(SLASH_COMMANDS)
             if workspace_root:
@@ -1255,33 +1327,28 @@ def _compute_completions(
 
         cmd = tokens[0].lower() if tokens else ""
 
-        # Auto-complete Agent personas: /agent <tab> or /agents <tab> or /switch <tab>
         if cmd in ("/agent", "/agents", "/switch"):
             agent_keys = list(AVAILABLE_AGENTS.keys())
             exact = [k for k in agent_keys if k.startswith(text)]
             sub = [k for k in agent_keys if text.lower() in k.lower() and k not in exact]
             return exact + sub
 
-        # Auto-complete Models: /model <tab> or /models <tab>
         if cmd in ("/model", "/models"):
             model_ids = [m["id"] for m in AVAILABLE_MODELS if "id" in m]
             exact = [m for m in model_ids if m.startswith(text)]
             sub = [m for m in model_ids if text.lower() in m.lower() and m not in exact]
             return exact + sub
 
-        # Auto-complete Compress subcommands: /compress <tab>
         if cmd in ("/compress", "/compact", "/summarize"):
             subcommands = ["compress", "show", "clear", "status", "view"]
             return [sc for sc in subcommands if sc.startswith(text)]
 
-        # Auto-complete tool names for /last <tab>
         if cmd in ("/last", "/last-result"):
             tool_names = [t["function"]["name"] for t in tools.TOOL_SCHEMAS]
             return [n for n in tool_names if n.startswith(text)]
 
         return []
 
-    # 2. General workspace file path auto-completion
     if text and workspace_root:
         try:
             root_str = str(workspace_root)
@@ -1305,13 +1372,11 @@ def setup_readline_completer(client: Optional[SafiClient] = None, workspace_root
     if not readline:
         return
 
-    # Use whitespace only as delimiters so slashes, hyphens, and paths are not truncated
     try:
         readline.set_completer_delims(" \t\n")
     except Exception:
         pass
 
-    # Bind Tab key for completion (GNU readline on Linux, libedit on macOS)
     try:
         if "libedit" in (getattr(readline, "__doc__", "") or ""):
             readline.parse_and_bind("bind ^I rl_complete")
@@ -1383,8 +1448,6 @@ def interactive_repl(
             f"[dim]Tip: end a line with [bold {ui.COLOR_BRAND_400}]\\[/] to continue on the next line (multi-line prompts).[/dim]\n"
         )
 
-    # Setup history & auto-completer. With prompt_toolkit the history is owned by
-    # its FileHistory; otherwise fall back to a GNU readline history file.
     config.ensure_config_dir()
     hist_file = str(config.HISTORY_FILE)
 
@@ -1420,24 +1483,29 @@ def interactive_repl(
                 break
 
             if line.lower() in ("/", "/menu", "/commands", "menu"):
-                current_agent, current_conv, should_exit = prompt_command_menu(
+                current_agent, current_conv, current_model, current_user_name, should_exit = prompt_command_menu(
                     current_agent=current_agent,
                     client=client,
                     workspace_root=workspace_root,
                     current_conv=current_conv,
                     current_model=current_model,
+                    current_user_name=current_user_name,
                     user_id=user_id,
                 )
-                current_model = resolve_model_preference(client, current_agent, current_model)
                 if should_exit:
                     break
                 continue
 
             if line.lower() == "/new":
                 current_conv = config.resolve_session_id(str(workspace_root), new_session=True)
+                try:
+                    client.clear_agent_memory(current_conv, user_id=user_id, agent=current_agent)
+                except Exception:
+                    pass
                 ui.reset_session_telemetry()
                 ui.clear_active_todos()
                 ui.console.print(f"[bold green]Started new conversation session:[/] [cyan]{current_conv}[/]")
+                ui.console.print("[dim green]↳ Cleared previous agent task & working memory.[/dim green]")
                 continue
 
             if line.lower() == "/clear":
@@ -1570,7 +1638,6 @@ def interactive_repl(
                 print_help()
                 continue
 
-            # Local project skills (.safi/skills/<name>.md) or slash command dispatch
             if line.startswith("/"):
                 from .skills import discover_skills
                 local_skills = discover_skills(workspace_root)
@@ -1616,13 +1683,17 @@ def interactive_repl(
                     ui.console.print(f"[bold {ui.COLOR_FAIL}]Unknown command:[/] '{line}'. Type [bold]/[/] to see options.")
                     continue
 
-
-            if sys.stdout.isatty():
+            # Only erase lines manually when using readline fallback; prompt_toolkit uses erase_when_done=True
+            if not rich_input and sys.stdout.isatty():
                 cols = shutil.get_terminal_size((80, 24)).columns
-                prompt_vis_len = len(f" SAFi [{current_agent}] › ")
-                last_input_line = line.splitlines()[-1] if line else ""
-                total_len = prompt_vis_len + len(last_input_line)
-                lines_count = max(1, ((total_len - 1) // cols) + 1) if cols > 0 else 1
+                margin_len = ui.CLI_MARGIN if ui.CLI_MARGIN > 0 else 0
+                prompt_vis_len = margin_len + len(f" SAFi [{current_agent}] › ")
+                input_lines = line.splitlines() or [""]
+                lines_count = 0
+                for idx_l, l_str in enumerate(input_lines):
+                    prefix_len = prompt_vis_len if idx_l == 0 else len("  … ")
+                    total_len = prefix_len + len(l_str)
+                    lines_count += max(1, ((total_len - 1) // cols) + 1) if cols > 0 else 1
                 for _ in range(lines_count):
                     sys.stdout.write("\033[F\033[2K")
                 sys.stdout.flush()
@@ -1700,7 +1771,6 @@ def main():
 
     args = parser.parse_args()
 
-    # Save user / model / key / URL commands
     if args.set_user:
         config.save_user_name(args.set_user.strip())
         ui.console.print(f"[bold green]✓ Saved user name '{args.set_user.strip()}' to {config.CONFIG_FILE}[/]")
@@ -1729,7 +1799,6 @@ def main():
         ui.console.print(f"[dim]Backend {new_url}: discovered {len(discovered)} available agent persona(s).[/dim]")
         sys.exit(0)
 
-    # Resolve settings for the targeted agent and backend URL
     api_url = config.resolve_api_url(args.api_url)
     target_agent = args.agent
     api_key = config.resolve_agent_api_key(target_agent, args.api_key)
@@ -1761,17 +1830,19 @@ def main():
         ui.console.print(f"[bold green]✓ Saved Policy API Key for {target_agent} to {config.CONFIG_FILE}[/]")
         discover_agents(client)
 
-    # Resolve the Intellect model now that the key is in hand: the "@serving"
-    # sentinel needs /api/models to identify the model the appliance serves.
     intellect_model = resolve_model_preference(client, target_agent, args.model)
 
     workspace_root = Path(args.workspace).resolve()
     conv_id = config.resolve_session_id(str(workspace_root), new_session=args.new)
-    user_id = f"cli_{os.getlogin() if hasattr(os, 'getlogin') else 'user'}"
+    user_id = config.resolve_user_id()
+    if args.new:
+        try:
+            client.clear_agent_memory(conv_id, user_id=user_id, agent=target_agent)
+        except Exception:
+            pass
     auto_approve = not args.require_approval
 
     if args.prompt:
-        # Single-shot command
         ui.print_banner(str(workspace_root), args.agent, api_url, user_name=user_name, intellect_model=intellect_model)
         run_agent_turn(
             client=client,
@@ -1786,7 +1857,6 @@ def main():
             max_steps=args.max_steps,
         )
     else:
-        # Interactive mode
         interactive_repl(
             client=client,
             workspace_root=workspace_root,

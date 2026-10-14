@@ -42,11 +42,16 @@ export function setupConscienceModalContent(payload) {
         ? `the standards of <strong class="text-gray-700 dark:text-gray-300">${esc(policyName)}</strong>${policyVersion ? ` (v${esc(policyVersion)})` : ''}, the policy governing ${profileName ? `<strong class="text-gray-700 dark:text-gray-300">${esc(profileName)}</strong>` : 'this agent'}`
         : `${profileName ? `<strong class="text-gray-700 dark:text-gray-300">${esc(profileName)}</strong>'s` : "this agent's"} values and standards`;
 
+    const model = payload.conscience_model || payload.conscienceModel;
+    const auditorBadge = model
+        ? ` · <span class="text-xs font-mono px-1.5 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-gray-300">Auditor: ${esc(model)}</span>`
+        : '';
+
     // Build the report body from the shared string builders, then attach the
     // modal-specific listeners (copy button, dashboard link).
     container.innerHTML = `
         <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">
-            This report shows how this response was evaluated against ${evaluatedAgainst}.
+            This report shows how this response was evaluated against ${evaluatedAgainst}.${auditorBadge}
         </p>
         ${renderConscienceReport(payload)}
     `;
@@ -108,7 +113,7 @@ export function renderConscienceReport(payload, idPrefix = '') {
 }
 
 function isTypedAssessment(item) {
-    return Boolean(item?.selected_level || item?.assessment_explanation || item?.choice_distribution);
+    return Boolean(item?.selected_level || item?.choice_distribution || item?.probabilities);
 }
 
 function readableTrigger(code) {
@@ -414,11 +419,13 @@ function renderLedgerItem(item, key, values = []) {
     const basis = scoringGuideDescription(item, values)
         || String(item.assessment_explanation || '').trim()
         || (typed ? typedAssessmentBasis(item) : '');
-    const reasonHtml = DOMPurify.sanitize(String(item.reason || ''));
+    const reasonHtml = DOMPurify.sanitize(String(item.reason || '').trim());
     const basisHtml = DOMPurify.sanitize(basis);
+
+    const hasDynamicReason = Boolean(reasonHtml && reasonHtml !== basisHtml);
+    const primaryText = hasDynamicReason ? reasonHtml : (basisHtml || reasonHtml);
     const maxLength = 120;
-    const displayedText = typed && basisHtml ? basisHtml : reasonHtml;
-    const isLong = displayedText.length > maxLength;
+    const isLong = primaryText.length > maxLength;
 
     const statusCardClass = {
         upholds: 'audit-card-uphold',
@@ -436,9 +443,27 @@ function renderLedgerItem(item, key, values = []) {
         </div>
     ` : '';
 
-    const assessmentHtml = basisHtml
-        ? `<div class="min-w-0 flex-1 text-sm">${basisHtml}</div>`
-        : (typed ? '' : `<div class="min-w-0 flex-1"><div class="reason-text ${isLong ? 'truncated' : ''}">${reasonHtml}</div>${isLong ? '<button class="expand-btn">Show More</button>' : ''}</div>`);
+    let choiceDistributionHtml = '';
+    if (typed && Array.isArray(item.choice_distribution) && item.choice_distribution.length > 1) {
+        choiceDistributionHtml = `
+            <div class="flex flex-wrap items-center gap-1.5 mt-2 pt-2 border-t border-gray-100 dark:border-neutral-800">
+                <span class="text-[11px] text-gray-400 dark:text-gray-500 mr-1">Distribution:</span>
+                ${item.choice_distribution.map(d => `
+                    <span class="text-[11px] px-1.5 py-0.5 rounded ${d.label === item.selected_level ? 'bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300 font-semibold' : 'bg-gray-100 text-gray-600 dark:bg-neutral-800 dark:text-gray-400'}">
+                        ${DOMPurify.sanitize(d.label)}: ${Math.round((d.probability || 0) * 100)}%
+                    </span>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    const assessmentHtml = `
+        <div class="min-w-0 flex-1 text-sm">
+            <div class="reason-text ${isLong ? 'truncated' : ''}">${primaryText}</div>
+            ${isLong ? '<button class="expand-btn">Show More</button>' : ''}
+            ${choiceDistributionHtml}
+        </div>
+    `;
     const findingHtml = (typed || scoreText) ? `
         <div class="mb-2 flex items-start gap-2">
             ${scoreText ? `<span class="inline-block shrink-0 rounded px-1.5 py-0.5 text-xs font-mono font-bold ${scoreToneClass}">${scoreText}</span>` : ''}
@@ -569,25 +594,26 @@ function copyAuditToClipboard(payload) {
         const conflicts = payload.ledger.filter(r => r.score < 0);
         const neutral = payload.ledger.filter(r => r.score === 0);
 
+        const getItemText = (item) => {
+            const basis = scoringGuideDescription(item, payload.values || []) || item.assessment_explanation || (isTypedAssessment(item) ? typedAssessmentBasis(item) : '');
+            const reason = String(item.reason || '').trim();
+            const desc = (reason && reason !== basis) ? reason : (basis || reason || '');
+            return `- ${item.value} (${Number(item.score) > 0 ? '+' : ''}${Number(item.score).toFixed(1)}): ${desc}\n`;
+        };
+
         if (upholds.length > 0) {
             text += 'UPHOLDS:\n';
-            upholds.forEach(item => {
-                text += `- ${item.value} (${Number(item.score) > 0 ? '+' : ''}${Number(item.score).toFixed(1)}): ${scoringGuideDescription(item, payload.values || []) || item.assessment_explanation || (isTypedAssessment(item) ? typedAssessmentBasis(item) : item.reason)}\n`;
-            });
+            upholds.forEach(item => { text += getItemText(item); });
             text += '\n';
         }
         if (conflicts.length > 0) {
             text += 'CONFLICTS:\n';
-            conflicts.forEach(item => {
-                text += `- ${item.value} (${Number(item.score) > 0 ? '+' : ''}${Number(item.score).toFixed(1)}): ${scoringGuideDescription(item, payload.values || []) || item.assessment_explanation || (isTypedAssessment(item) ? typedAssessmentBasis(item) : item.reason)}\n`;
-            });
+            conflicts.forEach(item => { text += getItemText(item); });
             text += '\n';
         }
         if (neutral.length > 0) {
             text += 'NEUTRAL:\n';
-            neutral.forEach(item => {
-                text += `- ${item.value} (${Number(item.score) > 0 ? '+' : ''}${Number(item.score).toFixed(1)}): ${scoringGuideDescription(item, payload.values || []) || item.assessment_explanation || (isTypedAssessment(item) ? typedAssessmentBasis(item) : item.reason)}\n`;
-            });
+            neutral.forEach(item => { text += getItemText(item); });
         }
     } else {
         text += 'No specific values were engaged for this response.';

@@ -1,9 +1,11 @@
 """HTTP Client communicating directly with SAFi's governed agentic endpoint."""
 
-import json
 import os
+import socket
+import ssl
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 import requests
 
 from .tools import TOOL_SCHEMAS
@@ -23,7 +25,6 @@ class SafiClient:
         self.endpoint = f"{self.api_url}/api/agentic/process_prompt"
 
         self.session = requests.Session()
-        # Resolve SSL verification (appliance CA cert if saved, or explicit parameter, or env)
         self.default_ca = Path.home() / ".config" / "safi" / "appliance.crt"
         if verify_ssl is not None:
             self.session.verify = verify_ssl
@@ -38,9 +39,6 @@ class SafiClient:
         if not self.api_url.startswith("https://"):
             return None
         try:
-            import socket
-            import ssl
-            from urllib.parse import urlparse
             parsed = urlparse(self.api_url)
             host = parsed.hostname
             port = parsed.port or 443
@@ -58,22 +56,31 @@ class SafiClient:
             pass
         return None
 
+    def _allow_cert_refresh(self) -> bool:
+        """Only allow overwriting an existing pinned appliance cert if explicitly opted in."""
+        val = os.environ.get("SAFI_TRUST_ON_REINSTALL", "")
+        return val.strip().lower() in ("1", "true", "yes", "on")
+
     def _ensure_appliance_cert(self, force_refresh: bool = False) -> None:
         if not self.api_url.startswith("https://"):
             return
-        if not force_refresh and self.default_ca.exists():
-            self.session.verify = str(self.default_ca)
-            return
+        if self.default_ca.exists():
+            if not (force_refresh and self._allow_cert_refresh()):
+                self.session.verify = str(self.default_ca)
+                return
 
         pem = self._fetch_peer_cert()
         if pem:
             try:
                 self.default_ca.parent.mkdir(parents=True, exist_ok=True)
                 self.default_ca.write_text(pem, encoding="ascii")
+                try:
+                    os.chmod(self.default_ca, 0o600)
+                except OSError:
+                    pass
                 self.session.verify = str(self.default_ca)
             except Exception:
                 pass
-
 
     def get_available_agents(self) -> List[Dict[str, Any]]:
         """Fetch available agents from the connected SAFi backend URL."""
@@ -92,19 +99,20 @@ class SafiClient:
                     if isinstance(data, dict) and data.get("ok") and isinstance(data.get("available"), list):
                         return data["available"]
             except requests.exceptions.SSLError:
-                self._ensure_appliance_cert(force_refresh=True)
-                try:
-                    resp = self.session.get(
-                        f"{self.api_url}{path}",
-                        headers=headers,
-                        timeout=5,
-                    )
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        if isinstance(data, dict) and data.get("ok") and isinstance(data.get("available"), list):
-                            return data["available"]
-                except Exception:
-                    continue
+                if self._allow_cert_refresh():
+                    self._ensure_appliance_cert(force_refresh=True)
+                    try:
+                        resp = self.session.get(
+                            f"{self.api_url}{path}",
+                            headers=headers,
+                            timeout=5,
+                        )
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            if isinstance(data, dict) and data.get("ok") and isinstance(data.get("available"), list):
+                                return data["available"]
+                    except Exception:
+                        continue
             except Exception:
                 continue
         return []
@@ -126,19 +134,20 @@ class SafiClient:
                     if isinstance(data, dict) and data.get("ok") and isinstance(data.get("models"), list):
                         return data["models"]
             except requests.exceptions.SSLError:
-                self._ensure_appliance_cert(force_refresh=True)
-                try:
-                    resp = self.session.get(
-                        f"{self.api_url}{path}",
-                        headers=headers,
-                        timeout=5,
-                    )
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        if isinstance(data, dict) and data.get("ok") and isinstance(data.get("models"), list):
-                            return data["models"]
-                except Exception:
-                    continue
+                if self._allow_cert_refresh():
+                    self._ensure_appliance_cert(force_refresh=True)
+                    try:
+                        resp = self.session.get(
+                            f"{self.api_url}{path}",
+                            headers=headers,
+                            timeout=5,
+                        )
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            if isinstance(data, dict) and data.get("ok") and isinstance(data.get("models"), list):
+                                return data["models"]
+                    except Exception:
+                        continue
             except Exception:
                 continue
         return []
@@ -164,12 +173,6 @@ class SafiClient:
             "Content-Type": "application/json",
         }
 
-        # Client-owned tools are advertised only for personas that operate a
-        # workspace/operator shell. Informational and advisory personas (e.g.
-        # fiduciary, health_navigator) use governed server-side MCP tools
-        # (stock market data, web search, etc.). The server still intersects
-        # whatever we advertise with the agent's policy allowed_tools, so
-        # advertising here can never widen an agent's grant.
         if tools is not None:
             tools_payload = tools
         else:
@@ -205,20 +208,25 @@ class SafiClient:
                 timeout=600,
             )
         except requests.exceptions.SSLError as exc:
-            # If the appliance was reinstalled and generated a fresh certificate,
-            # refresh ~/.config/safi/appliance.crt and retry once automatically.
-            self._ensure_appliance_cert(force_refresh=True)
-            try:
-                resp = self.session.post(
-                    self.endpoint,
-                    headers=headers,
-                    json=payload,
-                    timeout=600,
-                )
-            except requests.exceptions.RequestException as retry_exc:
+            if self._allow_cert_refresh():
+                self._ensure_appliance_cert(force_refresh=True)
+                try:
+                    resp = self.session.post(
+                        self.endpoint,
+                        headers=headers,
+                        json=payload,
+                        timeout=600,
+                    )
+                except requests.exceptions.RequestException as retry_exc:
+                    raise SafiClientError(
+                        f"Failed to connect to SAFi backend at {self.endpoint}: {retry_exc}",
+                        details=str(retry_exc),
+                    )
+            else:
                 raise SafiClientError(
-                    f"Failed to connect to SAFi backend at {self.endpoint}: {retry_exc}",
-                    details=str(retry_exc),
+                    f"SSL certificate verification failed for {self.endpoint}. "
+                    f"If the appliance was reinstalled, remove {self.default_ca} or set SAFI_TRUST_ON_REINSTALL=1.",
+                    details=str(exc),
                 )
         except requests.exceptions.RequestException as exc:
             raise SafiClientError(
@@ -313,3 +321,35 @@ class SafiClient:
             }
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
+
+    def clear_agent_memory(
+        self,
+        conversation_id: str,
+        user_id: str,
+        agent: str = "software_engineer",
+    ) -> Dict[str, Any]:
+        """Clear both conversation memory summary and accumulated agent work context."""
+        headers = {
+            "Content-Type": "application/json",
+        }
+        if self.api_key:
+            headers["X-API-KEY"] = self.api_key
+        payload = {
+            "conversation_id": conversation_id,
+            "user_id": user_id,
+            "agent": agent,
+            "action": "clear",
+            "clear_agent_memory": True,
+        }
+        try:
+            resp = self.session.post(
+                f"{self.api_url}/api/agentic/compress",
+                headers=headers,
+                json=payload,
+                timeout=30,
+            )
+            if resp.status_code == 200:
+                return resp.json()
+            return {"ok": False}
+        except Exception:
+            return {"ok": False}

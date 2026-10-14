@@ -7,11 +7,18 @@ current working directory, under SAFi's Will Gate and path confinement.
 import fnmatch
 import os
 import re
+import shutil
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
-FORBIDDEN_NAMES = frozenset({".env", "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa"})
+FORBIDDEN_NAMES = frozenset({
+    ".env", "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa",
+    "authorized_keys", "known_hosts", "credentials", ".netrc", ".pgpass",
+})
+FORBIDDEN_DIRS = frozenset({
+    ".git", ".ssh", ".aws", ".gnupg", ".kube",
+})
 FORBIDDEN_SUFFIXES = (
     ".pem", ".key", ".pkcs12", ".pfx", ".p12", ".kdbx", ".jks",
 )
@@ -54,12 +61,12 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "write",
-            "description": "Create a brand-new file that DOES NOT exist yet. DO NOT use this on existing files — use 'edit' instead to avoid output truncation. Path is relative to the repository root.",
+            "description": "Create a brand-new file or overwrite an entire file when a full rewrite is needed. Prefer 'edit' for targeted modifications to existing files. Path is relative to the repository root.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "path": {"type": "string", "description": "File path relative to repository root."},
-                    "content": {"type": "string", "description": "New content to write to the new file."}
+                    "content": {"type": "string", "description": "New content to write to the file."}
                 },
                 "required": ["path", "content"]
             }
@@ -69,7 +76,7 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "edit",
-            "description": "Modify, fix, or update an existing file by replacing an exact contiguous block of text. MANDATORY for existing files.",
+            "description": "Modify, fix, or update an existing file by replacing an exact contiguous block of text. MANDATORY for targeted changes to existing files.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -157,7 +164,7 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "task",
-            "description": "Delegate a unit of work to an autonomous subagent in an isolated context. Use proactively whenever a task involves multi-file exploration/search ('researcher'), running test suites ('tester'), or reviewing code changes ('code_reviewer'). Returns synthesized findings without consuming main context tokens.",
+            "description": "Delegate READ-ONLY work to an isolated subagent: multi-file exploration/search ('researcher'), running tests ('tester'), or reviewing code ('code_reviewer'). Subagents CANNOT modify files — never delegate implementation, editing, writing, or any file change; do that yourself with edit/write. Returns synthesized findings without consuming main context tokens.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -177,11 +184,11 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "question",
-            "description": "Ask the user a clarifying question with optional multiple-choice options when requirements or architectural choices are ambiguous. Pauses the turn and returns the user's selected choice or written answer.",
+            "description": "Ask the user a clarifying question ONLY when there is a critical, blocking ambiguity that prevents completing the task. DO NOT use this tool for routine choices, intermediate steps, or to ask permission to continue. Make sensible engineering decisions and execute autonomously.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "question": {"type": "string", "description": "The question to ask the user."},
+                    "question": {"type": "string", "description": "The specific blocking question to ask the user."},
                     "options": {
                         "type": "array",
                         "items": {"type": "string"},
@@ -253,24 +260,55 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
 def _is_secret_name(name: str) -> bool:
     """True for credential files: exact names, key suffixes, and .env.* variants (templates excepted)."""
     lower = name.lower()
-    if name in FORBIDDEN_NAMES or any(lower.endswith(s) for s in FORBIDDEN_SUFFIXES):
+    if lower in FORBIDDEN_NAMES or any(lower.endswith(s) for s in FORBIDDEN_SUFFIXES):
         return True
     if lower.startswith(".env.") and not lower.endswith(ENV_TEMPLATE_SUFFIXES):
         return True
     return False
 
 
-def resolve_safe_path(rel_path: str, workspace_root: Path) -> Path:
-    target = (workspace_root / rel_path).resolve()
+def _safe_int(value: Any, default: int) -> int:
     try:
-        target.relative_to(workspace_root.resolve())
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def resolve_safe_path(rel_path: str, workspace_root: Path, *, follow_symlinks: bool = True) -> Path:
+    """Confine a relative path to workspace_root and block protected directories and secret files."""
+    ws_resolved = workspace_root.resolve()
+    raw_target = workspace_root / rel_path
+
+    if follow_symlinks:
+        target = raw_target.resolve()
+    else:
+        target = raw_target.parent.resolve() / raw_target.name
+
+    try:
+        rel_parts = target.relative_to(ws_resolved).parts
     except ValueError:
         raise PermissionError(f"Access denied: '{rel_path}' resolves outside the repository root.")
 
-    # Secrets check
-    if _is_secret_name(target.name):
-        raise PermissionError(f"Access denied: '{target.name}' is a secret/credential file and cannot be accessed.")
+    raw_norm_parts = Path(os.path.normpath(rel_path)).parts
+    for part in set(rel_parts) | set(raw_norm_parts):
+        if part.lower() in FORBIDDEN_DIRS:
+            raise PermissionError(f"Access denied: '{part}' is a protected directory and cannot be accessed directly.")
+        if _is_secret_name(part):
+            raise PermissionError(f"Access denied: '{part}' is a secret/credential file and cannot be accessed.")
+
     return target
+
+
+def _dir_contains_protected(directory: Path) -> Optional[str]:
+    """Return the name of any protected directory or secret file inside `directory`, else None."""
+    for root, dirs, files in os.walk(directory, followlinks=False):
+        for d in dirs:
+            if d.lower() in FORBIDDEN_DIRS or _is_secret_name(d):
+                return d
+        for f in files:
+            if _is_secret_name(f):
+                return f
+    return None
 
 
 def execute_tool(
@@ -290,18 +328,16 @@ def execute_tool(
             if target.is_dir():
                 return f"Error: {path_str} is a directory. Use list instead."
 
-            # Robust parameter normalization for line slicing:
-            # Supports offset/limit, line_start/line_end, start_line/end_line
             raw_start = args.get("offset") or args.get("line_start") or args.get("start_line") or args.get("startLine")
             raw_end = args.get("line_end") or args.get("end_line") or args.get("endLine")
             raw_limit = args.get("limit")
 
-            offset = max(1, int(raw_start or 1))
+            offset = max(1, _safe_int(raw_start, 1))
             if raw_end is not None:
-                calc_limit = max(1, int(raw_end) - offset + 1)
+                calc_limit = max(1, _safe_int(raw_end, offset) - offset + 1)
                 limit = min(calc_limit, 2000)
             elif raw_limit is not None:
-                limit = max(1, min(int(raw_limit), 2000))
+                limit = max(1, min(_safe_int(raw_limit, 1000), 2000))
             else:
                 limit = 1000
 
@@ -309,6 +345,8 @@ def execute_tool(
                 lines = fh.readlines()
 
             total = len(lines)
+            if total == 0:
+                return "(empty file)"
             if offset > total:
                 return f"Error: offset {offset} is past end of file ({total} lines total)."
 
@@ -326,13 +364,13 @@ def execute_tool(
             path_str = args.get("path") or args.get("filePath") or args.get("file_path") or ""
             if not path_str.strip():
                 return "Error: 'path' parameter is required for write."
-            content = args.get("content") or ""
+            content = args.get("content") if args.get("content") is not None else ""
             target = resolve_safe_path(path_str, workspace_root)
-            if target == workspace_root or target.is_dir():
+            if target == workspace_root.resolve() or target.is_dir():
                 return f"Error: Cannot write to directory '{path_str}'. Specify a target file path."
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(content, encoding="utf-8")
-            return f"Successfully wrote {len(content)} characters to {path_str}."
+            target.write_text(str(content), encoding="utf-8")
+            return f"Successfully wrote {len(str(content))} characters to {path_str}."
 
         elif name == "edit":
             path_str = args.get("path") or args.get("filePath") or args.get("file_path") or ""
@@ -363,7 +401,6 @@ def execute_tool(
             text = target.read_text(encoding="utf-8", errors="replace")
             count = text.count(target_str)
             if count == 0:
-                # Try CRLF/LF normalization if exact match failed
                 normalized_text = text.replace("\r\n", "\n")
                 normalized_target = target_str.replace("\r\n", "\n")
                 normalized_replacement = replacement_str.replace("\r\n", "\n")
@@ -383,16 +420,20 @@ def execute_tool(
             path_str = args.get("path") or args.get("filePath") or args.get("file_path") or ""
             if not path_str.strip():
                 return "Error: 'path' parameter is required for delete."
-            target = resolve_safe_path(path_str, workspace_root)
-            if not target.exists():
+            target = resolve_safe_path(path_str, workspace_root, follow_symlinks=False)
+            if not target.exists() and not target.is_symlink():
                 return f"Error: No such file or directory: {path_str}"
-            if target == workspace_root:
+            if target == workspace_root.resolve():
                 return "Error: Cannot delete the repository root directory."
-            if target.is_file() or target.is_symlink():
+            if target.is_symlink() or target.is_file():
                 target.unlink()
                 return f"Successfully deleted file: {path_str}"
             elif target.is_dir():
-                import shutil
+                protected_item = _dir_contains_protected(target)
+                if protected_item:
+                    raise PermissionError(
+                        f"Access denied: Cannot delete directory '{path_str}' because it contains protected item '{protected_item}'."
+                    )
                 shutil.rmtree(target)
                 return f"Successfully deleted directory: {path_str}"
             return f"Error: Cannot delete '{path_str}'."
@@ -407,11 +448,9 @@ def execute_tool(
 
             max_matches = 100
 
-            # Fast path: use git grep if inside git repository
             if (workspace_root / ".git").is_dir():
                 try:
-                    # -e keeps a pattern like "-v" from being parsed as a git option.
-                    cmd = ["git", "grep", "-n", "-I", "-E", "-e", pattern, "--"]
+                    cmd = ["git", "grep", "--untracked", "-n", "-I", "-E", "-e", pattern, "--"]
                     base = "" if sub_path in (".", "./", "") else sub_path.rstrip("/")
                     if include:
                         glob_pat = include if any(c in include for c in "*?[") else f"*{include}"
@@ -448,7 +487,10 @@ def execute_tool(
             matches: List[str] = []
 
             for dirpath, dirnames, filenames in os.walk(search_dir):
-                dirnames[:] = [d for d in sorted(dirnames) if d not in SKIP_DIRS and not d.startswith(".")]
+                dirnames[:] = [
+                    d for d in sorted(dirnames)
+                    if d not in SKIP_DIRS and d.lower() not in FORBIDDEN_DIRS and not d.startswith(".")
+                ]
                 for f in sorted(filenames):
                     if f.startswith(".") or _is_secret_name(f):
                         continue
@@ -460,7 +502,7 @@ def execute_tool(
                     try:
                         if file_path.stat().st_size > MAX_GREP_FILE_SIZE:
                             continue
-                        rel = file_path.relative_to(workspace_root).as_posix()
+                        rel = file_path.relative_to(workspace_root.resolve()).as_posix()
                         with file_path.open("r", encoding="utf-8", errors="replace") as fh:
                             for idx, line in enumerate(fh, start=1):
                                 matched = regex.search(line) if regex else (pattern.lower() in line.lower())
@@ -484,15 +526,18 @@ def execute_tool(
 
             matched_files: List[str] = []
             for dirpath, dirnames, filenames in os.walk(search_dir):
-                dirnames[:] = [d for d in sorted(dirnames) if d not in SKIP_DIRS and not d.startswith(".")]
+                dirnames[:] = [
+                    d for d in sorted(dirnames)
+                    if d not in SKIP_DIRS and d.lower() not in FORBIDDEN_DIRS and not d.startswith(".")
+                ]
                 for f in sorted(filenames):
-                    if f.startswith("."):
+                    if f.startswith(".") or _is_secret_name(f):
                         continue
                     if any(f.lower().endswith(ext) for ext in BINARY_EXTENSIONS):
                         continue
                     file_path = Path(dirpath) / f
                     try:
-                        rel = file_path.relative_to(workspace_root).as_posix()
+                        rel = file_path.relative_to(workspace_root.resolve()).as_posix()
                         if fnmatch.fnmatch(rel, pattern) or fnmatch.fnmatch(f, pattern):
                             matched_files.append(rel)
                             if len(matched_files) >= 200:
@@ -500,7 +545,6 @@ def execute_tool(
                     except (OSError, PermissionError):
                         continue
             return "\n".join(matched_files) if matched_files else "No files matched."
-
 
         elif name == "list":
             sub_path = args.get("path") or "."
@@ -512,7 +556,12 @@ def execute_tool(
 
             entries = []
             for item in sorted(target.iterdir()):
-                if item.name.startswith(".") or item.name in SKIP_DIRS:
+                if (
+                    item.name.startswith(".")
+                    or item.name in SKIP_DIRS
+                    or item.name.lower() in FORBIDDEN_DIRS
+                    or _is_secret_name(item.name)
+                ):
                     continue
                 suffix = "/" if item.is_dir() else ""
                 entries.append(f"{item.name}{suffix}")
@@ -548,8 +597,7 @@ def execute_tool(
 
         elif name == "git_status":
             proc = subprocess.run(
-                "git status --short --branch",
-                shell=True,
+                ["git", "status", "--short", "--branch"],
                 cwd=str(workspace_root),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -566,7 +614,6 @@ def execute_tool(
             if staged:
                 diff_cmd.append("--staged")
             if path_arg:
-                # Confine and validate the path; never hand model input to a shell.
                 resolve_safe_path(path_arg, workspace_root)
                 diff_cmd.extend(["--", path_arg])
             proc = subprocess.run(

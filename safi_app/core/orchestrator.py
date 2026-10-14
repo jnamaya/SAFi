@@ -43,7 +43,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 
 from enum import Enum
-from collections import deque
+from collections import deque, OrderedDict
 from .faculties.spirit import build_spirit_feedback
 from . import pii_validators
 from .faculties import IntellectEngine, WillGate, ConscienceAuditor, SpiritIntegrator, PhaseZeroGate
@@ -321,6 +321,80 @@ def count_current_turn_path_reads(tool_results, path: str, parameters=None) -> i
         elif t_name == "read" and _read_window(args) == target_window:
             seen += 1
     return seen
+
+
+# Harness-injected pseudo tool results (a mid-task nudge the owning client adds
+# to the loop). They are shown to the model but are NOT task evidence, so they
+# are excluded from the Conscience audit material.
+HARNESS_META_TOOLS = {"harness_note"}
+
+
+def _compact_tool_target(args: Any) -> str:
+    """A one-line, human-readable target for a tool call (path/command/query)."""
+    if not isinstance(args, dict):
+        return ""
+    for key in ("command", "path", "filePath", "file_path", "pattern", "query", "url", "target"):
+        value = args.get(key)
+        if isinstance(value, str) and value.strip():
+            return " ".join(value.split())[:80]
+    return ""
+
+
+def build_task_state_block(user_prompt: str, tool_results: Any) -> str:
+    """A compact, deterministic scratchpad for a client-owned agent loop.
+
+    The owning client re-sends the original request each hop and does not carry
+    the model's own plan between tool calls, so without this the model re-derives
+    intent every step — re-reading files, drifting, and asking for guidance.
+    This block lists what has already been done (with repeat counts) and the
+    agent's own latest plan, then tells it to continue. It is built only from
+    data the client already sends (tool results and the todowrite call), so it
+    needs no protocol change and survives history truncation.
+    """
+    if not isinstance(tool_results, list) or not tool_results:
+        return ""
+
+    actions: "OrderedDict[str, int]" = OrderedDict()
+    plan: List[Dict[str, Any]] = []
+    for item in tool_results:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("tool_name") or item.get("tool") or "").strip()
+        if not name or name in HARNESS_META_TOOLS:
+            continue
+        args = item.get("arguments") or item.get("parameters") or item.get("params") or {}
+        if name in ("todowrite", "todo_write"):
+            todos = args.get("todos") if isinstance(args, dict) else None
+            if isinstance(todos, list):
+                plan = [t for t in todos if isinstance(t, dict)]
+            continue
+        target = _compact_tool_target(args if isinstance(args, dict) else {})
+        key = f'{name}("{target}")' if target else name
+        actions[key] = actions.get(key, 0) + 1
+
+    if not actions and not plan:
+        return ""
+
+    lines = [
+        "[TASK STATE — mid-task progress reminder, not a new user message]",
+        f"Original request: {' '.join(str(user_prompt).split())[:600]}",
+    ]
+    if actions:
+        lines.append("Actions already taken (you already have these results — do NOT repeat them):")
+        for key, count in list(actions.items())[-30:]:
+            lines.append(f"  - {key}{f' x{count}' if count > 1 else ''}")
+    if plan:
+        lines.append("Current plan:")
+        for todo in plan[:20]:
+            task = str(todo.get("task") or todo.get("content") or todo.get("description") or "step")
+            status = str(todo.get("status") or "pending").lower()
+            mark = "x" if status in ("completed", "done") else (">" if status in ("in_progress", "running") else " ")
+            lines.append(f"  [{mark}] {' '.join(task.split())[:120]}")
+    lines.append(
+        "Continue executing the remaining work with tools now. Do NOT ask the user "
+        "for permission to proceed, and do NOT re-read or re-run anything listed above."
+    )
+    return "\n".join(lines)
 
 
 def _tool_audit_entry(
@@ -1147,6 +1221,9 @@ class SAFi:
             )
             if tool_history:
                 prompt_for_intellect = f"{prompt_for_intellect}\n\n{tool_history}"
+            task_state_block = build_task_state_block(user_prompt, client_tool_results)
+            if task_state_block:
+                prompt_for_intellect = f"{prompt_for_intellect}\n\n{task_state_block}"
             prompt_for_storage = prompt_for_intellect
         else:
             self.intellect_engine.profile = profile_for_turn
@@ -1361,6 +1438,7 @@ class SAFi:
             f"{json.dumps(item.get('arguments') or {}, sort_keys=True, default=str)}]\n"
             f"{item.get('result', '')}"
             for item in client_tool_results
+            if str(item.get("tool_name") or item.get("tool") or "") not in HARNESS_META_TOOLS
         ] if client_owned else []
 
         if intent is None:
@@ -1621,9 +1699,10 @@ class SAFi:
                         "audit_status": "complete",
                     }
 
-                # A denied client-owned proposal returns a user-facing draft
-                # without advertising tools again. SAFi never dispatches client
-                # tools through its own MCP executor.
+                # A denied client-owned proposal normally returns a user-facing
+                # draft without advertising tools again (SAFi never dispatches
+                # client tools through its own MCP executor). Harness anti-loop
+                # refusals are the exception, handled below.
                 self.log.warning(f"WillGate blocked client tool '{tool_name}'. Reason: {tool_reason}")
                 redirect_on_tool_block = bool(
                     isinstance(self.profile.get("will_rules"), dict)
@@ -1641,6 +1720,78 @@ class SAFi:
                         will_stage="tool_intent",
                         agent_context=agent_context_for_prompt,
                     )
+
+                # Harness anti-loop refusals are NOT authorization denials: the
+                # tool itself is authorized, only this repeating call is refused.
+                # The toolless reflexion below would strip the tool catalogue and
+                # force a final prose answer, abandoning the task the agent was
+                # executing (a coding agent stuck re-reading then blocked could
+                # never reach 'edit'/'write'). Hand the refusal back to the owning
+                # client instead: it records the refused call and continues the
+                # loop, so the agent can switch tools and finish. The repeat and
+                # same-file-read counters still cap genuine loops, and WillGate
+                # still gates every subsequent proposal.
+                if loop_stopped:
+                    safe_parameters = self._sanitize_client_tool_parameters(
+                        tool_name, parameters
+                    )
+                    tool_event = [{
+                        "tool_name": tool_name,
+                        "parameters": safe_parameters,
+                        "decision": tool_decision,
+                        "reason": tool_reason,
+                    }]
+                    governance_record = {
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "mode": "agentic_integration",
+                        "turnKind": "tool_proposal",
+                        "clientToolProposal": True,
+                        "userPrompt": user_prompt,
+                        "recentTurns": recent_turns_text,
+                        "intellectDraft": tool_summary,
+                        "finalOutput": tool_summary,
+                        "willDecision": tool_decision,
+                        "willReason": tool_reason,
+                        "profileValues": self.values,
+                        "conscienceLedger": tool_preflight_ledger,
+                        "toolProposalLedger": tool_preflight_ledger,
+                        "spiritScore": None,
+                        "toolCalls": tool_event,
+                        "policyId": (self.profile or {}).get("policy_id"),
+                        "policyVersion": (self.profile or {}).get("policy_version"),
+                        "orgId": org_id or (self.profile or {}).get("org_id"),
+                        "userId": user_id,
+                        "agentName": self.active_profile_name,
+                        "intellectModel": self.intellect_model,
+                        "conscienceModel": self.conscience_model,
+                    }
+                    self.store.update_audit_results(
+                        message_id, tool_preflight_ledger, None,
+                        f"Tool intent gate: {tool_decision} — {tool_reason}",
+                        self.active_profile_name, self.values, None,
+                        policy_id=(self.profile or {}).get("policy_id"),
+                        policy_version=(self.profile or {}).get("policy_version"),
+                        model_attribution=self.model_attribution,
+                        will_decision=tool_decision,
+                        will_stage="tool_intent",
+                        governance_record=governance_record,
+                    )
+                    self.store.update_message_content(
+                        message_id, tool_summary, audit_status="complete"
+                    )
+                    self._append_log(governance_record)
+                    return {
+                        "type": "tool_call",
+                        "tool_name": tool_name,
+                        "parameters": safe_parameters,
+                        "messageId": message_id,
+                        "newTitle": new_title,
+                        "willDecision": tool_decision,
+                        "willReason": tool_reason,
+                        "audit_status": "complete",
+                        "conscienceLedger": tool_preflight_ledger,
+                        "toolProposalLedger": tool_preflight_ledger,
+                    }
 
                 observation = (
                     f"SYSTEM OBSERVATION: The Will gatekeeper rejected the client tool "

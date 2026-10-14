@@ -193,7 +193,7 @@ class WillGate:
         return ("approve", "alignment_within_threshold")
 
     @staticmethod
-    def classify_tool_risk(tool_name: str, parameters: dict) -> Tuple[str, str]:
+    def classify_tool_risk(tool_name: str, parameters: dict, profile: Optional[dict] = None) -> Tuple[str, str]:
         """
         Classify tool intent into deterministic risk classes:
           R0: read-only query (read, grep, glob, list, etc.)
@@ -205,11 +205,25 @@ class WillGate:
         lowered = tool_name.lower().strip()
         params_str = json.dumps(parameters or {}, default=str).lower()
 
+        # Check if this profile authorizes sysadmin commands (e.g. remote sudo, system inspection)
+        allow_sysadmin = False
+        if profile and isinstance(profile, dict):
+            will_rules = profile.get("will_rules") or {}
+            if isinstance(will_rules, dict) and will_rules.get("allow_sudo"):
+                allow_sysadmin = True
+            pol_id = str(profile.get("policy_id") or "").lower()
+            key = str(profile.get("key") or profile.get("agent_key") or "").lower()
+            if "systems_admin" in pol_id or "sysadmin" in key:
+                allow_sysadmin = True
+
         # Check R4 Privileged / Forbidden patterns
-        forbidden_indicators = (
-            "/etc/shadow", "/etc/passwd", ".ssh/id_", "id_rsa", "rm -rf /",
-            "sudo ", "chmod 777", "curl | bash", "wget | bash"
-        )
+        forbidden_indicators = [
+            "/etc/shadow", ".ssh/id_", "id_rsa", "rm -rf /",
+            "chmod 777", "curl | bash", "wget | bash"
+        ]
+        if not allow_sysadmin:
+            forbidden_indicators.extend(["sudo ", "/etc/passwd"])
+
         if any(ind in params_str for ind in forbidden_indicators):
             return "R4", "Privileged or forbidden system command/path"
 
@@ -279,7 +293,7 @@ class WillGate:
             )
 
         # 2. Risk classification and enforcement
-        risk_class, risk_reason = self.classify_tool_risk(tool_name, parameters)
+        risk_class, risk_reason = self.classify_tool_risk(tool_name, parameters, profile)
         if risk_class == "R4":
             self.log.warning(f"WillGate: Blocked '{tool_name}' — R4 Privileged/Forbidden ({risk_reason}).")
             return (

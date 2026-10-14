@@ -19,8 +19,7 @@ from typing import Callable, List, Optional
 
 from . import ui
 
-# ── Optional prompt_toolkit integration ─────────────────────────────────────
-try:  # pragma: no cover - exercised only when the optional dep is installed
+try:
     from prompt_toolkit import PromptSession
     from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
     from prompt_toolkit.completion import Completer, Completion
@@ -31,16 +30,15 @@ try:  # pragma: no cover - exercised only when the optional dep is installed
 
     _HAS_PROMPT_TOOLKIT = True
     _CompleterBase = Completer
-except Exception:  # pragma: no cover
+except Exception:
     _HAS_PROMPT_TOOLKIT = False
 
-    class _CompleterBase:  # placeholder so the module imports without the dep
+    class _CompleterBase:
         pass
 
-# ── Optional readline fallback ──────────────────────────────────────────────
 try:
     import readline
-except ImportError:  # pragma: no cover
+except ImportError:
     try:
         import pyreadline3 as readline
     except ImportError:
@@ -56,11 +54,7 @@ def using_prompt_toolkit() -> bool:
 
 
 def collect_multiline(initial: str) -> str:
-    """Join backslash-continued input lines so a prompt can span several lines.
-
-    A line ending in ``\\`` (before trailing whitespace) continues onto the next
-    line until a line without the trailing backslash is entered.
-    """
+    """Join backslash-continued input lines so a prompt can span several lines."""
     parts = [initial]
     while parts[-1].rstrip().endswith("\\"):
         parts[-1] = parts[-1].rstrip()[:-1]
@@ -77,18 +71,11 @@ def read_prompt(
     completions_fn: Optional[CompletionsFn] = None,
     history_path: Optional[str] = None,
 ) -> Optional[str]:
-    """Read one (possibly multi-line) prompt from the user.
-
-    Returns the raw buffer (which may contain newlines), or ``None`` on EOF.
-    ``KeyboardInterrupt`` (Ctrl+C) is allowed to propagate so the caller can
-    decide whether to abandon the line or end the session.
-    """
+    """Read one (possibly multi-line) prompt from the user."""
     if using_prompt_toolkit():
         return _read_prompt_toolkit(agent_label, completions_fn, history_path)
     return _read_prompt_readline(agent_label)
 
-
-# ── prompt_toolkit path ─────────────────────────────────────────────────────
 
 _SESSION = None
 _SESSION_HISTORY: Optional[str] = None
@@ -115,15 +102,15 @@ def _prompt_key_bindings():
     kb = KeyBindings()
 
     @kb.add("enter")
-    def _submit(event):  # noqa: ANN001
+    def _submit(event):
         event.current_buffer.validate_and_handle()
 
-    @kb.add("escape", "enter")  # Alt/Meta+Enter
-    def _newline_alt(event):  # noqa: ANN001
+    @kb.add("escape", "enter")
+    def _newline_alt(event):
         event.current_buffer.insert_text("\n")
 
-    @kb.add("c-j")  # Ctrl+J works in every terminal
-    def _newline_ctrl_j(event):  # noqa: ANN001
+    @kb.add("c-j")
+    def _newline_ctrl_j(event):
         event.current_buffer.insert_text("\n")
 
     _KEY_BINDINGS = kb
@@ -143,15 +130,13 @@ def _continuation(width: int, line_number: int, is_soft_wrap: bool) -> "Formatte
     return FormattedText([("class:safi-cont", " " * max(0, width - 2) + "… ")])
 
 
-class _CallbackCompleter(_CompleterBase):  # type: ignore[misc]
+class _CallbackCompleter(_CompleterBase):
     """Adapt SAFi's ``(line, text) -> List[str]`` completions to prompt_toolkit."""
 
     def __init__(self, fn: CompletionsFn):
         self._fn = fn
 
-    def get_completions(self, document, complete_event):  # noqa: ANN001
-        # WORD=True mirrors readline's whitespace-only delimiters so slashes,
-        # dots and hyphens in paths stay part of the completed token.
+    def get_completions(self, document, complete_event):
         text = document.get_word_before_cursor(WORD=True)
         line = document.text_before_cursor
         try:
@@ -175,10 +160,6 @@ def _get_session(history_path: Optional[str]):
         multiline=True,
         complete_while_typing=True,
         prompt_continuation=_continuation,
-        # Erase the submitted input once accepted. The caller reprints the prompt
-        # as a styled band (ui.print_user_prompt), so leaving prompt_toolkit's own
-        # rendering in place would show the user's message twice, wrapped
-        # differently by each renderer.
         erase_when_done=True,
     )
     _SESSION_HISTORY = history_path
@@ -200,11 +181,8 @@ def _read_prompt_toolkit(
         return None
 
 
-# ── readline fallback path ──────────────────────────────────────────────────
-
 def _read_prompt_readline(agent_label: str) -> Optional[str]:
     if readline:
-        # Best-effort: let a multi-line paste land in the buffer verbatim.
         try:
             readline.parse_and_bind("set enable-bracketed-paste on")
         except Exception:

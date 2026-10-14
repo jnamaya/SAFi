@@ -1,8 +1,9 @@
 """Configuration resolver and persistence for the SAFi CLI."""
 
+import hashlib
 import json
 import os
-import sys
+import uuid
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -46,19 +47,16 @@ def resolve_agent_api_key(agent: str, explicit_key: Optional[str] = None) -> Opt
     if explicit_key:
         return explicit_key.strip()
 
-    # 1. Environment variable: SAFI_API_KEY_<AGENT> (e.g. SAFI_API_KEY_FIDUCIARY)
     env_var_name = f"SAFI_API_KEY_{agent.upper()}"
     env_key = os.environ.get(env_var_name)
     if env_key:
         return env_key.strip()
 
-    # 2. Config file under 'agent_keys' dict
     cfg = load_config()
     agent_keys = cfg.get("agent_keys") or {}
     if isinstance(agent_keys, dict) and agent in agent_keys and agent_keys[agent]:
         return str(agent_keys[agent]).strip()
 
-    # 3. For software_engineer, fallback to the general SAFI_API_KEY or cfg["api_key"]
     if agent == "software_engineer":
         gen_env = os.environ.get("SAFI_API_KEY") or os.environ.get("SAFI_POLICY_API_KEY")
         if gen_env:
@@ -79,7 +77,6 @@ def save_agent_api_key(agent: str, key: str) -> None:
     clean_key = key.strip()
     agent_keys[agent] = clean_key
     cfg["agent_keys"] = agent_keys
-    # Keep top-level api_key in sync for software_engineer or if unset
     if agent == "software_engineer" or not cfg.get("api_key"):
         cfg["api_key"] = clean_key
     save_config(cfg)
@@ -98,8 +95,6 @@ def resolve_api_key(explicit_key: Optional[str] = None, agent: str = "software_e
     return resolve_agent_api_key(agent, explicit_key=explicit_key)
 
 
-
-
 def resolve_api_url(explicit_url: Optional[str] = None) -> str:
     if explicit_url:
         return explicit_url.rstrip("/")
@@ -111,8 +106,6 @@ def resolve_api_url(explicit_url: Optional[str] = None) -> str:
 
 
 def _workspace_key(workspace_root: str) -> str:
-    import hashlib
-
     norm = str(Path(workspace_root).resolve())
     return hashlib.sha256(norm.encode()).hexdigest()[:16]
 
@@ -120,7 +113,7 @@ def _workspace_key(workspace_root: str) -> str:
 SESSIONS_PATH_MAP_KEY = "_paths"
 
 
-def _load_sessions() -> Dict[str, str]:
+def _load_sessions() -> Dict[str, Any]:
     if SESSIONS_FILE.exists():
         try:
             data = json.loads(SESSIONS_FILE.read_text(encoding="utf-8"))
@@ -133,18 +126,20 @@ def _load_sessions() -> Dict[str, str]:
 
 def list_sessions() -> Dict[str, str]:
     """Return the workspace-key -> conversation-id session map (metadata keys excluded)."""
-    return {k: v for k, v in _load_sessions().items() if not k.startswith("_")}
+    return {k: str(v) for k, v in _load_sessions().items() if not k.startswith("_") and isinstance(v, str)}
 
 
 def session_paths() -> Dict[str, str]:
     """Return the conversation-id -> workspace-path map for friendly /sessions display."""
     data = _load_sessions()
-    return data.get(SESSIONS_PATH_MAP_KEY) if isinstance(data.get(SESSIONS_PATH_MAP_KEY), dict) else {}
+    paths = data.get(SESSIONS_PATH_MAP_KEY)
+    return paths if isinstance(paths, dict) else {}
 
 
 def session_for_workspace(workspace_root: str) -> Optional[str]:
     """Return the conversation id currently bound to a workspace, if any."""
-    return _load_sessions().get(_workspace_key(workspace_root))
+    val = _load_sessions().get(_workspace_key(workspace_root))
+    return str(val) if isinstance(val, str) else None
 
 
 def set_workspace_session(workspace_root: str, conversation_id: str) -> None:
@@ -162,18 +157,17 @@ def set_workspace_session(workspace_root: str, conversation_id: str) -> None:
 
 
 def resolve_session_id(workspace_root: str, new_session: bool = False) -> str:
-    import uuid
-
     ensure_config_dir()
     sessions = _load_sessions()
+    ws_key = _workspace_key(workspace_root)
 
     if not new_session:
-        existing = _load_sessions().get(_workspace_key(workspace_root))
-        if existing:
+        existing = sessions.get(ws_key)
+        if isinstance(existing, str) and existing:
             return existing
 
     new_id = str(uuid.uuid4())
-    sessions[_workspace_key(workspace_root)] = new_id
+    sessions[ws_key] = new_id
     paths = dict(sessions.get(SESSIONS_PATH_MAP_KEY) or {})
     paths[new_id] = str(Path(workspace_root).resolve())
     sessions[SESSIONS_PATH_MAP_KEY] = paths
@@ -182,6 +176,18 @@ def resolve_session_id(workspace_root: str, new_session: bool = False) -> str:
     except OSError:
         pass
     return new_id
+
+
+def resolve_user_id() -> str:
+    """Safely resolve the CLI user identifier across TTY, container, and headless environments."""
+    env_id = os.environ.get("SAFI_USER_ID")
+    if env_id and env_id.strip():
+        return env_id.strip()
+    try:
+        login = os.getlogin()
+    except Exception:
+        login = os.environ.get("USER") or os.environ.get("USERNAME") or "user"
+    return f"cli_{login or 'user'}"
 
 
 def resolve_user_name(explicit_name: Optional[str] = None) -> str:
@@ -197,7 +203,7 @@ def resolve_user_name(explicit_name: Optional[str] = None) -> str:
     try:
         login = os.getlogin()
     except Exception:
-        login = os.environ.get("USER", "user")
+        login = os.environ.get("USER") or os.environ.get("USERNAME") or "user"
     return login.capitalize() if login else "User"
 
 
@@ -211,7 +217,6 @@ def resolve_intellect_model(agent: Optional[str] = None, explicit_model: Optiona
     if explicit_model and explicit_model.strip():
         return explicit_model.strip()
 
-    # 1. Environment variable: SAFI_INTELLECT_MODEL_<AGENT> or SAFI_INTELLECT_MODEL
     if agent:
         env_agent = os.environ.get(f"SAFI_INTELLECT_MODEL_{agent.upper()}")
         if env_agent and env_agent.strip():
@@ -220,7 +225,6 @@ def resolve_intellect_model(agent: Optional[str] = None, explicit_model: Optiona
     if env_global and env_global.strip():
         return env_global.strip()
 
-    # 2. Config file under 'agent_models' or top-level 'intellect_model'
     cfg = load_config()
     if agent:
         agent_models = cfg.get("agent_models") or {}

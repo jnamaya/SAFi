@@ -949,8 +949,8 @@ class TestSafiSubagentDelegation(unittest.TestCase):
             },
         ]
         args = {
-            "description": "Attempt write",
-            "prompt": "Try to write a file",
+            "description": "Inspect repo",
+            "prompt": "Inspect the repository and summarize your findings.",
             "subagent_type": "researcher",
         }
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -1522,6 +1522,61 @@ class TestSafiSessionResume(unittest.TestCase):
         with patch("builtins.input", return_value=""):
             conv = prompt_resume_session("conv-current", Path("/tmp/repo-resume"))
         self.assertEqual(conv, "conv-current")
+
+
+class TestSubagentDelegationGuard(unittest.TestCase):
+    """Read-only subagents must never be handed implementation work.
+
+    A real coding session delegated the page conversion to read-only
+    subagents, which could only read and report; the parent never edited and
+    the job never finished. The guard refuses those delegations.
+    """
+
+    def test_mutation_prompts_are_detected(self):
+        from safi_cli.main import _looks_like_mutation_request
+
+        self.assertTrue(_looks_like_mutation_request("convert the remaining legacy pages"))
+        self.assertTrue(_looks_like_mutation_request(
+            "Finish legacy subpages\nContinue and implement conversions for the remaining legacy pages"
+        ))
+        self.assertTrue(_looks_like_mutation_request("implement conversions for the rest"))
+        self.assertTrue(_looks_like_mutation_request("refactor module X"))
+        self.assertTrue(_looks_like_mutation_request("rewrite index.html"))
+
+    def test_read_only_prompts_are_not_flagged(self):
+        from safi_cli.main import _looks_like_mutation_request
+
+        self.assertFalse(_looks_like_mutation_request(
+            "Inspect the repository and report content to preserve. Do not modify files."
+        ))
+        self.assertFalse(_looks_like_mutation_request(
+            "Read-only survey of the redesign; summarize convert recommendations."
+        ))
+        self.assertFalse(_looks_like_mutation_request("Run the test suite and report pass/fail."))
+
+    def test_read_only_subagent_refuses_a_mutation_task(self):
+        from safi_cli.main import run_subagent_task
+
+        result = run_subagent_task(
+            client=None,
+            args={
+                "description": "Finish legacy subpages",
+                "prompt": "Convert the remaining legacy pages to the new structure.",
+                "subagent_type": "researcher",
+            },
+            workspace_root=Path("/tmp"),
+            parent_conv_id="conv-1",
+            user_id="cli_test",
+        )
+        self.assertTrue(result.startswith("Refused:"))
+        self.assertIn("read-only", result)
+        self.assertIn("edit", result)
+
+    def test_delegation_cap_is_low_and_defined(self):
+        from safi_cli.main import MAX_SUBAGENTS_PER_TURN
+
+        self.assertGreaterEqual(MAX_SUBAGENTS_PER_TURN, 1)
+        self.assertLessEqual(MAX_SUBAGENTS_PER_TURN, 5)
 
 
 if __name__ == "__main__":

@@ -6,10 +6,9 @@ SAFi Color Palette Philosophy:
     - Semantic Colors: Red (error/blocked/concern), Amber/Yellow (warning/caution), Green (approved/aligned)
 """
 
-import json
+import difflib
 import os
 import re
-import sys
 from collections import deque
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -40,10 +39,7 @@ class MarginedConsole(Console):
 
     def print(self, *objects, **kwargs):
         pad_margin = kwargs.pop("pad_margin", True)
-        # Margins only apply to real terminals. Piped output stays plain so it can be
-        # grepped/parsed, and the line never scrolls horizontally in a redirection.
         interactive = getattr(self, "is_terminal", False)
-        # If margins are 0 or print has no objects or is trailing without newline, print directly
         if not interactive or CLI_MARGIN <= 0 or not pad_margin or not objects or kwargs.get("end") == "":
             return super().print(*objects, **kwargs)
 
@@ -53,7 +49,10 @@ class MarginedConsole(Console):
                 if not obj:
                     padded_objects.append(obj)
                 else:
-                    text_obj = Text.from_markup(obj) if "[" in obj else Text(obj)
+                    try:
+                        text_obj = Text.from_markup(obj) if "[" in obj else Text(obj)
+                    except Exception:
+                        text_obj = Text(obj)
                     padded_objects.append(Padding(text_obj, (0, CLI_MARGIN)))
             else:
                 padded_objects.append(Padding(obj, (0, CLI_MARGIN)))
@@ -63,28 +62,25 @@ class MarginedConsole(Console):
 console = MarginedConsole()
 
 # SAFi Brand Tokens
-COLOR_BRAND_600 = "#16a34a"  # Primary brand green
-COLOR_BRAND_500 = "#22c55e"  # Accent green
-COLOR_BRAND_400 = "#4ade80"  # Light brand highlight / center rosetta
-COLOR_BRAND_700 = "#15803d"  # Dark green borders
+COLOR_BRAND_600 = "#16a34a"
+COLOR_BRAND_500 = "#22c55e"
+COLOR_BRAND_400 = "#4ade80"
+COLOR_BRAND_700 = "#15803d"
 
 # Semantic Verdicts & Scores
-COLOR_PASS = "#22c55e"       # Alignment >= 7.0 / Rubric pass (>= 0.7)
-COLOR_WARN = "#eab308"       # Alignment 4.0..6.9 / Rubric caution (0.0..0.7)
-COLOR_FAIL = "#ef4444"       # Alignment < 4.0 / Rubric violation (< 0.0)
-COLOR_PENDING = "#a3a3a3"    # Neutral-400 / Audit pending
-COLOR_MUTED = "#737373"      # Neutral-500
-COLOR_BORDER = "#27272a"     # Dark border neutral
+COLOR_PASS = "#22c55e"
+COLOR_WARN = "#eab308"
+COLOR_FAIL = "#ef4444"
+COLOR_PENDING = "#a3a3a3"
+COLOR_MUTED = "#737373"
+COLOR_BORDER = "#27272a"
 
-# User Prompt Theme Tokens (Elevated Contrast)
-COLOR_USER_ACCENT = "#38bdf8"   # Bright Sky / Cyan 400
-COLOR_USER_BORDER = "#2563eb"   # Vibrant Blue 600
-COLOR_USER_BG = os.environ.get("SAFI_CLI_USER_BG", "#182234")  # Deep Midnight / Slate Navy background
-COLOR_USER_BADGE_BG = "#1e3a5f" # Background for prompt badge / input chip
+# User Prompt Theme Tokens
+COLOR_USER_ACCENT = "#38bdf8"
+COLOR_USER_BORDER = "#2563eb"
+COLOR_USER_BG = os.environ.get("SAFI_CLI_USER_BG", "#182234")
+COLOR_USER_BADGE_BG = "#1e3a5f"
 
-# ── Terminal density controls ────────────────────────────────────────────────
-# Set SAFI_CLI_SHOW_AUDIT=0 (or /compact-ui) to hide the compact audit footer on
-# final responses and keep the stream lean for terminals that don't need it.
 SHOW_AUDIT_PANEL = _env_flag("SAFI_CLI_SHOW_AUDIT", True)
 
 
@@ -98,8 +94,6 @@ def get_show_audit_panel() -> bool:
     return SHOW_AUDIT_PANEL
 
 
-# Governance pipeline phase codes — mirrors the backend harness labels. Order is
-# the canonical expected progression; the feed may only contain a subset.
 PROGRESS_STAGES: tuple = (
     "checking_request",
     "analyzing",
@@ -138,10 +132,7 @@ def build_progress_line(
     elapsed: float,
     model: Optional[str] = None,
 ) -> str:
-    """Render a clean live progress line showing the current governance step and elapsed time.
-
-    e.g. "SAFi · Drafting response with claude-haiku-5-5 · 4.2s"
-    """
+    """Render a clean live progress line showing the current governance step and elapsed time."""
     codes = [c for c in dict.fromkeys(progress_codes or []) if c in PROGRESS_STAGES]
 
     step = (latest_step or "").rstrip(".…").strip()
@@ -155,37 +146,25 @@ def build_progress_line(
     else:
         label = f"Governing turn{f' with {model}' if model else ''}"
 
-    # Keep the line to a single physical row so the spinner's self-erase
-    # never leaves a wrapped leftover behind on narrow terminals.
     text_width = max((console.width or 80) - 28, 12)
     if len(label) > text_width:
         label = label[: text_width - 1].rstrip() + "…"
 
     return (
-        f"[bold {COLOR_BRAND_400}]SAFi[/] [dim]·[/] [white]{label}[/] "
+        f"[bold {COLOR_BRAND_400}]SAFi[/] [dim]·[/] [white]{escape(label)}[/] "
         f"[dim]·[/] [dim]{elapsed:.1f}s[/]"
     )
 
 
 def clear_live_status_tail(last_status_markup: Optional[str]) -> None:
-    """Erase residual rows from a ``console.status`` live region after it stops.
-
-    On ``stop()`` Rich's ``Live`` already clears every row it rendered (including
-    wrapped rows) and leaves the cursor on the first row of that region. We only
-    re-clear the frame's *own* rows, moving downward from the cursor — never
-    above it. Erasing upward reaches the user prompt printed just before the
-    spinner and leaves phantom blank lines, which read as excess vertical
-    spacing between the thinking line and the response. No-op for piped output.
-    """
+    """Erase residual rows from a ``console.status`` live region after it stops."""
     if not last_status_markup or not getattr(console, "is_terminal", False):
         return
     width = max(console.width or 80, 1)
-    cells = Text.from_markup(last_status_markup).cell_len + 2  # spinner glyph + space
+    cells = Text.from_markup(last_status_markup).cell_len + 2
     rows = (cells + width - 1) // width
     if rows <= 1:
         return
-    # Cursor is on row 0 of the frame; clear it and each row below, then step
-    # back up to the frame origin so the response prints in its place.
     console.file.write("\x1b[2K" + "\x1b[1B\x1b[2K" * (rows - 1) + f"\x1b[{rows - 1}A")
     console.file.flush()
 
@@ -207,7 +186,6 @@ def print_banner(
     info_table.add_column("label", style="dim", justify="right")
     info_table.add_column("val", style="bold white")
 
-    # Format agent title nicely
     agent_title = agent.replace("_", " ").title()
     info_table.add_row("Agent Persona:", f"{agent_title} ({agent})")
     if intellect_model:
@@ -235,11 +213,7 @@ def render_menu(
     rows: List[List[Any]],
     border_style: Optional[str] = None,
 ) -> Table:
-    """Build and print a rounded SAFi-styled menu table from column specs and rows.
-
-    Each column dict: {"name": "Label", "style": "...", "justify": "..."}.
-    Rows are lists of renderables matching the column count.
-    """
+    """Build and print a rounded SAFi-styled menu table from column specs and rows."""
     table = Table(
         title=title,
         box=box.ROUNDED,
@@ -260,7 +234,7 @@ def print_user_prompt(
     agent: Optional[str] = None,
     user_name: Optional[str] = None,
 ) -> None:
-    """Render the user's prompt or question with a distinct background band (no borders, keeping SAFi label)."""
+    """Render the user's prompt or question with a distinct background band."""
     if not prompt or not prompt.strip():
         return
     agent_label = agent or "software_engineer"
@@ -282,7 +256,6 @@ def get_input_prompt(agent: Optional[str] = None, user_name: Optional[str] = Non
     """Format the interactive prompt with SAFi brand label, margin spacing, and distinct style."""
     agent_label = agent or "software_engineer"
     margin = " " * CLI_MARGIN if CLI_MARGIN > 0 else ""
-    # GNU readline non-printing delimiters \001 and \002 ensure prompt width is measured accurately
     return (
         f"\n{margin}\001\033[48;2;30;41;59m\033[38;2;74;222;128m\033[1m\002 SAFi \001\033[0m"
         f"\033[48;2;30;41;59m\033[38;2;255;255;255m\002[{agent_label}] › \001\033[0m\002 "
@@ -321,16 +294,10 @@ def mark_active_todos_completed() -> None:
 
 
 def advance_active_todo(tool_name: str, args: Dict[str, Any], is_success: bool = True) -> None:
-    """Advance the active plan checklist when a real action tool succeeds.
-
-    If the current task is 'in_progress', marks it 'completed' and marks the
-    next pending task 'in_progress'. If no task is in_progress, marks the first
-    pending task in_progress or completed.
-    """
+    """Advance the active plan checklist when a real action tool succeeds."""
     global _active_todos
     if not _active_todos or not is_success:
         return
-    # Only action tools that produce filesystem or command changes advance plan progress
     if tool_name not in ("write", "edit", "patch", "bash", "delete"):
         return
 
@@ -343,17 +310,14 @@ def advance_active_todo(tool_name: str, args: Dict[str, Any], is_success: bool =
 
     if in_prog_idx is not None:
         _active_todos[in_prog_idx]["status"] = "completed"
-        # Advance the next pending task to in_progress
         for next_idx in range(in_prog_idx + 1, len(_active_todos)):
             if (_active_todos[next_idx].get("status") or "").lower() in ("pending", "todo"):
                 _active_todos[next_idx]["status"] = "in_progress"
                 break
     else:
-        # No task was explicitly marked in_progress: advance the first pending task
         for idx, item in enumerate(_active_todos):
             if (item.get("status") or "").lower() in ("pending", "todo"):
                 item["status"] = "completed"
-                # Mark subsequent pending task in_progress
                 for next_idx in range(idx + 1, len(_active_todos)):
                     if (_active_todos[next_idx].get("status") or "").lower() in ("pending", "todo"):
                         _active_todos[next_idx]["status"] = "in_progress"
@@ -366,6 +330,7 @@ def clear_completed_todos() -> None:
     global _active_todos
     if _active_todos and all((t.get("status") or "").lower() in ("completed", "done") for t in _active_todos):
         _active_todos = []
+
 
 PRICING_PER_1M = {
     "claude-3-5-sonnet": (3.00, 15.00),
@@ -385,6 +350,7 @@ PRICING_PER_1M = {
     "llama": (0.59, 0.79),
 }
 
+
 def _estimate_cost(model_name: str, in_t: int, out_t: int) -> Optional[float]:
     if not model_name:
         return None
@@ -393,6 +359,7 @@ def _estimate_cost(model_name: str, in_t: int, out_t: int) -> Optional[float]:
         if k in model_lower:
             return (in_t / 1_000_000) * v[0] + (out_t / 1_000_000) * v[1]
     return None
+
 
 _session_intellect = {"in": 0, "out": 0, "cost": 0.0, "model": ""}
 _session_conscience = {"in": 0, "out": 0, "cost": 0.0, "model": ""}
@@ -444,7 +411,6 @@ def record_compression_telemetry(
     if conscience_model:
         _session_conscience["model"] = conscience_model
 
-    # Explicitly reduce session input tokens baseline to reflect compaction savings
     saved = max(0, int(tokens_saved or 0))
     after = max(0, int(tokens_after or 0))
     if saved > 0:
@@ -476,7 +442,6 @@ def _record_turn_telemetry(result: Dict[str, Any]):
     global _session_intellect, _session_conscience, _session_active_context
     models_usage = result.get("models_usage")
     if models_usage and isinstance(models_usage, dict):
-        # Intellect
         intellect_data = models_usage.get("intellect") or {}
         in_t = int(intellect_data.get("prompt_tokens") or 0)
         out_t = int(intellect_data.get("completion_tokens") or 0)
@@ -491,7 +456,6 @@ def _record_turn_telemetry(result: Dict[str, Any]):
         if cost is not None:
             _session_intellect["cost"] += cost
 
-        # Conscience
         conscience_data = models_usage.get("conscience") or {}
         c_in = int(conscience_data.get("prompt_tokens") or 0)
         c_out = int(conscience_data.get("completion_tokens") or 0)
@@ -532,7 +496,6 @@ def build_telemetry_panel(
     """Build the standalone or embedded FACULTY TELEMETRY panel."""
     stats_content = []
 
-    # Intellect Faculty
     effective_i_model = (
         intellect_model
         or _session_intellect.get("model")
@@ -547,13 +510,11 @@ def build_telemetry_panel(
     t_intellect.append(str(effective_i_model), style="dim")
     stats_content.append(t_intellect)
 
-    # Active Context Window
     active_ctx = in_t or _session_active_context or _session_compression.get("active_context", 0)
     if active_ctx:
         comp_tag = " [bold green](compacted)[/]" if _session_compression.get("tokens_saved", 0) > 0 else ""
         stats_content.append(Text.from_markup(f"  Active Context: [bold cyan]~{active_ctx:,}[/] tokens{comp_tag}"))
 
-    # Turn & Session Tokens
     saved_tokens = _session_compression.get("tokens_saved", 0)
     saved_note = f" [bold green](compacted -{saved_tokens:,})[/]" if saved_tokens > 0 else ""
 
@@ -563,7 +524,6 @@ def build_telemetry_panel(
     else:
         stats_content.append(Text("  Turn: - | Session: -", style="dim"))
 
-    # Conscience Faculty
     effective_c_model = (
         conscience_model
         or _session_conscience.get("model")
@@ -583,7 +543,6 @@ def build_telemetry_panel(
     else:
         stats_content.append(Text("  Audit: Jev / TypeSafe (deterministic)", style="dim italic"))
 
-    # Total Session Expenditure
     total_sess_cost = _session_intellect["cost"] + _session_conscience["cost"]
     if total_sess_cost > 0:
         stats_content.append(Text.from_markup(f"[dim]Total Cost:[/] [bold {COLOR_BRAND_400}]${total_sess_cost:.4f}[/]"))
@@ -597,12 +556,7 @@ def build_telemetry_panel(
 
 
 def build_audit_footer(result: Dict[str, Any]) -> Optional[Text]:
-    """Compact one-line governance verdict rendered beneath a governed response.
-
-    Replaces the former governance sidebar: the alignment score, tier, rubric
-    tally, and a pointer to /audit stay inline, while the full rubric table and
-    rationales remain available on demand via the /audit command.
-    """
+    """Compact one-line governance verdict rendered beneath a governed response."""
     raw_spirit = result.get("spirit_score") or result.get("spiritScore")
     ledger = result.get("conscienceLedger") or []
 
@@ -625,7 +579,6 @@ def build_audit_footer(result: Dict[str, Any]) -> Optional[Text]:
     s_val = _safe_float(raw_spirit)
     if s_val is not None:
         score_str = f"{s_val:.1f}/10"
-        # Thresholds mirror the SAFi web app: >=7 Aligned, 4..6.9 Caution, <4 Concern
         if s_val >= 7.0:
             tier_label, tier_color, tier_icon = "Aligned", COLOR_PASS, "●"
         elif s_val >= 4.0:
@@ -726,9 +679,7 @@ def _detect_lexer(path: str) -> str:
     return mapping.get(ext, "python" if not ext else "text")
 
 
-# ── Rendering helpers ────────────────────────────────────────────────────────
-
-MAX_PREVIEW_LINES = 40  # cap for diffs / file previews so one edit cannot flood the screen
+MAX_PREVIEW_LINES = 40
 _EXIT_CODE_RE = re.compile(r"^exit code (-?\d+)", re.IGNORECASE)
 _ERROR_PREFIXES = ("error:", "tool execution error", "unknown tool", "rejected:", "the will gatekeeper rejected")
 
@@ -742,10 +693,7 @@ def _safe_float(value: Any) -> Optional[float]:
 
 
 def _result_is_error(result: str) -> bool:
-    """Classify a tool result as a failure from its structure, not from words in the output.
-
-    The old heuristic flagged any grep hit containing the word "error" as a failed tool.
-    """
+    """Classify a tool result as a failure from its structure."""
     text = (result or "").strip()
     m = _EXIT_CODE_RE.match(text)
     if m:
@@ -819,7 +767,7 @@ def _add_diff_stats_line(items: List[Any], adds: int, dels: int) -> None:
 
 
 def print_tool_proposal(name: str, args: Dict[str, Any], res: Dict[str, Any]):
-    """Render a clean tool proposal inside the Workspace, with the Right Sidebar pinned alongside it."""
+    """Render a clean tool proposal inside the Workspace."""
     _record_turn_telemetry(res)
     if name in ("todowrite", "todo_write"):
         return
@@ -830,7 +778,6 @@ def print_tool_proposal(name: str, args: Dict[str, Any], res: Dict[str, Any]):
 
     items = []
 
-    # Title line with clean styled verdict tag
     title_line = Text()
     if is_approved:
         title_line.append("[✓ APPROVED] ", style=f"bold {COLOR_PASS}")
@@ -843,7 +790,6 @@ def print_tool_proposal(name: str, args: Dict[str, Any], res: Dict[str, Any]):
         title_line.append(f"  # {will_reason}", style="dim")
     items.append(title_line)
 
-    # Inline Policy Preflight Audit: Display rubric badges directly on the stream
     ledger = res.get("toolProposalLedger") or res.get("conscienceLedger") or []
     rubric_tags = _rubric_tags(ledger)
     if rubric_tags:
@@ -851,7 +797,6 @@ def print_tool_proposal(name: str, args: Dict[str, Any], res: Dict[str, Any]):
         preflight_text.append_text(rubric_tags)
         items.append(preflight_text)
 
-    # Tool Arguments / Payloads with bounded margins and word-wrapping to prevent overflow
     if name == "bash":
         cmd = _cap_lines(args.get("command", ""), limit=MAX_PREVIEW_LINES)
         if len(cmd.splitlines()) > MAX_PREVIEW_LINES:
@@ -874,7 +819,6 @@ def print_tool_proposal(name: str, args: Dict[str, Any], res: Dict[str, Any]):
             target = args.get("target", "")
             replacement = args.get("replacement", "")
 
-            import difflib
             diff_lines = list(difflib.unified_diff(
                 target.splitlines(keepends=True),
                 replacement.splitlines(keepends=True),
@@ -909,7 +853,6 @@ def print_tool_proposal(name: str, args: Dict[str, Any], res: Dict[str, Any]):
             )
             items.append(syntax)
     else:
-        # Generic arguments with margin
         args_str = _summarize_args(name, args)
         if len(args_str) > 120:
             args_str = args_str[:120] + "..."
@@ -918,14 +861,13 @@ def print_tool_proposal(name: str, args: Dict[str, Any], res: Dict[str, Any]):
     console.print(Group(*items))
 
 
-
 def prompt_user_permission(name: str, args: Dict[str, Any], auto_approve: bool = True) -> bool:
-    """Prompt the developer before running mutating tools (bash, write, edit)."""
-    if auto_approve or name in ("read", "grep", "glob", "list"):
+    """Prompt the developer before running mutating tools (bash, write, edit, delete)."""
+    if auto_approve or name in ("read", "grep", "glob", "list", "git_status", "git_diff"):
         return True
 
     margin = " " * CLI_MARGIN if CLI_MARGIN > 0 else ""
-    console.print(f"\n{margin}[bold black on {COLOR_WARN}] ⚠️  ACTION CONFIRMATION [/] [bold white]Allow executing tool [cyan]{name}[/]? [Y/n]:[/] ", end="")
+    console.print(f"\n{margin}[bold black on {COLOR_WARN}] ⚠️  ACTION CONFIRMATION [/] [bold white]Allow executing tool [cyan]{escape(name)}[/]? [Y/n]:[/] ", end="")
     try:
         choice = input().strip().lower()
         return choice in ("", "y", "yes")
@@ -936,11 +878,7 @@ def prompt_user_permission(name: str, args: Dict[str, Any], auto_approve: bool =
 
 def prompt_question(question: str, options: Optional[List[str]] = None) -> str:
     """Render an interactive question card for developer clarification and capture input."""
-    table = Table.grid(expand=True)
-    table.padding = (0, 1)
-
-    card_items = []
-    card_items.append(Text(f"❓ {question}", style="bold white"))
+    card_items = [Text(f"❓ {question}", style="bold white")]
 
     if options and isinstance(options, list):
         card_items.append(Text("\nOptions:", style="dim cyan"))
@@ -980,25 +918,19 @@ def build_plan_panel(todos: Optional[List[Dict[str, Any]]] = None) -> Optional[G
 
     total = len(active)
     completed = sum(1 for t in active if (t.get("status") or "").lower() in ("completed", "done"))
-    in_progress = sum(1 for t in active if (t.get("status") or "").lower() in ("in_progress", "running"))
-    failed = sum(1 for t in active if (t.get("status") or "").lower() in ("failed", "error"))
-
     pct = int((completed / total) * 100) if total > 0 else 0
 
-    # Visual progress bar: e.g. [██████░░░░] 60%
     bar_width = 10
     filled = int(round((completed / total) * bar_width)) if total > 0 else 0
     bar_str = "█" * filled + "░" * (bar_width - filled)
 
     items = []
-    # Title line placed directly on top of the task list
     status_tag = f"[{completed}/{total} • {pct}%]"
     title_line = Text()
     title_line.append("Plan & Tasks ", style=f"bold {COLOR_BRAND_400}")
     title_line.append(status_tag, style="dim")
     items.append(title_line)
 
-    # Progress header line
     prog_text = Text()
     prog_text.append(f"Progress: [{bar_str}] ", style=f"bold {COLOR_BRAND_400}")
     prog_text.append(f"{pct}% ", style="bold white")
@@ -1029,17 +961,15 @@ def build_plan_panel(todos: Optional[List[Dict[str, Any]]] = None) -> Optional[G
     return Group(*items)
 
 
-
 def print_workspace_step(
     tool_name: str,
     args: Dict[str, Any],
     proposal_res: Dict[str, Any],
     result_str: str,
 ):
-    """Render an executed tool step in the Workspace, with the Right Sidebar pinned alongside it."""
+    """Render an executed tool step in the Workspace."""
     ws_items = []
 
-    # 1. Approval / proposal line
     is_approved = proposal_res.get("willDecision", "approved") in ("approve", "approved")
     title_line = Text()
     if is_approved:
@@ -1053,7 +983,6 @@ def print_workspace_step(
         title_line.append(f"  # {will_reason}", style="dim")
     ws_items.append(title_line)
 
-    # 2. Inline preflight rubric tags if available
     ledger = proposal_res.get("toolProposalLedger") or proposal_res.get("conscienceLedger") or []
     rubric_tags = _rubric_tags(ledger)
     if rubric_tags:
@@ -1061,7 +990,6 @@ def print_workspace_step(
         preflight_text.append_text(rubric_tags)
         ws_items.append(preflight_text)
 
-    # 3. Arguments preview
     if tool_name == "bash":
         cmd = _cap_lines(args.get("command", ""), limit=MAX_PREVIEW_LINES)
         syntax = Syntax(cmd, "bash", theme="monokai", line_numbers=False, word_wrap=True, padding=(0, 1))
@@ -1077,7 +1005,6 @@ def print_workspace_step(
             args_str = args_str[:90] + "..."
         ws_items.append(Text(f"  Arguments: {args_str}", style="dim cyan"))
 
-    # 4. Result summary line
     preview = result_str.strip().splitlines()
     first_line = preview[0] if preview else "(no output)"
     max_first_line = min(75, max(25, console.width - 45))
@@ -1096,7 +1023,6 @@ def print_workspace_step(
     res_line.append(f": {first_line} ({line_count} line{'s' if line_count != 1 else ''})", style="dim")
     ws_items.append(res_line)
 
-    # 5. Render step items inline in the workspace
     console.print(Group(*ws_items))
 
 
@@ -1111,13 +1037,10 @@ def render_todo_list(todos: List[Dict[str, Any]], align_right: bool = False):
     if not panel:
         return
 
-    # Render inline in the terminal workspace directly
     console.print()
     console.print(panel)
 
 
-# Recent tool results ring buffer so developers can page back into a full
-# output after the one-line summary has scrolled by (/last).
 _recent_tool_results: deque = deque(maxlen=20)
 
 
@@ -1147,20 +1070,21 @@ def print_full_tool_result(name: Optional[str] = None) -> None:
     entry = get_last_tool_result(name)
     if not entry:
         if name:
-            console.print(f"[{COLOR_WARN}]No recent '{name}' tool result to show.[/]")
+            console.print(f"[{COLOR_WARN}]No recent '{escape(name)}' tool result to show.[/]")
         else:
             console.print(f"[{COLOR_WARN}]No recent tool results to show.[/]")
         return
     header = Text()
     header.append(f"Full {entry['tool']} result ", style="bold white")
     header.append(f"({len(entry['result'].splitlines())} lines)", style="dim")
+    body_text = Text(entry["result"])
     if getattr(console, "is_terminal", False):
         with console.pager(styles=True):
             console.print(header)
-            console.print(entry["result"])
+            console.print(body_text)
     else:
         console.print(header)
-        console.print(entry["result"])
+        console.print(body_text)
 
 
 def print_tool_result_summary(name: str, result: str, show_error_detail: bool = True):
@@ -1168,7 +1092,6 @@ def print_tool_result_summary(name: str, result: str, show_error_detail: bool = 
     record_tool_result(name, result)
     preview = result.strip().splitlines()
     first_line = preview[0] if preview else "(no output)"
-    # Bounded preview width so the single line never wraps or spills into right margins
     max_first_line = min(55, max(25, console.width - 45))
     if len(first_line) > max_first_line:
         first_line = first_line[:max_first_line - 3] + "..."
@@ -1193,8 +1116,6 @@ def print_tool_result_summary(name: str, result: str, show_error_detail: bool = 
 
     console.print(line)
 
-    # On genuine failures, show the full error body (capped) so debugging doesn't
-    # require a wild guess at what the one-line summary elided.
     if is_error and show_error_detail and line_count > 1:
         detail_cap = min(line_count, 12)
         detail_lines = []
@@ -1249,11 +1170,7 @@ def print_subagent_done(role: str, summary: str, steps: int = 1):
 
 
 def print_final_output(text: str, res: Dict[str, Any]):
-    """Render the final governed markdown response in a single workspace.
-
-    A compact audit footer follows the response (see ``build_audit_footer``);
-    the former governance sidebar was removed in favour of this inline line.
-    """
+    """Render the final governed markdown response in a single workspace."""
     _record_turn_telemetry(res)
     response_panel = Panel(
         Markdown(text),
@@ -1287,12 +1204,11 @@ def print_audit_details(result: Dict[str, Any]):
     table.add_column("Rationale", style="dim")
 
     for entry in ledger:
-        val = entry.get("value") or "Standard"
-        score = entry.get("score")
-        rationale = entry.get("rationale") or entry.get("reason") or "—"
-        if score is None:
+        val = str(entry.get("value") or "Standard")
+        s_val = _safe_float(entry.get("score"))
+        rationale = str(entry.get("rationale") or entry.get("reason") or "—")
+        if s_val is None:
             continue
-        s_val = float(score)
         if s_val >= 0.7:
             status = f"[bold {COLOR_PASS}]PASS[/]"
             score_text = Text(f"+{s_val:.2f}", style=f"bold {COLOR_PASS}")
@@ -1303,26 +1219,26 @@ def print_audit_details(result: Dict[str, Any]):
             status = f"[bold {COLOR_FAIL}]VIOLATION[/]"
             score_text = Text(f"{s_val:.2f}", style=f"bold {COLOR_FAIL}")
 
-        table.add_row(val, score_text, status, rationale)
+        table.add_row(escape(val), score_text, status, escape(rationale))
 
     console.print(table)
 
 
 def print_error(message: str):
     """Render an error message panel."""
-    console.print(Panel(f"[bold {COLOR_FAIL}]Error:[/] {message}", border_style=COLOR_FAIL, box=box.ROUNDED))
+    console.print(Panel(f"[bold {COLOR_FAIL}]Error:[/] {escape(message)}", border_style=COLOR_FAIL, box=box.ROUNDED))
 
 
 def print_compression_result(data: Dict[str, Any]):
     """Render a clean summary panel for context compression and token savings."""
     if not data.get("ok"):
         error_msg = data.get("error", "Unknown error during compression.")
-        console.print(Panel(f"[bold {COLOR_FAIL}]Compression Error:[/] {error_msg}", border_style=COLOR_FAIL, box=box.ROUNDED))
+        console.print(Panel(f"[bold {COLOR_FAIL}]Compression Error:[/] {escape(str(error_msg))}", border_style=COLOR_FAIL, box=box.ROUNDED))
         return
 
     if not data.get("compressed"):
         msg = data.get("message", "Conversation is already minimal (no compression needed).")
-        console.print(f"[dim]ℹ️  {msg}[/dim]")
+        console.print(f"[dim]ℹ️  {escape(str(msg))}[/dim]")
         if data.get("summary"):
             console.print(Panel(
                 Markdown(data["summary"]),
@@ -1362,5 +1278,4 @@ def print_compression_result(data: Dict[str, Any]):
             box=box.ROUNDED,
         ))
 
-    # Print updated Faculty Telemetry immediately so the developer sees the reduction in session tokens
     console.print(build_telemetry_panel())

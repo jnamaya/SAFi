@@ -1,7 +1,6 @@
 """Discovery and execution for repository-local custom skills (.safi/skills/)."""
 from pathlib import Path
-from typing import Dict, Any, List, Optional
-import os
+from typing import Dict
 
 
 class LocalSkill:
@@ -32,7 +31,6 @@ def discover_skills(workspace_root: Path) -> Dict[str, LocalSkill]:
                 content = item.read_text(encoding="utf-8", errors="replace")
                 skill_name = item.stem.lower()
 
-                # Parse frontmatter / header if present
                 lines = content.splitlines()
                 description = f"Local skill: {skill_name}"
                 body_lines = []

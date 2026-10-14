@@ -43,6 +43,7 @@ from safi_app.api import conversations as conv
 from safi_app.core.orchestrator import (
     HARNESS_TOOL_REPEAT_LIMIT,
     SAFi,
+    build_task_state_block,
     count_current_turn_tool_repeats,
     record_harness_progress,
 )
@@ -537,6 +538,50 @@ class HarnessProgressEndpointTests(unittest.TestCase):
         self.assertEqual(call_kwargs.get("policy_id"), "custom-override-policy")
 
 
+class TaskStateBlockTests(unittest.TestCase):
+    """The client-owned scratchpad tells the model what it already did.
+
+    A coding CLI re-sends the original request every hop and carries no plan of
+    its own, so the model re-derives intent each step: it re-reads files it
+    already read and asks the user for guidance mid-task. The scratchpad is the
+    deterministic fix and must survive history truncation, so it is rebuilt from
+    the full tool-result list, not the truncated one.
+    """
+
+    def test_renders_actions_with_repeat_counts_and_plan(self):
+        results = [
+            {"tool_name": "read", "arguments": {"filePath": "index.html"}, "result": "..."},
+            {"tool_name": "read", "arguments": {"filePath": "index.html"}, "result": "..."},
+            {"tool_name": "bash", "arguments": {"command": "npm install"}, "result": "ok"},
+            {"tool_name": "todowrite", "arguments": {"todos": [
+                {"task": "Download site", "status": "completed"},
+                {"task": "Modernize HTML", "status": "in_progress"},
+                {"task": "Update CSS", "status": "pending"},
+            ]}, "result": "Recorded plan"},
+        ]
+        block = build_task_state_block("Redesign the rjtechies site", results)
+        self.assertIn("[TASK STATE", block)
+        self.assertIn('read("index.html") x2', block)
+        self.assertIn('bash("npm install")', block)
+        self.assertIn("[x] Download site", block)
+        self.assertIn("[>] Modernize HTML", block)
+        self.assertIn("[ ] Update CSS", block)
+        self.assertIn("do NOT repeat", block)
+        self.assertIn("Do NOT ask the user", block)
+
+    def test_harness_meta_notes_are_not_listed_as_actions(self):
+        results = [
+            {"tool_name": "harness_note", "arguments": {}, "result": "resume"},
+            {"tool_name": "read", "arguments": {"filePath": "a.py"}, "result": "..."},
+        ]
+        block = build_task_state_block("do the thing", results)
+        self.assertNotIn("harness_note", block)
+        self.assertIn('read("a.py")', block)
+
+    def test_empty_progress_yields_no_block(self):
+        self.assertEqual(build_task_state_block("hello", []), "")
+        self.assertEqual(build_task_state_block("hello", None), "")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
-

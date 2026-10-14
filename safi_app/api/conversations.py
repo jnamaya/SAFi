@@ -1946,6 +1946,13 @@ async def agentic_compress_endpoint():
 
     if action in ("clear", "reset"):
         db.update_conversation_summary(conversation_id, "")
+        agent_key = data.get("agent")
+        user_id = data.get("user_id")
+        if data.get("clear_agent_memory") and agent_key and user_id:
+            try:
+                db.delete_agent_context_memory(user_id, agent_key)
+            except Exception:
+                pass
         return jsonify({
             "ok": True,
             "message": "Memory summary cleared.",

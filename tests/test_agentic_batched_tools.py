@@ -195,6 +195,41 @@ def test_batch_env_toggle(monkeypatch):
 # ---------------------------------------------------------------------------
 # End-to-end through process_prompt
 # ---------------------------------------------------------------------------
+def test_blocked_antiloop_tool_continues_instead_of_forcing_an_answer():
+    """A harness anti-loop refusal must not abandon the task.
+
+    The same-file/repeat circuit breakers refuse a REPEATING call, not an
+    unauthorized tool. If that refusal drops into the toolless reflexion it
+    strips the tool catalogue, so the agent can only emit prose and the client
+    ends its loop — a coding agent stuck re-reading can never reach 'edit'. The
+    refusal must instead be handed back as a tool_call so the owning client
+    records it and lets the agent switch tools.
+    """
+    intent = {"type": "tool_call", "tool_name": "read",
+              "parameters": {"path": "/repo/a.py"}}
+    orch, store, conscience, _ = _make_orch([(intent, "reading", "ctx")])
+    prior_reads = [
+        {"tool_name": "read", "arguments": {"path": "/repo/a.py"}, "result": "body"}
+        for _ in range(3)
+    ]
+
+    res = asyncio.run(orch.process_prompt(
+        user_prompt="modernize the site",
+        user_id="user-1",
+        conversation_id="conv-1",
+        client_owned_tools=[{"name": "read", "type": "function"},
+                            {"name": "edit", "type": "function"}],
+        client_tool_results=prior_reads,
+    ))
+
+    assert res.get("type") == "tool_call"
+    assert res.get("willDecision") == "violation"
+    assert "already been read" in res.get("willReason", "")
+    # The turn must not terminate as a prose final answer.
+    assert "finalOutput" not in res
+    assert res.get("tool_name") == "read"
+
+
 def test_process_prompt_returns_batched_proposals():
     multi = {
         "type": "tool_call",
