@@ -133,7 +133,7 @@ fi
 
 if [ "$1" = "--list" ] || [ "$1" = "-l" ]; then
     echo "Managed Infrastructure Inventory ($INVENTORY_FILE):"
-    jq -r 'to_entries[] | "  - \(.key): \(.value.user)@\(.value.host) (auth: \(.value.auth)) — \(.value.description // "")"' "$INVENTORY_FILE"
+    jq -r 'to_entries[] | "  - \(.key): \(.value.user // "(ssh-config)")@\(.value.host) (auth: \(.value.auth)) — \(.value.description // "")"' "$INVENTORY_FILE"
     exit 0
 fi
 
@@ -154,25 +154,35 @@ if [ -z "$TARGET_CONFIG" ]; then
 fi
 
 HOST=$(echo "$TARGET_CONFIG" | jq -r '.host')
-USER=$(echo "$TARGET_CONFIG" | jq -r '.user // "root"')
-PORT=$(echo "$TARGET_CONFIG" | jq -r '.port // 22')
+# Strip leading 'ssh ' prefix if accidentally specified in host
+HOST="${HOST#ssh }"
+
+USER=$(echo "$TARGET_CONFIG" | jq -r '.user // empty')
+PORT=$(echo "$TARGET_CONFIG" | jq -r '.port // empty')
 AUTH=$(echo "$TARGET_CONFIG" | jq -r '.auth // "key"')
 
-if [ "$PORT" = "null" ] || [ -z "$PORT" ]; then
-    PORT=22
+SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=15)
+if [ -n "$PORT" ] && [ "$PORT" != "null" ]; then
+    SSH_OPTS+=(-p "$PORT")
 fi
 
-SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 -p "$PORT")
+if [ -n "$USER" ] && [ "$USER" != "null" ]; then
+    DEST="${USER}@${HOST}"
+else
+    DEST="${HOST}"
+fi
 
-if [ "$AUTH" = "key" ]; then
-    if ssh -o BatchMode=yes "${SSH_OPTS[@]}" "${USER}@${HOST}" "$CMD"; then
+if [ "$AUTH" = "key" ] || [ "$AUTH" = "ssh" ] || [ "$AUTH" = "ssh_config" ]; then
+    # Key-based / SSH-config execution
+    if ssh -o BatchMode=yes "${SSH_OPTS[@]}" "$DEST" "$CMD"; then
         exit 0
     else
         EXIT_CODE=$?
+        # If key failed and password exists in secrets.json, offer fallback
         if [ -f "$SECRETS_FILE" ]; then
             PASS=$(jq -r --arg t "$TARGET" '.[$t] // empty' "$SECRETS_FILE")
             if [ -n "$PASS" ] && [ "$PASS" != "null" ]; then
-                SSHPASS="$PASS" sshpass -e ssh "${SSH_OPTS[@]}" "${USER}@${HOST}" "$CMD"
+                SSHPASS="$PASS" sshpass -e ssh "${SSH_OPTS[@]}" "$DEST" "$CMD"
                 exit $?
             fi
         fi
@@ -188,7 +198,7 @@ elif [ "$AUTH" = "password" ]; then
         echo "Error: Password for '$TARGET' not found in $SECRETS_FILE" >&2
         exit 1
     fi
-    SSHPASS="$PASS" sshpass -e ssh "${SSH_OPTS[@]}" "${USER}@${HOST}" "$CMD"
+    SSHPASS="$PASS" sshpass -e ssh "${SSH_OPTS[@]}" "$DEST" "$CMD"
     exit $?
 else
     echo "Error: Unsupported auth method '$AUTH' for '$TARGET'" >&2

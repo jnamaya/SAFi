@@ -154,11 +154,10 @@ def _get_session(history_path: Optional[str]):
     history = FileHistory(history_path) if history_path else InMemoryHistory()
     _SESSION = PromptSession(
         history=history,
-        auto_suggest=AutoSuggestFromHistory(),
         key_bindings=_prompt_key_bindings(),
         style=_prompt_style(),
         multiline=True,
-        complete_while_typing=True,
+        complete_while_typing=False,
         prompt_continuation=_continuation,
         erase_when_done=True,
     )
@@ -175,7 +174,6 @@ def _read_prompt_toolkit(
     try:
         return session.prompt(
             _prompt_text(agent_label),
-            completer=_CallbackCompleter(completions_fn) if completions_fn else None,
         )
     except EOFError:
         return None

@@ -68,7 +68,7 @@ LLM_TIMEOUT_SECONDS = int(os.environ.get("SAFI_LLM_TIMEOUT", "300"))
 # Raising it lengthens generations, so check SAFI_GUNICORN_TIMEOUT and the web
 # server's own Timeout before going much higher. LLM_TIMEOUT_SECONDS above is
 # the per-call ceiling that actually cuts a slow generation off.
-MAX_INTELLECT_TOKENS = int(os.environ.get("SAFI_MAX_INTELLECT_TOKENS", "8192"))
+MAX_INTELLECT_TOKENS = int(os.environ.get("SAFI_MAX_INTELLECT_TOKENS", "65536"))
 
 
 # Ceiling for the on-box llama.cpp server, applied only when a route resolves to

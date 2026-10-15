@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 FORBIDDEN_NAMES = frozenset({
     ".env", "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa",
     "authorized_keys", "known_hosts", "credentials", ".netrc", ".pgpass",
+    "secrets.json",
 })
 FORBIDDEN_DIRS = frozenset({
     ".git", ".ssh", ".aws", ".gnupg", ".kube",

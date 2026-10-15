@@ -156,6 +156,50 @@ def build_progress_line(
     )
 
 
+def build_tool_status_line(
+    tool_name: str,
+    args: Optional[Dict[str, Any]],
+    elapsed: float,
+) -> str:
+    """Render a clean live progress line showing the active tool execution and elapsed time."""
+    args = args or {}
+    if tool_name == "bash":
+        raw_cmd = (args.get("command") or "").strip()
+        first_line = raw_cmd.splitlines()[0] if raw_cmd else ""
+        if len(first_line) > 36:
+            cmd_preview = first_line[:33].rstrip() + "…"
+        else:
+            cmd_preview = first_line
+        label = f"Running bash: {cmd_preview}" if cmd_preview else "Running bash command"
+    elif tool_name in ("read", "edit", "write"):
+        path = args.get("path") or ""
+        verb = "Reading" if tool_name == "read" else ("Editing" if tool_name == "edit" else "Writing")
+        label = f"{verb} {path}" if path else f"Executing {tool_name}"
+    elif tool_name == "grep":
+        pat = args.get("pattern") or ""
+        label = f"Searching for '{pat}'" if pat else "Searching with grep"
+    elif tool_name == "glob":
+        label = f"Finding files matching {args.get('pattern', '*')}"
+    elif tool_name == "list":
+        label = f"Listing {args.get('path', '.')}"
+    elif tool_name in ("task", "delegate_subagent"):
+        desc = args.get("description") or ""
+        label = f"Subagent task: {desc}" if desc else "Executing subagent task"
+    elif tool_name in ("git_status", "git_diff"):
+        label = "Running git status" if tool_name == "git_status" else "Inspecting git diff"
+    else:
+        label = f"Executing {tool_name}"
+
+    text_width = max((console.width or 80) - 28, 12)
+    if len(label) > text_width:
+        label = label[: text_width - 1].rstrip() + "…"
+
+    return (
+        f"[bold {COLOR_BRAND_400}]SAFi[/] [dim]·[/] [white]{escape(label)}[/] "
+        f"[dim]·[/] [dim]{elapsed:.1f}s[/]"
+    )
+
+
 def clear_live_status_tail(last_status_markup: Optional[str]) -> None:
     """Erase residual rows from a ``console.status`` live region after it stops."""
     if not last_status_markup or not getattr(console, "is_terminal", False):

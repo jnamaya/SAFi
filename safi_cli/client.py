@@ -286,6 +286,7 @@ class SafiClient:
         agent: str = "software_engineer",
         model: Optional[str] = None,
         action: str = "compress",
+        clear_agent_memory: bool = False,
     ) -> Dict[str, Any]:
         """Compress or manage the conversation's memory summary."""
         headers = {
@@ -299,6 +300,8 @@ class SafiClient:
             "agent": agent,
             "action": action,
         }
+        if clear_agent_memory or action in ("clear", "reset"):
+            payload["clear_agent_memory"] = True
         if model:
             payload["model"] = model
         try:

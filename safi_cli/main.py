@@ -176,7 +176,7 @@ def run_subagent_task(
                     })
                     continue
 
-                t_out = tools.execute_tool(t_name, t_args, workspace_root)
+                t_out = _execute_tool_with_live_status(t_name, t_args, workspace_root)
                 last_snippet = t_out[:200]
                 ui.print_subagent_step(subagent_type, t_name, t_args, t_out)
                 child_tool_results.append({
@@ -193,6 +193,36 @@ def run_subagent_task(
     fallback_out = f"Subagent ({subagent_type}) reached iteration limit ({max_steps}). Summary: {last_snippet}"
     ui.print_subagent_done(subagent_type, fallback_out, steps=max_steps)
     return fallback_out
+
+
+def _execute_tool_with_live_status(
+    tool_name: str,
+    args: Dict[str, Any],
+    workspace_root: Path,
+) -> str:
+    """Execute a local tool while displaying a live animated spinner with elapsed seconds."""
+    stop_event = threading.Event()
+    start_time = time.time()
+    last_status_markup = ui.build_tool_status_line(tool_name, args, 0.0)
+
+    try:
+        with ui.console.status(last_status_markup, spinner="dots") as status_indicator:
+            def _ticker():
+                nonlocal last_status_markup
+                while not stop_event.wait(0.2):
+                    elapsed = time.time() - start_time
+                    last_status_markup = ui.build_tool_status_line(tool_name, args, elapsed)
+                    status_indicator.update(last_status_markup)
+
+            t = threading.Thread(target=_ticker, daemon=True)
+            t.start()
+            try:
+                return tools.execute_tool(tool_name, args, workspace_root)
+            finally:
+                stop_event.set()
+                t.join(timeout=0.3)
+    finally:
+        ui.clear_live_status_tail(last_status_markup)
 
 
 def _handle_tool_proposal(
@@ -309,7 +339,7 @@ def _handle_tool_proposal(
     if not allowed:
         result_str = f"Execution of '{tool_name}' was declined by the developer."
     else:
-        result_str = tools.execute_tool(tool_name, args, workspace_root)
+        result_str = _execute_tool_with_live_status(tool_name, args, workspace_root)
         is_err = ui._result_is_error(result_str)
         ui.advance_active_todo(tool_name, args, is_success=(not is_err))
         ui.print_tool_result_summary(tool_name, result_str)
@@ -952,8 +982,8 @@ def prompt_switch_model(
 
 COMMAND_OPTIONS = [
     ("agents", "Switch Agent", "Select an agent (software_engineer, fiduciary, etc.)"),
-    ("new", "New Session", "Start a fresh conversation session with a new session ID"),
-    ("clear", "Clear Screen", "Clear the terminal screen and reprint the session header"),
+    ("new", "New Session", "Start fresh conversation session without clearing screen"),
+    ("clear", "Clear & Reset", "Wipe screen and start fresh session with cleared memory"),
     ("config", "View Configuration", "Show backend URL, active session, and Policy API keys"),
     ("help", "Help & Docs", "Show command descriptions and syntax"),
     ("exit", "Exit CLI", "Exit SAFi interactive assistant"),
@@ -1025,9 +1055,9 @@ def print_help():
         ("/compact-ui", "Hide or show the compact governance audit line on responses"),
         ("/sessions", "List stored sessions and resume one in this workspace"),
         ("/skills", "List custom project skills defined in .safi/skills/"),
-        ("/user <name>", "View or update your user display name"),
-        ("/new", "Start a fresh conversation session with a new session ID"),
-        ("/clear", "Clear the terminal screen and reprint the session header"),
+        ("/new", "Start a fresh conversation session without clearing screen"),
+        ("/clear [screen]", "Clear screen & reset session memory (or /clear screen for visual only)"),
+        ("/reset", "Reset session and flush agent working memory"),
         ("/config", "View backend URL, active model, and Policy API key status"),
         ("/help", "Show this help menu"),
         ("exit, quit, :q", "Exit SAFi CLI"),
@@ -1159,8 +1189,16 @@ def prompt_command_menu(
         ui.console.print(f"[bold {ui.COLOR_PASS}]Started new conversation session:[/] [dim]{new_conv}[/]")
         return current_agent, new_conv, current_model, current_user_name, False
 
-    elif choice_clean == "clear":
+    elif choice_clean in ("clear", "reset"):
         os.system("cls" if os.name == "nt" else "clear")
+        new_conv = config.resolve_session_id(str(workspace_root), new_session=True)
+        try:
+            client.clear_agent_memory(new_conv, user_id=user_id, agent=current_agent)
+        except Exception:
+            pass
+        ui.reset_session_telemetry()
+        ui.clear_active_todos()
+        ui.record_compression_reset()
         ui.print_banner(
             str(workspace_root),
             current_agent,
@@ -1168,7 +1206,9 @@ def prompt_command_menu(
             user_name=current_user_name,
             intellect_model=current_model,
         )
-        return current_agent, current_conv, current_model, current_user_name, False
+        ui.console.print(f"[bold {ui.COLOR_PASS}]✓ Cleared screen and started fresh session:[/] [dim]{new_conv}[/]")
+        ui.console.print("[dim green]↳ Flushed previous conversation and agent working memory.[/dim green]\n")
+        return current_agent, new_conv, current_model, current_user_name, False
 
     elif choice_clean in ("config", "keys"):
         show_config(client, workspace_root, current_agent, current_conv, current_model=current_model)
@@ -1287,6 +1327,7 @@ SLASH_COMMANDS = [
     "/name",
     "/new",
     "/clear",
+    "/reset",
     "/config",
     "/keys",
     "/usage",
@@ -1346,6 +1387,9 @@ def _compute_completions(
         if cmd in ("/last", "/last-result"):
             tool_names = [t["function"]["name"] for t in tools.TOOL_SCHEMAS]
             return [n for n in tool_names if n.startswith(text)]
+
+        if cmd == "/clear":
+            return [sc for sc in ["screen", "all"] if sc.startswith(text)]
 
         return []
 
@@ -1465,7 +1509,7 @@ def interactive_repl(
             try:
                 raw_line = prompt_input.read_prompt(
                     agent_label=current_agent,
-                    completions_fn=lambda ln, tok: _compute_completions(ln, tok, client, workspace_root),
+                    completions_fn=None,
                     history_path=hist_file if rich_input else None,
                 )
                 if raw_line is None:
@@ -1504,12 +1548,34 @@ def interactive_repl(
                     pass
                 ui.reset_session_telemetry()
                 ui.clear_active_todos()
+                ui.record_compression_reset()
                 ui.console.print(f"[bold green]Started new conversation session:[/] [cyan]{current_conv}[/]")
                 ui.console.print("[dim green]↳ Cleared previous agent task & working memory.[/dim green]")
                 continue
 
-            if line.lower() == "/clear":
+            if line.lower().startswith(("/clear", "/reset")):
+                parts = line.split(maxsplit=1)
+                sub_arg = parts[1].strip().lower() if len(parts) > 1 else ""
+                if sub_arg == "screen":
+                    os.system("cls" if os.name == "nt" else "clear")
+                    ui.print_banner(
+                        str(workspace_root),
+                        current_agent,
+                        client.api_url,
+                        user_name=current_user_name,
+                        intellect_model=current_model,
+                    )
+                    continue
+
                 os.system("cls" if os.name == "nt" else "clear")
+                current_conv = config.resolve_session_id(str(workspace_root), new_session=True)
+                try:
+                    client.clear_agent_memory(current_conv, user_id=user_id, agent=current_agent)
+                except Exception:
+                    pass
+                ui.reset_session_telemetry()
+                ui.clear_active_todos()
+                ui.record_compression_reset()
                 ui.print_banner(
                     str(workspace_root),
                     current_agent,
@@ -1517,6 +1583,8 @@ def interactive_repl(
                     user_name=current_user_name,
                     intellect_model=current_model,
                 )
+                ui.console.print(f"[bold green]✓ Started fresh conversation session:[/] [cyan]{current_conv}[/]")
+                ui.console.print("[dim green]↳ Cleared screen, session history, and agent working memory.[/dim green]\n")
                 continue
 
             if line.lower() in ("/config", "/keys"):
@@ -1541,10 +1609,10 @@ def interactive_repl(
                     else:
                         ui.console.print("[dim]ℹ️ No active memory summary exists for this session yet. Run /compress to generate one.[/dim]")
                 elif sub_arg in ("clear", "reset"):
-                    with ui.console.status(f"[bold {ui.COLOR_BRAND_400}]● SAFi[/] [dim]Clearing memory summary...[/]", spinner="dots"):
-                        comp_res = client.compress_conversation(current_conv, user_id=user_id, agent=current_agent, model=current_model, action="clear")
+                    with ui.console.status(f"[bold {ui.COLOR_BRAND_400}]● SAFi[/] [dim]Clearing memory summary & agent context...[/]", spinner="dots"):
+                        comp_res = client.compress_conversation(current_conv, user_id=user_id, agent=current_agent, model=current_model, action="clear", clear_agent_memory=True)
                     ui.record_compression_reset()
-                    ui.console.print(f"[bold {ui.COLOR_PASS}]✓ Compacted memory summary cleared.[/]")
+                    ui.console.print(f"[bold {ui.COLOR_PASS}]✓ Compacted memory summary and agent context memory cleared.[/]")
                 else:
                     with ui.console.status(f"[bold {ui.COLOR_BRAND_400}]● SAFi[/] [dim]Compressing conversation tokens...[/]", spinner="dots"):
                         comp_res = client.compress_conversation(current_conv, user_id=user_id, agent=current_agent, model=current_model, action="compress")

@@ -260,8 +260,8 @@ class TestSafiCliAgentSwitching(unittest.TestCase):
         client = MagicMock()
         client.api_key = "coding-key"
 
-        # "2" corresponds to fiduciary in AVAILABLE_AGENTS
-        with patch("builtins.input", return_value="2"):
+        # "3" corresponds to fiduciary in AVAILABLE_AGENTS
+        with patch("builtins.input", return_value="3"):
             new_agent, new_conv = prompt_switch_agent(
                 current_agent="software_engineer",
                 client=client,
@@ -307,7 +307,7 @@ class TestSafiCliAgentSwitching(unittest.TestCase):
     def test_prompt_command_menu_exit(self):
         client = MagicMock()
         with patch("builtins.input", return_value="6"):
-            agent, conv, should_exit = prompt_command_menu(
+            agent, conv, model, user, should_exit = prompt_command_menu(
                 current_agent="software_engineer",
                 client=client,
                 workspace_root=Path("."),
@@ -318,7 +318,7 @@ class TestSafiCliAgentSwitching(unittest.TestCase):
     def test_prompt_command_menu_new(self):
         client = MagicMock()
         with patch("builtins.input", return_value="new"):
-            agent, conv, should_exit = prompt_command_menu(
+            agent, conv, model, user, should_exit = prompt_command_menu(
                 current_agent="software_engineer",
                 client=client,
                 workspace_root=Path("."),
@@ -330,7 +330,7 @@ class TestSafiCliAgentSwitching(unittest.TestCase):
     def test_prompt_command_menu_cancel(self):
         client = MagicMock()
         with patch("builtins.input", return_value=""):
-            agent, conv, should_exit = prompt_command_menu(
+            agent, conv, model, user, should_exit = prompt_command_menu(
                 current_agent="software_engineer",
                 client=client,
                 workspace_root=Path("."),
@@ -758,7 +758,7 @@ class TestSafiModelSelection(unittest.TestCase):
         client = SafiClient("http://mock-backend:5000", "test-key")
         with unittest.mock.patch("builtins.input", return_value="8"):
             with unittest.mock.patch("safi_cli.main.prompt_switch_model") as mock_switch:
-                agent, conv, should_exit = prompt_command_menu(
+                agent, conv, model, user, should_exit = prompt_command_menu(
                     current_agent="software_engineer",
                     client=client,
                     workspace_root=Path("/tmp"),
@@ -931,7 +931,7 @@ class TestSafiSubagentDelegation(unittest.TestCase):
             self.assertTrue(call_kwargs["conversation_id"].startswith("conv-parent_sub_"))
             # Verify child tools are strictly read-only
             tool_names = [t["function"]["name"] for t in call_kwargs["tools"]]
-            self.assertEqual(set(tool_names), {"read", "grep", "glob", "list"})
+            self.assertEqual(set(tool_names), {"read", "grep", "glob", "list", "git_status", "git_diff"})
 
     def test_run_subagent_task_blocks_prohibited_tool(self):
         from safi_cli.main import run_subagent_task
@@ -1228,6 +1228,7 @@ class TestSafiCliHardeningAndUiFixes(unittest.TestCase):
         self.assertTrue(_is_secret_name(".env.development"))
         self.assertTrue(_is_secret_name("id_rsa"))
         self.assertTrue(_is_secret_name("id_ed25519"))
+        self.assertTrue(_is_secret_name("secrets.json"))
         self.assertTrue(_is_secret_name("server.key"))
         self.assertTrue(_is_secret_name("cert.pem"))
 
@@ -1297,7 +1298,7 @@ class TestSafiCliHardeningAndUiFixes(unittest.TestCase):
 
         # 1. Test cancel on empty input (Enter key)
         with patch("builtins.input", return_value=""):
-            agent, conv, should_exit = prompt_command_menu(
+            agent, conv, model, user, should_exit = prompt_command_menu(
                 current_agent="software_engineer",
                 client=client,
                 workspace_root=Path("."),
@@ -1309,7 +1310,7 @@ class TestSafiCliHardeningAndUiFixes(unittest.TestCase):
 
         # 2. Test selecting command by name with slash (e.g. "/help")
         with patch("builtins.input", return_value="/help"):
-            agent, conv, should_exit = prompt_command_menu(
+            agent, conv, model, user, should_exit = prompt_command_menu(
                 current_agent="software_engineer",
                 client=client,
                 workspace_root=Path("."),
@@ -1319,13 +1320,14 @@ class TestSafiCliHardeningAndUiFixes(unittest.TestCase):
 
         # 3. Test selecting command by name without slash (e.g. "clear")
         with patch("builtins.input", return_value="clear"):
-            agent, conv, should_exit = prompt_command_menu(
+            agent, conv, model, user, should_exit = prompt_command_menu(
                 current_agent="software_engineer",
                 client=client,
                 workspace_root=Path("."),
                 current_conv="conv-1",
             )
             self.assertFalse(should_exit)
+            self.assertNotEqual(conv, "conv-1")
 
 
 class TestSafiUiEnhancements(unittest.TestCase):
@@ -1577,6 +1579,60 @@ class TestSubagentDelegationGuard(unittest.TestCase):
 
         self.assertGreaterEqual(MAX_SUBAGENTS_PER_TURN, 1)
         self.assertLessEqual(MAX_SUBAGENTS_PER_TURN, 5)
+
+
+class TestSafiCliMemoryClearCommands(unittest.TestCase):
+    @patch.object(requests.Session, "post")
+    def test_compress_clear_passes_clear_agent_memory(self, mock_post):
+        from safi_cli.client import SafiClient
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"ok": True, "message": "Memory summary cleared."}
+        mock_post.return_value = mock_resp
+
+        client = SafiClient("http://mock-backend:5000", "test-key")
+        res = client.compress_conversation("conv-xyz", user_id="user-1", agent="software_engineer", action="clear")
+        self.assertTrue(res["ok"])
+        _, kwargs = mock_post.call_args
+        payload = kwargs.get("json", {})
+        self.assertEqual(payload.get("action"), "clear")
+        self.assertTrue(payload.get("clear_agent_memory"))
+
+    def test_command_menu_clear_starts_new_session_and_clears_memory(self):
+        from safi_cli.main import prompt_command_menu
+        client = MagicMock()
+        with patch("os.system"):
+            with patch("builtins.input", return_value="clear"):
+                agent, new_conv, model, user, should_exit = prompt_command_menu(
+                    current_agent="software_engineer",
+                    client=client,
+                    workspace_root=Path("/tmp"),
+                    current_conv="conv-old",
+                )
+                self.assertFalse(should_exit)
+                self.assertNotEqual(new_conv, "conv-old")
+                client.clear_agent_memory.assert_called_once()
+
+    def test_tool_status_line_and_live_execution(self):
+        from safi_cli.ui import build_tool_status_line
+        from safi_cli.main import _execute_tool_with_live_status
+
+        # Test bash tool preview
+        bash_status = build_tool_status_line("bash", {"command": "ssh root@server 'sleep 10'"}, 4.2)
+        self.assertIn("Running bash: ssh root@server 'sleep 10'", bash_status)
+        self.assertIn("4.2s", bash_status)
+
+        # Test read tool preview
+        read_status = build_tool_status_line("read", {"path": "src/app.py"}, 0.3)
+        self.assertIn("Reading src/app.py", read_status)
+        self.assertIn("0.3s", read_status)
+
+        # Test live status execution wrapping tools.execute_tool
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p = Path(tmpdir)
+            (p / "demo.txt").write_text("hello live status")
+            out = _execute_tool_with_live_status("read", {"path": "demo.txt"}, p)
+            self.assertIn("hello live status", out)
 
 
 if __name__ == "__main__":
