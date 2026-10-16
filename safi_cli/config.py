@@ -77,8 +77,7 @@ def save_agent_api_key(agent: str, key: str) -> None:
     clean_key = key.strip()
     agent_keys[agent] = clean_key
     cfg["agent_keys"] = agent_keys
-    if agent == "software_engineer" or not cfg.get("api_key"):
-        cfg["api_key"] = clean_key
+    cfg.pop("api_key", None)
     save_config(cfg)
 
 

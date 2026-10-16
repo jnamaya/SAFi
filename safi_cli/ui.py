@@ -13,6 +13,7 @@ from collections import deque
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from rich.console import Console, Group
+from rich.control import Control
 from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
@@ -41,6 +42,9 @@ class MarginedConsole(Console):
         pad_margin = kwargs.pop("pad_margin", True)
         interactive = getattr(self, "is_terminal", False)
         if not interactive or CLI_MARGIN <= 0 or not pad_margin or not objects or kwargs.get("end") == "":
+            return super().print(*objects, **kwargs)
+
+        if any(isinstance(obj, Control) for obj in objects):
             return super().print(*objects, **kwargs)
 
         padded_objects = []
@@ -205,13 +209,12 @@ def clear_live_status_tail(last_status_markup: Optional[str] = None) -> None:
     if not getattr(console, "is_terminal", False):
         return
     try:
+        width = max(console.width or 80, 1)
+        cells = (Text.from_markup(last_status_markup).cell_len + 4) if last_status_markup else 0
+        rows = max(1, (cells + width - 1) // width) if cells else 1
         console.file.write("\r\x1b[2K")
-        if last_status_markup:
-            width = max(console.width or 80, 1)
-            cells = Text.from_markup(last_status_markup).cell_len + 4
-            rows = (cells + width - 1) // width
-            if rows > 1:
-                console.file.write("\x1b[1B\x1b[2K" * (rows - 1) + f"\x1b[{rows - 1}A\r")
+        for _ in range(rows):
+            console.file.write("\x1b[1A\r\x1b[2K")
         console.file.flush()
     except Exception:
         pass
@@ -235,7 +238,7 @@ def print_banner(
     info_table.add_column("val", style="bold white")
 
     agent_title = agent.replace("_", " ").title()
-    info_table.add_row("Agent Persona:", f"{agent_title} ({agent})")
+    info_table.add_row("Agent Name:", f"{agent_title} ({agent})")
     if intellect_model:
         info_table.add_row("Model:", f"{intellect_model}")
     info_table.add_row("API Endpoint:", f"{api_url}")
@@ -831,15 +834,24 @@ def print_tool_proposal(name: str, args: Dict[str, Any], res: Dict[str, Any]):
     items = []
 
     title_line = Text()
-    if is_approved:
-        title_line.append("[✓ APPROVED] ", style=f"bold {COLOR_PASS}")
-    else:
-        title_line.append("[⛔ BLOCKED] ", style=f"bold {COLOR_FAIL}")
-
+    title_line.append("● SAFi ", style=f"bold {COLOR_BRAND_400}")
     title_line.append("-> ", style="dim")
     title_line.append(f"{name}", style="bold white")
-    if will_reason:
-        title_line.append(f"  # {will_reason}", style="dim")
+    if is_approved:
+        if will_reason:
+            clean_reason = will_reason.rstrip(" .")
+            suffix = " [approved ✓]"
+            prefix_len = len(f"● SAFi -> {name}  # ")
+            avail = max((console.width or 80) - prefix_len - len(suffix) - (CLI_MARGIN * 2) - 2, 15)
+            if len(clean_reason) > avail:
+                clean_reason = clean_reason[:avail - 1].rstrip() + "…"
+            title_line.append(f"  # {clean_reason}{suffix}", style="dim")
+        else:
+            title_line.append("  # approved ✓", style="dim")
+    else:
+        title_line.append("  [⛔ BLOCKED]", style=f"bold {COLOR_FAIL}")
+        if will_reason:
+            title_line.append(f"  # {will_reason}", style="dim")
     items.append(title_line)
 
     ledger = res.get("toolProposalLedger") or res.get("conscienceLedger") or []

@@ -1835,6 +1835,34 @@ class TestWorkspaceAgentPersistence(unittest.TestCase):
             self.assertEqual(kwargs.get("agent"), "sysadmin")
 
 
+class TestSafiCliUiSpinnerCleanup(unittest.TestCase):
+    def test_margined_console_control_passthrough(self):
+        from rich.control import Control
+        from rich.segment import ControlType
+        from safi_cli import ui
+        import io
+
+        buf = io.StringIO()
+        test_console = ui.MarginedConsole(file=buf, force_terminal=True)
+        ctrl = Control(ControlType.CARRIAGE_RETURN, (ControlType.CURSOR_UP, 1), (ControlType.ERASE_IN_LINE, 2))
+        test_console.print(ctrl)
+        output = buf.getvalue()
+        # Should NOT contain 80 spaces from Padding wrapper
+        self.assertNotIn(" " * 40, output)
+
+    def test_clear_live_status_tail_erases_lines(self):
+        from safi_cli import ui
+        import io
+
+        buf = io.StringIO()
+        test_console = ui.MarginedConsole(file=buf, force_terminal=True)
+        with unittest.mock.patch.object(ui, "console", test_console):
+            ui.clear_live_status_tail("Test status")
+            output = buf.getvalue()
+            # Must emit cursor up and clear line escape codes
+            self.assertIn("\x1b[1A\r\x1b[2K", output)
+
+
 if __name__ == "__main__":
     unittest.main()
 

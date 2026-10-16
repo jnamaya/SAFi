@@ -106,13 +106,12 @@ set -eo pipefail
 
 CONFIG_DIR="${HOME}/.config/safi"
 INVENTORY_FILE="${CONFIG_DIR}/inventory.json"
-SECRETS_FILE="${CONFIG_DIR}/secrets.json"
 
 usage() {
     cat << 'HELP'
 Usage:
   sys-exec --list                      List all managed inventory hosts
-  sys-exec <target-alias> <command>    Execute command on the target host
+  sys-exec <target-alias> <command>    Execute command on the target host (SSH key authentication)
 
 Examples:
   sys-exec --list
@@ -174,40 +173,19 @@ fi
 
 if [ "$AUTH" = "key" ] || [ "$AUTH" = "ssh" ] || [ "$AUTH" = "ssh_config" ]; then
     # Key-based / SSH-config execution
-    if ssh -o BatchMode=yes "${SSH_OPTS[@]}" "$DEST" "$CMD"; then
-        exit 0
-    else
-        EXIT_CODE=$?
-        # If key failed and password exists in secrets.json, offer fallback
-        if [ -f "$SECRETS_FILE" ]; then
-            PASS=$(jq -r --arg t "$TARGET" '.[$t] // empty' "$SECRETS_FILE")
-            if [ -n "$PASS" ] && [ "$PASS" != "null" ]; then
-                SSHPASS="$PASS" sshpass -e ssh "${SSH_OPTS[@]}" "$DEST" "$CMD"
-                exit $?
-            fi
-        fi
-        exit $EXIT_CODE
-    fi
-elif [ "$AUTH" = "password" ]; then
-    if [ ! -f "$SECRETS_FILE" ]; then
-        echo "Error: Password auth requested for '$TARGET' but secrets file not found ($SECRETS_FILE)" >&2
-        exit 1
-    fi
-    PASS=$(jq -r --arg t "$TARGET" '.[$t] // empty' "$SECRETS_FILE")
-    if [ -z "$PASS" ] || [ "$PASS" = "null" ]; then
-        echo "Error: Password for '$TARGET' not found in $SECRETS_FILE" >&2
-        exit 1
-    fi
-    SSHPASS="$PASS" sshpass -e ssh "${SSH_OPTS[@]}" "$DEST" "$CMD"
+    ssh -o BatchMode=yes "${SSH_OPTS[@]}" "$DEST" "$CMD"
     exit $?
+elif [ "$AUTH" = "password" ]; then
+    echo "Error: Plain-text password storage has been disabled for security. Please configure SSH key-based authentication for '$TARGET' (e.g. ssh-copy-id)." >&2
+    exit 1
 else
-    echo "Error: Unsupported auth method '$AUTH' for '$TARGET'" >&2
+    echo "Error: Unsupported auth method '$AUTH' for '$TARGET'. Please use SSH key-based authentication." >&2
     exit 1
 fi
 EOF
 chmod +x "${BIN_DIR}/sys-exec"
 
-# 7. Scaffold inventory and secrets template if missing
+# 7. Scaffold inventory template if missing
 CONFIG_DIR="${HOME}/.config/safi"
 mkdir -p "${CONFIG_DIR}"
 
@@ -224,17 +202,6 @@ if [ ! -f "${CONFIG_DIR}/inventory.json" ]; then
 }
 EOF
     echo "Created sample inventory at ${CONFIG_DIR}/inventory.json"
-fi
-
-if [ ! -f "${CONFIG_DIR}/secrets.json" ]; then
-    cat << 'EOF' > "${CONFIG_DIR}/secrets.json"
-{
-  "_comment": "Store passwords here for targets configured with 'auth': 'password'. File permissions are 0600.",
-  "example-password-switch": "YourPasswordHere"
-}
-EOF
-    chmod 600 "${CONFIG_DIR}/secrets.json"
-    echo "Created sample secrets file at ${CONFIG_DIR}/secrets.json"
 fi
 
 echo ""

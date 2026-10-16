@@ -1567,19 +1567,9 @@ def interactive_repl(
         intellect_model=current_model,
     )
     ui.console.print(
-        f"[dim]Commands: [bold {ui.COLOR_BRAND_400}]/[/] menu  •  [bold {ui.COLOR_BRAND_400}]/memory[/] memory & compact  •  [bold {ui.COLOR_BRAND_400}]/models[/] switch model  •  [bold {ui.COLOR_BRAND_400}]/agents[/] switch agent  •  [bold {ui.COLOR_BRAND_400}]/new[/] fresh session[/dim]"
+        f"[dim]Commands: [bold {ui.COLOR_BRAND_400}]/[/] menu  •  [bold {ui.COLOR_BRAND_400}]/memory[/] memory & compact  •  [bold {ui.COLOR_BRAND_400}]/models[/] switch model  •  [bold {ui.COLOR_BRAND_400}]/agents[/] switch agent  •  [bold {ui.COLOR_BRAND_400}]/new[/] fresh session[/dim]\n"
     )
     rich_input = prompt_input.using_prompt_toolkit()
-    if rich_input:
-        ui.console.print(
-            f"[dim]Tip: [bold {ui.COLOR_BRAND_400}]Enter[/] sends  •  "
-            f"[bold {ui.COLOR_BRAND_400}]Alt+Enter[/] / [bold {ui.COLOR_BRAND_400}]Ctrl+J[/] add a line  •  "
-            f"multi-line pastes just work.[/dim]\n"
-        )
-    else:
-        ui.console.print(
-            f"[dim]Tip: end a line with [bold {ui.COLOR_BRAND_400}]\\[/] to continue on the next line (multi-line prompts).[/dim]\n"
-        )
 
     config.ensure_config_dir()
     hist_file = str(config.HISTORY_FILE)
