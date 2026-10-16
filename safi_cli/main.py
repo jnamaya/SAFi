@@ -797,6 +797,8 @@ def _infer_provider(model_id: str) -> str:
         return "Alibaba / Cerebras"
     if "groq" in m:
         return "Groq"
+    if "glm" in m or "zhipu" in m:
+        return "Zhipu (Z.ai)"
     return "Cloud Provider"
 
 

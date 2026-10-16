@@ -361,6 +361,16 @@ def _build_bwrap_command(
             if sdir.exists() and sdir.is_dir():
                 bwrap_cmd.extend(["--tmpfs", str(sdir)])
 
+        # Allow read-only access to known_hosts and ssh config so git/ssh can verify
+        # remote host identities (e.g. github.com) and use ssh configs without exposing any private key files.
+        ssh_dir = home / ".ssh"
+        if ssh_dir.exists() and ssh_dir.is_dir():
+            bwrap_cmd.extend([
+                "--ro-bind-try", str(ssh_dir / "known_hosts"), str(ssh_dir / "known_hosts"),
+                "--ro-bind-try", str(ssh_dir / "known_hosts.old"), str(ssh_dir / "known_hosts.old"),
+                "--ro-bind-try", str(ssh_dir / "config"), str(ssh_dir / "config"),
+            ])
+
     bwrap_cmd.extend(["bash", "-c", cmd])
     return bwrap_cmd
 
@@ -628,7 +638,6 @@ def execute_tool(
             clean_env = os.environ.copy()
             if not is_sysadmin:
                 for k in (
-                    "SSH_AUTH_SOCK",
                     "ANTHROPIC_API_KEY",
                     "OPENAI_API_KEY",
                     "GEMINI_API_KEY",

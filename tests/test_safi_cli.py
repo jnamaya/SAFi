@@ -92,19 +92,24 @@ class TestSafiCliTools(unittest.TestCase):
 
     def test_bash_tool_strips_secret_env_vars(self):
         os.environ["ANTHROPIC_API_KEY"] = "sk-ant-test-secret"
+        os.environ["GITHUB_TOKEN"] = "ghp_secret_token_123"
         os.environ["SSH_AUTH_SOCK"] = "/tmp/fake-ssh-sock"
         try:
             out = execute_tool(
                 "bash",
-                {"command": "echo ant=$ANTHROPIC_API_KEY ssh=$SSH_AUTH_SOCK"},
+                {"command": "echo ant=$ANTHROPIC_API_KEY gh=$GITHUB_TOKEN ssh=$SSH_AUTH_SOCK"},
                 self.root,
                 agent="software_engineer",
             )
             self.assertIn("ant=", out)
+            self.assertIn("gh=", out)
             self.assertNotIn("sk-ant-test-secret", out)
-            self.assertNotIn("/tmp/fake-ssh-sock", out)
+            self.assertNotIn("ghp_secret_token_123", out)
+            # SSH_AUTH_SOCK is retained for ssh-agent passthrough
+            self.assertIn("ssh=/tmp/fake-ssh-sock", out)
         finally:
             os.environ.pop("ANTHROPIC_API_KEY", None)
+            os.environ.pop("GITHUB_TOKEN", None)
             os.environ.pop("SSH_AUTH_SOCK", None)
 
     def test_build_bwrap_command_masks_credentials_for_non_sysadmin(self):
@@ -122,6 +127,11 @@ class TestSafiCliTools(unittest.TestCase):
             self.assertIn(str(home / ".ssh"), cmd_se)
             idx = cmd_se.index(str(home / ".ssh"))
             self.assertEqual(cmd_se[idx - 1], "--tmpfs")
+            # known_hosts and config are bound read-only
+            if (home / ".ssh" / "known_hosts").is_file():
+                self.assertIn(str(home / ".ssh" / "known_hosts"), cmd_se)
+                kh_idx = cmd_se.index(str(home / ".ssh" / "known_hosts"))
+                self.assertEqual(cmd_se[kh_idx - 1], "--ro-bind-try")
 
         # For sysadmin
         cmd_sys = _build_bwrap_command("ls", self.root, agent="sysadmin")

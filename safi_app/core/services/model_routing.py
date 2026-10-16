@@ -142,7 +142,7 @@ def detect_provider(model_name: str) -> str:
         return "deepseek"
     if m.startswith("mistral-") or m.startswith("ministral-") or m.startswith("codestral-") or m.startswith("open-mi") or m.startswith("voxtral-"):
         return "mistral"
-    if m.startswith("glm-"):
+    if m.startswith("glm-") or m.startswith("codegeex-"):
         return "zhipu"
     # Appliance-selected local models all carry a "safi-" alias (safi-qwen3-8b,
     # safi-qwen3-32b, ...), so match the reserved prefix rather than one literal
@@ -192,7 +192,7 @@ def build_providers_config(config) -> dict:
         "zhipu": {
             "type": "openai",
             "api_key": getattr(config, "ZHIPU_API_KEY", ""),
-            "base_url": "https://api.z.ai/api/paas/v4",
+            "base_url": getattr(config, "ZHIPU_BASE_URL", "") or "https://api.z.ai/api/coding/paas/v4",
         },
         "cerebras": {
             "type": "openai",

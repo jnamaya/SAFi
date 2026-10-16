@@ -353,6 +353,7 @@ class Config:
     MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY")
     DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY")
     ZHIPU_API_KEY = os.environ.get("ZHIPU_API_KEY")
+    ZHIPU_BASE_URL = os.environ.get("ZHIPU_BASE_URL", "https://api.z.ai/api/coding/paas/v4").strip()
     CEREBRAS_API_KEY = os.environ.get("CEREBRAS_API_KEY")
     TYPESAFE_API_KEY = os.environ.get("TYPESAFE_API_KEY", "").strip()
     TYPESAFE_BASE_URL = os.environ.get("TYPESAFE_BASE_URL", "").strip()
@@ -728,7 +729,10 @@ class Config:
         {"id": "deepseek-v4-pro", "label": "DeepSeek Pro"},
 
         # Zhipu (Z.ai) Models
-        {"id": "glm-5.2", "label": "GLM"},
+        {"id": "glm-5.3", "label": "GLM 5.3 (Coding)"},
+        {"id": "glm-5.2", "label": "GLM 5.2 (Coding)"},
+        {"id": "glm-5", "label": "GLM 5 (Coding)"},
+        {"id": "glm-4.7", "label": "GLM 4.7 (Coding)"},
 
         # Cerebras Models (bare ids, unlike Groq's "openai/"-prefixed ones).
         # Cerebras is inference-only and publishes no first-party model, so
