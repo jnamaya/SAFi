@@ -435,9 +435,10 @@ def run_agent_turn(
                                 return False
                             return True
 
+                        agent_tools = tools.get_tools_for_agent(agent)
                         active_tools = (
-                            [t for t in tools.TOOL_SCHEMAS if _tool_ok(t)]
-                            if agent in ("software_engineer", "sysadmin")
+                            [t for t in agent_tools if _tool_ok(t)]
+                            if agent_tools
                             else None
                         )
 
@@ -1472,7 +1473,8 @@ def _compute_completions(
             return [sc for sc in subcommands if sc.startswith(text)]
 
         if cmd in ("/last", "/last-result"):
-            tool_names = [t["function"]["name"] for t in tools.TOOL_SCHEMAS]
+            avail = tools.get_tools_for_agent(agent) or tools.TOOL_SCHEMAS
+            tool_names = [t["function"]["name"] for t in avail]
             return [n for n in tool_names if n.startswith(text)]
 
         if cmd == "/clear":

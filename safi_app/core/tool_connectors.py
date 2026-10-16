@@ -60,6 +60,18 @@ CONNECTOR_TOOLS: Dict[str, Tuple[str, ...]] = {
         "bash", "write", "edit", "patch", "delete",
         "webfetch", "websearch", "task", "todowrite", "skill", "lsp", "question",
     ),
+    # Per-agent connectors. Software engineer keeps the full coding vocabulary;
+    # sysadmin gets the operational subset (no code-harness-only functions).
+    "software_engineer_tools": (
+        "read", "grep", "glob", "list",
+        "bash", "write", "edit", "patch", "delete",
+        "webfetch", "websearch", "task", "todowrite", "skill", "lsp", "question",
+    ),
+    "sysadmin_tools": (
+        "read", "grep", "glob", "list",
+        "bash", "write", "edit", "delete",
+        "webfetch", "websearch", "task", "todowrite", "skill", "question",
+    ),
     "find_places": ("find_places",),
     "get_analyst_recommendations": ("get_analyst_recommendations",),
     "get_company_news": ("get_company_news",),

@@ -89,7 +89,7 @@ SYSADMIN_AGENT: Dict[str, Any] = {
             "banned_markdown_syntaxes": [],
         },
     },
-    "tools": ["agentic_coding"],
+    "tools": ["sysadmin_tools"],
     "example_prompts": [
         "Diagnose why this server is running out of disk space.",
         "Show me the current DNS and routing configuration for these hosts.",

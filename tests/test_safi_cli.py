@@ -548,6 +548,36 @@ class TestSafiClientToolPayload(unittest.TestCase):
         tool_names = [t["function"]["name"] for t in payload["tools"]]
         self.assertIn("read", tool_names)
         self.assertIn("write", tool_names)
+        self.assertIn("git_status", tool_names)
+        self.assertIn("git_diff", tool_names)
+
+    @patch.object(requests.Session, "post")
+    def test_send_turn_includes_tools_for_sysadmin(self, mock_post):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"ok": True, "finalOutput": "Sysadmin done"}
+        mock_post.return_value = mock_resp
+
+        client = SafiClient("https://safi.test", "sk-test")
+        client.send_turn(
+            user_id="u1",
+            conversation_id="c1",
+            message="Check status",
+            workspace_root="/tmp/repo",
+            agent="sysadmin",
+        )
+
+        mock_post.assert_called_once()
+        payload = mock_post.call_args.kwargs["json"]
+        self.assertIsNotNone(payload.get("tools"))
+        tool_names = [t["function"]["name"] for t in payload["tools"]]
+        self.assertIn("bash", tool_names)
+        self.assertIn("read", tool_names)
+        self.assertIn("write", tool_names)
+        self.assertIn("edit", tool_names)
+        # Verify sysadmin does not include code-specific git tools
+        self.assertNotIn("git_status", tool_names)
+        self.assertNotIn("git_diff", tool_names)
 
     @patch.object(requests.Session, "post")
     def test_send_turn_sends_empty_tools_for_fiduciary(self, mock_post):

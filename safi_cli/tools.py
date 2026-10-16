@@ -39,7 +39,7 @@ BINARY_EXTENSIONS = frozenset({
 MAX_GREP_FILE_SIZE = 1_000_000
 
 
-TOOL_SCHEMAS: List[Dict[str, Any]] = [
+SOFTWARE_ENGINEER_TOOL_SCHEMAS: List[Dict[str, Any]] = [
     {
         "type": "function",
         "function": {
@@ -257,6 +257,194 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
     }
 ]
 
+SYSADMIN_TOOL_SCHEMAS: List[Dict[str, Any]] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "bash",
+            "description": "Run shell and CLI administration commands (e.g. systemctl, journalctl, ssh, sys-exec, docker, ip, df, curl, ps) on the system or remote servers.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string", "description": "The exact shell command line to execute."}
+                },
+                "required": ["command"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read",
+            "description": "Read system configuration files, service units, scripts, and logs with 1-indexed line numbers.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "File path to read."},
+                    "offset": {"type": "integer", "description": "1-indexed starting line number (default 1). Alias: line_start."},
+                    "limit": {"type": "integer", "description": "Maximum number of lines to read (default 1000)."},
+                    "line_start": {"type": "integer", "description": "1-indexed starting line number."},
+                    "line_end": {"type": "integer", "description": "1-indexed ending line number."}
+                },
+                "required": ["path"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "write",
+            "description": "Create a new configuration file, script, or unit file. Prefer 'edit' for targeted changes to existing configs.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "File path to create or write."},
+                    "content": {"type": "string", "description": "Content to write to the file."}
+                },
+                "required": ["path", "content"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "edit",
+            "description": "Modify, update, or patch an existing configuration file or script by replacing an exact contiguous block of text.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "File path to modify."},
+                    "target": {"type": "string", "description": "Exact contiguous text sequence to replace."},
+                    "replacement": {"type": "string", "description": "Replacement text sequence."}
+                },
+                "required": ["path", "target", "replacement"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete",
+            "description": "Delete an obsolete configuration file, temporary file, or directory.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "File or directory path to delete."}
+                },
+                "required": ["path"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "grep",
+            "description": "Search configuration files, scripts, or system logs using regular expressions.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {"type": "string", "description": "Regular expression pattern to search for."},
+                    "path": {"type": "string", "description": "Directory or file path to search in (default '.')."},
+                    "include": {"type": "string", "description": "Optional file glob filter, e.g. '*.conf', '*.service'."}
+                },
+                "required": ["pattern"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "glob",
+            "description": "Find configuration files, service units, or logs matching a glob pattern.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {"type": "string", "description": "Glob pattern (default '*')."},
+                    "path": {"type": "string", "description": "Subdirectory to search in (default '.')."}
+                },
+                "required": ["pattern"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list",
+            "description": "List files and directories in a directory path.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Directory path (default '.')."}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "todowrite",
+            "description": "Maintain and track an operational maintenance or troubleshooting runbook/checklist.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "todos": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string", "description": "Unique short identifier."},
+                                "task": {"type": "string", "description": "Description of the operational step."},
+                                "status": {
+                                    "type": "string",
+                                    "enum": ["pending", "in_progress", "completed", "failed"],
+                                    "description": "Current status."
+                                }
+                            },
+                            "required": ["task", "status"]
+                        },
+                        "description": "The updated list of runbook steps."
+                    }
+                },
+                "required": ["todos"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "question",
+            "description": "Ask the operator a clarifying question ONLY when there is a critical, blocking operational ambiguity.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "question": {"type": "string", "description": "The specific blocking question to ask the operator."},
+                    "options": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional list of recommended choices."
+                    }
+                },
+                "required": ["question"]
+            }
+        }
+    }
+]
+
+# Default / backward compatibility alias
+TOOL_SCHEMAS: List[Dict[str, Any]] = SOFTWARE_ENGINEER_TOOL_SCHEMAS
+
+
+def get_tools_for_agent(agent: Optional[str]) -> List[Dict[str, Any]]:
+    """Return the designated tool schemas for the given agent."""
+    if not agent:
+        return []
+    low = agent.lower()
+    if "sysadmin" in low:
+        return list(SYSADMIN_TOOL_SCHEMAS)
+    if "software_engineer" in low or "engineer" in low or "coding" in low:
+        return list(SOFTWARE_ENGINEER_TOOL_SCHEMAS)
+    return []
+
 
 def _is_secret_name(name: str) -> bool:
     """True for credential files: exact names, key suffixes, and .env.* variants (templates excepted)."""
@@ -383,6 +571,11 @@ def execute_tool(
 ) -> str:
     """Execute a tool proposal locally inside workspace_root."""
     try:
+        if agent:
+            allowed_tools = {t["function"]["name"] for t in get_tools_for_agent(agent)}
+            if allowed_tools and name not in allowed_tools:
+                return f"Error: Tool '{name}' is not authorized for agent '{agent}'."
+
         if name == "read":
             path_str = args.get("path") or args.get("filePath") or args.get("file_path") or ""
             if not path_str.strip():

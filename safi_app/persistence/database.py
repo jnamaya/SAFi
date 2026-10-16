@@ -3616,15 +3616,26 @@ def list_policies(user_id=None, org_id=None):
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
-        cursor.execute(f"""
+        # Only current seed policies should be exposed as demo examples. Keep
+        # retired demo rows in the database for historical governance lookups,
+        # but do not include them in the list shown to users.
+        from safi_app.core.policies.demo import get_current_demo_policy_ids
+
+        current_demo_ids = get_current_demo_policy_ids() | {"safi_default_policy"}
+        cursor.execute("""
             SELECT * FROM policies
             WHERE (is_demo=TRUE AND org_id IS NULL)
             OR created_by=%s
             OR (org_id IS NOT NULL AND org_id=%s)
             ORDER BY created_at DESC
         """, (user_id, org_id))
-        
+
         rows = cursor.fetchall()
+        rows = [
+            row for row in rows
+            if not (row.get("is_demo") and row.get("org_id") is None
+                    and row.get("id") not in current_demo_ids)
+        ]
         for row in rows:
             row['will_rules'] = json.loads(row['will_rules']) if isinstance(row['will_rules'], str) else row['will_rules']
             row['values_weights'] = json.loads(row['values_weights']) if isinstance(row['values_weights'], str) else row['values_weights']

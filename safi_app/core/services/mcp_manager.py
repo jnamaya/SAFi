@@ -367,7 +367,28 @@ class MCPManager:
 
         tools = []
 
-        if "agentic_coding" in allowed_tools or "coding_harness" in allowed_tools:
+        # Each coding-harness connector emits exactly the functions its entry in
+        # tool_connectors.CONNECTOR_TOOLS declares. test_mapping_matches_the_real_builder
+        # pins that equality, so the schemas offered to the model can never drift
+        # from what the Will will authorize.
+        _CODING_CONNECTORS = (
+            "agentic_coding", "coding_harness",
+            "software_engineer_tools", "sysadmin_tools",
+        )
+        _coding_declared = [c for c in _CODING_CONNECTORS if c in allowed_tools]
+        _emit_coding = bool(_coding_declared)
+        _coding_names = None
+        if _emit_coding:
+            # Sysadmin is the only connector narrower than the full vocabulary:
+            # it omits "patch" and "lsp" (code-harness-only functions).
+            if _coding_declared == ["sysadmin_tools"]:
+                _coding_names = frozenset(CONNECTOR_TOOLS["sysadmin_tools"])
+            else:
+                _coding_names = None  # full vocabulary
+        def _want(name: str) -> bool:
+            return _coding_names is None or name in _coding_names
+
+        if _emit_coding and _want("read"):
             tools.append({
                 "name": "read",
                 "description": (
@@ -386,7 +407,8 @@ class MCPManager:
                 },
             })
 
-            tools.append({
+            if _want("grep"):
+              tools.append({
                 "name": "grep",
                 "description": (
                     "Search file contents with a regular expression and return "
@@ -405,7 +427,8 @@ class MCPManager:
                 },
             })
 
-            tools.append({
+            if _want("glob"):
+              tools.append({
                 "name": "glob",
                 "description": (
                     "Find files by glob pattern and return workspace-relative "
@@ -422,7 +445,8 @@ class MCPManager:
                 },
             })
 
-            tools.append({
+            if _want("list"):
+              tools.append({
                 "name": "list",
                 "description": (
                     "List the entries of one directory, with directories listed "
@@ -487,6 +511,8 @@ class MCPManager:
                  {"question": {"type": "string"}}, ["question"]),
             ]
             for name, desc, props, required in declared_only:
+                if not _want(name):
+                    continue
                 tools.append({
                     "name": name,
                     "description": desc,

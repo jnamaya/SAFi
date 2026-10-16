@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 import requests
 
-from .tools import TOOL_SCHEMAS
+from .tools import TOOL_SCHEMAS, get_tools_for_agent
 
 
 class SafiClientError(Exception):
@@ -176,8 +176,7 @@ class SafiClient:
         if tools is not None:
             tools_payload = tools
         else:
-            is_client_tool_agent = agent in ("software_engineer", "sysadmin")
-            tools_payload = TOOL_SCHEMAS if is_client_tool_agent else []
+            tools_payload = get_tools_for_agent(agent)
 
         payload: Dict[str, Any] = {
             "user_id": user_id,

@@ -80,7 +80,7 @@ SOFTWARE_ENGINEER_AGENT: Dict[str, Any] = {
             "banned_markdown_syntaxes": [],
         },
     },
-    "tools": ["agentic_coding"],
+    "tools": ["software_engineer_tools"],
     "example_prompts": [
         "Explain what this repository does.",
         "Trace how authentication works in this codebase.",
