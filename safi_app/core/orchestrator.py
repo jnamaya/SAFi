@@ -1411,7 +1411,7 @@ class SAFi:
         else:
             preflight_scope_trigger = (
                 has_execution_tools
-                and (os.environ.get("SAFI_PREFLIGHT_PROMPT_SCOPE", "0").lower() in ("1", "true", "yes"))
+                and (os.environ.get("SAFI_PREFLIGHT_PROMPT_SCOPE", "1").lower() in ("1", "true", "yes"))
                 and bool((self.profile or {}).get("scope_statement"))
             )
         is_continuation_turn = bool(client_owned and client_tool_results)

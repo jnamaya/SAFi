@@ -259,6 +259,132 @@ class TestConsciencePromptScope(unittest.IsolatedAsyncioTestCase):
         orch.conscience.evaluate_prompt_scope.assert_not_called()
         orch.intellect_engine.generate.assert_awaited_once()
 
+    async def test_chatbot_without_execution_tools_skips_preflight(self):
+        orch = SAFi.__new__(SAFi)
+        orch.log = MagicMock()
+        orch.store = MagicMock()
+        orch.config = MagicMock()
+        orch.intellect_engine = MagicMock()
+        orch.will_gate = MagicMock()
+        orch.spirit = MagicMock()
+        orch.phase_zero = MagicMock()
+        orch.conscience = MagicMock()
+        orch.active_profile_name = "academic_tutor"
+        orch.intellect_model = "test-model"
+        orch.conscience_model = "test-conscience"
+        orch.model_attribution = None
+        orch.review_alert_callback = None
+        orch._append_log = MagicMock()
+        orch.background_task_callback = None
+        orch.values = []
+        orch._spirit_state_lock = MagicMock()
+        orch.mu_history = []
+        orch.last_drift = 0.0
+        orch.mcp_manager = None
+        # Chatbot profile: NO execution tools (mutating tools), has scope statement
+        orch.profile = {
+            "name": "academic_tutor",
+            "title": "Academic Tutor",
+            "scope_statement": "STEM education only.",
+            "will_rules": {},
+        }
+        orch.context_budgeter = MagicMock(return_value="{}")
+        orch._resolve_history_window = MagicMock(return_value=(5, 4000))
+        orch.phase_zero.evaluate_prompt = MagicMock(return_value=(True, "Prompt safe"))
+        orch._pii_enabled = MagicMock(return_value=False)
+        orch.activate_org = MagicMock()
+        orch.activate_agent = MagicMock()
+        orch.max_context_chars = 12000
+        orch._is_cancelled = MagicMock(return_value=False)
+
+        orch.conscience.evaluate_prompt_scope = AsyncMock()
+        orch.intellect_engine.generate = AsyncMock(return_value=(
+            {"type": "message", "content": "Let us solve this together."},
+            "reflection",
+            "context"
+        ))
+        orch.store.update_spirit_memory_atomic.return_value = ((1.0, "ok", {}, {}, 0.0, []), 1)
+        orch._finalize_draft = AsyncMock(return_value={
+            "verdict": "approve", "stage": "audit", "draft": "Let us solve this.", "finalOutput": "Let us solve this.",
+            "willDecision": "approve", "ledger": [], "reason": None,
+        })
+
+        # Process a prompt with NO client_owned_tools (pure chatbot turn)
+        await orch.process_prompt(
+            user_prompt="Help me with quadratic equations",
+            user_id="user_123",
+            conversation_id="conv_456",
+        )
+
+        # Chatbot must NEVER call prompt scope preflight!
+        orch.conscience.evaluate_prompt_scope.assert_not_called()
+        orch.intellect_engine.generate.assert_awaited_once()
+
+    async def test_cli_execution_agent_defaults_to_preflight_without_explicit_policy_flag(self):
+        orch = SAFi.__new__(SAFi)
+        orch.log = MagicMock()
+        orch.store = MagicMock()
+        orch.config = MagicMock()
+        orch.intellect_engine = MagicMock()
+        orch.will_gate = MagicMock()
+        orch.spirit = MagicMock()
+        orch.phase_zero = MagicMock()
+        orch.conscience = MagicMock()
+        orch.active_profile_name = "software_engineer"
+        orch.intellect_model = "test-model"
+        orch.conscience_model = "test-conscience"
+        orch.model_attribution = None
+        orch.review_alert_callback = None
+        orch._append_log = MagicMock()
+        orch.background_task_callback = None
+        orch.values = []
+        orch._spirit_state_lock = MagicMock()
+        orch.mu_history = []
+        orch.last_drift = 0.0
+        orch.mcp_manager = None
+        # Agent with execution tools (bash) but NO preflight_prompt_scope specified in will_rules
+        orch.profile = {
+            "name": "software_engineer",
+            "title": "Software Engineer",
+            "scope_statement": "Software engineering and repository development.",
+            "allowed_tools": ["bash", "read", "write"],
+            "will_rules": {},  # omitted!
+        }
+        orch.context_budgeter = MagicMock(return_value="{}")
+        orch._resolve_history_window = MagicMock(return_value=(5, 4000))
+        orch.phase_zero.evaluate_prompt = MagicMock(return_value=(True, "Prompt safe"))
+        orch._pii_enabled = MagicMock(return_value=False)
+        orch.activate_org = MagicMock()
+        orch.activate_agent = MagicMock()
+        orch.max_context_chars = 12000
+        orch._is_cancelled = MagicMock(return_value=False)
+
+        orch.conscience.evaluate_prompt_scope = AsyncMock(return_value=[
+            {"value": "Domain Scope Adherence", "score": 1.0, "confidence": 0.95, "reason": "In-scope."}
+        ])
+        orch.intellect_engine.generate = AsyncMock(return_value=(
+            {"type": "message", "content": "Done."},
+            "reflection",
+            "context"
+        ))
+        orch.store.update_spirit_memory_atomic.return_value = ((1.0, "ok", {}, {}, 0.0, []), 1)
+        orch._finalize_draft = AsyncMock(return_value={
+            "verdict": "approve", "stage": "audit", "draft": "Done.", "finalOutput": "Done.",
+            "willDecision": "approve", "ledger": [], "reason": None,
+        })
+
+        await orch.process_prompt(
+            user_prompt="Refactor the auth middleware",
+            user_id="user_123",
+            conversation_id="conv_456",
+            client_owned_tools=[{"name": "bash"}],
+        )
+
+        # CLI agent with execution tools MUST call prompt scope preflight by default!
+        orch.conscience.evaluate_prompt_scope.assert_awaited_once()
+        orch.intellect_engine.generate.assert_awaited_once()
+
 
 if __name__ == "__main__":
     unittest.main()
+
