@@ -1,8 +1,13 @@
 # Phase 0 Hardening — Design Doc / Implementation Plan
 
-**Status:** Draft for review · **Author:** (drafted with Claude Code) · **Date:** 2026-06-03
+**Status:** Draft for review (historical — see note) · **Author:** (drafted with Claude Code) · **Date:** 2026-06-03
 **Scope:** `safi_app/core/faculties/phase_zero.py`, `safi_app/core/threat_intel.py`, `Benchmarks/Scripts/jailbreak_test.py`
 **Non-goals:** Changes to Will/Conscience/Spirit, the redirect UX, or persona definitions (beyond optional per-persona config).
+
+> **Note (v1.5):** This is the pre-hardening design draft. Sections below describe the
+> gate *as it was on 2026-06-03*, not as shipped. The shipped heuristic deviates from
+> Phase E (see the note there); `docs/MATHEMATICAL_SPECIFICATION.md` § Phase Zero is
+> the authoritative formulation.
 
 ---
 
@@ -186,6 +191,11 @@ single words ("jailbreak", "god mode", "decision tree", governance-probing terms
 ---
 
 ### Phase E — Heuristic hardening
+> **Status (v1.5): implemented differently.** Shipped as the embedded-instruction *blob*
+> heuristic (unbroken-run + entropy floor + marker proximity) rather than a sliding window —
+> windowed entropy was measured to fire on ordinary technical prose. See
+> `docs/MATHEMATICAL_SPECIFICATION.md` § Phase Zero for the shipped formulation.
+
 - Entropy: **sliding window** across the whole prompt (not just first 300 chars); flag the
   max-entropy window. Make `ENTROPY_THRESHOLD`, window size, and min-length **per-persona
   overridable** via `will_rules` (fall back to module defaults).

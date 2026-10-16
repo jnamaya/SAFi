@@ -115,13 +115,21 @@ $$\text{safe} = \neg \exists\ p \in \text{blacklist} : p \subseteq \text{lower}(
 
 **2b. Sensitive identifier scan** is a regex-plus-checksum match against `pii_validators` (enabled per org); a hit returns `pii_detected`. Runs before the Intellect so the data never reaches the model.
 
-**3. Entropy heuristic** flags a high-entropy payload *anywhere in the prompt* combined with an embedded instruction marker. A minimum length guard prevents false positives on short strings where entropy is statistically unstable. The check requires a marker somewhere in the prompt, then scans the whole prompt with a sliding window of width $\tau_{\text{sample}}$ (stride $\tau_{\text{sample}}/2$), flagging if any window's entropy crosses the threshold:
+**3. Embedded-instruction blob heuristic** flags an encoded payload *attached to* an instruction marker. A windowed entropy scan alone cannot separate a payload from technical prose (300-char windows over this repo's own docs measure 5.28–5.46 bits/char, all above the retired 4.5 threshold, while a hex dump scores 3.97 and slips past it), so the discriminator is word structure: an encoded payload is one long unbroken non-whitespace run, prose is not. The test requires a minimum prompt length, at least one marker anywhere in the prompt, and a qualifying blob whose entropy floor holds *inside the blob*, with a marker within proximity of it:
 
-$$|x_t| \geq \tau_{\text{len}} \quad \wedge \quad \text{has-instr-marker}(x_t) \quad \wedge \quad \exists\, k : H\!\left(x_t[k : k + \tau_{\text{sample}}]\right) \geq \tau_H$$
+hit ⇔ |x_t| ≥ τ_len ∧ has-instr-marker(x_t) ∧ ∃ b ∈ blobs(x_t) : (|b| ≥ β_run ∧ H(b[0 : τ_sample]) ≥ β_H ∧ ∃ m ∈ markers(x_t) : start(b) − δ_prox ≤ m ≤ end(b) + δ_prox)
 
-$$H(s) = -\sum_c P(c) \log_2 P(c)$$
+H(s) = −Σ_c P(c) · log₂ P(c)
 
-Where $\tau_{\text{len}} = 150$ chars (`MIN_LENGTH_FOR_ENTROPY_CHECK`), $\tau_{\text{sample}} = 300$ chars (`ENTROPY_SAMPLE_LENGTH`), and $\tau_H = 4.5$ bits/char (`ENTROPY_THRESHOLD`). Markers come from `EMBEDDED_INSTRUCTION_MARKERS`. Windows shorter than $\tau_{\text{len}}$ (the tail of the prompt) are not scored.
+Where blobs(x_t) are the maximal runs of non-whitespace characters in x_t; markers(x_t) are the start offsets in lower(x_t) of every entry in `EMBEDDED_INSTRUCTION_MARKERS`; start(b)/end(b) are the blob's character offsets (end exclusive); and:
+
+- τ_len = 150 chars (`MIN_LENGTH_FOR_ENTROPY_CHECK`) — short prompts are exempt; entropy over a few characters says nothing
+- β_run = 200 chars (`BLOB_MIN_RUN`) — measured: base64 of 400 random bytes is one 536-char run and a hex dump 600, while the longest unbroken run across this repo's docs is 113 (a URL in README); 200 sits in that gap with room either side
+- τ_sample = 300 chars (`ENTROPY_SAMPLE_LENGTH`) — the blob prefix actually scored
+- β_H = 3.0 bits/char (`BLOB_MIN_ENTROPY`) — a floor that only rejects degenerate repetition inside an already-unbroken run (measured: one repeated character ≈ 0–2, hex 3.97, base64 5.88, random printable 6.27)
+- δ_prox = 600 chars (`BLOB_MARKER_PROXIMITY_CHARS`) — the instruction must be *attached* to the payload; a marker in paragraph three and a blob in paragraph forty is a long document, not this attack
+
+A hit returns gate reason `injection:embedded_instruction`. The legacy sliding-window threshold `ENTROPY_THRESHOLD` (4.5 bits/char) is retired from this gate and survives only in the benchmark's inline fallback scanner.
 
 **If any check fails** → `trigger_agent_redirect(violation_type=gate_reason)` and return.
 **If all pass** → proceed to Stage 0.5 (or Stage 1 if scope preflight is disabled).
@@ -395,7 +403,7 @@ The formal model above is substrate-neutral: each stage is a function with a fix
 
 | Stage | Intelligent component? | Reference realization |
 |---------|------------------------|------------------------|
-| Phase Zero | No | Deterministic: zero model calls (regex signatures, entropy heuristic, PII scan) |
+| Phase Zero | No | Deterministic: zero model calls (regex signatures, embedded-instruction blob heuristic, PII scan) |
 | Conscience (antecedent) | Optional | LLM call (`evaluate_prompt_scope`) if `preflight_prompt_scope=True` |
 | Synderesis | No | Deterministic: weight normalization, policy merge, rubric assembly |
 | Intellect | **Yes** | LLM call (`run_intellect`), provider-routed |

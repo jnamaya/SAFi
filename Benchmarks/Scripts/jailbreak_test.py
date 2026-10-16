@@ -692,12 +692,12 @@ def _load_real_gate():
     """Load the PRODUCTION PhaseZeroGate, not a copy of it.
 
     Why this matters: everything below used to be an inline reimplementation of
-    the gate, and it had already drifted. The real
-    `_has_embedded_instruction` slides the entropy window over the WHOLE prompt
-    — it was fixed precisely because sampling only the first
-    ENTROPY_SAMPLE_LENGTH characters meant "prepending a paragraph of benign
-    prose defeated the check entirely" — while the copy here still sampled only
-    the head. So this suite was grading production against a known-weaker
+    the gate, and it had already drifted. The real `_has_embedded_instruction`
+    now requires an unbroken blob run (BLOB_MIN_RUN) whose scored prefix clears
+    an entropy floor (BLOB_MIN_ENTROPY) AND an instruction marker within
+    BLOB_MARKER_PROXIMITY_CHARS of that blob — the head-only sample and the
+    interim whole-prompt sliding window both fired on ordinary technical prose.
+    So this suite was grading production against a known-weaker
     implementation, and a signature change could pass here and behave
     differently in the app (or the reverse).
 

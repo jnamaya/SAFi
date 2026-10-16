@@ -30,7 +30,7 @@ Every user prompt flows through a strict, synchronous pipeline:
 
 | Phase | Name | What Happens |
 | :--- | :--- | :--- |
-| **Phase 0** | Pre-generation Gate | Before any model runs, the raw prompt is screened by deterministic threat checks, known-injection signatures, per-agent blocked-phrase lists, and an entropy heuristic. Anything flagged is redirected immediately. |
+| **Phase 0** | Pre-generation Gate | Before any model runs, the raw prompt is screened by deterministic threat checks, known-injection signatures, per-agent blocked-phrase lists, and an embedded-instruction heuristic (encoded-blob detection). Anything flagged is redirected immediately. |
 | **Phase 1** | Data Gathering | The Intellect retrieves the context it needs (RAG lookups, memory, and tool/plugin context). This runs as part of the Intellect call rather than as a separate gate. |
 | **Phase 2** | Apprehension | The Intellect drafts a response or proposes a tool call. |
 | **Phase 3** | Structural Will | The Will deterministically checks the draft against structural invariants (required disclaimers, allowed syntax). A failure here is sent straight to a governed redirect, with no rewrite at this pass. |

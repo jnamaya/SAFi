@@ -41,7 +41,7 @@ _FACULTY_DEFAULTS_BY_PROVIDER = {
     # before it, Conscience gives up its stronger auditing tier here.
     "cerebras":  {"intellect": "qwen-3.8-27b",               "conscience": "qwen-3.8-27b",              "light": "qwen-3.8-27b"},
     "deepseek":  {"intellect": "deepseek-v4-flash",         "conscience": "deepseek-v4-pro",           "light": "deepseek-v4-flash"},
-    "zhipu":     {"intellect": "glm-5.2",                   "conscience": "glm-5.2",                   "light": "glm-5.2"},
+    "zhipu":     {"intellect": "glm-5.3",                   "conscience": "glm-5.3",                   "light": "glm-5.3"},
 }
 
 # Groq first preserves the historical default when several keys are present.
@@ -729,10 +729,7 @@ class Config:
         {"id": "deepseek-v4-pro", "label": "DeepSeek Pro"},
 
         # Zhipu (Z.ai) Models
-        {"id": "glm-5.3", "label": "GLM 5.3 (Coding)"},
-        {"id": "glm-5.2", "label": "GLM 5.2 (Coding)"},
-        {"id": "glm-5", "label": "GLM 5 (Coding)"},
-        {"id": "glm-4.7", "label": "GLM 4.7 (Coding)"},
+        {"id": "glm-5.3", "label": "GLM"},
 
         # Cerebras Models (bare ids, unlike Groq's "openai/"-prefixed ones).
         # Cerebras is inference-only and publishes no first-party model, so
