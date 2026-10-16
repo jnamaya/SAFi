@@ -176,7 +176,7 @@ def run_subagent_task(
                     })
                     continue
 
-                t_out = _execute_tool_with_live_status(t_name, t_args, workspace_root)
+                t_out = _execute_tool_with_live_status(t_name, t_args, workspace_root, agent=subagent_type)
                 last_snippet = t_out[:200]
                 ui.print_subagent_step(subagent_type, t_name, t_args, t_out)
                 child_tool_results.append({
@@ -199,6 +199,7 @@ def _execute_tool_with_live_status(
     tool_name: str,
     args: Dict[str, Any],
     workspace_root: Path,
+    agent: Optional[str] = None,
 ) -> str:
     """Execute a local tool while displaying a live animated spinner with elapsed seconds."""
     stop_event = threading.Event()
@@ -217,10 +218,14 @@ def _execute_tool_with_live_status(
             t = threading.Thread(target=_ticker, daemon=True)
             t.start()
             try:
-                return tools.execute_tool(tool_name, args, workspace_root)
+                return tools.execute_tool(tool_name, args, workspace_root, agent=agent)
             finally:
                 stop_event.set()
                 t.join(timeout=0.3)
+                try:
+                    status_indicator.stop()
+                except Exception:
+                    pass
     finally:
         ui.clear_live_status_tail(last_status_markup)
 
@@ -250,7 +255,7 @@ def _handle_tool_proposal(
         tool_results.append({
             "tool_name": tool_name,
             "arguments": args,
-            "result": f"The Will Gatekeeper rejected '{tool_name}' ({will_reason}).",
+            "result": f"Security Gate rejected '{tool_name}' ({will_reason}).",
         })
         return subagents_run_count
 
@@ -339,7 +344,7 @@ def _handle_tool_proposal(
     if not allowed:
         result_str = f"Execution of '{tool_name}' was declined by the developer."
     else:
-        result_str = _execute_tool_with_live_status(tool_name, args, workspace_root)
+        result_str = _execute_tool_with_live_status(tool_name, args, workspace_root, agent=agent)
         is_err = ui._result_is_error(result_str)
         ui.advance_active_todo(tool_name, args, is_success=(not is_err))
         ui.print_tool_result_summary(tool_name, result_str)
@@ -386,9 +391,6 @@ def run_agent_turn(
                 ) as status_indicator:
                     stop_poller = threading.Event()
                     start_time = time.time()
-
-                    seen_steps = set()
-
                     def _poll_progress():
                         nonlocal last_status_markup
                         current_step_text = "Governing turn"
@@ -404,9 +406,6 @@ def run_agent_turn(
                                         progress_codes = [c for c in codes if isinstance(c, str)]
                                     raw_step = progress_data.get("latest_step")
                                     if raw_step and raw_step != current_step_text:
-                                        if current_step_text not in seen_steps and current_step_text != "Governing turn":
-                                            seen_steps.add(current_step_text)
-                                            ui.print_governance_step(current_step_text, time.time() - start_time)
                                         current_step_text = raw_step
                             except Exception:
                                 if stop_poller.is_set():
@@ -458,6 +457,10 @@ def run_agent_turn(
                     finally:
                         stop_poller.set()
                         poller.join(timeout=0.5)
+                        try:
+                            status_indicator.stop()
+                        except Exception:
+                            pass
             except SafiClientError as err:
                 ui.clear_live_status_tail(last_status_markup)
                 ui.print_error(str(err))
@@ -754,7 +757,8 @@ def prompt_switch_agent(
         ui.console.print(f"[bold green]✓ Saved Policy API Key for {target_agent} to {config.CONFIG_FILE}[/]")
 
     client.api_key = agent_key_val
-    new_conv = config.resolve_session_id(str(workspace_root), new_session=True)
+    new_conv = config.resolve_session_id(str(workspace_root), new_session=True, agent=target_agent)
+    config.set_workspace_agent(str(workspace_root), target_agent, new_conv)
     ui.console.print(f"[bold green]✓ Switched active agent to:[/] [bold cyan]{target_agent}[/] ([green]{agent_title}[/])")
     ui.console.print(f"[dim]Started fresh session:[/] [cyan]{new_conv}[/]")
     return target_agent, new_conv
@@ -890,7 +894,7 @@ def prompt_switch_model(
             target_model = req
     else:
         table = Table(
-            title="Available Intellect AI Models",
+            title="Available AI Models",
             box=box.ROUNDED,
             border_style=ui.COLOR_BRAND_600,
         )
@@ -919,7 +923,7 @@ def prompt_switch_model(
             )
 
         ui.console.print(table)
-        ui.console.print(f"[dim]Current Intellect model:[/] [bold white]{resolved_active}[/]")
+        ui.console.print(f"[dim]Current model:[/] [bold white]{resolved_active}[/]")
         ui.console.print("[dim]Enter number, model ID (or custom model name), or press Enter to cancel.[/dim]")
 
         old_completer = readline.get_completer() if readline else None
@@ -933,7 +937,7 @@ def prompt_switch_model(
             readline.set_completer(model_sub_completer)
 
         try:
-            choice = input("\nSelect Intellect model: ").strip()
+            choice = input("\nSelect model: ").strip()
         except (KeyboardInterrupt, EOFError):
             ui.console.print("[dim]Model selection cancelled.[/dim]")
             return current_model
@@ -968,13 +972,13 @@ def prompt_switch_model(
     if is_serving_alias(target_model):
         serving = serving_model_id(models)
         ui.console.print(
-            f"[bold {ui.COLOR_PASS}]✓ Intellect AI now follows the served model:[/] "
+            f"[bold {ui.COLOR_PASS}]✓ AI now follows the served model:[/] "
             f"[bold {ui.COLOR_BRAND_400}]{serving or 'backend policy default'}[/]"
             + (f" [dim](for persona '{current_agent}')[/dim]" if current_agent else "")
         )
         return serving
     ui.console.print(
-        f"[bold {ui.COLOR_PASS}]✓ Switched Intellect AI model to:[/] [bold {ui.COLOR_BRAND_400}]{target_model}[/]"
+        f"[bold {ui.COLOR_PASS}]✓ Switched model to:[/] [bold {ui.COLOR_BRAND_400}]{target_model}[/]"
         + (f" [dim](for persona '{current_agent}')[/dim]" if current_agent else "")
     )
     return target_model
@@ -987,15 +991,15 @@ COMMAND_OPTIONS = [
     ("config", "View Configuration", "Show backend URL, active session, and Policy API keys"),
     ("help", "Help & Docs", "Show command descriptions and syntax"),
     ("exit", "Exit CLI", "Exit SAFi interactive assistant"),
-    ("audit", "Conscience Audit", "View full conscience audit ledger and rationales for the last turn"),
-    ("models", "Intellect Model", "Select the LLM powering the agent's Intellect faculty"),
-    ("compress", "Compress Context", "Compact conversation history and save tokens"),
+    ("audit", "Governance Audit", "View full governance audit ledger and rationales for the last turn"),
+    ("models", "Select Model", "Select the AI model powering the agent"),
+    ("memory", "Working Memory", "View active memory or compact tokens (/memory compress)"),
     ("skills", "Project Skills", "List custom project skills defined in .safi/skills/"),
     ("user", "User Profile", "View or set your display name"),
     ("usage", "Session Usage", "Show session token, cost, and compaction totals"),
     ("last", "Last Tool Output", "Page through the full output of the most recent tool result"),
     ("compact-ui", "Toggle Audit Line", "Hide or show the compact governance audit line on responses"),
-    ("sessions", "Resume Session", "List stored sessions and resume one in this workspace"),
+    ("sessions", "Manage Sessions", "List, name, or resume stored conversation sessions"),
 ]
 
 
@@ -1019,8 +1023,11 @@ def show_config(
     ui.console.print(f"  [dim]Backend URL:[/]     {client.api_url}")
     ui.console.print(f"  [dim]Workspace:[/]       {workspace_root}")
     ui.console.print(f"  [dim]Active Agent:[/]    [bold {ui.COLOR_BRAND_500}]{current_agent}[/]")
-    ui.console.print(f"  [dim]Intellect Model:[/] [bold {ui.COLOR_BRAND_400}]{resolved_model}[/]")
+    ui.console.print(f"  [dim]Model:[/]           [bold {ui.COLOR_BRAND_400}]{resolved_model}[/]")
     ui.console.print(f"  [dim]Active Session:[/]  [dim]{current_conv}[/]")
+    names = config.session_names()
+    if names.get(current_conv):
+        ui.console.print(f"  [dim]Session Name:[/]    [bold white]{names[current_conv]}[/]")
     ui.console.print(f"  [dim]Config File:[/]     {config.CONFIG_FILE}\n")
 
     table = Table(title="Policy API Keys by Persona", box=box.ROUNDED, border_style=ui.COLOR_BRAND_600)
@@ -1046,14 +1053,18 @@ def print_help():
         ("/", "Open interactive command menu"),
         ("/agents", "Interactive agent selector & Policy API key status"),
         ("/agent <name>", "Switch directly to an agent (e.g. /agent fiduciary)"),
-        ("/models", "Select the LLM powering the Intellect faculty"),
-        ("/model <name>", "Switch directly to an Intellect LLM (e.g. /model gpt-4o)"),
-        ("/compress", "Compact conversation history and save tokens (OpenCode style)"),
-        ("/audit", "View detailed conscience audit ledger & rationales for the last turn"),
+        ("/models", "Select the AI model powering the agent"),
+        ("/model <name>", "Switch directly to an AI model (e.g. /model gpt-4o)"),
+        ("/memory", "Show the agent's distilled working memory summary"),
+        ("/memory compress", "Compact conversation history and distill working memory to save tokens"),
+        ("/memory clear", "Clear compacted memory summary and reset agent context"),
+        ("/compress", "Alias for /memory compress (compact conversation history)"),
+        ("/session name <name>", "Assign a friendly name to the current session (or /title <name>)"),
+        ("/sessions [resume <name>]", "List stored sessions or resume one by name/number"),
+        ("/audit", "View detailed governance audit ledger & rationales for the last turn"),
         ("/usage", "Show session token, cost, and compaction totals"),
         ("/last [tool]", "Page through the full output of the last tool result"),
         ("/compact-ui", "Hide or show the compact governance audit line on responses"),
-        ("/sessions", "List stored sessions and resume one in this workspace"),
         ("/skills", "List custom project skills defined in .safi/skills/"),
         ("/new", "Start a fresh conversation session without clearing screen"),
         ("/clear [screen]", "Clear screen & reset session memory (or /clear screen for visual only)"),
@@ -1072,7 +1083,7 @@ def print_help():
     )
 
 
-def prompt_resume_session(current_conv: str, workspace_root: Path) -> str:
+def prompt_resume_session(current_conv: str, workspace_root: Path, target_arg: Optional[str] = None) -> str:
     """List stored conversation sessions and resume a selected one."""
     sessions = config.list_sessions()
     if not sessions:
@@ -1080,17 +1091,42 @@ def prompt_resume_session(current_conv: str, workspace_root: Path) -> str:
         return current_conv
 
     paths = config.session_paths()
+    names = config.session_names()
+    agents = config.session_agents()
     entries = list(sessions.items())
+
+    if target_arg:
+        arg_clean = target_arg.strip().lower()
+        if arg_clean.isdigit() and 1 <= int(arg_clean) <= len(entries):
+            conv_id = entries[int(arg_clean) - 1][1]
+            config.set_workspace_session(str(workspace_root), conv_id)
+            label = f"'{names[conv_id]}' ({conv_id})" if names.get(conv_id) else conv_id
+            ui.console.print(f"[bold {ui.COLOR_PASS}]✓ Resumed session:[/] [dim]{label}[/]")
+            return conv_id
+        for _, conv_id in entries:
+            name = names.get(conv_id, "").lower()
+            if arg_clean == name or conv_id.lower().startswith(arg_clean):
+                config.set_workspace_session(str(workspace_root), conv_id)
+                label = f"'{names[conv_id]}' ({conv_id})" if names.get(conv_id) else conv_id
+                ui.console.print(f"[bold {ui.COLOR_PASS}]✓ Resumed session:[/] [dim]{label}[/]")
+                return conv_id
+        ui.console.print(f"[bold {ui.COLOR_FAIL}]Session not found matching:[/] '{target_arg}'.")
+        return current_conv
+
     rows = []
     for idx, (key, conv_id) in enumerate(entries, 1):
         active = f" [bold {ui.COLOR_BRAND_500}](active)[/]" if conv_id == current_conv else ""
         ws = paths.get(conv_id) or f"…{key}"
-        rows.append([str(idx), conv_id, ws + active])
+        name = names.get(conv_id) or "[dim](unnamed)[/dim]"
+        ag = agents.get(conv_id) or "[dim]default[/dim]"
+        rows.append([str(idx), name, ag, conv_id, ws + active])
 
     ui.render_menu(
         "Stored Sessions",
         [
             {"name": "#", "style": f"bold {ui.COLOR_WARN}", "width": 3, "justify": "right"},
+            {"name": "Session Name", "style": "bold white"},
+            {"name": "Agent", "style": f"bold {ui.COLOR_BRAND_500}"},
             {"name": "Session ID", "style": f"bold {ui.COLOR_BRAND_400}"},
             {"name": "Workspace", "style": "dim"},
         ],
@@ -1098,7 +1134,7 @@ def prompt_resume_session(current_conv: str, workspace_root: Path) -> str:
     )
 
     try:
-        choice = input("\nResume session [#] (or press Enter to cancel): ").strip()
+        choice = input("\nResume session [# or Name] (or press Enter to cancel): ").strip()
     except (KeyboardInterrupt, EOFError):
         return current_conv
 
@@ -1107,8 +1143,18 @@ def prompt_resume_session(current_conv: str, workspace_root: Path) -> str:
     if choice.isdigit() and 1 <= int(choice) <= len(entries):
         conv_id = entries[int(choice) - 1][1]
         config.set_workspace_session(str(workspace_root), conv_id)
-        ui.console.print(f"[bold {ui.COLOR_PASS}]✓ Resumed session:[/] [dim]{conv_id}[/]")
+        label = f"'{names[conv_id]}' ({conv_id})" if names.get(conv_id) else conv_id
+        ui.console.print(f"[bold {ui.COLOR_PASS}]✓ Resumed session:[/] [dim]{label}[/]")
         return conv_id
+
+    choice_lower = choice.lower()
+    for _, conv_id in entries:
+        name = names.get(conv_id, "").lower()
+        if choice_lower == name or conv_id.lower().startswith(choice_lower):
+            config.set_workspace_session(str(workspace_root), conv_id)
+            label = f"'{names[conv_id]}' ({conv_id})" if names.get(conv_id) else conv_id
+            ui.console.print(f"[bold {ui.COLOR_PASS}]✓ Resumed session:[/] [dim]{label}[/]")
+            return conv_id
 
     ui.console.print(f"[bold {ui.COLOR_FAIL}]Invalid selection:[/] '{choice}'.")
     return current_conv
@@ -1179,7 +1225,8 @@ def prompt_command_menu(
         return new_agent, new_conv, new_model, current_user_name, False
 
     elif choice_clean == "new":
-        new_conv = config.resolve_session_id(str(workspace_root), new_session=True)
+        new_conv = config.resolve_session_id(str(workspace_root), new_session=True, agent=current_agent)
+        config.set_workspace_agent(str(workspace_root), current_agent, new_conv)
         try:
             client.clear_agent_memory(new_conv, user_id=user_id, agent=current_agent)
         except Exception:
@@ -1191,7 +1238,8 @@ def prompt_command_menu(
 
     elif choice_clean in ("clear", "reset"):
         os.system("cls" if os.name == "nt" else "clear")
-        new_conv = config.resolve_session_id(str(workspace_root), new_session=True)
+        new_conv = config.resolve_session_id(str(workspace_root), new_session=True, agent=current_agent)
+        config.set_workspace_agent(str(workspace_root), current_agent, new_conv)
         try:
             client.clear_agent_memory(new_conv, user_id=user_id, agent=current_agent)
         except Exception:
@@ -1229,24 +1277,59 @@ def prompt_command_menu(
         )
         return current_agent, current_conv, updated_model, current_user_name, False
 
-    elif choice_clean in ("compress", "summarize", "compact"):
-        with ui.console.status(f"[bold {ui.COLOR_BRAND_400}]● SAFi[/] [dim]Compressing conversation tokens...[/]", spinner="dots"):
-            comp_res = client.compress_conversation(
-                current_conv,
-                user_id=user_id,
-                agent=current_agent,
-                model=current_model,
-                action="compress",
-            )
-        if comp_res.get("ok") and comp_res.get("compressed"):
-            ui.record_compression_telemetry(
-                tokens_before=comp_res.get("tokens_before", 0),
-                tokens_after=comp_res.get("tokens_after", 0),
-                tokens_saved=comp_res.get("tokens_saved", 0),
-                reduction_pct=comp_res.get("reduction_pct", 0.0),
-                intellect_model=current_model,
-            )
-        ui.print_compression_result(comp_res)
+    elif choice_clean in ("memory", "working-memory", "compress", "summarize", "compact"):
+        if choice_clean in ("compress", "summarize", "compact"):
+            sub_c = "compress"
+        else:
+            ui.console.print(f"\n[bold {ui.COLOR_BRAND_400}]● Working Memory & Token Compaction[/]")
+            ui.console.print("  [bold cyan]1[/] View active working memory summary")
+            ui.console.print("  [bold cyan]2[/] Compact conversation history & distill memory (/memory compress)")
+            ui.console.print("  [bold cyan]3[/] Clear working memory summary & reset context (/memory clear)")
+            try:
+                sub_c = input("\nSelect option (1-3, or Enter to view): ").strip().lower()
+            except (KeyboardInterrupt, EOFError):
+                return current_agent, current_conv, current_model, current_user_name, False
+
+        if sub_c in ("2", "compress", "compact"):
+            with ui.console.status(f"[bold {ui.COLOR_BRAND_400}]● SAFi[/] [dim]Compressing conversation tokens...[/]", spinner="dots"):
+                comp_res = client.compress_conversation(
+                    current_conv,
+                    user_id=user_id,
+                    agent=current_agent,
+                    model=current_model,
+                    action="compress",
+                )
+            ui.clear_live_status_tail()
+            if comp_res.get("ok") and comp_res.get("compressed"):
+                ui.record_compression_telemetry(
+                    tokens_before=comp_res.get("tokens_before", 0),
+                    tokens_after=comp_res.get("tokens_after", 0),
+                    tokens_saved=comp_res.get("tokens_saved", 0),
+                    reduction_pct=comp_res.get("reduction_pct", 0.0),
+                    intellect_model=current_model,
+                )
+            ui.print_compression_result(comp_res)
+        elif sub_c in ("3", "clear", "reset"):
+            with ui.console.status(f"[bold {ui.COLOR_BRAND_400}]● SAFi[/] [dim]Clearing memory summary & agent context...[/]", spinner="dots"):
+                comp_res = client.compress_conversation(
+                    current_conv,
+                    user_id=user_id,
+                    agent=current_agent,
+                    model=current_model,
+                    action="clear",
+                    clear_agent_memory=True,
+                )
+            ui.clear_live_status_tail()
+            ui.record_compression_reset()
+            ui.console.print(f"[bold {ui.COLOR_PASS}]✓ Compacted memory summary and agent context memory cleared.[/]")
+        else:
+            with ui.console.status(f"[bold {ui.COLOR_BRAND_400}]● SAFi[/] [dim]Fetching active memory summary...[/]", spinner="dots"):
+                comp_res = client.compress_conversation(current_conv, user_id=user_id, agent=current_agent, model=current_model, action="get")
+            ui.clear_live_status_tail()
+            if comp_res.get("summary"):
+                ui.print_compression_result({"ok": True, "compressed": False, "summary": comp_res["summary"], "message": "Showing active working memory summary."})
+            else:
+                ui.console.print("[dim]ℹ️ No active memory summary exists for this session yet. Run /memory compress to distill one, or continue chatting.[/dim]")
         return current_agent, current_conv, current_model, current_user_name, False
 
     elif choice_clean in ("skills", "skill"):
@@ -1297,7 +1380,8 @@ def prompt_command_menu(
         ui.console.print(f"[bold {ui.COLOR_PASS}]✓ Governance audit line is now {state}.[/]")
         return current_agent, current_conv, current_model, current_user_name, False
 
-    elif choice_clean in ("sessions", "resume"):
+
+    elif choice_clean in ("sessions", "session", "resume"):
         new_conv = prompt_resume_session(current_conv, workspace_root)
         return current_agent, new_conv, current_model, current_user_name, False
 
@@ -1319,6 +1403,7 @@ SLASH_COMMANDS = [
     "/agent",
     "/models",
     "/model",
+    "/memory",
     "/compress",
     "/skills",
     "/audit",
@@ -1380,7 +1465,7 @@ def _compute_completions(
             sub = [m for m in model_ids if text.lower() in m.lower() and m not in exact]
             return exact + sub
 
-        if cmd in ("/compress", "/compact", "/summarize"):
+        if cmd in ("/memory", "/compress", "/compact", "/summarize"):
             subcommands = ["compress", "show", "clear", "status", "view"]
             return [sc for sc in subcommands if sc.startswith(text)]
 
@@ -1478,7 +1563,7 @@ def interactive_repl(
         intellect_model=current_model,
     )
     ui.console.print(
-        f"[dim]Commands: [bold {ui.COLOR_BRAND_400}]/[/] menu  •  [bold {ui.COLOR_BRAND_400}]/compress[/] compact tokens  •  [bold {ui.COLOR_BRAND_400}]/models[/] intellect model  •  [bold {ui.COLOR_BRAND_400}]/agents[/] switch agent  •  [bold {ui.COLOR_BRAND_400}]/new[/] fresh session[/dim]"
+        f"[dim]Commands: [bold {ui.COLOR_BRAND_400}]/[/] menu  •  [bold {ui.COLOR_BRAND_400}]/memory[/] memory & compact  •  [bold {ui.COLOR_BRAND_400}]/models[/] switch model  •  [bold {ui.COLOR_BRAND_400}]/agents[/] switch agent  •  [bold {ui.COLOR_BRAND_400}]/new[/] fresh session[/dim]"
     )
     rich_input = prompt_input.using_prompt_toolkit()
     if rich_input:
@@ -1541,7 +1626,8 @@ def interactive_repl(
                 continue
 
             if line.lower() == "/new":
-                current_conv = config.resolve_session_id(str(workspace_root), new_session=True)
+                current_conv = config.resolve_session_id(str(workspace_root), new_session=True, agent=current_agent)
+                config.set_workspace_agent(str(workspace_root), current_agent, current_conv)
                 try:
                     client.clear_agent_memory(current_conv, user_id=user_id, agent=current_agent)
                 except Exception:
@@ -1568,7 +1654,8 @@ def interactive_repl(
                     continue
 
                 os.system("cls" if os.name == "nt" else "clear")
-                current_conv = config.resolve_session_id(str(workspace_root), new_session=True)
+                current_conv = config.resolve_session_id(str(workspace_root), new_session=True, agent=current_agent)
+                config.set_workspace_agent(str(workspace_root), current_agent, current_conv)
                 try:
                     client.clear_agent_memory(current_conv, user_id=user_id, agent=current_agent)
                 except Exception:
@@ -1598,24 +1685,37 @@ def interactive_repl(
                     ui.console.print(f"[{ui.COLOR_WARN}]No recent turn audit available yet. Run a prompt first.[/]")
                 continue
 
-            if line.lower().startswith(("/compress", "/summarize", "/compact")):
+            if line.lower().startswith(("/memory", "/working-memory", "/compress", "/summarize", "/compact")):
                 parts = line.split(maxsplit=1)
-                sub_arg = parts[1].strip().lower() if len(parts) > 1 else "compress"
+                cmd_head = parts[0].lower()
+                sub_arg = parts[1].strip().lower() if len(parts) > 1 else ""
+
+                # /compress with no args defaults to "compress"
+                # /memory with no args defaults to "show"
+                if not sub_arg:
+                    if cmd_head in ("/compress", "/compact", "/summarize"):
+                        sub_arg = "compress"
+                    else:
+                        sub_arg = "show"
+
                 if sub_arg in ("show", "view", "get", "status"):
                     with ui.console.status(f"[bold {ui.COLOR_BRAND_400}]● SAFi[/] [dim]Fetching active memory summary...[/]", spinner="dots"):
                         comp_res = client.compress_conversation(current_conv, user_id=user_id, agent=current_agent, model=current_model, action="get")
+                    ui.clear_live_status_tail()
                     if comp_res.get("summary"):
                         ui.print_compression_result({"ok": True, "compressed": False, "summary": comp_res["summary"], "message": "Showing active memory summary."})
                     else:
-                        ui.console.print("[dim]ℹ️ No active memory summary exists for this session yet. Run /compress to generate one.[/dim]")
+                        ui.console.print("[dim]ℹ️ No active memory summary exists for this session yet. Run /memory compress to distill one, or continue chatting.[/dim]")
                 elif sub_arg in ("clear", "reset"):
                     with ui.console.status(f"[bold {ui.COLOR_BRAND_400}]● SAFi[/] [dim]Clearing memory summary & agent context...[/]", spinner="dots"):
                         comp_res = client.compress_conversation(current_conv, user_id=user_id, agent=current_agent, model=current_model, action="clear", clear_agent_memory=True)
+                    ui.clear_live_status_tail()
                     ui.record_compression_reset()
                     ui.console.print(f"[bold {ui.COLOR_PASS}]✓ Compacted memory summary and agent context memory cleared.[/]")
-                else:
+                elif sub_arg in ("compress", "compact", "summarize"):
                     with ui.console.status(f"[bold {ui.COLOR_BRAND_400}]● SAFi[/] [dim]Compressing conversation tokens...[/]", spinner="dots"):
                         comp_res = client.compress_conversation(current_conv, user_id=user_id, agent=current_agent, model=current_model, action="compress")
+                    ui.clear_live_status_tail()
                     if comp_res.get("ok") and comp_res.get("compressed"):
                         ui.record_compression_telemetry(
                             tokens_before=comp_res.get("tokens_before", 0),
@@ -1625,6 +1725,8 @@ def interactive_repl(
                             intellect_model=current_model,
                         )
                     ui.print_compression_result(comp_res)
+                else:
+                    ui.console.print(f"[bold {ui.COLOR_WARN}]Unknown memory subcommand:[/] '{sub_arg}'. Usage: /memory [compress | show | clear]")
                 continue
 
             if line.lower().strip() in ("/agents", "/agent", "/switch", "/list-agents"):
@@ -1698,9 +1800,60 @@ def interactive_repl(
                 ui.console.print(f"[bold {ui.COLOR_PASS}]✓ Governance audit line is now {state}.[/]")
                 continue
 
-            if line.lower() in ("/sessions", "/resume"):
-                current_conv = prompt_resume_session(current_conv, workspace_root)
+            if line.lower().startswith(("/session", "/sessions", "/resume")):
+                parts = line.split(maxsplit=2)
+                sub = parts[1].strip().lower() if len(parts) > 1 else ""
+                if sub in ("name", "rename", "title", "set-name"):
+                    if len(parts) > 2 and parts[2].strip():
+                        s_name = parts[2].strip()
+                        config.set_session_name(current_conv, s_name)
+                        ui.console.print(f"[bold {ui.COLOR_PASS}]✓ Session named:[/] [bold white]{s_name}[/] [dim]({current_conv})[/]")
+                    else:
+                        current_names = config.session_names()
+                        curr_name = current_names.get(current_conv)
+                        if curr_name:
+                            ui.console.print(f"[dim]Current session name:[/] [bold white]{curr_name}[/]")
+                        ui.console.print("[dim]Usage: /session name <friendly_name>[/dim]")
+                    continue
+                elif sub in ("resume", "switch"):
+                    target_name = parts[2].strip() if len(parts) > 2 else None
+                    new_conv = prompt_resume_session(current_conv, workspace_root, target_arg=target_name)
+                    if new_conv != current_conv:
+                        current_conv = new_conv
+                        resumed_agent = config.session_agent(current_conv)
+                        if resumed_agent and resumed_agent != current_agent:
+                            current_agent = resumed_agent
+                            current_model = resolve_model_preference(client, current_agent)
+                            client.api_key = config.resolve_agent_api_key(current_agent) or client.api_key
+                            config.set_workspace_agent(str(workspace_root), current_agent, current_conv)
+                            agent_title = AVAILABLE_AGENTS.get(current_agent, {}).get("title", current_agent)
+                            ui.console.print(f"[bold {ui.COLOR_PASS}]✓ Switched active agent to:[/] [bold cyan]{current_agent}[/] ([green]{agent_title}[/])")
+                    continue
+                else:
+                    target_arg = parts[1].strip() if len(parts) > 1 and sub not in ("list", "show") else None
+                    new_conv = prompt_resume_session(current_conv, workspace_root, target_arg=target_arg)
+                    if new_conv != current_conv:
+                        current_conv = new_conv
+                        resumed_agent = config.session_agent(current_conv)
+                        if resumed_agent and resumed_agent != current_agent:
+                            current_agent = resumed_agent
+                            current_model = resolve_model_preference(client, current_agent)
+                            client.api_key = config.resolve_agent_api_key(current_agent) or client.api_key
+                            config.set_workspace_agent(str(workspace_root), current_agent, current_conv)
+                            agent_title = AVAILABLE_AGENTS.get(current_agent, {}).get("title", current_agent)
+                            ui.console.print(f"[bold {ui.COLOR_PASS}]✓ Switched active agent to:[/] [bold cyan]{current_agent}[/] ([green]{agent_title}[/])")
+                    continue
+
+            if line.lower().startswith(("/name-session", "/title")):
+                parts = line.split(maxsplit=1)
+                if len(parts) > 1 and parts[1].strip():
+                    s_name = parts[1].strip()
+                    config.set_session_name(current_conv, s_name)
+                    ui.console.print(f"[bold {ui.COLOR_PASS}]✓ Session named:[/] [bold white]{s_name}[/] [dim]({current_conv})[/]")
+                else:
+                    ui.console.print("[dim]Usage: /title <session_name>[/dim]")
                 continue
+
 
             if line.lower() in ("/help", "/?", "help", "?"):
                 print_help()
@@ -1783,6 +1936,10 @@ def interactive_repl(
             )
 
     finally:
+        try:
+            config.set_workspace_agent(str(workspace_root), current_agent, current_conv)
+        except Exception:
+            pass
         if readline and not rich_input:
             try:
                 readline.write_history_file(hist_file)
@@ -1798,11 +1955,11 @@ def main():
     parser.add_argument("prompt", nargs="?", help="Task prompt. If omitted, starts interactive REPL mode.")
     parser.add_argument("-k", "--api-key", help="SAFi Policy API Key (defaults to SAFI_API_KEY env or config).")
     parser.add_argument("-u", "--api-url", help="SAFi backend URL (default: http://localhost:5000).")
-    parser.add_argument("-a", "--agent", default="software_engineer", help="Agent persona (default: software_engineer).")
+    parser.add_argument("-a", "--agent", default=None, help="Agent persona (default: last used in workspace, or software_engineer).")
     parser.add_argument(
         "-m",
         "--model",
-        help="LLM model powering the Intellect faculty (e.g. claude-3-5-sonnet, claude-haiku-5-5, gpt-4o, gemini-3.5-flash-lite). Use '@serving' to always follow the model the appliance is serving.",
+        help="AI model powering the agent (e.g. claude-3-5-sonnet, gpt-4o, gemini-2.5-flash). Use '@serving' to always follow the model the appliance is serving.",
     )
 
     parser.add_argument("-w", "--workspace", default=".", help="Workspace path (default: current directory).")
@@ -1832,7 +1989,7 @@ def main():
     parser.add_argument("--set-url", help="Save the given backend URL to ~/.config/safi/config.json and exit.")
     parser.add_argument(
         "--set-model",
-        help="Save default Intellect AI model to ~/.config/safi/config.json and exit. Pass '@serving' to always follow the model the appliance is serving.",
+        help="Save default AI model to ~/.config/safi/config.json and exit. Pass '@serving' to always follow the model the appliance is serving.",
     )
     parser.add_argument("--user-name", help="Display name of the user for the agent to address.")
     parser.add_argument("--set-user", help="Save the default user display name to ~/.config/safi/config.json and exit.")
@@ -1845,17 +2002,18 @@ def main():
         sys.exit(0)
 
     if args.set_model:
-        target_save_agent = args.agent if args.agent != "software_engineer" else None
+        target_save_agent = args.agent if args.agent and args.agent != "software_engineer" else None
         config.save_intellect_model(args.set_model.strip(), target_save_agent)
         agent_note = f" for '{args.agent}'" if target_save_agent else " globally"
         ui.console.print(
-            f"[bold green]✓ Saved default Intellect AI model '{args.set_model.strip()}'{agent_note} to {config.CONFIG_FILE}[/]"
+            f"[bold green]✓ Saved default AI model '{args.set_model.strip()}'{agent_note} to {config.CONFIG_FILE}[/]"
         )
         sys.exit(0)
 
     if args.set_key:
-        config.save_agent_api_key(args.agent, args.set_key.strip())
-        ui.console.print(f"[bold green]✓ Saved Policy API key for '{args.agent}' to {config.CONFIG_FILE}[/]")
+        target_key_agent = args.agent or "software_engineer"
+        config.save_agent_api_key(target_key_agent, args.set_key.strip())
+        ui.console.print(f"[bold green]✓ Saved Policy API key for '{target_key_agent}' to {config.CONFIG_FILE}[/]")
         sys.exit(0)
 
     if args.set_url:
@@ -1867,8 +2025,10 @@ def main():
         ui.console.print(f"[dim]Backend {new_url}: discovered {len(discovered)} available agent persona(s).[/dim]")
         sys.exit(0)
 
+    workspace_root = Path(args.workspace).resolve()
+    target_agent = args.agent or config.get_workspace_agent(str(workspace_root)) or "software_engineer"
+
     api_url = config.resolve_api_url(args.api_url)
-    target_agent = args.agent
     api_key = config.resolve_agent_api_key(target_agent, args.api_key)
     user_name = config.resolve_user_name(args.user_name)
 
@@ -1900,8 +2060,8 @@ def main():
 
     intellect_model = resolve_model_preference(client, target_agent, args.model)
 
-    workspace_root = Path(args.workspace).resolve()
-    conv_id = config.resolve_session_id(str(workspace_root), new_session=args.new)
+    conv_id = config.resolve_session_id(str(workspace_root), new_session=args.new, agent=target_agent)
+    config.set_workspace_agent(str(workspace_root), target_agent, conv_id)
     user_id = config.resolve_user_id()
     if args.new:
         try:
@@ -1911,14 +2071,14 @@ def main():
     auto_approve = not args.require_approval
 
     if args.prompt:
-        ui.print_banner(str(workspace_root), args.agent, api_url, user_name=user_name, intellect_model=intellect_model)
+        ui.print_banner(str(workspace_root), target_agent, api_url, user_name=user_name, intellect_model=intellect_model)
         run_agent_turn(
             client=client,
             prompt=args.prompt,
             workspace_root=workspace_root,
             conversation_id=conv_id,
             user_id=user_id,
-            agent=args.agent,
+            agent=target_agent,
             user_name=user_name,
             model=intellect_model,
             auto_approve=auto_approve,
@@ -1930,7 +2090,7 @@ def main():
             workspace_root=workspace_root,
             conversation_id=conv_id,
             user_id=user_id,
-            agent=args.agent,
+            agent=target_agent,
             user_name=user_name,
             model=intellect_model,
             auto_approve=auto_approve,

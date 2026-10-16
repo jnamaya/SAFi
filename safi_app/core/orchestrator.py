@@ -1308,7 +1308,11 @@ class SAFi:
         # verbatim history (the common first-loop case) never recorded it — the live
         # progress bar then sat on "analyzing" alone for the whole wait.
         if client_owned:
-            record_harness_progress(self.store, message_id, "checking_request")
+            record_harness_progress(
+                self.store,
+                message_id,
+                "analyzing" if client_tool_results else "checking_request",
+            )
         
         # Read-only snapshot for the coaching feedback below. The authoritative
         # EMA commit at the end of the turn re-reads mu under a row lock
@@ -1387,6 +1391,71 @@ class SAFi:
                 agent_context=agent_context_for_prompt,
             )
         self.log.info(f"[Governance | Phase 0 | Injection Gate] PASS — {gate_reason}")
+
+        # --- PHASE 1: Conscience Prompt Scope Preflight ---
+        # Verifies that the initial user prompt falls within the agent's authorized scope
+        # BEFORE any planning, tool loop, or operative execution begins.
+        # Chatbots do not need preflight because their drafts are held safely in memory and audited at Phase 4.
+        # Agents with tool execution capabilities DO need preflight to prevent un-audited state mutation (bash/edit/write).
+        agent_tools = set(
+            (self.profile or {}).get("allowed_tools")
+            or (self.profile or {}).get("tools")
+            or []
+        )
+        mutating_tools = {"bash", "write", "edit", "patch", "delete", "agentic_coding", "coding_harness"}
+        has_execution_tools = bool(agent_tools & mutating_tools) or client_owned or bool((self.profile or {}).get("track_work_context"))
+
+        policy_preflight = _will_rules.get("preflight_prompt_scope") if isinstance(_will_rules, dict) else None
+        if policy_preflight is not None:
+            preflight_scope_trigger = bool(policy_preflight) and bool((self.profile or {}).get("scope_statement"))
+        else:
+            preflight_scope_trigger = (
+                has_execution_tools
+                and (os.environ.get("SAFI_PREFLIGHT_PROMPT_SCOPE", "0").lower() in ("1", "true", "yes"))
+                and bool((self.profile or {}).get("scope_statement"))
+            )
+        is_continuation_turn = bool(client_owned and client_tool_results)
+        if preflight_scope_trigger and not is_continuation_turn:
+            if client_owned:
+                record_harness_progress(self.store, message_id, "checking_request")
+            self.store.update_message_reasoning(
+                message_id,
+                "Verifying request scope with Conscience...",
+                phase="gather" if client_owned else "analyzing",
+            )
+            try:
+                scope_ledger = await self.conscience.evaluate_prompt_scope(
+                    user_prompt=user_prompt,
+                    agent_title=str((self.profile or {}).get("title") or (self.profile or {}).get("name") or self.active_profile_name),
+                    scope_statement=str((self.profile or {}).get("scope_statement") or "").strip(),
+                    recent_history=recent_turns_text if prior_turns else None,
+                )
+            except Exception as exc:
+                self.log.warning(f"Antecedent prompt scope preflight audit failed: {exc}")
+                scope_ledger = []
+
+            if scope_ledger:
+                for entry in scope_ledger:
+                    try:
+                        score = float(entry.get("score", 0))
+                    except (TypeError, ValueError):
+                        score = 0.0
+                    if score < 0.0:
+                        scope_reason = entry.get("reason", "Request is outside the agent's operational scope.")
+                        self.log.warning(f"[Governance | Phase 1 | Scope Preflight] BLOCKED — {scope_reason}")
+                        return await self.trigger_agent_redirect(
+                            original_prompt=user_prompt,
+                            violation_type="scope_violation",
+                            conversation_id=conversation_id,
+                            message_id=message_id,
+                            new_title=new_title,
+                            user_id=user_id,
+                            org_id=org_id,
+                            failing_ledger=scope_ledger,
+                            will_stage="phase_one_scope",
+                            agent_context=agent_context_for_prompt,
+                        )
+            self.log.info(f"[Governance | Phase 1 | Scope Preflight] PASS")
 
         # --- CANCELLATION CHECK: before the expensive Intellect call ---
         if self._is_cancelled(message_id):

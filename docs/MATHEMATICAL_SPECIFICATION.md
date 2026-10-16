@@ -1,7 +1,7 @@
 # SAFi Mathematical Specification
 
-> **Version:** 1.9.3  
-> **Last Updated:** 2026-09-05  
+> **Version:** 1.10.0
+> **Last Updated:** 2026-10-15
 > **Status:** Aligned with code implementation
 
 This document defines the formal mathematical foundation of SAFi's five-stage architecture.
@@ -21,6 +21,10 @@ This document defines the formal mathematical foundation of SAFi's five-stage ar
 |--------|-------------|
 | $t$ | Interaction index. Indexes the agent's Spirit-memory sequence, not the conversation. `spirit_memory` is keyed on `profile_name` alone, so built-in agents share $t$ and $\mu_t$ across every organization using that agent. Custom agents are namespaced by org prefix. Governance records carry `t_sequence`. |
 | $x_t$ | Input context (prompt + metadata) |
+| $\text{scope}$ | Compiled scope boundaries from Synderesis, defining the agent's appointed office |
+| $C_{\text{scope}}$ | Antecedent Conscience prompt-scope evaluator (*conscientia antecedens*) |
+| $s_{\text{scope}} \in [-1.0, 1.0]$ | Continuous scope alignment score for prompt $x_t$ |
+| $c_{\text{scope}} \in [0, 1]$ | Scope confidence score |
 | $V = \{(v_i, w_i)\}$ | Value set with weights, $\sum w_i = 1$ |
 | $R$ | Rubric set compiled by Synderesis, one scoring guide per value. Given to the Conscience, withheld from the Intellect. |
 | $P$ | Persona given to the Intellect: worldview and style. Carries no value, weight, rubric or score. |
@@ -40,38 +44,38 @@ This document defines the formal mathematical foundation of SAFi's five-stage ar
 ## Timing Model
 
 ```
-┌────────────────────────────────────────────────────────────────────────────────┐
-│  SYNCHRONOUS (User Waits for All of This)                                      │
-│                                                                                │
-│ ┌──────────┐ ┌──────────┐ ┌────────┐ ┌───────────┐ ┌────────┐ ┌────────┐    │
-│ │Phase Zero│─▶│Intellect │─▶│Will P1 │─▶│Conscience │─▶│Will P2 │─▶│Spirit  │ │
-│ └──────────┘ └──────────┘ │structur│ └───────────┘ │hard-   │ └────────┘    │
-│      │            (P2)    │-al     │      (P4)     │gate    │      │  (P5)   │
-│      │                    └────────┘               │ (P4.5) │ ┌────────┐    │
-│      │                        │                    └────────┘ │Will P3 │    │
-│ [unsafe]                 [violation]                   │      │alignmnt│    │
-│      │                        ▼                    [violation]└────────┘    │
-│      │                  redirect (no              │     │          │        │
-│      │                   reflexion)          redirect    │   [violation:    │
-│      │                                                   │  low_align /     │
-│      │                                                   │  ethical]        │
-│      │                                                   │        ▼         │
-│      │                                                   │  ┌──────────┐    │
-│      │                                                   │  │Reflexion │    │
-│      │                                                   │  │(regen →  │    │
-│      │                                                   │  │ re-audit)│    │
-│      │                                                   │  └──────────┘    │
-│      │                                                   │   Retry once     │
-│      │                                                   │        │         │
-│      │                                                   │  still violation?│
-│      │                                                   │  ├ low_align →   │
-│      │                                                   │  │  commit best  │
-│      │                                                   │  └ ethical →     │
-│      ▼                                                   ▼     redirect      │
-│  redirect ◀────────────────────────────────────────────┘        │         │
-│                                                                   ▼         │
-│                                                             Return to User   │
-└────────────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│  SYNCHRONOUS (User Waits for All of This)                                                              │
+│                                                                                                        │
+│ ┌──────────┐ ┌───────────┐ ┌──────────┐ ┌────────┐ ┌───────────┐ ┌────────┐ ┌────────┐                 │
+│ │Phase Zero│─▶ Conscience│─▶│Intellect │─▶│Will P1 │─▶│Conscience │─▶│Will P2 │─▶│Spirit  │                 │
+│ └──────────┘ │Scope Pre- │ └──────────┘ │structur│ └───────────┘ │hard-   │ └────────┘                 │
+│      │       │flight (P1)│      (P2)    │-al     │  Draft Audit │gate    │      │  (P5)                │
+│      │       └───────────┘              └────────┘      (P4)     │ (P4.5) │ ┌────────┐                 │
+│      │             │                        │                    └────────┘ │Will P3 │                 │
+│  [unsafe]   [out_of_scope]             [violation]                   │      │alignmnt│                 │
+│      │             │                        ▼                    [violation]└────────┘                 │
+│      │             │                  redirect (no              │     │          │                     │
+│      │             │                   reflexion)          redirect    │   [violation:                 │
+│      │             │                                                   │  low_align /                  │
+│      │             │                                                   │  ethical]                     │
+│      │             │                                                   │        ▼                      │
+│      │             │                                                   │  ┌──────────┐                 │
+│      │             │                                                   │  │Reflexion │                 │
+│      │             │                                                   │  │(regen →  │                 │
+│      │             │                                                   │  │ re-audit)│                 │
+│      │             │                                                   │  └──────────┘                 │
+│      │             │                                                   │   Retry once                  │
+│      │             │                                                   │        │                      │
+│      │             │                                                   │  still violation?             │
+│      │             │                                                   │  ├ low_align →                │
+│      │             │                                                   │  │  commit best               │
+│      │             │                                                   │  └ ethical →                  │
+│      ▼             ▼                                                   ▼     redirect                   │
+│  redirect ◀──────────────────────────────────────────────────────────┘        │                      │
+│                                                                               ▼                      │
+│                                                                         Return to User                │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────┘
                          │
                          ▼ (ThreadPoolExecutor, fire and forget)
 ┌────────────────────────────────────────────────────────────────────────────────┐
@@ -87,6 +91,7 @@ All gates above run synchronously. Summarization and profile extraction run asyn
 | Failure | Exit |
 |---|---|
 | Phase Zero: any check | Agent redirect. Intellect never called. |
+| Phase 1: scope preflight (`preflight_prompt_scope`) | Agent redirect (`phase_one_scope`). Intellect never called. |
 | Pass 1: unrepairable structural failure | System failure notice. No retry. |
 | Pass 1: audit unavailable (fail-closed) | System failure notice. No retry. |
 | Pass 2: scope/grounding reason | Agent redirect. No retry. |
@@ -118,10 +123,40 @@ $$H(s) = -\sum_c P(c) \log_2 P(c)$$
 
 Where $\tau_{\text{len}} = 150$ chars (`MIN_LENGTH_FOR_ENTROPY_CHECK`), $\tau_{\text{sample}} = 300$ chars (`ENTROPY_SAMPLE_LENGTH`), and $\tau_H = 4.5$ bits/char (`ENTROPY_THRESHOLD`). Markers come from `EMBEDDED_INSTRUCTION_MARKERS`. Windows shorter than $\tau_{\text{len}}$ (the tail of the prompt) are not scored.
 
-**If any check fails** → `trigger_agent_redirect(violation_type=gate_reason)` and return.  
-**If all pass** → proceed to Stage 1.
+**If any check fails** → `trigger_agent_redirect(violation_type=gate_reason)` and return.
+**If all pass** → proceed to Stage 0.5 (or Stage 1 if scope preflight is disabled).
 
 **Code Reference:** [`phase_zero.py`](../safi_app/core/faculties/phase_zero.py), [`threat_intel.py`](../safi_app/core/threat_intel.py), [`orchestrator.py#Phase0`](../safi_app/core/orchestrator.py)
+
+---
+
+## Stage 0.5: Antecedent Conscience (Prompt Scope Preflight Gate)
+
+Following the deterministic Phase Zero gate, SAFi optionally invokes the **Conscience** faculty in its classical antecedent office (*conscientia antecedens*, Aquinas *ST* I, q. 79, a. 13) when `preflight_prompt_scope` is enabled in the agent's policy:
+
+$$s_{\text{scope}}, c_{\text{scope}}, \text{reason} = C_{\text{scope}}(x_t, \text{scope}, H_t)$$
+
+Where:
+- $x_t$ is the inbound user prompt context
+- $\text{scope}$ is the compiled agent scope boundary from Synderesis $\Sigma(\text{policy}) \rightarrow (V, R, \text{scope})$
+- $H_t$ is recent conversation history (retaining cross-turn context)
+- $s_{\text{scope}} \in [-1.0, 1.0]$ is the continuous scope alignment score
+- $c_{\text{scope}} \in [0, 1]$ is the confidence score
+
+$$\text{safe}_{\text{scope}} = (s_{\text{scope}} \geq 0.0)$$
+
+**Philosophical and Architectural Rationale:**
+In Thomistic moral psychology (*ST* I, q. 79, a. 13), conscience acts not only *consequently* (judging what was done, *bene vel non bene factum*), but *antecedently* (judging whether an act ought to be entertained, *an sit faciendum*). Furthermore, per Aristotle (*Nicomachean Ethics* III.3) and Aquinas (*ST* I-II, q. 14, a. 2), the rational power does not deliberate (*consilium*) on objectives outside its appointed office (*officium* / *iudicium usurpatum*, *ST* II-II, q. 60, a. 6).
+
+Evaluating prompt scope antecedently ensures:
+1. **No Out-of-Scope Deliberation or Tool Execution:** The Intellect is prevented from constructing plans, generating responses, or invoking tools on objectives outside its authority.
+2. **Separation of Concerns ($P$ vs $V, R, \text{scope}$):** Rubrics $R$ and value weights $w_i$ remain strictly withheld from the Intellect. The Conscience evaluates the prompt purely against the high-level scope boundary.
+3. **Preservation of Spirit Memory ($\mu_t$):** A failed scope preflight terminates at Phase 1 via `trigger_agent_redirect(violation_type="scope_violation", will_stage="phase_one_scope")`. The redirect path bypasses the Spirit EMA update, preventing non-content scope rejections from drifting the agent's long-term moral profile.
+
+**If $\text{safe}_{\text{scope}} = \text{false}$** ($s_{\text{scope}} < 0.0$) → `trigger_agent_redirect(violation_type="scope_violation", will_stage="phase_one_scope")` and return immediately. Intellect is never called.
+**If $\text{safe}_{\text{scope}} = \text{true}$** (or if `preflight_prompt_scope` is disabled) → proceed to Stage 1.
+
+**Code Reference:** [`conscience.py#evaluate_prompt_scope()`](../safi_app/core/faculties/conscience.py), [`orchestrator.py#Phase1`](../safi_app/core/orchestrator.py)
 
 ---
 
@@ -160,7 +195,7 @@ Checks in order (`evaluate_draft_structure`):
 
 **Deterministic repair before violation:** a missing mandatory disclaimer is mechanically repairable. The orchestrator appends it ($a_t \leftarrow a_t \oplus \text{disclaimer}$) and the repaired draft re-runs the **full** audit path. Only structurally unrepairable drafts produce $D^1_t = \text{violation}$.
 
-**If $D^1_t = \text{violation}$** → ship a deterministic **system failure notice** (`_ship_system_failure_notice`): a structural failure is a fault of the system, not a verdict on the user's request, so it is *not* voiced as an agent redirect. There is **no reflexion retry at this pass.** The same routing applies to an audit-availability failure (Conscience unreachable or garbled: fail-closed).  
+**If $D^1_t = \text{violation}$** → ship a deterministic **system failure notice** (`_ship_system_failure_notice`): a structural failure is a fault of the system, not a verdict on the user's request, so it is *not* voiced as an agent redirect. There is **no reflexion retry at this pass.** The same routing applies to an audit-availability failure (Conscience unreachable or garbled: fail-closed).
 **If $D^1_t = \text{approve}$** → proceed to Stage 3 (Conscience).
 
 ### Pass 2: Hard-Gate Check (after Conscience, before Spirit)
@@ -340,16 +375,17 @@ A natural-language coaching note $f_t$ is generated from $S_t$ and $d_t$ to stee
 |---------|-----------|
 | Synderesis (compile-time) | $\Sigma: \text{policy} \rightarrow (V, R, \text{scope})$; normalized value set $V$, rubric set $R$, scope bounds |
 | Phase Zero | $P: x_t \rightarrow (\text{safe} \in \mathbb{B},\ \text{reason})$ |
+| Conscience (antecedent) | $C_{\text{scope}}: (x_t, \text{scope}, H_t) \rightarrow (\text{safe} \in \mathbb{B},\ s_{\text{scope}},\ c_{\text{scope}},\ \text{reason})$ |
 | Intellect | $I: (x_t, P, M_t, f_{t-1}) \rightarrow (a_t, r_t)$. Persona only: $V$ and $R$ are withheld |
 | Will, Pass 1 | $W_1: a_t \rightarrow (D^1_t, E^1_t)$ |
-| Conscience | $C: (a_t, x_t, R) \rightarrow L_t$. Rubrics and value names: the weights are withheld, applied later by Spirit |
+| Conscience (consequent) | $C: (a_t, x_t, R) \rightarrow L_t$. Rubrics and value names: the weights are withheld, applied later by Spirit |
 | Will, Pass 2 | $W_2: (L_t, V) \rightarrow (D^2_t, E^2_t)$ |
 | Will, Tool Gate (agentic) | $`W_{\text{tool}}: (\tau, \pi, T_{\text{allow}}) \rightarrow (D_t, E_t)`$ |
 | Spirit (integrate) | $`\text{integrate}: (L_t, V) \rightarrow (\text{critical\_violation},\ A_t)`$ |
 | Will, Pass 3 | $`W_3: (\text{critical\_violation},\ A_t) \rightarrow (D^3_t, E^3_t)`$ |
 | Spirit (compute) | $\text{compute}: (L_t, V, M_t) \rightarrow (S_t, d_t, \mu_t)$ |
 
-**Faculties vs. stages.** The rows above are pipeline *stages*, not a list of faculties. SAFi has **five faculties** (*Synderesis, Intellect, Will, Conscience, Spirit*), the moral-cognitive core inherited from the SAF framework. Some faculties span several stages here (the Will's three passes; Spirit's `integrate` and `compute`). **Phase Zero is not a faculty**: it is a deterministic input-threat *gate* that exists only because the system runs in an adversarial environment. Its nearest classical analog is the *sensitive* soul's estimative power (*vis aestimativa*), which perceives a thing as threatening before reason engages; that is why it sits outside the five.
+**Faculties vs. stages.** The rows above are pipeline *stages*, not a list of faculties. SAFi has **five faculties** (*Synderesis, Intellect, Will, Conscience, Spirit*), the moral-cognitive core inherited from the SAF framework. Some faculties span several stages here: Conscience acts in two temporal modes (antecedent prompt-scope preflight $C_{\text{scope}}$ and consequent draft-rubric audit $C$); the Will evaluates across three passes; Spirit divides into `integrate` and `compute`. **Phase Zero is not a faculty**: it is a deterministic input-threat *gate* that exists only because the system runs in an adversarial environment. Its nearest classical analog is the *sensitive* soul's estimative power (*vis aestimativa*), which perceives a thing as threatening before reason engages; that is why it sits outside the five.
 
 ---
 
@@ -360,10 +396,11 @@ The formal model above is substrate-neutral: each stage is a function with a fix
 | Stage | Intelligent component? | Reference realization |
 |---------|------------------------|------------------------|
 | Phase Zero | No | Deterministic: zero model calls (regex signatures, entropy heuristic, PII scan) |
+| Conscience (antecedent) | Optional | LLM call (`evaluate_prompt_scope`) if `preflight_prompt_scope=True` |
 | Synderesis | No | Deterministic: weight normalization, policy merge, rubric assembly |
 | Intellect | **Yes** | LLM call (`run_intellect`), provider-routed |
 | Will ($W_1$–$W_3$) | No | Deterministic: zero model calls (rule / threshold enforcement) |
-| Conscience | **Yes** | LLM call (`run_conscience`) scoring each value against its rubric |
+| Conscience (consequent) | **Yes** | LLM call (`run_conscience`) scoring each value against its rubric |
 | Spirit | No | Deterministic: EMA + cosine drift over the score vectors |
 
 Only the **Intellect** and **Conscience** slots invoke an intelligent component; the other stages are pure functions. Any component satisfying the signatures in the Type System table may substitute for an LLM in those two slots: a rules engine, a smaller or different model, or a human reviewer.

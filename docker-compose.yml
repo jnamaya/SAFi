@@ -41,6 +41,7 @@ services:
       # `up --build` — which silently wiped an operator's installed servers and
       # made scripts/safi_mcp.py useless in Docker.
       MCP_SERVERS_JSON: /app/mcp/servers.json
+      SAFI_PREFLIGHT_PROMPT_SCOPE: "${SAFI_PREFLIGHT_PROMPT_SCOPE:-true}"
     depends_on:
       db:
         condition: service_healthy

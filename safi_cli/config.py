@@ -111,6 +111,9 @@ def _workspace_key(workspace_root: str) -> str:
 
 
 SESSIONS_PATH_MAP_KEY = "_paths"
+SESSIONS_NAME_MAP_KEY = "_names"
+SESSIONS_AGENT_MAP_KEY = "_agents"
+SESSIONS_WS_AGENT_MAP_KEY = "_workspace_agents"
 
 
 def _load_sessions() -> Dict[str, Any]:
@@ -136,6 +139,88 @@ def session_paths() -> Dict[str, str]:
     return paths if isinstance(paths, dict) else {}
 
 
+def session_names() -> Dict[str, str]:
+    """Return the conversation-id -> friendly name map."""
+    data = _load_sessions()
+    names = data.get(SESSIONS_NAME_MAP_KEY)
+    return names if isinstance(names, dict) else {}
+
+
+def session_agents() -> Dict[str, str]:
+    """Return the conversation-id -> agent-name map."""
+    data = _load_sessions()
+    agents = data.get(SESSIONS_AGENT_MAP_KEY)
+    return agents if isinstance(agents, dict) else {}
+
+
+def session_agent(conversation_id: str) -> Optional[str]:
+    """Return the agent persona name associated with a conversation ID, if known."""
+    data = _load_sessions()
+    agents = data.get(SESSIONS_AGENT_MAP_KEY)
+    if isinstance(agents, dict):
+        val = agents.get(conversation_id)
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+    return None
+
+
+def get_workspace_agent(workspace_root: str) -> Optional[str]:
+    """Return the last active agent persona used in this workspace, if any."""
+    data = _load_sessions()
+    ws_key = _workspace_key(workspace_root)
+    ws_agents = data.get(SESSIONS_WS_AGENT_MAP_KEY)
+    if isinstance(ws_agents, dict) and ws_key in ws_agents:
+        val = ws_agents[ws_key]
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+
+    active_conv = session_for_workspace(workspace_root)
+    if active_conv:
+        conv_agents = data.get(SESSIONS_AGENT_MAP_KEY)
+        if isinstance(conv_agents, dict) and active_conv in conv_agents:
+            val = conv_agents[active_conv]
+            if isinstance(val, str) and val.strip():
+                return val.strip()
+
+    return None
+
+
+def set_workspace_agent(workspace_root: str, agent: str, conversation_id: Optional[str] = None) -> None:
+    """Record the last active agent persona for a workspace (and optionally its session ID)."""
+    ensure_config_dir()
+    sessions = _load_sessions()
+    ws_key = _workspace_key(workspace_root)
+    clean_agent = agent.strip()
+
+    ws_agents = dict(sessions.get(SESSIONS_WS_AGENT_MAP_KEY) or {})
+    ws_agents[ws_key] = clean_agent
+    sessions[SESSIONS_WS_AGENT_MAP_KEY] = ws_agents
+
+    conv_id = conversation_id or session_for_workspace(workspace_root)
+    if conv_id:
+        conv_agents = dict(sessions.get(SESSIONS_AGENT_MAP_KEY) or {})
+        conv_agents[conv_id] = clean_agent
+        sessions[SESSIONS_AGENT_MAP_KEY] = conv_agents
+
+    try:
+        SESSIONS_FILE.write_text(json.dumps(sessions, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def set_session_name(conversation_id: str, name: str) -> None:
+    """Assign a human-friendly name/title to a session ID."""
+    ensure_config_dir()
+    sessions = _load_sessions()
+    names = dict(sessions.get(SESSIONS_NAME_MAP_KEY) or {})
+    names[conversation_id] = name.strip()
+    sessions[SESSIONS_NAME_MAP_KEY] = names
+    try:
+        SESSIONS_FILE.write_text(json.dumps(sessions, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+
+
 def session_for_workspace(workspace_root: str) -> Optional[str]:
     """Return the conversation id currently bound to a workspace, if any."""
     val = _load_sessions().get(_workspace_key(workspace_root))
@@ -150,13 +235,18 @@ def set_workspace_session(workspace_root: str, conversation_id: str) -> None:
     paths = dict(sessions.get(SESSIONS_PATH_MAP_KEY) or {})
     paths[conversation_id] = str(Path(workspace_root).resolve())
     sessions[SESSIONS_PATH_MAP_KEY] = paths
+    conv_agents = sessions.get(SESSIONS_AGENT_MAP_KEY)
+    if isinstance(conv_agents, dict) and conversation_id in conv_agents:
+        ws_agents = dict(sessions.get(SESSIONS_WS_AGENT_MAP_KEY) or {})
+        ws_agents[_workspace_key(workspace_root)] = conv_agents[conversation_id]
+        sessions[SESSIONS_WS_AGENT_MAP_KEY] = ws_agents
     try:
         SESSIONS_FILE.write_text(json.dumps(sessions, indent=2), encoding="utf-8")
     except OSError:
         pass
 
 
-def resolve_session_id(workspace_root: str, new_session: bool = False) -> str:
+def resolve_session_id(workspace_root: str, new_session: bool = False, agent: Optional[str] = None) -> str:
     ensure_config_dir()
     sessions = _load_sessions()
     ws_key = _workspace_key(workspace_root)
@@ -164,6 +254,14 @@ def resolve_session_id(workspace_root: str, new_session: bool = False) -> str:
     if not new_session:
         existing = sessions.get(ws_key)
         if isinstance(existing, str) and existing:
+            if agent:
+                conv_agents = dict(sessions.get(SESSIONS_AGENT_MAP_KEY) or {})
+                conv_agents[existing] = agent.strip()
+                sessions[SESSIONS_AGENT_MAP_KEY] = conv_agents
+                try:
+                    SESSIONS_FILE.write_text(json.dumps(sessions, indent=2), encoding="utf-8")
+                except OSError:
+                    pass
             return existing
 
     new_id = str(uuid.uuid4())
@@ -171,6 +269,13 @@ def resolve_session_id(workspace_root: str, new_session: bool = False) -> str:
     paths = dict(sessions.get(SESSIONS_PATH_MAP_KEY) or {})
     paths[new_id] = str(Path(workspace_root).resolve())
     sessions[SESSIONS_PATH_MAP_KEY] = paths
+    if agent:
+        conv_agents = dict(sessions.get(SESSIONS_AGENT_MAP_KEY) or {})
+        conv_agents[new_id] = agent.strip()
+        sessions[SESSIONS_AGENT_MAP_KEY] = conv_agents
+        ws_agents = dict(sessions.get(SESSIONS_WS_AGENT_MAP_KEY) or {})
+        ws_agents[ws_key] = agent.strip()
+        sessions[SESSIONS_WS_AGENT_MAP_KEY] = ws_agents
     try:
         SESSIONS_FILE.write_text(json.dumps(sessions, indent=2), encoding="utf-8")
     except OSError:
@@ -213,15 +318,15 @@ def save_user_name(name: str) -> None:
 
 
 def resolve_intellect_model(agent: Optional[str] = None, explicit_model: Optional[str] = None) -> Optional[str]:
-    """Resolve the preferred LLM model powering the Intellect faculty."""
+    """Resolve the preferred LLM model powering the agent."""
     if explicit_model and explicit_model.strip():
         return explicit_model.strip()
 
     if agent:
-        env_agent = os.environ.get(f"SAFI_INTELLECT_MODEL_{agent.upper()}")
+        env_agent = os.environ.get(f"SAFI_MODEL_{agent.upper()}") or os.environ.get(f"SAFI_INTELLECT_MODEL_{agent.upper()}")
         if env_agent and env_agent.strip():
             return env_agent.strip()
-    env_global = os.environ.get("SAFI_INTELLECT_MODEL")
+    env_global = os.environ.get("SAFI_MODEL") or os.environ.get("SAFI_INTELLECT_MODEL")
     if env_global and env_global.strip():
         return env_global.strip()
 
@@ -230,13 +335,15 @@ def resolve_intellect_model(agent: Optional[str] = None, explicit_model: Optiona
         agent_models = cfg.get("agent_models") or {}
         if isinstance(agent_models, dict) and agent in agent_models and agent_models[agent]:
             return str(agent_models[agent]).strip()
+    if cfg.get("model"):
+        return str(cfg.get("model")).strip()
     if cfg.get("intellect_model"):
         return str(cfg.get("intellect_model")).strip()
     return None
 
 
 def save_intellect_model(model: str, agent: Optional[str] = None) -> None:
-    """Save default Intellect AI model preference."""
+    """Save default AI model preference."""
     ensure_config_dir()
     cfg = load_config()
     clean_model = model.strip()
@@ -247,5 +354,11 @@ def save_intellect_model(model: str, agent: Optional[str] = None) -> None:
         agent_models[agent] = clean_model
         cfg["agent_models"] = agent_models
     else:
+        cfg["model"] = clean_model
         cfg["intellect_model"] = clean_model
     save_config(cfg)
+
+
+# Modern developer aliases
+resolve_model = resolve_intellect_model
+save_model = save_intellect_model

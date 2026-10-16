@@ -75,6 +75,60 @@ class TestSafiCliTools(unittest.TestCase):
         self.assertIn("running bash", out)
         self.assertIn("Exit code 0", out)
 
+    def test_bash_tool_credential_isolation_for_software_engineer(self):
+        import shutil
+        if not shutil.which("bwrap"):
+            self.skipTest("bwrap not installed on system")
+        # When running as software_engineer, ~/.ssh should be masked with empty tmpfs
+        out = execute_tool(
+            "bash",
+            {"command": "ls -1 ~/.ssh 2>/dev/null || true"},
+            self.root,
+            agent="software_engineer",
+        )
+        self.assertIn("Exit code 0", out)
+        self.assertNotIn("id_ed25519", out)
+        self.assertNotIn("id_rsa", out)
+
+    def test_bash_tool_strips_secret_env_vars(self):
+        os.environ["ANTHROPIC_API_KEY"] = "sk-ant-test-secret"
+        os.environ["SSH_AUTH_SOCK"] = "/tmp/fake-ssh-sock"
+        try:
+            out = execute_tool(
+                "bash",
+                {"command": "echo ant=$ANTHROPIC_API_KEY ssh=$SSH_AUTH_SOCK"},
+                self.root,
+                agent="software_engineer",
+            )
+            self.assertIn("ant=", out)
+            self.assertNotIn("sk-ant-test-secret", out)
+            self.assertNotIn("/tmp/fake-ssh-sock", out)
+        finally:
+            os.environ.pop("ANTHROPIC_API_KEY", None)
+            os.environ.pop("SSH_AUTH_SOCK", None)
+
+    def test_build_bwrap_command_masks_credentials_for_non_sysadmin(self):
+        from safi_cli.tools import _build_bwrap_command
+        import shutil
+
+        if not shutil.which("bwrap"):
+            self.skipTest("bwrap not installed on system")
+
+        home = Path.home().resolve()
+        # For software_engineer
+        cmd_se = _build_bwrap_command("ls", self.root, agent="software_engineer")
+        self.assertIsNotNone(cmd_se)
+        if (home / ".ssh").is_dir():
+            self.assertIn(str(home / ".ssh"), cmd_se)
+            idx = cmd_se.index(str(home / ".ssh"))
+            self.assertEqual(cmd_se[idx - 1], "--tmpfs")
+
+        # For sysadmin
+        cmd_sys = _build_bwrap_command("ls", self.root, agent="sysadmin")
+        self.assertIsNotNone(cmd_sys)
+        if (home / ".ssh").is_dir():
+            self.assertNotIn(str(home / ".ssh"), cmd_sys)
+
 
 class TestSafiCliConfig(unittest.TestCase):
     def test_resolve_api_url_default(self):
@@ -1151,7 +1205,9 @@ class TestSafiSubagentDelegation(unittest.TestCase):
         self.assertTrue(any("claude" in m for m in model_matches))
         self.assertIn("claude-haiku-5-5", model_matches)
 
-        # 4. Compress subcommands (e.g. /compress sh)
+        # 4. Memory and Compress subcommands (e.g. /memory comp, /compress sh)
+        mem_matches = _compute_completions("/memory comp", "comp")
+        self.assertEqual(mem_matches, ["compress"])
         comp_matches = _compute_completions("/compress sh", "sh")
         self.assertEqual(comp_matches, ["show"])
 
@@ -1633,6 +1689,110 @@ class TestSafiCliMemoryClearCommands(unittest.TestCase):
             (p / "demo.txt").write_text("hello live status")
             out = _execute_tool_with_live_status("read", {"path": "demo.txt"}, p)
             self.assertIn("hello live status", out)
+
+    def test_session_naming_and_named_resume(self):
+        from safi_cli import config
+        from safi_cli.main import prompt_resume_session
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cfg_dir = Path(tmpdir) / ".config" / "safi"
+            cfg_dir.mkdir(parents=True)
+            with patch("safi_cli.config.CONFIG_DIR", cfg_dir), \
+                 patch("safi_cli.config.SESSIONS_FILE", cfg_dir / "sessions.json"):
+
+                # Set workspace sessions
+                config.set_workspace_session("/repo/one", "conv-alpha")
+                config.set_workspace_session("/repo/two", "conv-beta")
+                config.set_workspace_session("/repo/three", "conv-gamma")
+
+                # Name session
+                config.set_session_name("conv-alpha", "Website Redesign")
+                names = config.session_names()
+                self.assertEqual(names.get("conv-alpha"), "Website Redesign")
+
+                # Test resuming by name via target_arg
+                resumed = prompt_resume_session("conv-beta", Path("/repo/three"), target_arg="Website Redesign")
+                self.assertEqual(resumed, "conv-alpha")
+
+                # Test resuming by ID prefix
+                resumed_id = prompt_resume_session("conv-alpha", Path("/repo/three"), target_arg="conv-beta")
+                self.assertEqual(resumed_id, "conv-beta")
+
+                # Test unmatched target returns current_conv
+                unmatched = prompt_resume_session("conv-alpha", Path("/repo/three"), target_arg="nonexistent-target")
+                self.assertEqual(unmatched, "conv-alpha")
+
+
+class TestWorkspaceAgentPersistence(unittest.TestCase):
+    """Test that a workspace remembers the last active agent and restores it when returning."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.cfg_dir = Path(self.temp_dir.name) / ".config" / "safi"
+        self.cfg_dir.mkdir(parents=True)
+        self.sessions_file = self.cfg_dir / "sessions.json"
+        self.orig_cfg = config.CONFIG_DIR
+        self.orig_sess = config.SESSIONS_FILE
+        config.CONFIG_DIR = self.cfg_dir
+        config.SESSIONS_FILE = self.sessions_file
+
+    def tearDown(self):
+        config.CONFIG_DIR = self.orig_cfg
+        config.SESSIONS_FILE = self.orig_sess
+        self.temp_dir.cleanup()
+
+    def test_workspace_agent_roundtrip(self):
+        ws = "/home/nelson/Documents/sysadmin"
+        self.assertIsNone(config.get_workspace_agent(ws))
+
+        # Set sysadmin as the agent for this workspace
+        config.set_workspace_agent(ws, "sysadmin", "conv-sys-1")
+        self.assertEqual(config.get_workspace_agent(ws), "sysadmin")
+        self.assertEqual(config.session_agent("conv-sys-1"), "sysadmin")
+
+        # Switching to another agent updates the workspace
+        config.set_workspace_agent(ws, "fiduciary", "conv-fid-2")
+        self.assertEqual(config.get_workspace_agent(ws), "fiduciary")
+        self.assertEqual(config.session_agent("conv-fid-2"), "fiduciary")
+        # Earlier session agent is preserved
+        self.assertEqual(config.session_agent("conv-sys-1"), "sysadmin")
+
+    def test_resolve_session_id_with_agent(self):
+        ws = "/home/nelson/Documents/myproject"
+        conv = config.resolve_session_id(ws, new_session=True, agent="sysadmin")
+        self.assertEqual(config.get_workspace_agent(ws), "sysadmin")
+        self.assertEqual(config.session_agent(conv), "sysadmin")
+
+    def test_set_workspace_session_syncs_agent(self):
+        ws = "/workspace/project"
+        config.set_workspace_agent(ws, "sysadmin", "conv-sys")
+        config.set_workspace_agent(ws, "software_engineer", "conv-dev")
+
+        # Rebinding to conv-sys restores sysadmin as the workspace agent
+        config.set_workspace_session(ws, "conv-sys")
+        self.assertEqual(config.get_workspace_agent(ws), "sysadmin")
+
+    def test_cli_main_defaults_to_workspace_agent(self):
+        from unittest.mock import patch, MagicMock
+        from safi_cli.main import main
+
+        ws = str(Path(self.temp_dir.name) / "sysadmin_ws")
+        Path(ws).mkdir()
+        config.set_workspace_agent(ws, "sysadmin", "conv-existing-123")
+
+        # Simulate running `safi -w <ws>` without -a
+        with patch("sys.argv", ["safi", "-w", ws]), \
+             patch("safi_cli.main.SafiClient") as mock_client_cls, \
+             patch("safi_cli.main.interactive_repl") as mock_repl, \
+             patch("safi_cli.config.resolve_agent_api_key", return_value="sk-test"):
+            mock_client = MagicMock()
+            mock_client_cls.return_value = mock_client
+            main()
+
+            # Verify interactive_repl was invoked with sysadmin, not software_engineer
+            mock_repl.assert_called_once()
+            _, kwargs = mock_repl.call_args
+            self.assertEqual(kwargs.get("agent"), "sysadmin")
 
 
 if __name__ == "__main__":

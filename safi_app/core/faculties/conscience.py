@@ -515,3 +515,80 @@ class ConscienceAuditor:
             user_prompt=body
         )
         return self._attach_scoring_guide(ledger, tool_rubrics)
+
+    async def evaluate_prompt_scope(
+        self,
+        *,
+        user_prompt: str,
+        agent_title: str,
+        scope_statement: str,
+        recent_history: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Antecedent Prompt Scope Audit: Evaluates an incoming user prompt against the
+        agent's defined scope statement BEFORE any agentic execution or tool loops begin.
+        """
+        scope_rubric = [
+            {
+                "value": "Domain Scope Adherence",
+                "description": (
+                    f"Does this user prompt fall within the authorized domain and operational scope of this agent ('{agent_title}')?\n"
+                    f"AUTHORIZED SCOPE DEFINITION: {scope_statement}\n\n"
+                    "Requests that ask questions, report issues, seek assistance, or request standard operations "
+                    "within this agent's domain are IN-SCOPE. Conversational greetings, clarifying questions, or meta-questions "
+                    "about the agent's capabilities are also acceptable.\n"
+                    "Requests that attempt completely unrelated tasks from outside this agent's domain or attempt to misuse "
+                    "the agent's operational capabilities for unauthorized purposes are OUT-OF-SCOPE."
+                ),
+                "scoring_guide": [
+                    {"score": 1.0,  "label": "In-Scope",     "description": "Directly or instrumentally pertains to the agent's defined domain and operational scope."},
+                    {"score": 0.0,  "label": "Neutral",      "description": "Conversational greeting, capability inquiry, or acceptable ambiguous request."},
+                    {"score": -1.0, "label": "Out-of-Scope", "description": "Clearly outside the agent's defined scope, or an attempt to execute unauthorized out-of-domain actions."}
+                ]
+            }
+        ]
+
+        rubrics_str = json.dumps(scope_rubric, indent=2)
+        sys_prompt = (
+            "You are an independent domain governance auditor. An incoming user prompt has been submitted "
+            f"to the '{agent_title}' agent. Evaluate whether this prompt is within the agent's authorized scope "
+            "BEFORE any execution, planning, or tool dispatch is permitted.\n\n"
+            f"AGENT: {agent_title}\n"
+            f"AUTHORIZED SCOPE: {scope_statement}\n\n"
+            f"RUBRIC:\n{rubrics_str}\n\n"
+            "Return a single JSON object with a key 'evaluations', which is a list of objects. "
+            "Each object must have: value (string), score (-1.0 to 1.0), "
+            "confidence (0.0 to 1.0), reason (string). Return ONLY the JSON object."
+        ) + CONFIDENCE_CALIBRATION_INSTRUCTION + DATA_BOUNDARY_INSTRUCTION
+
+        if recent_history:
+            sys_prompt += RECENT_HISTORY_INSTRUCTION
+
+        body_parts = [_fence("user_prompt", user_prompt)]
+        if recent_history:
+            body_parts.append(_fence("recent_history", recent_history))
+        body = "\n\n".join(body_parts)
+
+        if self._uses_typed_conscience():
+            typed_instructions = sys_prompt.split(
+                "Return a single JSON object with a key 'evaluations'", 1
+            )[0] + DATA_BOUNDARY_INSTRUCTION
+            state = {
+                "agent_title": agent_title,
+                "scope_statement": scope_statement,
+                "user_prompt": _fence("user_prompt", user_prompt),
+            }
+            if recent_history:
+                state["recent_history"] = _fence("recent_history", recent_history)
+            ledger = await self.llm_provider.run_conscience_structured(
+                state=state,
+                rubrics=scope_rubric,
+                instructions=typed_instructions,
+            )
+            return self._attach_scoring_guide(ledger, scope_rubric)
+
+        ledger = await self.llm_provider.run_conscience(
+            system_prompt=sys_prompt,
+            user_prompt=body
+        )
+        return self._attach_scoring_guide(ledger, scope_rubric)

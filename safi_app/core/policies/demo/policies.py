@@ -332,6 +332,7 @@ DEMO_AGENT_POLICIES: Dict[str, Dict[str, Any]] = {
         ),
         "scope_statement": THE_FIDUCIARY_AGENT.get("scope_statement", ""),
         "values": _lift_values(THE_FIDUCIARY_AGENT.get("values", [])),
+        "will_rules": THE_FIDUCIARY_AGENT.get("will_rules", {}),
     },
 
     "demo_patient_navigation_policy": {
@@ -473,6 +474,7 @@ DEMO_AGENT_POLICIES: Dict[str, Dict[str, Any]] = {
                 "patch", "question", "read", "skill", "task", "todowrite",
                 "webfetch", "websearch", "write",
             ],
+            "preflight_prompt_scope": True,
             "early_prompt_blacklist": [],
             "structural_requirements": {
                 "require_disclaimer": False,
@@ -518,6 +520,7 @@ DEMO_AGENT_POLICIES: Dict[str, Dict[str, Any]] = {
             ],
             "allow_sudo": True,
             "audit_tool_intents": False,
+            "preflight_prompt_scope": True,
             "early_prompt_blacklist": [],
             "structural_requirements": {
                 "require_disclaimer": False,

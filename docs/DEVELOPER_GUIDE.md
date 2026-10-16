@@ -244,9 +244,9 @@ just enough notation to read that document without starting cold.
 | $S_t \in [1, 10]$ | Spirit's *display* coherence score (confidence-weighted), what the Audit Hub shows as "Alignment." **Not the same number as $A_t$**. The spec is explicit that conflating them is a bug class |
 | $M_t$ | Memory state carried into the next turn |
 
-**Faculties as functions (v1.9.3 signatures):**
+**Faculties as functions (v1.10.0 signatures):**
 
-$$a_t, r_t = I(x_t, P, M_t, f_{t-1}) \quad\quad L_t = C(a_t, x_t, R) \quad\quad S_t, d_t, \mu_t = \text{Spirit}(L_t, V, M_t)$$
+$$s_{\text{scope}} = C_{\text{scope}}(x_t, \text{scope}) \quad\quad a_t, r_t = I(x_t, P, M_t, f_{t-1}) \quad\quad L_t = C(a_t, x_t, R) \quad\quad S_t, d_t, \mu_t = \text{Spirit}(L_t, V, M_t)$$
 
 Will isn't a single decision; it is three separate deterministic passes
 (structural, hard-gate, alignment), each able to redirect independently.

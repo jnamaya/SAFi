@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional
 FORBIDDEN_NAMES = frozenset({
     ".env", "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa",
     "authorized_keys", "known_hosts", "credentials", ".netrc", ".pgpass",
-    "secrets.json",
+    "secrets.json", "inventory.json",
 })
 FORBIDDEN_DIRS = frozenset({
     ".git", ".ssh", ".aws", ".gnupg", ".kube",
@@ -312,10 +312,64 @@ def _dir_contains_protected(directory: Path) -> Optional[str]:
     return None
 
 
+def _build_bwrap_command(
+    cmd: str,
+    workspace_root: Path,
+    agent: Optional[str] = None,
+) -> Optional[List[str]]:
+    """Build a Bubblewrap (bwrap) isolation command for running bash commands safely.
+
+    Sandboxes execution:
+    - Root filesystem is mounted read-only (--ro-bind / /).
+    - Workspace is mounted read-write (--bind ws ws).
+    - /tmp is a private in-memory filesystem (--tmpfs /tmp).
+    - Process namespace is unshared (--unshare-pid).
+    - For non-sysadmin agents, sensitive credential directories (~/.ssh, ~/.config/safi,
+      ~/.aws, ~/.azure, ~/.gnupg, ~/.kube, ~/.docker) are masked with empty tmpfs mounts.
+    """
+    bwrap_path = shutil.which("bwrap")
+    if not bwrap_path:
+        return None
+
+    ws = str(workspace_root.resolve())
+    bwrap_cmd = [
+        bwrap_path,
+        "--ro-bind", "/", "/",
+        "--dev", "/dev",
+        "--proc", "/proc",
+        "--tmpfs", "/tmp",
+        "--unshare-pid",
+        "--die-with-parent",
+        "--bind", ws, ws,
+        "--chdir", ws,
+    ]
+
+    home = Path.home().resolve()
+    is_sysadmin = agent is not None and "sysadmin" in agent.lower()
+
+    if not is_sysadmin:
+        sensitive_dirs = [
+            home / ".ssh",
+            home / ".config" / "safi",
+            home / ".aws",
+            home / ".azure",
+            home / ".gnupg",
+            home / ".kube",
+            home / ".docker",
+        ]
+        for sdir in sensitive_dirs:
+            if sdir.exists() and sdir.is_dir():
+                bwrap_cmd.extend(["--tmpfs", str(sdir)])
+
+    bwrap_cmd.extend(["bash", "-c", cmd])
+    return bwrap_cmd
+
+
 def execute_tool(
     name: str,
     args: Dict[str, Any],
     workspace_root: Path,
+    agent: Optional[str] = None,
 ) -> str:
     """Execute a tool proposal locally inside workspace_root."""
     try:
@@ -570,15 +624,44 @@ def execute_tool(
 
         elif name == "bash":
             cmd = args.get("command") or ""
-            proc = subprocess.run(
-                cmd,
-                shell=True,
-                cwd=str(workspace_root),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                timeout=120,
-            )
+            is_sysadmin = agent is not None and "sysadmin" in agent.lower()
+            clean_env = os.environ.copy()
+            if not is_sysadmin:
+                for k in (
+                    "SSH_AUTH_SOCK",
+                    "ANTHROPIC_API_KEY",
+                    "OPENAI_API_KEY",
+                    "GEMINI_API_KEY",
+                    "AWS_ACCESS_KEY_ID",
+                    "AWS_SECRET_ACCESS_KEY",
+                    "AWS_SESSION_TOKEN",
+                    "GITHUB_TOKEN",
+                    "GH_TOKEN",
+                ):
+                    clean_env.pop(k, None)
+
+            bwrap_cmd = _build_bwrap_command(cmd, workspace_root, agent=agent)
+            if bwrap_cmd:
+                proc = subprocess.run(
+                    bwrap_cmd,
+                    cwd=str(workspace_root),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    timeout=120,
+                    env=clean_env,
+                )
+            else:
+                proc = subprocess.run(
+                    cmd,
+                    shell=True,
+                    cwd=str(workspace_root),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    timeout=120,
+                    env=clean_env,
+                )
             out = proc.stdout or ""
             if len(out) > 20000:
                 out = out[:20000] + f"\n... [output truncated, {len(out)} chars total]"

@@ -200,17 +200,21 @@ def build_tool_status_line(
     )
 
 
-def clear_live_status_tail(last_status_markup: Optional[str]) -> None:
-    """Erase residual rows from a ``console.status`` live region after it stops."""
-    if not last_status_markup or not getattr(console, "is_terminal", False):
+def clear_live_status_tail(last_status_markup: Optional[str] = None) -> None:
+    """Erase any residual spinner/status lines from the terminal."""
+    if not getattr(console, "is_terminal", False):
         return
-    width = max(console.width or 80, 1)
-    cells = Text.from_markup(last_status_markup).cell_len + 2
-    rows = (cells + width - 1) // width
-    if rows <= 1:
-        return
-    console.file.write("\x1b[2K" + "\x1b[1B\x1b[2K" * (rows - 1) + f"\x1b[{rows - 1}A")
-    console.file.flush()
+    try:
+        console.file.write("\r\x1b[2K")
+        if last_status_markup:
+            width = max(console.width or 80, 1)
+            cells = Text.from_markup(last_status_markup).cell_len + 4
+            rows = (cells + width - 1) // width
+            if rows > 1:
+                console.file.write("\x1b[1B\x1b[2K" * (rows - 1) + f"\x1b[{rows - 1}A\r")
+        console.file.flush()
+    except Exception:
+        pass
 
 
 def print_banner(
@@ -233,7 +237,7 @@ def print_banner(
     agent_title = agent.replace("_", " ").title()
     info_table.add_row("Agent Persona:", f"{agent_title} ({agent})")
     if intellect_model:
-        info_table.add_row("Intellect Model:", f"{intellect_model}")
+        info_table.add_row("Model:", f"{intellect_model}")
     info_table.add_row("API Endpoint:", f"{api_url}")
     info_table.add_row("Workspace Root:", f"{workspace_root}")
     if user_name:
@@ -550,7 +554,7 @@ def build_telemetry_panel(
     sess_cost = _session_intellect["cost"]
     sess_cost_str = f" (${sess_cost:.4f})" if sess_cost >= 0.0001 else (" (<$0.0001)" if sess_cost > 0 else "")
 
-    t_intellect = Text("Intellect: ", style="bold white")
+    t_intellect = Text("Model: ", style="bold white")
     t_intellect.append(str(effective_i_model), style="dim")
     stats_content.append(t_intellect)
 
@@ -578,14 +582,14 @@ def build_telemetry_panel(
     c_sess_cost = _session_conscience["cost"]
     c_sess_cost_str = f" (${c_sess_cost:.4f})" if c_sess_cost >= 0.0001 else (" (<$0.0001)" if c_sess_cost > 0 else "")
 
-    t_conscience = Text("Conscience: ", style="bold white")
+    t_conscience = Text("Auditor: ", style="bold white")
     t_conscience.append(str(effective_c_model), style="dim")
     stats_content.append(t_conscience)
     if c_in or c_out or _session_conscience["in"]:
         stats_content.append(Text(f"  Turn: {c_in:,} in | {c_out:,} out{c_cost_str}", style="dim"))
         stats_content.append(Text.from_markup(f"  Session: [bold white]{_session_conscience['in']:,}[/] in | {_session_conscience['out']:,} out{c_sess_cost_str}"))
     else:
-        stats_content.append(Text("  Audit: Jev / TypeSafe (deterministic)", style="dim italic"))
+        stats_content.append(Text("  Audit: Deterministic rules (zero token cost)", style="dim italic"))
 
     total_sess_cost = _session_intellect["cost"] + _session_conscience["cost"]
     if total_sess_cost > 0:
@@ -663,10 +667,10 @@ def build_session_usage_panel() -> Panel:
     total_cost = i["cost"] + c["cost"]
 
     rows = [
-        ("Intellect model", i.get("model") or "Unknown"),
-        ("Intellect tokens", f"{i['in']:,} in / {i['out']:,} out"),
-        ("Conscience model", c.get("model") or "systemone (Jev)"),
-        ("Conscience tokens", f"{c['in']:,} in / {c['out']:,} out"),
+        ("Model", i.get("model") or "Unknown"),
+        ("Model tokens", f"{i['in']:,} in / {i['out']:,} out"),
+        ("Auditor model", c.get("model") or "systemone (Jev)"),
+        ("Auditor tokens", f"{c['in']:,} in / {c['out']:,} out"),
     ]
     if comp.get("tokens_saved", 0) > 0:
         rows.append((
@@ -725,7 +729,11 @@ def _detect_lexer(path: str) -> str:
 
 MAX_PREVIEW_LINES = 40
 _EXIT_CODE_RE = re.compile(r"^exit code (-?\d+)", re.IGNORECASE)
-_ERROR_PREFIXES = ("error:", "tool execution error", "unknown tool", "rejected:", "the will gatekeeper rejected")
+_ERROR_PREFIXES = (
+    "error:", "tool execution error", "unknown tool", "rejected:",
+    "the will gatekeeper rejected", "the security gate rejected",
+    "security gate rejected", "policy gate rejected",
+)
 
 
 def _safe_float(value: Any) -> Optional[float]:
@@ -1237,7 +1245,7 @@ def print_audit_details(result: Dict[str, Any]):
     """Detailed drill-down of all policy rubrics, scores, confidence, and rationales."""
     ledger = result.get("conscienceLedger") or []
     if not ledger:
-        console.print(f"[{COLOR_WARN}]No conscience audit ledger available for this turn.[/]")
+        console.print(f"[{COLOR_WARN}]No governance audit ledger available for this turn.[/]")
         return
 
     policy_title = result.get("policyName") or result.get("policyId") or "Domain Policy"

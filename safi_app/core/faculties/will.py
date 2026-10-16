@@ -218,11 +218,15 @@ class WillGate:
 
         # Check R4 Privileged / Forbidden patterns
         forbidden_indicators = [
-            "/etc/shadow", ".ssh/id_", "id_rsa", "rm -rf /",
-            "chmod 777", "curl | bash", "wget | bash"
+            "/etc/shadow", ".ssh/id_", "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa",
+            "rm -rf /", "chmod 777", "curl | bash", "wget | bash"
         ]
         if not allow_sysadmin:
-            forbidden_indicators.extend(["sudo ", "/etc/passwd"])
+            forbidden_indicators.extend([
+                "sudo ", "/etc/passwd", "ssh ", "scp ", "sftp ",
+                ".ssh", ".config/safi", "inventory.json", "secrets.json",
+                ".gnupg", ".aws"
+            ])
 
         if any(ind in params_str for ind in forbidden_indicators):
             return "R4", "Privileged or forbidden system command/path"
