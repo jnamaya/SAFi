@@ -206,7 +206,58 @@ if [[ ":$PATH:" != *":${BIN_DIR}:"* ]]; then
     fi
 fi
 
-# 8. Scaffold inventory template if missing
+# 8. WSL Windows Host Integration
+# If running inside WSL, bridge safi to Windows so users can run 'safi' directly from Windows PowerShell / CMD
+if grep -qi "microsoft" /proc/version 2>/dev/null && command -v cmd.exe &>/dev/null; then
+    echo "Detected WSL environment — configuring Windows PowerShell & CMD integration..."
+    WIN_APPS_RAW=$(cmd.exe /c "echo %LOCALAPPDATA%\Microsoft\WindowsApps" 2>/dev/null | tr -d '\r')
+    if [ -n "$WIN_APPS_RAW" ] && command -v wslpath &>/dev/null; then
+        WIN_APPS_DIR=$(wslpath "$WIN_APPS_RAW" 2>/dev/null || true)
+        if [ -n "$WIN_APPS_DIR" ] && [ -d "$WIN_APPS_DIR" ]; then
+            cat << 'EOF' > "${WIN_APPS_DIR}/safi.cmd"
+@echo off
+wsl.exe -e safi %*
+exit /b %ERRORLEVEL%
+EOF
+            cat << 'EOF' > "${WIN_APPS_DIR}/sys-exec.cmd"
+@echo off
+wsl.exe -e sys-exec %*
+exit /b %ERRORLEVEL%
+EOF
+            chmod +x "${WIN_APPS_DIR}/safi.cmd" "${WIN_APPS_DIR}/sys-exec.cmd" 2>/dev/null || true
+            echo "✓ Created Windows bridge in ${WIN_APPS_RAW} (safi.cmd & sys-exec.cmd)"
+        fi
+    fi
+
+    WIN_PROFILE_RAW=$(cmd.exe /c "echo %USERPROFILE%" 2>/dev/null | tr -d '\r')
+    if [ -n "$WIN_PROFILE_RAW" ] && command -v wslpath &>/dev/null; then
+        WIN_PROFILE_DIR=$(wslpath "$WIN_PROFILE_RAW" 2>/dev/null || true)
+        if [ -n "$WIN_PROFILE_DIR" ] && [ -d "$WIN_PROFILE_DIR" ]; then
+            mkdir -p "${WIN_PROFILE_DIR}/.local/bin"
+            cat << 'EOF' > "${WIN_PROFILE_DIR}/.local/bin/safi.cmd"
+@echo off
+wsl.exe -e safi %*
+exit /b %ERRORLEVEL%
+EOF
+            cat << 'EOF' > "${WIN_PROFILE_DIR}/.local/bin/sys-exec.cmd"
+@echo off
+wsl.exe -e sys-exec %*
+exit /b %ERRORLEVEL%
+EOF
+            if command -v powershell.exe &>/dev/null; then
+                powershell.exe -NoProfile -NonInteractive -Command "
+                \$binDir = Join-Path \$env:USERPROFILE '.local\bin';
+                \$userPath = [Environment]::GetEnvironmentVariable('Path', 'User');
+                if (\$userPath -and \$userPath -notlike \"*\$binDir*\") {
+                    [Environment]::SetEnvironmentVariable('Path', (\$userPath + ';' + \$binDir).Trim(';'), 'User')
+                }
+                " 2>/dev/null || true
+            fi
+        fi
+    fi
+fi
+
+# 9. Scaffold inventory template if missing
 CONFIG_DIR="${HOME}/.config/safi"
 mkdir -p "${CONFIG_DIR}"
 
