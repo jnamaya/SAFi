@@ -99,7 +99,17 @@ exec "${TARGET_PYTHON}" -m safi_cli.main "\$@"
 EOF
 chmod +x "${BIN_DIR}/safi"
 
-# 6. Create sys-exec infrastructure runner
+# 6. Ensure ~/.local/bin is in user PATH
+if [[ ":$PATH:" != *":${BIN_DIR}:"* ]]; then
+    if [ -f "${HOME}/.bashrc" ] && ! grep -q '\.local/bin' "${HOME}/.bashrc" 2>/dev/null; then
+        echo 'export PATH="$HOME/.local/bin:$PATH"' >> "${HOME}/.bashrc"
+    fi
+    if [ -f "${HOME}/.profile" ] && ! grep -q '\.local/bin' "${HOME}/.profile" 2>/dev/null; then
+        echo 'export PATH="$HOME/.local/bin:$PATH"' >> "${HOME}/.profile"
+    fi
+fi
+
+# 7. Create sys-exec infrastructure runner
 echo "Writing sys-exec runner to ${BIN_DIR}/sys-exec..."
 cat << 'EOF' > "${BIN_DIR}/sys-exec"
 #!/usr/bin/env bash
@@ -211,6 +221,11 @@ echo "✓ SAFi CLI & sys-exec installed successfully to ${BIN_DIR}"
 echo "=========================================================="
 echo ""
 echo "Quick Setup:"
+if [[ ":$PATH:" != *":${BIN_DIR}:"* ]]; then
+    echo "  Activate PATH in this terminal window:"
+    echo "     source ~/.profile   (or: export PATH=\"\$HOME/.local/bin:\$PATH\")"
+    echo ""
+fi
 echo "  Launch the interactive setup wizard:"
 echo "     safi"
 echo ""
