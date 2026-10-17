@@ -829,7 +829,7 @@ def discover_models(client: SafiClient, force_refresh: bool = False) -> List[Dic
     return AVAILABLE_MODELS
 
 
-SERVING_MODEL_ALIASES = frozenset({"@serving", "serving", "auto", "@local", "@active"})
+SERVING_MODEL_ALIASES = frozenset({"local", "@local", "serving", "@serving", "auto", "@active"})
 
 
 def is_serving_alias(value: Optional[str]) -> bool:
@@ -889,12 +889,15 @@ def prompt_switch_model(
 
     if requested_model:
         req = requested_model.strip()
-        for m in models:
-            if req.lower() == m["id"].lower() or req.lower() == m["label"].lower():
-                target_model = m["id"]
-                break
-        if not target_model:
-            target_model = req
+        if is_serving_alias(req):
+            target_model = "local"
+        else:
+            for m in models:
+                if req.lower() == m["id"].lower() or req.lower() == m["label"].lower():
+                    target_model = m["id"]
+                    break
+            if not target_model:
+                target_model = req
     else:
         table = Table(
             title="Available AI Models",
@@ -927,11 +930,11 @@ def prompt_switch_model(
 
         ui.console.print(table)
         ui.console.print(f"[dim]Current model:[/] [bold white]{resolved_active}[/]")
-        ui.console.print("[dim]Enter number, model ID (or custom model name), or press Enter to cancel.[/dim]")
+        ui.console.print("[dim]Enter number, model ID, or type [bold cyan]local[/] to follow the served model.[/dim]")
 
         old_completer = readline.get_completer() if readline else None
         if readline:
-            model_ids = [m["id"] for m in models if "id" in m]
+            model_ids = [m["id"] for m in models if "id" in m] + ["local"]
             def model_sub_completer(text: str, state: int) -> Optional[str]:
                 matches = [m for m in model_ids if m.startswith(text)] + [m for m in model_ids if text.lower() in m.lower() and not m.startswith(text)]
                 if state < len(matches):
@@ -964,18 +967,21 @@ def prompt_switch_model(
                 return current_model
         else:
             choice_lower = choice.lower()
-            for m in models:
-                if choice_lower == m["id"].lower() or choice_lower in m["label"].lower():
-                    target_model = m["id"]
-                    break
-            if not target_model:
-                target_model = choice
+            if is_serving_alias(choice_lower):
+                target_model = "local"
+            else:
+                for m in models:
+                    if choice_lower == m["id"].lower() or choice_lower in m["label"].lower():
+                        target_model = m["id"]
+                        break
+                if not target_model:
+                    target_model = choice
 
     config.save_intellect_model(target_model, current_agent)
     if is_serving_alias(target_model):
         serving = serving_model_id(models)
         ui.console.print(
-            f"[bold {ui.COLOR_PASS}]✓ AI now follows the served model:[/] "
+            f"[bold {ui.COLOR_PASS}]✓ AI now follows the local served model:[/] "
             f"[bold {ui.COLOR_BRAND_400}]{serving or 'backend policy default'}[/]"
             + (f" [dim](for persona '{current_agent}')[/dim]" if current_agent else "")
         )
@@ -1744,7 +1750,7 @@ def interactive_repl(
                 current_model = resolve_model_preference(client, current_agent)
                 continue
 
-            if line.lower().strip() in ("/models", "/model", "/list-models"):
+            if line.lower().strip() in ("/models", "/model", "/list-models", "model", "models"):
                 current_model = prompt_switch_model(
                     current_model=current_model,
                     client=client,
@@ -1752,7 +1758,7 @@ def interactive_repl(
                 )
                 continue
 
-            if line.lower().startswith(("/model ", "/models ")):
+            if line.lower().startswith(("/model ", "/models ", "model ", "models ")):
                 parts = line.split(maxsplit=1)
                 req = parts[1].strip() if len(parts) > 1 else None
                 current_model = prompt_switch_model(
@@ -2093,7 +2099,7 @@ def main():
     parser.add_argument(
         "-m",
         "--model",
-        help="AI model powering the agent (e.g. claude-3-5-sonnet, gpt-4o, gemini-2.5-flash). Use '@serving' to always follow the model the appliance is serving.",
+        help="AI model powering the agent (e.g. claude-3-5-sonnet, gpt-4o, gemini-2.5-flash). Pass 'local' to always follow the model the appliance is serving.",
     )
 
     parser.add_argument("-w", "--workspace", default=".", help="Workspace path (default: current directory).")
@@ -2123,7 +2129,7 @@ def main():
     parser.add_argument("--set-url", help="Save the given backend URL to ~/.config/safi/config.json and exit.")
     parser.add_argument(
         "--set-model",
-        help="Save default AI model to ~/.config/safi/config.json and exit. Pass '@serving' to always follow the model the appliance is serving.",
+        help="Save default AI model to ~/.config/safi/config.json and exit. Pass 'local' to always follow the model the appliance is serving.",
     )
     parser.add_argument("--user-name", help="Display name of the user for the agent to address.")
     parser.add_argument("--set-user", help="Save the default user display name to ~/.config/safi/config.json and exit.")

@@ -798,8 +798,15 @@ class TestSafiModelSelection(unittest.TestCase):
         ]
         with unittest.mock.patch.object(client, "get_available_models", return_value=remote):
             self.assertTrue(is_serving_alias("@serving"))
+            self.assertTrue(is_serving_alias("serving"))
+            self.assertTrue(is_serving_alias("local"))
+            self.assertTrue(is_serving_alias("@local"))
             self.assertTrue(is_serving_alias("auto"))
             self.assertFalse(is_serving_alias("gpt-4o"))
+            self.assertEqual(
+                resolve_model_preference(client, "software_engineer", "local"),
+                "safi-qwen3-coder-30b",
+            )
             self.assertEqual(
                 resolve_model_preference(client, "software_engineer", "@serving"),
                 "safi-qwen3-coder-30b",
@@ -811,7 +818,7 @@ class TestSafiModelSelection(unittest.TestCase):
         client = SafiClient("http://mock-backend:5000", "test-key")
         remote = [{"id": "gpt-4o", "label": "GPT-4o", "provider": "OpenAI"}]
         with unittest.mock.patch.object(client, "get_available_models", return_value=remote):
-            self.assertIsNone(resolve_model_preference(client, "software_engineer", "@serving"))
+            self.assertIsNone(resolve_model_preference(client, "software_engineer", "local"))
 
     def test_serving_alias_switch_persists_sentinel(self):
         from safi_cli.main import prompt_switch_model
@@ -820,12 +827,10 @@ class TestSafiModelSelection(unittest.TestCase):
         remote = [{"id": "safi-qwen3-coder-30b", "label": "Coder", "provider": "local"}]
         with unittest.mock.patch.object(client, "get_available_models", return_value=remote):
             chosen = prompt_switch_model(
-                None, client, requested_model="@serving", current_agent="software_engineer"
+                None, client, requested_model="local", current_agent="software_engineer"
             )
             self.assertEqual(chosen, "safi-qwen3-coder-30b")
-            # The sentinel is what persists, so the CLI keeps following the box
-            # even after the served model is swapped.
-            self.assertEqual(config.resolve_intellect_model("software_engineer"), "@serving")
+            self.assertEqual(config.resolve_intellect_model("software_engineer"), "local")
 
     def test_prompt_switch_model_direct(self):
         from safi_cli.main import prompt_switch_model
