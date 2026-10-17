@@ -6,6 +6,7 @@ SAFi Color Palette Philosophy:
     - Semantic Colors: Red (error/blocked/concern), Amber/Yellow (warning/caution), Green (approved/aligned)
 """
 
+from datetime import datetime
 import difflib
 import os
 import re
@@ -1250,9 +1251,26 @@ def print_subagent_done(role: str, summary: str, steps: int = 1):
 def print_final_output(text: str, res: Dict[str, Any]):
     """Render the final governed markdown response in a single workspace."""
     _record_turn_telemetry(res)
+
+    now_str = datetime.now().strftime("%H:%M:%S")
+    w = console.width
+    margin = CLI_MARGIN if getattr(console, "is_terminal", False) else 0
+    avail = w - (margin * 2) - 6
+    left_text = Text.from_markup(f"[bold {COLOR_BRAND_400}]● SAFI Response[/] ")
+    right_text = Text.from_markup(f" [dim]{now_str}[/dim]")
+    gap = avail - (left_text.cell_len + right_text.cell_len)
+
+    if gap >= 2:
+        top_title = Text.assemble(left_text, ("─" * gap, COLOR_BRAND_600), right_text)
+        title_align = "left"
+    else:
+        top_title = f"[bold {COLOR_BRAND_400}]● SAFI Response[/]"
+        title_align = "center"
+
     response_panel = Panel(
         Markdown(text),
-        title=f"[bold {COLOR_BRAND_400}]● SAFI Response[/]",
+        title=top_title,
+        title_align=title_align,
         border_style=COLOR_BRAND_600,
         box=box.ROUNDED,
         padding=(1, 2),
