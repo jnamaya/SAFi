@@ -70,7 +70,7 @@ CONNECTOR_TOOLS: Dict[str, Tuple[str, ...]] = {
     "sysadmin_tools": (
         "read", "grep", "glob", "list",
         "bash", "write", "edit", "delete",
-        "webfetch", "websearch", "task", "todowrite", "skill", "question",
+        "webfetch", "websearch", "todowrite", "question",
     ),
     "find_places": ("find_places",),
     "get_analyst_recommendations": ("get_analyst_recommendations",),

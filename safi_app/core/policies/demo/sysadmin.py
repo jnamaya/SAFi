@@ -150,8 +150,8 @@ POLICY: Dict[str, Any] = {
     "will_rules": {
         "allowed_tools": [
             "bash", "delete", "edit", "glob", "grep", "list",
-            "question", "read", "skill", "task", "todowrite",
-            "webfetch", "websearch", "write",
+            "question", "read", "todowrite",
+            "web_search", "webfetch", "websearch", "write",
         ],
         "allow_sudo": True,
         "audit_tool_intents": False,
