@@ -33,10 +33,11 @@ if [ -d "${REPO_DIR}/safi_cli" ]; then
     rm -rf "${INSTALL_DIR}/safi_cli"
     cp -r "${REPO_DIR}/safi_cli" "${INSTALL_DIR}/"
 else
-    echo "Downloading safi_cli package from repository..."
+    SAFI_BRANCH="${SAFI_BRANCH:-dev}"
+    echo "Downloading safi_cli package from repository (${SAFI_BRANCH} branch)..."
     rm -rf "${INSTALL_DIR}/safi_cli"
     TMP_DIR=$(mktemp -d)
-    git clone --depth 1 https://github.com/jnamaya/SAFi.git "${TMP_DIR}/safi-repo"
+    git clone --depth 1 --branch "${SAFI_BRANCH}" https://github.com/jnamaya/SAFi.git "${TMP_DIR}/safi-repo"
     cp -r "${TMP_DIR}/safi-repo/safi_cli" "${INSTALL_DIR}/"
     rm -rf "${TMP_DIR}"
 fi
