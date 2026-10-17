@@ -111,8 +111,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--dump-interventions", metavar="PATH",
                    help="write every non-approve entry (full record) here for manual review")
     p.add_argument("--signatures", metavar="PATH",
-                   help="path to a threat_intel.py; classifies prompts against its "
-                        "INJECTION_SIGNATURES to produce a floor on adversarial traffic")
+                   help="path to the signature module (safi_app/security_policy.py); "
+                        "classifies prompts against its INJECTION_SIGNATURES to "
+                        "produce a floor on adversarial traffic")
     p.add_argument("--manifest", metavar="PATH",
                    help="write a SHA-256 chain-of-custody manifest of every scanned log file")
     p.add_argument("--sessions", metavar="PATH",

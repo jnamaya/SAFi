@@ -1863,6 +1863,48 @@ class TestSafiCliUiSpinnerCleanup(unittest.TestCase):
             self.assertIn("\x1b[1A\r\x1b[2K", output)
 
 
+class TestSafiSetupWizard(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.orig_config_file = config.CONFIG_FILE
+        self.orig_config_dir = config.CONFIG_DIR
+        config.CONFIG_DIR = Path(self.temp_dir.name)
+        config.CONFIG_FILE = config.CONFIG_DIR / "config.json"
+
+    def tearDown(self):
+        config.CONFIG_FILE = self.orig_config_file
+        config.CONFIG_DIR = self.orig_config_dir
+        self.temp_dir.cleanup()
+
+    def test_has_configured_api_url(self):
+        self.assertFalse(config.has_configured_api_url())
+        config.save_config({"api_url": "http://192.168.1.223:5001"})
+        self.assertTrue(config.has_configured_api_url())
+
+    def test_default_agent_persistence(self):
+        self.assertIsNone(config.get_default_agent())
+        config.set_default_agent("sysadmin")
+        self.assertEqual(config.get_default_agent(), "sysadmin")
+
+    @unittest.mock.patch("builtins.input")
+    @unittest.mock.patch("safi_cli.main.discover_agents", return_value={"sysadmin": {"title": "Sysadmin Agent"}, "software_engineer": {"title": "SWE"}})
+    def test_run_setup_wizard(self, mock_discover, mock_input):
+        from safi_cli.main import run_setup_wizard
+
+        # Inputs: 1) URL, 2) Persona choice "1" (sysadmin), 3) API Key "sk-safi-12345"
+        mock_input.side_effect = ["http://192.168.1.223:5001", "1", "sk-safi-12345"]
+        url, agent, key = run_setup_wizard()
+
+        self.assertEqual(url, "http://192.168.1.223:5001")
+        self.assertEqual(agent, "sysadmin")
+        self.assertEqual(key, "sk-safi-12345")
+
+        # Verify saved to config
+        self.assertEqual(config.load_config().get("api_url"), "http://192.168.1.223:5001")
+        self.assertEqual(config.get_default_agent(), "sysadmin")
+        self.assertEqual(config.resolve_agent_api_key("sysadmin"), "sk-safi-12345")
+
+
 if __name__ == "__main__":
     unittest.main()
 

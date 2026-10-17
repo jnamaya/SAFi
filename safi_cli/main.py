@@ -1332,7 +1332,7 @@ def prompt_command_menu(
             if comp_res.get("summary"):
                 ui.print_compression_result({"ok": True, "compressed": False, "summary": comp_res["summary"], "message": "Showing active working memory summary."})
             else:
-                ui.console.print("[dim]ℹ️ No active memory summary exists for this session yet. Run /memory compress to distill one, or continue chatting.[/dim]")
+                ui.console.print("[dim]No active memory summary exists for this session yet. Run /memory compress to distill one, or continue chatting.[/dim]")
         return current_agent, current_conv, current_model, current_user_name, False
 
     elif choice_clean in ("skills", "skill"):
@@ -1699,7 +1699,7 @@ def interactive_repl(
                     if comp_res.get("summary"):
                         ui.print_compression_result({"ok": True, "compressed": False, "summary": comp_res["summary"], "message": "Showing active memory summary."})
                     else:
-                        ui.console.print("[dim]ℹ️ No active memory summary exists for this session yet. Run /memory compress to distill one, or continue chatting.[/dim]")
+                        ui.console.print("[dim]No active memory summary exists for this session yet. Run /memory compress to distill one, or continue chatting.[/dim]")
                 elif sub_arg in ("clear", "reset"):
                     with ui.console.status(f"[bold {ui.COLOR_BRAND_400}]● SAFi[/] [dim]Clearing memory summary & agent context...[/]", spinner="dots"):
                         comp_res = client.compress_conversation(current_conv, user_id=user_id, agent=current_agent, model=current_model, action="clear", clear_agent_memory=True)
@@ -1941,11 +1941,151 @@ def interactive_repl(
                 pass
 
 
+def run_setup_wizard() -> tuple[str, str, Optional[str]]:
+    """Interactive onboarding wizard to configure SAFi CLI for the first time.
+
+    Returns:
+        (api_url, target_agent, api_key)
+    """
+    from rich.panel import Panel
+    from rich import box
+
+    ui.console.print()
+    ui.console.print(
+        Panel(
+            "[bold white]Welcome to the SAFi Governed Agent Interface![/]\n\n"
+            "[dim]This quick wizard will connect your workstation to your SAFi appliance\n"
+            "and configure your primary agent persona.[/dim]",
+            title=f"[bold {ui.COLOR_BRAND_400}]SAFi CLI — First-Run Setup[/]",
+            border_style=ui.COLOR_BRAND_500,
+            box=box.ROUNDED,
+            padding=(1, 2),
+        )
+    )
+
+    # 1. Ask for SAFi Appliance URL
+    existing_url = config.load_config().get("api_url") or os.environ.get("SAFI_API_URL") or "http://localhost:5000"
+    ui.console.print("\n[bold white]1. SAFi Appliance Endpoint[/]")
+    ui.console.print(
+        "[dim]Enter the base URL of your SAFi server or Mini-PC appliance.\n"
+        "Examples: [cyan]http://localhost:5000[/], [cyan]http://192.168.1.223:5001[/], [cyan]https://safi.local:5001[/][/dim]"
+    )
+
+    while True:
+        try:
+            val = input(f"Endpoint URL [{existing_url}]: ").strip()
+        except (KeyboardInterrupt, EOFError):
+            ui.console.print("\n[yellow]Setup cancelled.[/]")
+            sys.exit(0)
+
+        chosen_url = val.rstrip("/") if val else existing_url
+        if not chosen_url.startswith(("http://", "https://")):
+            chosen_url = f"http://{chosen_url}"
+
+        ui.console.print(f"[dim]⠋ Testing connection to {chosen_url}...[/dim]")
+        test_client = SafiClient(chosen_url)
+        discovered = discover_agents(test_client)
+        if discovered:
+            ui.console.print(
+                f"[bold green]✓ Connected successfully![/] "
+                f"[dim](Discovered {len(discovered)} agent persona(s): {', '.join(discovered.keys())})[/dim]"
+            )
+            config.save_config({"api_url": chosen_url})
+            break
+        else:
+            ui.console.print(
+                f"[bold yellow]⚠️ Could not verify connection to {chosen_url}.[/]\n"
+                f"[dim]The server may be starting up, behind a firewall, or unreachable.[/dim]"
+            )
+            try:
+                confirm = input("Save and use this endpoint anyway? [y/N]: ").strip().lower()
+            except (KeyboardInterrupt, EOFError):
+                sys.exit(0)
+            if confirm in ("y", "yes"):
+                config.save_config({"api_url": chosen_url})
+                break
+
+    # 2. Select Default Agent Persona
+    ui.console.print("\n[bold white]2. Primary Agent Persona[/]")
+    ui.console.print("[dim]Select the primary agent persona for your workflows:[/dim]")
+
+    agent_options = [
+        ("sysadmin", "Sysadmin Agent", "Infrastructure, server maintenance, Active Directory, network"),
+        ("software_engineer", "Software Engineer Agent", "Codebase engineering, refactoring, tests, git"),
+    ]
+    existing_keys = {opt[0] for opt in agent_options}
+    for k, v in AVAILABLE_AGENTS.items():
+        if k not in existing_keys:
+            agent_options.append((k, v.get("title", k), v.get("description", "")))
+
+    for idx, (k, title, desc) in enumerate(agent_options, 1):
+        ui.console.print(f"  [bold cyan][{idx}][/] [bold white]{title}[/] [dim]({k})[/]\n      [dim]{desc}[/dim]")
+
+    chosen_agent = "sysadmin"
+    while True:
+        try:
+            choice = input(f"Select Persona [1-{len(agent_options)}, default 1]: ").strip()
+        except (KeyboardInterrupt, EOFError):
+            sys.exit(0)
+        if not choice:
+            chosen_agent = agent_options[0][0]
+            break
+        if choice.isdigit() and 1 <= int(choice) <= len(agent_options):
+            chosen_agent = agent_options[int(choice) - 1][0]
+            break
+        matching = [opt[0] for opt in agent_options if choice.lower() in opt[0] or choice.lower() in opt[1].lower()]
+        if matching:
+            chosen_agent = matching[0]
+            break
+        ui.console.print("[yellow]Invalid choice, please select a valid number or agent name.[/]")
+
+    config.set_default_agent(chosen_agent)
+    agent_title = AVAILABLE_AGENTS.get(chosen_agent, {}).get("title", chosen_agent)
+    ui.console.print(f"[bold green]✓ Selected primary agent: {agent_title} ({chosen_agent})[/]")
+
+    # 3. Policy API Key for Chosen Agent
+    ui.console.print(f"\n[bold white]3. Policy API Key for '{agent_title}'[/]")
+    existing_key = config.resolve_agent_api_key(chosen_agent)
+    if existing_key:
+        ui.console.print(f"[bold green]✓ Found existing Policy API key for '{chosen_agent}' in config.[/]")
+        key_val = existing_key
+    else:
+        ui.console.print(
+            "[dim]Each agent persona is governed by its own domain policy and requires its own Policy API Key.\n"
+            "You can generate one in the SAFi Governance Portal (Settings → API Keys).[/dim]"
+        )
+        try:
+            key_val = input(f"Enter Policy API Key (sk-safi-...) [press Enter to skip for now]: ").strip()
+        except (KeyboardInterrupt, EOFError):
+            sys.exit(0)
+        if key_val:
+            config.save_agent_api_key(chosen_agent, key_val)
+            ui.console.print(f"[bold green]✓ Saved Policy API Key for {chosen_agent} to {config.CONFIG_FILE}[/]")
+        else:
+            ui.console.print(f"[yellow]Skipped for now. You will be prompted when launching '{chosen_agent}'.[/]")
+
+    ui.console.print()
+    ui.console.print(
+        Panel(
+            f"[bold green]✓ SAFi CLI configured successfully![/]\n\n"
+            f"[dim]• Endpoint: [cyan]{chosen_url}[/]\n"
+            f"• Default Agent: [cyan]{chosen_agent}[/]\n"
+            f"• Config File: [cyan]{config.CONFIG_FILE}[/][/dim]\n\n"
+            f"[bold white]Launching {agent_title}...[/]",
+            border_style=ui.COLOR_BRAND_600,
+            box=box.ROUNDED,
+            padding=(1, 2),
+        )
+    )
+    return chosen_url, chosen_agent, key_val or None
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="safi",
         description="SAFi (The Self-alignment Framework Interface) — The governance engine for AI agents.",
     )
+    parser.add_argument("--setup", "--init", dest="setup_wizard", action="store_true", help="Launch the interactive first-run setup wizard.")
     parser.add_argument("prompt", nargs="?", help="Task prompt. If omitted, starts interactive REPL mode.")
     parser.add_argument("-k", "--api-key", help="SAFi Policy API Key (defaults to SAFI_API_KEY env or config).")
     parser.add_argument("-u", "--api-url", help="SAFi backend URL (default: http://localhost:5000).")
@@ -2019,8 +2159,19 @@ def main():
         ui.console.print(f"[dim]Backend {new_url}: discovered {len(discovered)} available agent persona(s).[/dim]")
         sys.exit(0)
 
+    # Run setup wizard if requested via --setup or on first run in an interactive terminal
+    is_first_run = (not config.has_configured_api_url() and not args.api_url and not os.environ.get("SAFI_API_URL"))
+    if args.setup_wizard or (is_first_run and sys.stdin.isatty()):
+        wizard_url, wizard_agent, wizard_key = run_setup_wizard()
+        if not args.api_url:
+            args.api_url = wizard_url
+        if not args.agent:
+            args.agent = wizard_agent
+        if not args.api_key and wizard_key:
+            args.api_key = wizard_key
+
     workspace_root = Path(args.workspace).resolve()
-    target_agent = args.agent or config.get_workspace_agent(str(workspace_root)) or "software_engineer"
+    target_agent = args.agent or config.get_workspace_agent(str(workspace_root)) or config.get_default_agent() or "software_engineer"
 
     api_url = config.resolve_api_url(args.api_url)
     api_key = config.resolve_agent_api_key(target_agent, args.api_key)

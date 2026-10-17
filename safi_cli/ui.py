@@ -974,8 +974,8 @@ def prompt_question(question: str, options: Optional[List[str]] = None) -> str:
         return "Developer skipped answering the question."
 
 
-def build_plan_panel(todos: Optional[List[Dict[str, Any]]] = None) -> Optional[Group]:
-    """Build a styled Plan & Tasks view showing checklist items and progress."""
+def build_plan_panel(todos: Optional[List[Dict[str, Any]]] = None) -> Optional[Panel]:
+    """Build a styled Plan & Tasks view showing checklist items and progress in a clean rounded panel."""
     active = todos if todos is not None else _active_todos
     if not active:
         return None
@@ -984,45 +984,58 @@ def build_plan_panel(todos: Optional[List[Dict[str, Any]]] = None) -> Optional[G
     completed = sum(1 for t in active if (t.get("status") or "").lower() in ("completed", "done"))
     pct = int((completed / total) * 100) if total > 0 else 0
 
-    bar_width = 10
+    bar_width = 12
     filled = int(round((completed / total) * bar_width)) if total > 0 else 0
     bar_str = "█" * filled + "░" * (bar_width - filled)
 
     items = []
-    status_tag = f"[{completed}/{total} • {pct}%]"
-    title_line = Text()
-    title_line.append("Plan & Tasks ", style=f"bold {COLOR_BRAND_400}")
-    title_line.append(status_tag, style="dim")
-    items.append(title_line)
 
+    # Clean progress bar line
     prog_text = Text()
-    prog_text.append(f"Progress: [{bar_str}] ", style=f"bold {COLOR_BRAND_400}")
+    prog_text.append("Progress: ", style="dim")
+    prog_text.append(f"[{bar_str}] ", style=f"bold {COLOR_BRAND_400}")
     prog_text.append(f"{pct}% ", style="bold white")
-    prog_text.append(f"({completed}/{total})\n", style="dim")
+    prog_text.append(f"({completed}/{total} completed)\n", style="dim")
     items.append(prog_text)
+
+    # 2-column grid for tasks so multi-line wrapped text stays indented
+    grid = Table.grid(padding=(0, 1))
+    grid.add_column(justify="left", no_wrap=True)
+    grid.add_column(justify="left", overflow="fold")
 
     for item in active:
         task_text = item.get("task") or item.get("description") or ""
         status = (item.get("status") or "pending").lower()
         if status in ("completed", "done"):
-            badge = Text("  ✔ ", style=f"bold {COLOR_PASS}")
+            badge = Text("  ✔", style=f"bold {COLOR_PASS}")
             text = Text(task_text, style="dim white")
         elif status in ("in_progress", "running"):
-            badge = Text("▶ ⏳ ", style=f"bold {COLOR_WARN}")
+            badge = Text("▶ ⏳", style=f"bold {COLOR_WARN}")
             text = Text(task_text, style="bold #38bdf8")
         elif status in ("failed", "error"):
-            badge = Text("  ✖ ", style=f"bold {COLOR_FAIL}")
+            badge = Text("  ✖", style=f"bold {COLOR_FAIL}")
             text = Text(task_text, style="bold red")
         else:
-            badge = Text("  ○ ", style="dim")
+            badge = Text("  ○", style="dim")
             text = Text(task_text, style="white")
 
-        line = Text()
-        line.append_text(badge)
-        line.append_text(text)
-        items.append(line)
+        grid.add_row(badge, text)
 
-    return Group(*items)
+    items.append(grid)
+
+    title = Text()
+    title.append(" Plan & Tasks ", style=f"bold {COLOR_BRAND_400}")
+    title.append(f"({completed}/{total} • {pct}%) ", style="dim")
+
+    return Panel(
+        Group(*items),
+        title=title,
+        title_align="left",
+        border_style=COLOR_BRAND_600,
+        box=box.ROUNDED,
+        padding=(1, 2),
+        expand=False,
+    )
 
 
 def print_workspace_step(
@@ -1103,6 +1116,7 @@ def render_todo_list(todos: List[Dict[str, Any]], align_right: bool = False):
 
     console.print()
     console.print(panel)
+    console.print()
 
 
 _recent_tool_results: deque = deque(maxlen=20)
@@ -1302,7 +1316,7 @@ def print_compression_result(data: Dict[str, Any]):
 
     if not data.get("compressed"):
         msg = data.get("message", "Conversation is already minimal (no compression needed).")
-        console.print(f"[dim]ℹ️  {escape(str(msg))}[/dim]")
+        console.print(f"[dim]{escape(str(msg))}[/dim]")
         if data.get("summary"):
             console.print(Panel(
                 Markdown(data["summary"]),

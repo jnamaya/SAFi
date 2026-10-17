@@ -105,7 +105,7 @@ All gates above run synchronously. Summarization and profile extraction run asyn
 
 Before the Intellect is ever invoked, the Phase Zero Gate evaluates the raw user prompt deterministically, invoking no intelligent component. A detected threat short-circuits immediately to a governed redirect. Detection mechanisms run in order:
 
-**1. Global signature scan** against `INJECTION_SIGNATURES` in `threat_intel.py`:
+**1. Global signature scan** against `INJECTION_SIGNATURES` in `safi_app/security_policy.py`:
 
 $$\text{safe} = \neg \exists\ p \in \text{INJECTION-SIGS} : p \subseteq \text{lower}(x_t)$$
 
@@ -134,7 +134,7 @@ A hit returns gate reason `injection:embedded_instruction`. The legacy sliding-w
 **If any check fails** → `trigger_agent_redirect(violation_type=gate_reason)` and return.
 **If all pass** → proceed to Stage 0.5 (or Stage 1 if scope preflight is disabled).
 
-**Code Reference:** [`phase_zero.py`](../safi_app/core/faculties/phase_zero.py), [`threat_intel.py`](../safi_app/core/threat_intel.py), [`orchestrator.py#Phase0`](../safi_app/core/orchestrator.py)
+**Code Reference:** [`phase_zero.py`](../safi_app/core/faculties/phase_zero.py), [`security_policy.py`](../safi_app/security_policy.py), [`orchestrator.py#Phase0`](../safi_app/core/orchestrator.py)
 
 ---
 
@@ -431,6 +431,6 @@ The reference provider routes across OpenAI, Anthropic, Gemini, Groq/DeepSeek/Mi
 
 5. **Memory format:** $\mu$ is stored as a semantic dictionary (value name → float) for robustness across value set changes. Dormant values (removed from policy) are preserved in the dictionary but excluded from active computation.
 
-6. **Phase Zero is language-aware:** The signature database (`threat_intel.py`) includes multilingual patterns (Chinese, Spanish, Japanese, French, Portuguese) to catch injection attempts that evade ASCII-based matching.
+6. **Phase Zero is language-aware:** The signature database (`safi_app/security_policy.py`) includes multilingual patterns (Chinese, Spanish, Japanese, French, Portuguese) to catch injection attempts that evade ASCII-based matching.
 
 7. **PII is deterministic, pre-model:** Sensitive identifiers are scanned with regex-plus-checksum (`pii_validators.py`), never with a model. Inbound (Phase Zero 2b) keeps the data from reaching the Intellect at all; outbound (Will Pass 1) keeps a draft from shipping identifiers. Both fail closed with `pii_detected`. The PII floor resolves per acting user's org, unioned with the compiled profile (backlog 84).

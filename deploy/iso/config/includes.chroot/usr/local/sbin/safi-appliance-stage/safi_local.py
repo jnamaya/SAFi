@@ -458,7 +458,7 @@ def backend_reason(catalogue: dict, hardware: dict, backend_id: str) -> str:
 
 def estimate_ram(model: dict, catalogue: dict) -> int:
     ctx = int(model.get("context_size") or catalogue.get("context_size", 8192))
-    return int(model["size"]) + int(model["kv_bytes_per_token"]) * ctx \
+    return int(model["size"]) + int(model.get("kv_bytes_per_token", 131072)) * ctx \
         + int(catalogue.get("overhead_bytes", 0))
 
 
@@ -472,7 +472,7 @@ def estimate_vram(model: dict, catalogue: dict) -> int:
     offload of a 2.5 GB model.
     """
     ctx = int(model.get("context_size") or catalogue.get("context_size", 8192))
-    return int(model["size"]) + int(model["kv_bytes_per_token"]) * ctx
+    return int(model["size"]) + int(model.get("kv_bytes_per_token", 131072)) * ctx
 
 
 def evaluate_models(catalogue: dict, hardware: dict, backend_id: str) -> list[dict]:

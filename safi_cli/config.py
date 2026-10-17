@@ -104,6 +104,23 @@ def resolve_api_url(explicit_url: Optional[str] = None) -> str:
     return cfg.get("api_url", "http://localhost:5000").rstrip("/")
 
 
+def has_configured_api_url() -> bool:
+    """Return True if an API URL has been explicitly configured in config.json or environment."""
+    return bool(os.environ.get("SAFI_API_URL") or load_config().get("api_url"))
+
+
+def get_default_agent() -> Optional[str]:
+    """Return configured default agent persona if set."""
+    cfg = load_config()
+    val = cfg.get("default_agent")
+    return str(val).strip() if val else None
+
+
+def set_default_agent(agent: str) -> None:
+    """Save default agent persona to config."""
+    save_config({"default_agent": agent.strip()})
+
+
 def _workspace_key(workspace_root: str) -> str:
     norm = str(Path(workspace_root).resolve())
     return hashlib.sha256(norm.encode()).hexdigest()[:16]

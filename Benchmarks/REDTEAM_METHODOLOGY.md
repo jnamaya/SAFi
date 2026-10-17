@@ -101,7 +101,7 @@ Reproduce with:
 cd Benchmarks/Scripts
 python3 jailbreak_log_analysis.py /path/to/archive \
     --persona the_socratic_tutor --persona "the socratic tutor" \
-    --signatures ../../safi_app/core/threat_intel.py \
+    --signatures ../../safi_app/security_policy.py \
     --out ../Results/redteam_summary.json \
     --manifest ../Results/redteam_log_manifest.sha256
 ```
@@ -132,9 +132,11 @@ half a result.
 Because the demo mixes benign and adversarial traffic, the share that was
 actually adversarial has to be *established*, not asserted. Each prompt is
 matched against `INJECTION_SIGNATURES` in SAFi's own shipped threat-intel
-database — the same 209 patterns across 11 categories that the live Phase 0
-gate uses (`safi_app/core/threat_intel.py`, SHA-256 `23ea83b0…`, pinned in the
-summary JSON).
+database — the same file the live Phase 0 gate loads
+(`safi_app/security_policy.py`, 210 patterns across 11 categories). The archived
+run pinned it at its then-path `safi_app/core/threat_intel.py` (209 patterns,
+SHA-256 `23ea83b0…`, recorded in the summary JSON) before the signature
+database was consolidated.
 
 | Attack category | Prompts |
 | :--- | :--- |
@@ -195,7 +197,7 @@ as a closed loop:
 # 1. emit the worksheet (publishable) and the transcripts (local only)
 python3 jailbreak_log_analysis.py /path/to/archive \
     --persona the_socratic_tutor --persona "the socratic tutor" \
-    --signatures ../../safi_app/core/threat_intel.py \
+    --signatures ../../safi_app/security_policy.py \
     --sessions ../Results/redteam_sessions_worksheet.csv \
     --dump-sessions ~/local-review.jsonl
 

@@ -68,8 +68,8 @@ returns an answer that is usually right, occasionally not, carries no stable
 threshold, and cannot be independently verified afterwards. For a control whose
 value is being checkable, that is the wrong tier.
 
-The detectors live outside the faculties, alongside `threat_intel.py`, so adding
-one never requires editing a faculty.
+The detectors live outside the faculties, alongside the shared policy data in
+`safi_app/security_policy.py`, so adding one never requires editing a faculty.
 
 ---
 
