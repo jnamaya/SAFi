@@ -43,7 +43,7 @@ def save_config(values: Dict[str, Any]) -> None:
 
 
 def resolve_agent_api_key(agent: str, explicit_key: Optional[str] = None) -> Optional[str]:
-    """Resolve the Policy API key for a specific agent persona."""
+    """Resolve the Policy API key for a specific agent."""
     if explicit_key:
         return explicit_key.strip()
 
@@ -68,7 +68,7 @@ def resolve_agent_api_key(agent: str, explicit_key: Optional[str] = None) -> Opt
 
 
 def save_agent_api_key(agent: str, key: str) -> None:
-    """Save a Policy API key specifically for an agent persona."""
+    """Save a Policy API key specifically for an agent."""
     ensure_config_dir()
     cfg = load_config()
     agent_keys = cfg.get("agent_keys") or {}
@@ -110,14 +110,14 @@ def has_configured_api_url() -> bool:
 
 
 def get_default_agent() -> Optional[str]:
-    """Return configured default agent persona if set."""
+    """Return configured default agent if set."""
     cfg = load_config()
     val = cfg.get("default_agent")
     return str(val).strip() if val else None
 
 
 def set_default_agent(agent: str) -> None:
-    """Save default agent persona to config."""
+    """Save default agent to config."""
     save_config({"default_agent": agent.strip()})
 
 
@@ -170,7 +170,7 @@ def session_agents() -> Dict[str, str]:
 
 
 def session_agent(conversation_id: str) -> Optional[str]:
-    """Return the agent persona name associated with a conversation ID, if known."""
+    """Return the agent name associated with a conversation ID, if known."""
     data = _load_sessions()
     agents = data.get(SESSIONS_AGENT_MAP_KEY)
     if isinstance(agents, dict):
@@ -181,7 +181,7 @@ def session_agent(conversation_id: str) -> Optional[str]:
 
 
 def get_workspace_agent(workspace_root: str) -> Optional[str]:
-    """Return the last active agent persona used in this workspace, if any."""
+    """Return the last active agent used in this workspace, if any."""
     data = _load_sessions()
     ws_key = _workspace_key(workspace_root)
     ws_agents = data.get(SESSIONS_WS_AGENT_MAP_KEY)
@@ -202,7 +202,7 @@ def get_workspace_agent(workspace_root: str) -> Optional[str]:
 
 
 def set_workspace_agent(workspace_root: str, agent: str, conversation_id: Optional[str] = None) -> None:
-    """Record the last active agent persona for a workspace (and optionally its session ID)."""
+    """Record the last active agent for a workspace (and optionally its session ID)."""
     ensure_config_dir()
     sessions = _load_sessions()
     ws_key = _workspace_key(workspace_root)

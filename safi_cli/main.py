@@ -661,7 +661,7 @@ def prompt_switch_agent(
     workspace_root: Path,
     requested_agent: Optional[str] = None,
 ) -> tuple[str, str]:
-    """Interactively select or switch to an agent persona, prompting for its Policy API key if not yet configured."""
+    """Interactively select or switch to an agent, prompting for its Policy API key if not yet configured."""
     from rich.table import Table
     from rich import box
 
@@ -682,12 +682,12 @@ def prompt_switch_agent(
                         target_agent = k
                         break
         if not target_agent:
-            ui.console.print(f"[bold red]Unknown agent persona:[/] [yellow]'{requested_agent}'[/]. Use [bold]/[/] to see available options.")
+            ui.console.print(f"[bold red]Unknown agent:[/] [yellow]'{requested_agent}'[/]. Use [bold]/[/] to see available options.")
             return current_agent, config.resolve_session_id(str(workspace_root))
 
     if not target_agent:
         backend_tag = f" ({client.api_url})" if getattr(client, "api_url", None) else ""
-        table = Table(title=f"Available SAFi Agent Personas{backend_tag}", box=box.ROUNDED, border_style=ui.COLOR_BRAND_600)
+        table = Table(title=f"Available SAFi Agents{backend_tag}", box=box.ROUNDED, border_style=ui.COLOR_BRAND_600)
         table.add_column("#", style=f"bold {ui.COLOR_WARN}", width=3, justify="right")
         table.add_column("Agent Key", style=f"bold {ui.COLOR_BRAND_400}")
         table.add_column("Title", style="bold white")
@@ -983,12 +983,12 @@ def prompt_switch_model(
         ui.console.print(
             f"[bold {ui.COLOR_PASS}]✓ AI now follows the local served model:[/] "
             f"[bold {ui.COLOR_BRAND_400}]{serving or 'backend policy default'}[/]"
-            + (f" [dim](for persona '{current_agent}')[/dim]" if current_agent else "")
+            + (f" [dim](for agent '{current_agent}')[/dim]" if current_agent else "")
         )
         return serving
     ui.console.print(
         f"[bold {ui.COLOR_PASS}]✓ Switched model to:[/] [bold {ui.COLOR_BRAND_400}]{target_model}[/]"
-        + (f" [dim](for persona '{current_agent}')[/dim]" if current_agent else "")
+        + (f" [dim](for agent '{current_agent}')[/dim]" if current_agent else "")
     )
     return target_model
 
@@ -1039,7 +1039,7 @@ def show_config(
         ui.console.print(f"  [dim]Session Name:[/]    [bold white]{names[current_conv]}[/]")
     ui.console.print(f"  [dim]Config File:[/]     {config.CONFIG_FILE}\n")
 
-    table = Table(title="Policy API Keys by Persona", box=box.ROUNDED, border_style=ui.COLOR_BRAND_600)
+    table = Table(title="Policy API Keys by Agent", box=box.ROUNDED, border_style=ui.COLOR_BRAND_600)
     table.add_column("Agent Key", style=f"bold {ui.COLOR_BRAND_400}")
     table.add_column("Title", style="bold white")
     table.add_column("Policy API Key", style="dim")
@@ -1961,7 +1961,7 @@ def run_setup_wizard() -> tuple[str, str, Optional[str]]:
         Panel(
             "[bold white]Welcome to the SAFi Governed Agent Interface![/]\n\n"
             "[dim]This quick wizard will connect your workstation to your SAFi appliance\n"
-            "and configure your primary agent persona.[/dim]",
+            "and configure your primary agent.[/dim]",
             title=f"[bold {ui.COLOR_BRAND_400}]SAFi CLI — First-Run Setup[/]",
             border_style=ui.COLOR_BRAND_500,
             box=box.ROUNDED,
@@ -1994,7 +1994,7 @@ def run_setup_wizard() -> tuple[str, str, Optional[str]]:
         if discovered:
             ui.console.print(
                 f"[bold green]✓ Connected successfully![/] "
-                f"[dim](Discovered {len(discovered)} agent persona(s): {', '.join(discovered.keys())})[/dim]"
+                f"[dim](Discovered {len(discovered)} agent(s): {', '.join(discovered.keys())})[/dim]"
             )
             config.save_config({"api_url": chosen_url})
             break
@@ -2011,9 +2011,9 @@ def run_setup_wizard() -> tuple[str, str, Optional[str]]:
                 config.save_config({"api_url": chosen_url})
                 break
 
-    # 2. Select Default Agent Persona
-    ui.console.print("\n[bold white]2. Primary Agent Persona[/]")
-    ui.console.print("[dim]Select the primary agent persona for your workflows:[/dim]")
+    # 2. Select Default Agent
+    ui.console.print("\n[bold white]2. Primary Agent[/]")
+    ui.console.print("[dim]Select the primary agent for your workflows:[/dim]")
 
     agent_options = [
         ("sysadmin", "Sysadmin Agent", "Infrastructure, server maintenance, Active Directory, network"),
@@ -2030,7 +2030,7 @@ def run_setup_wizard() -> tuple[str, str, Optional[str]]:
     chosen_agent = "sysadmin"
     while True:
         try:
-            choice = input(f"Select Persona [1-{len(agent_options)}, default 1]: ").strip()
+            choice = input(f"Select Agent [1-{len(agent_options)}, default 1]: ").strip()
         except (KeyboardInterrupt, EOFError):
             sys.exit(0)
         if not choice:
@@ -2057,7 +2057,7 @@ def run_setup_wizard() -> tuple[str, str, Optional[str]]:
         key_val = existing_key
     else:
         ui.console.print(
-            "[dim]Each agent persona is governed by its own domain policy and requires its own Policy API Key.\n"
+            "[dim]Each agent is governed by its own domain policy and requires its own Policy API Key.\n"
             "You can generate one in the SAFi Governance Portal (Settings → API Keys).[/dim]"
         )
         try:
@@ -2095,7 +2095,7 @@ def main():
     parser.add_argument("prompt", nargs="?", help="Task prompt. If omitted, starts interactive REPL mode.")
     parser.add_argument("-k", "--api-key", help="SAFi Policy API Key (defaults to SAFI_API_KEY env or config).")
     parser.add_argument("-u", "--api-url", help="SAFi backend URL (default: http://localhost:5000).")
-    parser.add_argument("-a", "--agent", default=None, help="Agent persona (default: last used in workspace, or software_engineer).")
+    parser.add_argument("-a", "--agent", default=None, help="Agent (default: last used in workspace, or software_engineer).")
     parser.add_argument(
         "-m",
         "--model",
@@ -2162,7 +2162,7 @@ def main():
         ui.console.print(f"[bold green]✓ Saved API URL to {config.CONFIG_FILE}[/]")
         test_client = SafiClient(new_url)
         discovered = discover_agents(test_client)
-        ui.console.print(f"[dim]Backend {new_url}: discovered {len(discovered)} available agent persona(s).[/dim]")
+        ui.console.print(f"[dim]Backend {new_url}: discovered {len(discovered)} available agent(s).[/dim]")
         sys.exit(0)
 
     # Run setup wizard if requested via --setup or on first run in an interactive terminal
@@ -2190,7 +2190,7 @@ def main():
         agent_title = AVAILABLE_AGENTS.get(target_agent, {}).get("title", target_agent)
         ui.console.print(
             f"[bold yellow]🔑 No Policy API Key found for '{agent_title}' ({target_agent}).[/]\n"
-            f"[dim]Each agent persona is governed by its own domain policy and requires its own Policy API Key.[/dim]"
+            f"[dim]Each agent is governed by its own domain policy and requires its own Policy API Key.[/dim]"
         )
         try:
             api_key = input(f"Enter Policy API Key for {target_agent} (from SAFi Governance Portal): ").strip()

@@ -173,7 +173,7 @@ SOFTWARE_ENGINEER_TOOL_SCHEMAS: List[Dict[str, Any]] = [
                     "prompt": {"type": "string", "description": "Detailed goal and instructions for the subagent."},
                     "subagent_type": {
                         "type": "string",
-                        "description": "Role/persona for the subagent: 'researcher' (read-only search), 'tester' (test runner), or 'code_reviewer'.",
+                        "description": "Role for the subagent: 'researcher' (read-only search), 'tester' (test runner), or 'code_reviewer'.",
                         "enum": ["researcher", "tester", "code_reviewer"]
                     }
                 },
