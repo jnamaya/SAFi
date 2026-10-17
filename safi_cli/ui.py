@@ -1252,7 +1252,7 @@ def print_final_output(text: str, res: Dict[str, Any]):
     _record_turn_telemetry(res)
     response_panel = Panel(
         Markdown(text),
-        title=f"[bold {COLOR_BRAND_400}]● SAFi Governed Response[/]",
+        title=f"[bold {COLOR_BRAND_400}]● SAFI Response[/]",
         border_style=COLOR_BRAND_600,
         box=box.ROUNDED,
         padding=(1, 2),
