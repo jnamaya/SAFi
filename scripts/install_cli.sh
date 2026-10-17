@@ -42,7 +42,29 @@ else
     rm -rf "${TMP_DIR}"
 fi
 
-# 3. Setup Python runtime (try venv first, fallback to user python)
+# 3. Check & Install system packages (python3-venv, sshpass, nmap, jq)
+echo "Checking operational system packages..."
+PKGS=()
+for tool in ssh sshpass nmap jq; do
+    if ! command -v "$tool" &>/dev/null; then
+        PKGS+=("$tool")
+    fi
+done
+
+if ! "${PYTHON_BIN}" -m venv --help &>/dev/null; then
+    PKGS+=("python3-venv" "python3-pip")
+fi
+
+if [ ${#PKGS[@]} -gt 0 ]; then
+    echo "Installing missing system utilities: ${PKGS[*]}..."
+    if command -v apt-get &>/dev/null && [ "$(id -u)" -eq 0 ]; then
+        apt-get update -qq && apt-get install -y -qq "${PKGS[@]}" || true
+    elif command -v apt-get &>/dev/null && command -v sudo &>/dev/null; then
+        sudo apt-get update -qq && sudo apt-get install -y -qq "${PKGS[@]}" || true
+    fi
+fi
+
+# 4. Setup Python runtime (isolated venv preferred)
 TARGET_PYTHON="${PYTHON_BIN}"
 USE_VENV=0
 
@@ -56,7 +78,6 @@ if "${PYTHON_BIN}" -m venv "${INSTALL_DIR}/venv" 2>/dev/null; then
 fi
 
 if [ "${USE_VENV}" -eq 0 ]; then
-    # Venv was not created (e.g. Debian/Ubuntu missing python3-venv), check if rich/requests exist
     if "${PYTHON_BIN}" -c "import requests, rich" 2>/dev/null; then
         echo "Using existing Python environment (requests and rich already present)."
         TARGET_PYTHON="${PYTHON_BIN}"
@@ -66,27 +87,7 @@ if [ "${USE_VENV}" -eq 0 ]; then
             TARGET_PYTHON="${PYTHON_BIN}"
         else
             echo "Warning: could not auto-install requests and rich."
-            echo "Please run: sudo apt install python3-venv (or pip install requests rich)"
         fi
-    fi
-fi
-
-# 4. Check & Install Sysadmin CLI dependencies (openssh, sshpass, nmap, jq)
-echo "Checking sysadmin operational tooling..."
-SYS_PKGS=()
-for tool in ssh sshpass nmap jq; do
-    if ! command -v "$tool" &>/dev/null; then
-        SYS_PKGS+=("$tool")
-    fi
-done
-
-if [ ${#SYS_PKGS[@]} -gt 0 ]; then
-    echo "Optional sysadmin utilities missing: ${SYS_PKGS[*]}"
-    if command -v apt-get &>/dev/null && [ "$(id -u)" -eq 0 ]; then
-        apt-get update -qq && apt-get install -y -qq openssh-client sshpass nmap jq || true
-    elif command -v apt-get &>/dev/null && command -v sudo &>/dev/null; then
-        echo "Attempting to install missing sysadmin tools via sudo apt-get..."
-        sudo apt-get update -qq && sudo apt-get install -y -qq openssh-client sshpass nmap jq || echo "Notice: Could not auto-install via sudo. Please install manually: sudo apt install ${SYS_PKGS[*]}"
     fi
 fi
 
@@ -99,17 +100,7 @@ exec "${TARGET_PYTHON}" -m safi_cli.main "\$@"
 EOF
 chmod +x "${BIN_DIR}/safi"
 
-# 6. Ensure ~/.local/bin is in user PATH
-if [[ ":$PATH:" != *":${BIN_DIR}:"* ]]; then
-    if [ -f "${HOME}/.bashrc" ] && ! grep -q '\.local/bin' "${HOME}/.bashrc" 2>/dev/null; then
-        echo 'export PATH="$HOME/.local/bin:$PATH"' >> "${HOME}/.bashrc"
-    fi
-    if [ -f "${HOME}/.profile" ] && ! grep -q '\.local/bin' "${HOME}/.profile" 2>/dev/null; then
-        echo 'export PATH="$HOME/.local/bin:$PATH"' >> "${HOME}/.profile"
-    fi
-fi
-
-# 7. Create sys-exec infrastructure runner
+# 6. Create sys-exec infrastructure runner
 echo "Writing sys-exec runner to ${BIN_DIR}/sys-exec..."
 cat << 'EOF' > "${BIN_DIR}/sys-exec"
 #!/usr/bin/env bash
@@ -196,7 +187,26 @@ fi
 EOF
 chmod +x "${BIN_DIR}/sys-exec"
 
-# 7. Scaffold inventory template if missing
+# 7. Make safi and sys-exec universally available in system PATH
+if [ -w "/usr/local/bin" ]; then
+    ln -sf "${BIN_DIR}/safi" /usr/local/bin/safi 2>/dev/null || true
+    ln -sf "${BIN_DIR}/sys-exec" /usr/local/bin/sys-exec 2>/dev/null || true
+elif command -v sudo &>/dev/null; then
+    sudo ln -sf "${BIN_DIR}/safi" /usr/local/bin/safi 2>/dev/null || true
+    sudo ln -sf "${BIN_DIR}/sys-exec" /usr/local/bin/sys-exec 2>/dev/null || true
+fi
+
+# Fallback: persist ~/.local/bin in user shell profiles
+if [[ ":$PATH:" != *":${BIN_DIR}:"* ]]; then
+    if [ -f "${HOME}/.bashrc" ] && ! grep -q '\.local/bin' "${HOME}/.bashrc" 2>/dev/null; then
+        echo 'export PATH="$HOME/.local/bin:$PATH"' >> "${HOME}/.bashrc"
+    fi
+    if [ -f "${HOME}/.profile" ] && ! grep -q '\.local/bin' "${HOME}/.profile" 2>/dev/null; then
+        echo 'export PATH="$HOME/.local/bin:$PATH"' >> "${HOME}/.profile"
+    fi
+fi
+
+# 8. Scaffold inventory template if missing
 CONFIG_DIR="${HOME}/.config/safi"
 mkdir -p "${CONFIG_DIR}"
 
@@ -217,22 +227,9 @@ fi
 
 echo ""
 echo "=========================================================="
-echo "✓ SAFi CLI & sys-exec installed successfully to ${BIN_DIR}"
+echo "✓ SAFi CLI installed successfully!"
 echo "=========================================================="
 echo ""
-echo "Quick Setup:"
-if [[ ":$PATH:" != *":${BIN_DIR}:"* ]]; then
-    echo "  Activate PATH in this terminal window:"
-    echo "     source ~/.profile   (or: export PATH=\"\$HOME/.local/bin:\$PATH\")"
-    echo ""
-fi
-echo "  Launch the interactive setup wizard:"
-echo "     safi"
-echo ""
-echo "  Or configure manually:"
-echo "     safi --set-url http://<appliance-ip>:5001"
-echo "     safi --set-key sk-safi-... -a sysadmin"
-echo ""
-echo "  Manage remote servers via ~/.config/safi/inventory.json:"
-echo "     sys-exec --list"
+echo "To get started, simply run:"
+echo "   safi"
 echo ""
