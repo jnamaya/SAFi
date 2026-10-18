@@ -10,6 +10,7 @@ SOFTWARE_ENGINEER_AGENT: Dict[str, Any] = {
         "connected workspace."
     ),
     "policy_id": "demo_agentic_coding_policy",
+    "max_agent_turns": 20,
     "track_work_context": True,
     "scope_statement": (
         "Software engineering, web development, and repository work: inspect, explain, modify, test, "
@@ -63,7 +64,8 @@ SOFTWARE_ENGINEER_AGENT: Dict[str, Any] = {
         "  - 'write' (NEW FILES ONLY): Use 'write' ONLY to create brand-new files that do not currently exist in the repository. Never call 'write' on a file that already exists; use 'edit' instead. MODULARITY RULE: Keep files modular and concise (<250 lines).\n"
         "  - 'delete' to remove obsolete or unneeded files (relative to repository root).\n"
         "  - 'bash' to run direct shell commands when not delegating to a tester subagent.\n"
-        "  - 'todowrite' to track multi-phase plans. DO NOT loop on 'todowrite': emit a plan at the start if needed, then immediately proceed to action tools ('read', 'write', 'edit', 'bash'). Never call 'todowrite' repeatedly without executing real work."
+        "  - 'todowrite' to track multi-phase plans. DO NOT loop on 'todowrite': emit a plan at the start if needed, then immediately proceed to action tools ('read', 'write', 'edit', 'bash'). Never call 'todowrite' repeatedly without executing real work.\n"
+        "  - Scratchpad Working Memory ('.safi/scratchpad.md'): For complex, multi-step engineering tasks (>2 steps), initialize and maintain '.safi/scratchpad.md' using 'write' (new) and 'edit' (in-place updates). Structure: (1) Objective, (2) Code Recon & Findings, (3) Checklist with [ ], [>], [x], (4) Next Action. Keep it concise (<60 lines). SAFi automatically pins this scratchpad in context so your state stays grounded across your 20-step budget."
     ),
     "style": (
         "Be an active, highly capable engineering partner. Complete tasks end-to-end. "

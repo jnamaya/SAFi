@@ -1200,6 +1200,30 @@ class SAFi:
                     "[Client workspace metadata]\n" + "\n".join(workspace_lines)
                     + "\n[/Client workspace metadata]\n\n" + prompt_for_intellect
                 )
+
+            # Workspace Scratchpad (.safi/scratchpad.md)
+            scratchpad_content = context.get("scratchpad")
+            if not scratchpad_content:
+                ws_root = context.get("workspace_root")
+                if isinstance(ws_root, str) and ws_root.startswith("/"):
+                    try:
+                        local_sp = Path(ws_root) / ".safi" / "scratchpad.md"
+                        if local_sp.is_file():
+                            scratchpad_content = local_sp.read_text(encoding="utf-8", errors="replace").strip()
+                    except Exception:
+                        pass
+            if isinstance(scratchpad_content, str) and scratchpad_content.strip():
+                max_sp_chars = int(os.environ.get("SAFI_SCRATCHPAD_MAX_CHARS", "4000"))
+                sp_text = scratchpad_content.strip()
+                if len(sp_text) > max_sp_chars:
+                    sp_text = sp_text[:max_sp_chars] + f"\n... [scratchpad truncated to {max_sp_chars} characters]"
+                prompt_for_intellect = (
+                    "[ACTIVE WORKSPACE SCRATCHPAD (.safi/scratchpad.md)]\n"
+                    + sp_text
+                    + "\n[/ACTIVE WORKSPACE SCRATCHPAD]\n\n"
+                    + prompt_for_intellect
+                )
+
             def _bound_result(val: Any, max_chars: int = 16_000) -> str:
                 s = val if isinstance(val, str) else (json.dumps(val, default=str) if val is not None else "")
                 bound_cap = int(os.environ.get("SAFI_TOOL_RESULT_MAX_CHARS", str(max_chars)))

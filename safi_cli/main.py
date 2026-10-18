@@ -2219,6 +2219,13 @@ def main():
             client.clear_agent_memory(conv_id, user_id=user_id, agent=target_agent)
         except Exception:
             pass
+        try:
+            sp = workspace_root / ".safi" / "scratchpad.md"
+            if sp.is_file():
+                prev_sp = workspace_root / ".safi" / "scratchpad.prev.md"
+                sp.replace(prev_sp)
+        except Exception:
+            pass
     auto_approve = not args.require_approval
 
     if args.prompt:

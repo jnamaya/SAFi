@@ -48,6 +48,11 @@ coverage/
 .DS_Store
 Thumbs.db
 .idea/
+
+# SAFi workspace scratchpads and local state
+.safi/
+*.scratchpad.md
+
 .vscode/
 vector_store/
 tts_cache/

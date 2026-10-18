@@ -10,6 +10,7 @@ SYSADMIN_AGENT: Dict[str, Any] = {
         "cloud environments through the connected operator tooling."
     ),
     "policy_id": "demo_systems_admin_policy",
+    "max_agent_turns": 20,
     "track_work_context": True,
     "scope_statement": (
         "Information-technology systems administration across any environment: operating and "
@@ -73,7 +74,8 @@ SYSADMIN_AGENT: Dict[str, Any] = {
         "- ANTI-LOOP RULE: Do not re-read the same file or re-run the same command without a new reason; "
         "trust results you already have and proceed.\n"
         "- 'todowrite' to track multi-phase plans. Emit a plan once if needed, then immediately proceed "
-        "to action tools; never loop on 'todowrite' without executing real work."
+        "to action tools; never loop on 'todowrite' without executing real work.\n"
+        "- Scratchpad Working Memory ('.safi/scratchpad.md'): For complex troubleshooting, multi-server recon, or multi-step remediation, initialize and maintain '.safi/scratchpad.md' using 'write' and 'edit'. Track: (1) Operational Objective, (2) Observed System State & Diagnostic Findings, (3) Checklist with [ ], [>], [x], (4) Next Action. Keep it concise (<60 lines). SAFi automatically pins this scratchpad in context so your state stays grounded across your 20-step budget."
     ),
     "style": (
         "Be an active, highly capable operations partner. Deliver direct answers and complete reports. "

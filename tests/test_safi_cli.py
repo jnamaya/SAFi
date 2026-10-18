@@ -1910,8 +1910,74 @@ class TestSafiSetupWizard(unittest.TestCase):
         self.assertEqual(config.resolve_agent_api_key("sysadmin"), "sk-safi-12345")
 
 
+
+class TestWorkspaceScratchpad(unittest.TestCase):
+    """Test scratchpad detection, bounding, and transmission in safi_cli."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.workspace_root = Path(self.temp_dir.name)
+        self.client = SafiClient(api_url="http://127.0.0.1:5000", api_key="sk-test")
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def test_scratchpad_loaded_when_present(self):
+        safi_dir = self.workspace_root / ".safi"
+        safi_dir.mkdir(parents=True)
+        sp_file = safi_dir / "scratchpad.md"
+        sp_file.write_text("# Goal: Migrate database\n- [ ] Step 1\n", encoding="utf-8")
+
+        with patch.object(self.client.session, "post") as mock_post:
+            mock_post.return_value = MagicMock(status_code=200, json=lambda: {"ok": True})
+            self.client.send_turn(
+                user_id="u1",
+                conversation_id="c1",
+                message="hello",
+                workspace_root=str(self.workspace_root),
+            )
+            payload = mock_post.call_args[1]["json"]
+            ws_ctx = payload.get("workspace_context", {})
+            self.assertIn("scratchpad", ws_ctx)
+            self.assertIn("# Goal: Migrate database", ws_ctx["scratchpad"])
+
+    def test_scratchpad_truncated_when_oversized(self):
+        safi_dir = self.workspace_root / ".safi"
+        safi_dir.mkdir(parents=True)
+        sp_file = safi_dir / "scratchpad.md"
+        sp_file.write_text("A" * 6000, encoding="utf-8")
+
+        with patch.object(self.client.session, "post") as mock_post:
+            mock_post.return_value = MagicMock(status_code=200, json=lambda: {"ok": True})
+            self.client.send_turn(
+                user_id="u1",
+                conversation_id="c1",
+                message="hello",
+                workspace_root=str(self.workspace_root),
+            )
+            payload = mock_post.call_args[1]["json"]
+            ws_ctx = payload.get("workspace_context", {})
+            self.assertIn("scratchpad", ws_ctx)
+            self.assertIn("truncated", ws_ctx["scratchpad"])
+            self.assertLessEqual(len(ws_ctx["scratchpad"]), 4100)
+
+    def test_scratchpad_omitted_when_absent(self):
+        with patch.object(self.client.session, "post") as mock_post:
+            mock_post.return_value = MagicMock(status_code=200, json=lambda: {"ok": True})
+            self.client.send_turn(
+                user_id="u1",
+                conversation_id="c1",
+                message="hello",
+                workspace_root=str(self.workspace_root),
+            )
+            payload = mock_post.call_args[1]["json"]
+            ws_ctx = payload.get("workspace_context", {})
+            self.assertNotIn("scratchpad", ws_ctx)
+
+
 if __name__ == "__main__":
     unittest.main()
+
 
 
 

@@ -178,15 +178,28 @@ class SafiClient:
         else:
             tools_payload = get_tools_for_agent(agent)
 
+        ws_context: Dict[str, Any] = {
+            "working_directory": workspace_root,
+            "workspace_root": workspace_root,
+        }
+        try:
+            sp_path = Path(workspace_root) / ".safi" / "scratchpad.md"
+            if sp_path.is_file():
+                raw_sp = sp_path.read_text(encoding="utf-8", errors="replace").strip()
+                if raw_sp:
+                    # Enforce 4,000 char anti-bloat limit
+                    if len(raw_sp) > 4000:
+                        raw_sp = raw_sp[:4000] + "\n... [scratchpad truncated to 4,000 characters]"
+                    ws_context["scratchpad"] = raw_sp
+        except Exception:
+            pass
+
         payload: Dict[str, Any] = {
             "user_id": user_id,
             "conversation_id": conversation_id,
             "message": message,
             "agent": agent,
-            "workspace_context": {
-                "working_directory": workspace_root,
-                "workspace_root": workspace_root,
-            },
+            "workspace_context": ws_context,
             "tools": tools_payload,
             "tool_results": tool_results or [],
             "recent_turns": recent_turns,
