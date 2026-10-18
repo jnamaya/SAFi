@@ -83,7 +83,7 @@ COLOR_BORDER = "#27272a"
 # User Prompt Theme Tokens
 COLOR_USER_ACCENT = "#38bdf8"
 COLOR_USER_BORDER = "#2563eb"
-COLOR_USER_BG = os.environ.get("SAFI_CLI_USER_BG", "#182234")
+COLOR_USER_BG = os.environ.get("SAFI_CLI_USER_BG", "#1e293b")
 COLOR_USER_BADGE_BG = "#1e3a5f"
 
 SHOW_AUDIT_PANEL = _env_flag("SAFI_CLI_SHOW_AUDIT", True)
@@ -297,7 +297,7 @@ def print_user_prompt(
     row_text = Text()
     row_text.append("SAFi ", style=f"bold {COLOR_BRAND_400}")
     row_text.append(f"[{agent_label}] › ", style="white")
-    row_text.append(prompt.strip(), style="bold white")
+    row_text.append(prompt.strip(), style=f"bold {COLOR_USER_ACCENT}")
 
     table.add_row(row_text)
     console.print()
@@ -310,7 +310,7 @@ def get_input_prompt(agent: Optional[str] = None, user_name: Optional[str] = Non
     margin = " " * CLI_MARGIN if CLI_MARGIN > 0 else ""
     return (
         f"\n{margin}\001\033[48;2;30;41;59m\033[38;2;74;222;128m\033[1m\002 SAFi \001\033[0m"
-        f"\033[48;2;30;41;59m\033[38;2;255;255;255m\002[{agent_label}] › \001\033[0m\002 "
+        f"\033[48;2;30;41;59m\033[38;2;255;255;255m\002[{agent_label}] › \001\033[0m\033[38;2;56;189;248m\033[1m\002 "
     )
 
 

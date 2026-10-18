@@ -90,6 +90,7 @@ def _prompt_style():
             "safi-badge": "bg:#1e293b #4ade80 bold",
             "safi-agent": "bg:#1e293b #ffffff",
             "safi-cont": "#64748b",
+            "": "#38bdf8 bold",
         })
     return _STYLE
 
