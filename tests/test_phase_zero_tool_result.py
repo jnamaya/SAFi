@@ -50,9 +50,9 @@ class OrchestratorWiring(unittest.TestCase):
 
     def test_screen_precedes_use_of_tool_result(self):
         src = inspect.getsource(orch)
-        screen = src.index("evaluate_tool_result(tool_result)")
+        screen = src.index("self.phase_zero.evaluate_tool_result(")
         evidence = src.index("tool_evidence.append(")
-        history = src.index("tool_result_history_entry(current_tool_name, tool_result)")
+        history = src.index("tool_result_history_entry(")
         self.assertLess(screen, evidence)
         self.assertLess(screen, history)
 

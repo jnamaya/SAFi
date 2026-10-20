@@ -614,12 +614,13 @@ class Config:
     SPIRIT_ALIGNMENT_THRESHOLD = float(os.environ.get("SAFI_SPIRIT_THRESHOLD", "0.5"))
 
     #
-    # The Fiduciary leads because it demonstrates what SAFi is for in a single
-    # interaction: a regulated-domain agent declining to give personalised
-    # financial advice. It is also the agent the published domain-compliance
-    # benchmark measures, and it needs no knowledge base — no index, no
-    # embedding model, nothing to download on first boot.
-    DEFAULT_PROFILE = os.environ.get("SAFI_PROFILE", "fiduciary").strip().lower()
+    # The Software Engineer leads because it is the agent a technical operator
+    # reaches for first, and it needs no knowledge base — no index, no
+    # embedding model, nothing to download on first boot. It must remain a
+    # member of BUILTIN_AGENTS' default set below: a default profile missing
+    # from the active catalog makes every conversation fall back to it and
+    # loop (the appliance wizard pins the same coupling).
+    DEFAULT_PROFILE = os.environ.get("SAFI_PROFILE", "software_engineer").strip().lower()
 
     # Org that turns from /api/public/process_prompt are attributed to. Anonymous
     # public users carry no org of their own, so without this their governance
@@ -631,18 +632,21 @@ class Config:
     PUBLIC_ORG_ID = (os.environ.get("SAFI_PUBLIC_ORG_ID") or "").strip() or None
 
     # Which built-in demo agents to register and seed. Comma-separated agent
-    # keys (see core/faculties/synderesis.py AGENTS), or "all" for the full
-    # demo suite.
+    # keys (see core/agents/ KEY values), or "all" for the full suite.
     #
-    # The default three all run with zero extra setup. Fiduciary and Tutor
-    # carry no rag_knowledge_base at all; the Steward has a small one that
-    # auto-builds in Docker. The Bible Scholar is excluded from the default
-    # precisely because it DOES require an index to be built first.
+    # The default three all run with zero extra setup: none carries a
+    # rag_knowledge_base, so a first boot builds no index and downloads no
+    # embedding model. The SAFi Steward (safi) is excluded because its small
+    # index must auto-build in Docker; enable it (or use "all") to get the
+    # system-explainer back. The Bible Scholar is excluded for the stronger
+    # reason that it DOES require an index to be built first.
     BUILTIN_AGENTS = [
         a.strip().lower()
-        for a in os.environ.get("SAFI_BUILTIN_AGENTS", "fiduciary,tutor,safi").split(",")
+        for a in os.environ.get(
+            "SAFI_BUILTIN_AGENTS", "software_engineer,sysadmin,tutor"
+        ).split(",")
         if a.strip()
-    ] or ["fiduciary", "tutor", "safi"]
+    ] or ["software_engineer", "sysadmin", "tutor"]
 
     @classmethod
     def builtin_agent_enabled(cls, key: str) -> bool:

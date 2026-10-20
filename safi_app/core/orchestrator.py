@@ -2267,6 +2267,12 @@ class SAFi:
 
             _directives = (self.profile or {}).get("internal_rephrase_directives", {})
             spirit_directive = _directives.get(E_spirit) or _directives.get("ethical_violation", "")
+            if correctable_gate and E_spirit == "scope_violation":
+                spirit_directive = (
+                    "The user's request is in-scope, but your previous draft was incomplete "
+                    "or failed to answer it directly. Provide a direct, complete, and helpful "
+                    "response that answers the user's question within your role."
+                )
             spirit_retry_prompt = (
                 f"{prompt_with_date}\n\n"
                 "--- INTERNAL GOVERNANCE FEEDBACK ---\n"
@@ -2746,15 +2752,36 @@ class SAFi:
     @staticmethod
     def _is_correctable_gate(result: Dict[str, Any]) -> bool:
         """True for a hard-gate failure whose mapped reason is ethical_violation
-        (a content-quality gate, per will.py's gate table). These take the
+        (a content-quality gate, per will.py's gate table) or an in-scope
+        draft-failure under scope_violation. These take the
         reflexion retry — regenerate with the question and blocked draft
         visible — instead of the vacuum agent redirect, which cannot see the
         question and misreports in-scope requests as out of scope."""
-        return (
-            result.get("verdict") == "violation"
-            and result.get("stage") == "hard_gate"
-            and result.get("reason") == "ethical_violation"
-        )
+        if result.get("verdict") != "violation" or result.get("stage") != "hard_gate":
+            return False
+        reason = result.get("reason")
+        if reason == "ethical_violation":
+            return True
+        if reason == "scope_violation":
+            # If the user's prompt was in-scope but the draft failed to answer,
+            # was a fragment, or derailed, it is a content-quality defect
+            # (correctable via reflexion retry) rather than an out-of-scope request.
+            ledger = result.get("ledger") or []
+            for entry in ledger:
+                val = str(entry.get("value") or "").lower()
+                if "scope" in val:
+                    if float(entry.get("score", 0)) <= -1.0:
+                        audit_reason = str(entry.get("reason") or "").lower()
+                        in_scope = any(k in audit_reason for k in (
+                            "in-scope", "in scope", "clearly in-scope", "clearly in scope"
+                        ))
+                        draft_failure = any(k in audit_reason for k in (
+                            "fails to answer", "failed to answer", "fragment", "derails", "derailed",
+                            "refuses", "refusal", "failure to engage", "incomplete"
+                        ))
+                        if in_scope and draft_failure:
+                            return True
+        return False
 
     def _ship_system_failure_notice(
         self,

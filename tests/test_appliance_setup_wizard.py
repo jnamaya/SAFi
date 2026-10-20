@@ -283,7 +283,7 @@ def test_commit_makes_software_engineer_the_default_agent(env_paths):
     text = _commit(env_paths, {"mode": "cloud", "provider": "GROQ_API_KEY",
                                "api_key": "sk-test"})
     assert "SAFI_PROFILE=software_engineer" in text
-    assert "SAFI_BUILTIN_AGENTS=fiduciary,tutor,safi,software_engineer" in text
+    assert "SAFI_BUILTIN_AGENTS=software_engineer,sysadmin,tutor" in text
 
 
 def test_commit_uses_https_and_secure_cookie_for_appliance_access(env_paths):

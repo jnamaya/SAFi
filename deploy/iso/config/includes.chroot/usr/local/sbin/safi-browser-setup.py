@@ -608,12 +608,13 @@ def initialize(state: dict, setup) -> None:
         values[choice["provider"]] = choice["api_key"]
 
     values.update(setup.generated_secrets())
-    # The Software Engineer agent ships in the package but is not one of the
-    # enabled-by-default demo trio (config.py BUILTIN_AGENTS = fiduciary,
-    # tutor, safi). The appliance turns it on and makes it the default profile
-    # so a fresh box is a coding agent out of the box. The two must move
-    # together: a default profile that is not in BUILTIN_AGENTS would not be
-    # in the active catalog and every conversation would fall back and loop.
+    # Upstream now defaults to exactly this appliance's trio (config.py
+    # BUILTIN_AGENTS = software_engineer, sysadmin, tutor) with the Software
+    # Engineer as the default profile, so the wizard only pins what the code
+    # already says — keeping the pin means a later upstream default change
+    # cannot silently alter a fresh box. The two must move together: a
+    # default profile that is not in BUILTIN_AGENTS would not be in the
+    # active catalog and every conversation would fall back and loop.
     values["SAFI_PROFILE"] = "software_engineer"
     tmp = ENV_FILE.with_suffix(".env.tmp")
     final = setup.render(lines, index, values)
@@ -623,9 +624,8 @@ def initialize(state: dict, setup) -> None:
     # instead; config.py loads .env with load_dotenv(override=True), so the
     # last assignment wins even if a future template defines the key.
     final += (
-        "# Agents enabled on the appliance: the demo trio plus the Software "
-        "Engineer, which is the default profile.\n"
-        "SAFI_BUILTIN_AGENTS=fiduciary,tutor,safi,software_engineer\n"
+        "# Agents enabled on the appliance.\n"
+        "SAFI_BUILTIN_AGENTS=software_engineer,sysadmin,tutor\n"
     )
     tmp.write_text(final, encoding="utf-8")
     tmp.chmod(0o600)

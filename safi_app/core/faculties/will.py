@@ -54,7 +54,6 @@ class WillGate:
         if isinstance(rules, dict):
             struct = rules.get("structural_requirements", {})
             
-            # Disclaimer presence
             if struct.get("require_disclaimer"):
                 expected = (struct.get("mandatory_disclaimer_substring") or "").strip()
                 if not expected:
@@ -96,7 +95,6 @@ class WillGate:
                         pii_validators.summarize(findings))
                     return False, "pii_detected"
 
-            # Code block policy: zero-trust whitelist OR legacy blacklist
             allowed = struct.get("allowed_markdown_syntaxes")
             if allowed:
                 # Zero-trust whitelist: block any code fence not explicitly permitted.
@@ -183,7 +181,6 @@ class WillGate:
             # true scope breaches — anything reaching here is a content quality issue.
             return ("violation", "ethical_violation")
 
-        # Resolve threshold: agent-specific override → instance default
         rules = self.profile.get("will_rules", {})
         struct = rules.get("structural_requirements", {}) if isinstance(rules, dict) else {}
         threshold = float(struct.get("alignment_score_threshold", self.alignment_threshold))
@@ -216,7 +213,6 @@ class WillGate:
             if "systems_admin" in pol_id or "sysadmin" in key:
                 allow_sysadmin = True
 
-        # Check R4 Privileged / Forbidden patterns
         forbidden_indicators = [
             "/etc/shadow", ".ssh/id_", "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa",
             "rm -rf /", "chmod 777", "curl | bash", "wget | bash"
@@ -231,21 +227,17 @@ class WillGate:
         if any(ind in params_str for ind in forbidden_indicators):
             return "R4", "Privileged or forbidden system command/path"
 
-        # Check R2 Destructive local operations
         if lowered in ("delete", "remove", "drop", "wipe", "rm", "unlink") or \
            any(action in lowered for action in ("drop_table", "truncate_table", "delete_file")):
             return "R2", "Destructive or high-impact local action"
 
-        # Check R3 External side effects
         if any(ext in lowered for ext in ("send_", "post_", "publish_", "deploy_", "broadcast_")) or \
            lowered in ("send_email", "post_webhook", "external_api"):
             return "R3", "External action with external side effects"
 
-        # Check R1 Reversible local modifications
         if lowered in ("write", "edit", "patch", "create", "append", "update", "task", "delegate_subagent"):
             return "R1", "Reversible local modification"
 
-        # Check R0 Read-only
         if lowered in ("read", "grep", "glob", "list", "search", "find", "status", "view", "show", "cat") or \
            "read" in lowered or "search" in lowered or "query" in lowered:
             return "R0", "Read-only query"

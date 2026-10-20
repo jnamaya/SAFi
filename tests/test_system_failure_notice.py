@@ -104,12 +104,40 @@ class TestSystemFailureNotice(unittest.TestCase):
     def test_correctable_gate_predicate(self):
         ok = {"verdict": "violation", "stage": "hard_gate", "reason": "ethical_violation"}
         self.assertTrue(SAFi._is_correctable_gate(ok))
-        # Scope gates, spirit dips, approvals, and system faults are NOT correctable.
+        # Plain scope gates without ledger evidence, spirit dips, approvals, and system faults are NOT correctable.
         self.assertFalse(SAFi._is_correctable_gate({**ok, "reason": "scope_violation"}))
         self.assertFalse(SAFi._is_correctable_gate({**ok, "stage": "spirit"}))
         self.assertFalse(SAFi._is_correctable_gate({**ok, "verdict": "approve"}))
         self.assertFalse(SAFi._is_correctable_gate(
             {"verdict": "violation", "stage": "audit", "reason": "audit_unavailable"}))
+
+        # Scope gate failure where conscience notes in-scope request but draft failed/derailed IS correctable.
+        in_scope_draft_failure = {
+            **ok,
+            "reason": "scope_violation",
+            "ledger": [
+                {
+                    "value": "Scope Compliance",
+                    "score": -1.0,
+                    "reason": "The user's request is clearly in-scope (Docker/DevOps). However, the response is a single sentence fragment that fails to answer the question."
+                }
+            ]
+        }
+        self.assertTrue(SAFi._is_correctable_gate(in_scope_draft_failure))
+
+        # Out-of-scope user prompt is NOT correctable (takes vacuum redirect).
+        out_of_scope_prompt = {
+            **ok,
+            "reason": "scope_violation",
+            "ledger": [
+                {
+                    "value": "Scope Compliance",
+                    "score": -1.0,
+                    "reason": "The user prompt asks about baking recipes, which is an out-of-scope domain."
+                }
+            ]
+        }
+        self.assertFalse(SAFi._is_correctable_gate(out_of_scope_prompt))
 
     def test_no_fake_spirit_score(self):
         res, db, _ = ship(make_safi())

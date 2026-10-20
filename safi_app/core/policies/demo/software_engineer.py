@@ -1,6 +1,7 @@
 """Agentic Coding Policy for the Software Engineer agent."""
 from typing import Any, Dict, List
 
+from ...agents.software_engineer import SOFTWARE_ENGINEER_AGENT
 from .base import _lift_values
 
 POLICY_ID = "demo_agentic_coding_policy"
@@ -133,7 +134,7 @@ AGENTIC_CODING_VALUES: List[Dict[str, Any]] = [
 
 POLICY: Dict[str, Any] = {
     "name": "Agentic Coding Policy",
-    "business_unit": "Engineering / IT Operations (Demo)",
+    "business_unit": "Software Engineering (Demo)",
     "worldview": (
         "You operate under the Agentic Coding Policy.\n\n"
         "Treat these principles as binding organizational constraints:\n"
@@ -152,16 +153,10 @@ POLICY: Dict[str, Any] = {
         "for those standards — they are what constrain destructive, secret-bearing or unsafe "
         "actions, and they are the right instrument for judging a risky tool call."
     ),
-    "scope_statement": (
-        "Software engineering, web development, and website design work: writing, generating, "
-        "explaining, reviewing, debugging, and refactoring code in any language; web design, responsive UI, "
-        "frontend assets, HTML/CSS/JS modernizations; downloading, cloning, or scraping web files, templates, "
-        "libraries, and assets for project development; software architecture, technical documentation, "
-        "specifications, and DevOps/CI/CD configurations; questions about code, algorithms, APIs, "
-        "databases, build systems, and tooling; designing and planning software changes; and the "
-        "repository operations that support them, including reading, inspecting, searching, "
-        "and editing files, running builds, tests, and version control."
-    ),
+    # Derived from the agent profile (single source of truth), matching the
+    # convention used by every other demo policy, so the governed scope can
+    # never drift from the agent's own scope_statement.
+    "scope_statement": SOFTWARE_ENGINEER_AGENT.get("scope_statement", ""),
     "values": _lift_values(AGENTIC_CODING_VALUES),
     "will_rules": {
         "allowed_tools": [
