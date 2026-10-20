@@ -27,6 +27,16 @@ docs/
 # Node (Tailwind dev tooling)
 public/node_modules/
 
+# Heavy local trees the image never COPYs (the Dockerfile brings in only
+# safi_app/, public/, scripts/, integrations/, rag/ and wsgi.py). deploy/ is
+# the multi-GB ISO workspace — including a duplicated source cache under
+# deploy/iso/config/includes.chroot/var/cache/safi-src — mcp/ holds vendored
+# gateway servers, .safi/ is agent scratch, db/ a local MySQL data dir.
+deploy/
+mcp/
+.safi/
+db/
+
 # Git
 .git/
 .gitignore
