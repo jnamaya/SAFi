@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import re
 import logging
+import uuid
 from typing import List, Dict, Any, Tuple, Optional, TYPE_CHECKING
 
 # TYPE_CHECKING import for type hints only; logging is imported at runtime above.
@@ -245,3 +246,83 @@ def parse_conscience_response(raw_text: str, log: "logging.Logger") -> List[Dict
         return [{"error": f"Conscience 'evaluations' was not a list."}]
 
     return evaluations
+
+
+def parse_tool_calls_from_text(raw_text: str, log: Optional["logging.Logger"] = None) -> List[Dict[str, Any]]:
+    """Salvage leaked or format-drifted tool calls from model text output.
+
+    Models (especially open-weights models like Qwen or Hermes running via llama.cpp)
+    occasionally leak their internal pre-training format into message content
+    instead of emitting structured tool_calls. Supports:
+      1. XML-style function & parameter tags:
+         <tool_call><function=bash><parameter=command>...</parameter></function></tool_call>
+         <tool_call><function name="bash"><parameter name="command">...</parameter></function></tool_call>
+      2. Embedded JSON inside <tool_call>...</tool_call>
+    """
+    if not raw_text or "<tool_call" not in raw_text:
+        return []
+
+    calls: List[Dict[str, Any]] = []
+    pattern = re.compile(r"<tool_call>(.*?)(?:</tool_call>|$)", re.DOTALL | re.IGNORECASE)
+    matches = pattern.findall(raw_text)
+
+    for block in matches:
+        block = block.strip()
+        if not block:
+            continue
+
+        # 1. Embedded JSON inside <tool_call>
+        start = block.find("{")
+        end = block.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            try:
+                candidate = block[start:end + 1]
+                data = json.loads(candidate)
+                name = data.get("name") or data.get("function")
+                args = data.get("arguments") or data.get("parameters") or {}
+                if name:
+                    calls.append({
+                        "id": f"call_salvage_{uuid.uuid4().hex[:8]}",
+                        "name": str(name),
+                        "arguments": args if isinstance(args, dict) else {"raw": args},
+                    })
+                    continue
+            except Exception:
+                pass
+
+        # 2. XML function and parameter parsing
+        fn_match = re.search(
+            r"<function(?:[ =:]|\s+name=)[\"']?([a-zA-Z0-9_\.\-]+)[\"']?>",
+            block,
+            re.IGNORECASE,
+        )
+        if fn_match:
+            fn_name = fn_match.group(1)
+            params: Dict[str, Any] = {}
+            param_matches = re.finditer(
+                r"<parameter(?:[ =:]|\s+name=)[\"']?([a-zA-Z0-9_\.\-]+)[\"']?>([\s\S]*?)(?:</parameter>|(?=<parameter)|(?=</function>)|$)",
+                block,
+                re.IGNORECASE,
+            )
+            for pm in param_matches:
+                p_name = pm.group(1)
+                p_val = pm.group(2).strip()
+                if (p_val.startswith("{") and p_val.endswith("}")) or (
+                    p_val.startswith("[") and p_val.endswith("]")
+                ):
+                    try:
+                        p_val = json.loads(p_val)
+                    except Exception:
+                        pass
+                params[p_name] = p_val
+
+            calls.append({
+                "id": f"call_salvage_{uuid.uuid4().hex[:8]}",
+                "name": fn_name,
+                "arguments": params,
+            })
+
+    if calls and log:
+        log.info(f"parse_tool_calls_from_text: Successfully salvaged {len(calls)} tool call(s) from XML tags.")
+
+    return calls

@@ -36,6 +36,7 @@ from .parsing_utils import (
     parse_intellect_response,
     parse_will_response,
     parse_conscience_response,
+    parse_tool_calls_from_text,
     robust_json_parse,
 )
 
@@ -780,7 +781,13 @@ class LLMProvider:
                     })
                 return json.dumps({"tool_calls": calls})
 
-            return msg.content or "{}"
+            content_text = msg.content or ""
+            if "<tool_call" in content_text:
+                salvaged = parse_tool_calls_from_text(content_text, self.log)
+                if salvaged:
+                    return json.dumps({"tool_calls": salvaged})
+
+            return content_text or "{}"
 
         elif provider_type == "anthropic":
             kwargs = {
@@ -1126,6 +1133,11 @@ class LLMProvider:
                                 return json_text, "Tool Call", context_for_audit, raw_turn
                         except:
                             pass
+
+                if "<tool_call" in raw_content_stripped:
+                    salvaged = parse_tool_calls_from_text(raw_content_stripped, self.log)
+                    if salvaged:
+                        return json.dumps({"tool_calls": salvaged}), "Tool Call", context_for_audit, None
 
                 parsed = parse_intellect_response(raw_content, self.log)
                 answer, reflection = parsed[0], parsed[1]
