@@ -11,6 +11,10 @@ logs/
 # Database file (contains user memory and private data)
 safi_memory.db
 
+# Stray sqlite ":memory:" test-run artifact (do not ignore *.ses broadly;
+# session_*.ses files are legitimate)
+:memory:.ses
+
 # Any local environment files (if you create them later)
 .env
 .env.*
