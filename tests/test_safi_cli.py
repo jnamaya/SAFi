@@ -2,11 +2,17 @@
 
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 import requests
+
+# Pin imports to the repository's safi_cli package: a stale installed copy
+# (e.g. ~/.local/share/safi-cli via PYTHONPATH or a user-site .pth) must not
+# shadow the code under test. Every other safi_cli test file does the same.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from safi_cli.tools import execute_tool, resolve_safe_path
 from safi_cli import config
@@ -443,24 +449,22 @@ class TestSafiCliDynamicAgentDiscovery(unittest.TestCase):
         )
 
     @patch.object(requests.Session, "get")
-    def test_client_get_available_agents_fallback_route(self, mock_get):
+    def test_client_get_available_agents_route_miss_returns_empty(self, mock_get):
+        # The /api/agentic/agents alias was removed in CLI 0.2.0; a miss on the
+        # canonical /api/agents/all must degrade to an empty list, not retry.
         mock_404 = MagicMock()
         mock_404.status_code = 404
-
-        mock_200 = MagicMock()
-        mock_200.status_code = 200
-        mock_200.json.return_value = {
-            "ok": True,
-            "available": [{"key": "remote_agent", "name": "Remote Agent"}],
-        }
-        mock_get.side_effect = [mock_404, mock_200]
+        mock_get.return_value = mock_404
 
         client = SafiClient("https://safi.demo.com")
         agents = client.get_available_agents()
 
-        self.assertEqual(len(agents), 1)
-        self.assertEqual(agents[0]["key"], "remote_agent")
-        self.assertEqual(mock_get.call_count, 2)
+        self.assertEqual(agents, [])
+        mock_get.assert_called_once_with(
+            "https://safi.demo.com/api/agents/all",
+            headers={},
+            timeout=5,
+        )
 
     @patch.object(requests.Session, "get", side_effect=Exception("Connection refused"))
     def test_client_get_available_agents_error_returns_empty(self, mock_get):

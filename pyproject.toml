@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "safi-cli"
-version = "0.1.0"
+version = "0.2.0"
 description = "SAFi Governed Agent Interface CLI"
 
 readme = "README.md"

@@ -20,7 +20,7 @@ from ..persistence import database as db
 from ..config import Config
 from ..bootstrap import create_organization
 from ..role_config import ROLE_CONFIG
-from ..profile_resolver import get_profile, list_profiles
+from ..profile_resolver import get_profile
 from authlib.integrations.base_client.errors import OAuthError
 import jwt
 
