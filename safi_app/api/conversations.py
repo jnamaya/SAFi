@@ -18,7 +18,7 @@ from ..core.orchestrator import (
     HARNESS_TOOL_REPEAT_LIMIT,
     count_current_turn_tool_repeats,
 )
-from ..profile_resolver import get_profile, list_profiles, AGENTS
+from ..profile_resolver import get_profile, AGENTS
 from ..core.services import provider_governance as pg
 from ..core.services.model_routing import resolve_effective_faculty_models
 from ..core import provenance
@@ -245,10 +245,6 @@ def get_user_id():
     if not user:
         return None
     return user.get('sub') or user.get('id')
-
-def get_user_profile_name():
-    user = session.get('user', {})
-    return user.get('active_profile') or Config.DEFAULT_PROFILE
 
 
 @conversations_bp.route('/bot/process_prompt', methods=['POST'])
@@ -833,48 +829,6 @@ def get_audit_result_endpoint(message_id):
 @conversations_bp.route('/health')
 def health_check():
     return jsonify({"status": "ok"})
-
-@conversations_bp.route('/profiles', methods=['GET'])
-def profiles_list():
-    user_id = get_user_id()
-    if not user_id:
-        return jsonify({"error": "Authentication required."}), 401
-
-    user_profile_name = get_user_profile_name()
-
-    sess_user = session.get('user') or {}
-    candidates = list_profiles(
-        owner_id=user_id,
-        org_id=sess_user.get('org_id'),
-        user_role=sess_user.get('role'),
-    )
-    # Explicit grants widen the role-based visibility result.
-    seen = {p['key'] for p in candidates}
-    for granted in sharing_store.granted_agents(user_id, sess_user.get('org_id')):
-        if granted['key'] not in seen:
-            candidates.append({"key": granted['key'], "name": granted.get('name'),
-                               "is_custom": True, "created_by": granted.get('created_by')})
-
-    all_profiles = []
-    for p in candidates:
-        try:
-            profile_details = get_profile(p['key'])
-            profile_details['key'] = p['key'] 
-            profile_details['is_custom'] = p.get('is_custom', False)
-            profile_details['created_by'] = p.get('created_by')
-            all_profiles.append(profile_details)
-        except (KeyError, ValueError):
-            # KeyError: unknown agent. ValueError: agent failed compile-time
-            # governance validation (e.g. rubric-less hard gate) — skip it here;
-            # it still appears in the agents management UI where it can be fixed.
-            continue 
-            
-    sorted_profiles = sorted(all_profiles, key=lambda x: x['name'])
-    
-    return jsonify({
-        "available": sorted_profiles, 
-        "active_profile_key": user_profile_name
-    })
 
 @conversations_bp.route('/conversations', methods=['GET'])
 def get_conversations():

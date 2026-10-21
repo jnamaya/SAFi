@@ -186,18 +186,14 @@ class UsePathEnforcement(SharingTestBase):
         self.assertIn("access", (r.get_json() or {}).get("error", "").lower())
 
 
-class PickerUnion(SharingTestBase):
+class AgentPickerVisibility(SharingTestBase):
 
-    def test_granted_agent_appears_in_both_pickers(self):
+    def test_granted_agent_appears_in_picker(self):
         sharing_store.set_grant(self.agent_key, 'user', self.member, self.org, self.owner)
         client = self.app.test_client()
         login_as(client, self.member, 'member', org_id=self.org)
 
         r = client.get('/api/agents/all')
-        keys = {a.get('key') for a in (r.get_json() or {}).get('available', [])}
-        self.assertIn(self.agent_key, keys)
-
-        r = client.get('/api/profiles')
         keys = {a.get('key') for a in (r.get_json() or {}).get('available', [])}
         self.assertIn(self.agent_key, keys)
 
