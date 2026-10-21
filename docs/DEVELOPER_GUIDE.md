@@ -542,7 +542,7 @@ to apply by hand.
 RBAC does not apply. `evaluate_api.py` authenticates via a policy-scoped
 API key (§9), not session RBAC, by design. A few files,
 `conversations.py`, `agent_api_routes.py`, `model_api_routes.py`,
-`profile_api_routes.py`, `documents.py`, do not show the same
+`documents.py`, do not show the same
 `_org_forbidden` grep hits; that likely means they scope by the
 authenticated user (e.g. a conversation the session user owns) rather
 than an `org_id` path parameter, but verify the specific route you are

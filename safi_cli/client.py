@@ -87,7 +87,7 @@ class SafiClient:
         headers = {}
         if self.api_key:
             headers["X-API-KEY"] = self.api_key
-        for path in ("/api/agents/all", "/api/agentic/agents"):
+        for path in ("/api/agents/all",):
             try:
                 resp = self.session.get(
                     f"{self.api_url}{path}",
@@ -122,7 +122,7 @@ class SafiClient:
         headers = {}
         if self.api_key:
             headers["X-API-KEY"] = self.api_key
-        for path in ("/api/agentic/models", "/api/models"):
+        for path in ("/api/models",):
             try:
                 resp = self.session.get(
                     f"{self.api_url}{path}",

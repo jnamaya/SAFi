@@ -86,7 +86,6 @@ def _deployment_keys_forbidden():
 
 
 @model_api_bp.route('/models', methods=['GET'], strict_slashes=False)
-@model_api_bp.route('/agentic/models', methods=['GET'], strict_slashes=False)
 def list_models():
     """Canonical model list: Config.AVAILABLE_MODELS enriched with provider
     metadata (provider, baa_capable, eu_hostable) and filtered by the caller

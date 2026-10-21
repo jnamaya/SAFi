@@ -1175,6 +1175,39 @@ def get_me():
         current_app.logger.error(f"/api/me error: {str(e)}", exc_info=True)
         return jsonify({'ok': False, 'error': 'Server error'}), 500
 
+@auth_bp.route('/me/profile', methods=['GET'])
+def get_user_profile():
+    """Reads the authenticated user's persistent profile (facts, values, interests).
+
+    Merged from the former profile_api blueprint. The PUT sibling below
+    handles the active-agent preference; these two handle profile *memory*.
+    """
+    user_id = session.get('user', {}).get('id')
+    if not user_id:
+        return jsonify({"ok": False, "error": "Not authenticated"}), 401
+    try:
+        profile_data = json.loads(db.fetch_user_profile_memory(user_id))
+        return jsonify(profile_data), 200
+    except Exception as e:
+        current_app.logger.error(f"Error fetching profile for {user_id}: {e}")
+        return jsonify({"error": "Could not fetch profile"}), 500
+
+@auth_bp.route('/me/profile', methods=['POST'])
+def update_user_profile():
+    """Overwrites the authenticated user's persistent profile."""
+    user_id = session.get('user', {}).get('id')
+    if not user_id:
+        return jsonify({"ok": False, "error": "Not authenticated"}), 401
+    try:
+        new_profile_data = request.json
+        if not isinstance(new_profile_data, dict):
+            return jsonify({"error": "Invalid JSON payload"}), 400
+        db.upsert_user_profile_memory(user_id, json.dumps(new_profile_data))
+        return jsonify({"status": "success", "profile": new_profile_data}), 200
+    except Exception as e:
+        current_app.logger.error(f"Error updating profile for {user_id}: {e}")
+        return jsonify({"error": "Could not update profile"}), 500
+
 @auth_bp.route('/me/profile', methods=['PUT'])
 def set_user_profile():
     user_id = session.get('user_id')

@@ -320,7 +320,6 @@ def save_agent():
         return jsonify({"error": "An internal error occurred."}), 500
 
 @agent_api_bp.route('/agents/all', methods=['GET'], strict_slashes=False)
-@agent_api_bp.route('/agentic/agents', methods=['GET'], strict_slashes=False)
 def list_all_agents():
     user = session.get("user")
     user_id = user.get("id") or user.get("sub") if user else None
