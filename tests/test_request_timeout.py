@@ -46,6 +46,11 @@ class TheTimeoutIsRaisedAndTunable(unittest.TestCase):
         m = re.search(r'--timeout "\$\{SAFI_GUNICORN_TIMEOUT:-(\d+)\}"', ENTRY)
         self.assertLessEqual(int(m.group(1)), APACHE_CEILING)
 
+    def test_keepalive_is_configured_and_tunable(self):
+        m = re.search(r'--keep-alive "\$\{SAFI_GUNICORN_KEEPALIVE:-(\d+)\}"', ENTRY)
+        self.assertIsNotNone(m, "keepalive should be env-tunable")
+        self.assertGreaterEqual(int(m.group(1)), 60)
+
 
 class TheReasoningStaysWithIt(unittest.TestCase):
 

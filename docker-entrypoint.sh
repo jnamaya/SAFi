@@ -138,6 +138,7 @@ WARM
         --workers 4 \
         --threads 2 \
         --timeout "${SAFI_GUNICORN_TIMEOUT:-300}" \
+        --keep-alive "${SAFI_GUNICORN_KEEPALIVE:-65}" \
         --access-logfile - \
         --error-logfile -
 fi

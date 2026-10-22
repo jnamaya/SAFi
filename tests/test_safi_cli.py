@@ -472,6 +472,17 @@ class TestSafiCliDynamicAgentDiscovery(unittest.TestCase):
         agents = client.get_available_agents()
         self.assertEqual(agents, [])
 
+    def test_client_mounts_retry_adapter_on_http_and_https(self):
+        client = SafiClient("http://192.168.1.223:5001")
+        http_adapter = client.session.get_adapter("http://192.168.1.223:5001")
+        https_adapter = client.session.get_adapter("https://safi.demo.com")
+        self.assertIsNotNone(http_adapter.max_retries)
+        self.assertEqual(http_adapter.max_retries.total, 3)
+        self.assertEqual(https_adapter.max_retries.total, 3)
+        self.assertIn(502, http_adapter.max_retries.status_forcelist)
+        self.assertIn(503, http_adapter.max_retries.status_forcelist)
+        self.assertIn(504, http_adapter.max_retries.status_forcelist)
+
     def test_discover_agents_updates_available_agents(self):
         client = MagicMock()
         client.get_available_agents.return_value = [
@@ -1136,13 +1147,26 @@ class TestSafiSubagentDelegation(unittest.TestCase):
         self.assertIn("Option A", second_call["tool_results"][0]["result"])
 
     @patch("safi_cli.ui.render_todo_list")
-    def test_run_agent_turn_todowrite(self, mock_render_todo):
+    def test_run_agent_turn_scratchpad_syncs_todos(self, mock_render_todo):
         client = MagicMock()
         client.send_turn.side_effect = [
             {
                 "type": "tool_call",
-                "tool_name": "todowrite",
-                "parameters": {"todos": [{"task": "Step 1", "status": "completed"}]},
+                "tool_name": "write",
+                "parameters": {
+                    "path": ".safi/scratchpad.md",
+                    "content": "# Task\n## Checklist\n- [x] Step 1\n- [>] Step 2\n- [ ] Step 3\n",
+                },
+                "willDecision": "approve",
+            },
+            {
+                "type": "tool_call",
+                "tool_name": "edit",
+                "parameters": {
+                    "path": ".safi/scratchpad.md",
+                    "target": "- [>] Step 2\n- [ ] Step 3",
+                    "replacement": "- [x] Step 2\n- [x] Step 3",
+                },
                 "willDecision": "approve",
             },
             {
@@ -1151,18 +1175,27 @@ class TestSafiSubagentDelegation(unittest.TestCase):
                 "willDecision": "approve",
             },
         ]
-        res = run_agent_turn(
-            client=client,
-            prompt="Do task",
-            workspace_root=Path("."),
-            conversation_id="conv-1",
-            user_id="u-1",
-            agent="software_engineer",
-        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            res = run_agent_turn(
+                client=client,
+                prompt="Do task",
+                workspace_root=Path(tmpdir),
+                conversation_id="conv-1",
+                user_id="u-1",
+                agent="software_engineer",
+            )
         self.assertIsNotNone(res)
-        mock_render_todo.assert_called_once()
-        second_call = client.send_turn.call_args_list[1].kwargs
-        self.assertIn("Recorded plan with 1 task(s)", second_call["tool_results"][0]["result"])
+        self.assertEqual(mock_render_todo.call_count, 2)
+        first_todos = mock_render_todo.call_args_list[0].args[0]
+        self.assertEqual(
+            [(t["task"], t["status"]) for t in first_todos],
+            [("Step 1", "completed"), ("Step 2", "in_progress"), ("Step 3", "pending")],
+        )
+        second_todos = mock_render_todo.call_args_list[1].args[0]
+        self.assertEqual(
+            [(t["task"], t["status"]) for t in second_todos],
+            [("Step 1", "completed"), ("Step 2", "completed"), ("Step 3", "completed")],
+        )
 
     def test_git_tools_execution(self):
         from safi_cli.tools import execute_tool

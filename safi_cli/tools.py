@@ -203,36 +203,6 @@ SOFTWARE_ENGINEER_TOOL_SCHEMAS: List[Dict[str, Any]] = [
     {
         "type": "function",
         "function": {
-            "name": "todowrite",
-            "description": "Maintain and track an inline task checklist. ONLY call this tool when necessary for complex, multi-step tasks that require breaking down into distinct phases. Do NOT call this repeatedly or as a substitute for taking action with real tools (read, edit, write, bash). Progress the actual work rather than continuously rewriting the plan.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "todos": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "id": {"type": "string", "description": "Unique short identifier (e.g. '1', 'step-1')."},
-                                "task": {"type": "string", "description": "Short description of the task item."},
-                                "status": {
-                                    "type": "string",
-                                    "enum": ["pending", "in_progress", "completed", "failed"],
-                                    "description": "Current status of the todo item."
-                                }
-                            },
-                            "required": ["task", "status"]
-                        },
-                        "description": "The updated list of todo items."
-                    }
-                },
-                "required": ["todos"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "git_status",
             "description": "Get structured git repository status showing branch, staged files, modified files, and untracked files.",
             "parameters": {
@@ -376,36 +346,6 @@ SYSADMIN_TOOL_SCHEMAS: List[Dict[str, Any]] = [
                 "properties": {
                     "path": {"type": "string", "description": "Directory path (default '.')."}
                 }
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "todowrite",
-            "description": "Maintain and track an operational maintenance or troubleshooting runbook/checklist.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "todos": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "id": {"type": "string", "description": "Unique short identifier."},
-                                "task": {"type": "string", "description": "Description of the operational step."},
-                                "status": {
-                                    "type": "string",
-                                    "enum": ["pending", "in_progress", "completed", "failed"],
-                                    "description": "Current status."
-                                }
-                            },
-                            "required": ["task", "status"]
-                        },
-                        "description": "The updated list of runbook steps."
-                    }
-                },
-                "required": ["todos"]
             }
         }
     },
@@ -876,10 +816,6 @@ def execute_tool(
         elif name in ("question", "ask_user"):
             q_text = args.get("question") or ""
             return f"Clarification requested: {q_text}"
-
-        elif name in ("todowrite", "todo_write"):
-            todos = args.get("todos") or []
-            return f"Updated plan with {len(todos)} task(s)."
 
         elif name == "git_status":
             proc = subprocess.run(

@@ -31,6 +31,17 @@ def _collect_multiline(initial: str) -> str:
     return prompt_input.collect_multiline(initial)
 
 
+def _archive_scratchpad(workspace_root: Path) -> None:
+    """Rotate .safi/scratchpad.md to .safi/scratchpad.prev.md on session reset."""
+    try:
+        sp = Path(workspace_root) / ".safi" / "scratchpad.md"
+        if sp.is_file():
+            prev_sp = Path(workspace_root) / ".safi" / "scratchpad.prev.md"
+            sp.replace(prev_sp)
+    except Exception:
+        pass
+
+
 MAX_SUBAGENTS_PER_TURN = 3
 
 _MUTATION_VERBS_RE = re.compile(
@@ -309,27 +320,6 @@ def _handle_tool_proposal(
         })
         return subagents_run_count
 
-    if tool_name in ("todowrite", "todo_write"):
-        todos = args.get("todos") or []
-        ui.render_todo_list(todos)
-        total = len(todos)
-        completed = sum(1 for t in todos if (t.get("status") or "").lower() in ("completed", "done"))
-        pct = int((completed / total) * 100) if total > 0 else 0
-        in_prog = [t for t in todos if (t.get("status") or "").lower() in ("in_progress", "running")]
-        curr_item = in_prog[0].get("task") if in_prog else (todos[0].get("task") if todos else "first step")
-        res_msg = (
-            f"Recorded plan with {total} task(s) ({completed}/{total} completed • {pct}%). "
-            f"Now execute the current task ('{curr_item}') using action tools (read, write, edit, bash). "
-            f"DO NOT call todowrite again until you have executed real tool actions."
-        )
-        ui.print_tool_result_summary(tool_name, res_msg)
-        tool_results.append({
-            "tool_name": tool_name,
-            "arguments": args,
-            "result": res_msg,
-        })
-        return subagents_run_count
-
     if proposal.get("executed_by") == "server":
         result_str = str(proposal.get("result", ""))
         ui.print_tool_result_summary(tool_name, result_str)
@@ -346,7 +336,10 @@ def _handle_tool_proposal(
     else:
         result_str = _execute_tool_with_live_status(tool_name, args, workspace_root, agent=agent)
         is_err = ui._result_is_error(result_str)
-        ui.advance_active_todo(tool_name, args, is_success=(not is_err))
+        if not is_err and tool_name in ("write", "edit"):
+            raw_path = str(args.get("path") or args.get("filePath") or args.get("file_path") or "").replace("\\", "/").strip("/")
+            if raw_path == ".safi/scratchpad.md" or raw_path.endswith("/.safi/scratchpad.md"):
+                ui.sync_todos_from_scratchpad(workspace_root, render=True)
         ui.print_tool_result_summary(tool_name, result_str)
 
     tool_results.append({
@@ -375,7 +368,7 @@ def run_agent_turn(
     subagents_run_count = 0
     recent_turns = ""
 
-    ui.clear_completed_todos()
+    ui.clear_active_todos()
     ui.print_user_prompt(prompt, agent=agent, user_name=user_name)
 
     resume_budget = 3
@@ -424,13 +417,10 @@ def run_agent_turn(
                     poller = threading.Thread(target=_poll_progress, daemon=True)
                     poller.start()
                     try:
-                        plan_recorded = any(tr.get("tool_name") in ("todowrite", "todo_write") for tr in tool_results)
                         delegations_spent = subagents_run_count >= MAX_SUBAGENTS_PER_TURN
 
                         def _tool_ok(t: Dict[str, Any]) -> bool:
                             name = t.get("function", {}).get("name")
-                            if plan_recorded and name in ("todowrite", "todo_write"):
-                                return False
                             if delegations_spent and name in ("task", "delegate_subagent"):
                                 return False
                             return True
@@ -520,10 +510,10 @@ def run_agent_turn(
                     "arguments": {},
                     "result": (
                         "[Harness] Your last message was a mid-task status note, not "
-                        "the final answer. The plan still has unfinished steps: "
+                        "the final answer. The plan in '.safi/scratchpad.md' still has unfinished steps: "
                         f"{remaining}. Do not ask the user for permission. Continue "
                         "now with the appropriate tools, or, if the work is genuinely "
-                        f"done, mark the remaining steps complete. (Your note: {pause_note})"
+                        f"done, update '.safi/scratchpad.md' to mark the remaining steps [x] complete. (Your note: {pause_note})"
                     ),
                 })
                 ui.console.print("[dim yellow]↳ Plan incomplete — continuing autonomously…[/dim yellow]")
@@ -553,11 +543,20 @@ def run_agent_turn(
                     ui.console.print(f"  [dim green]↳ ✓ Executed {t_name} (server MCP)[/dim green]")
 
             _last_turn_result = res
-            ui.mark_active_todos_completed()
             ui.print_final_output(final_text, res)
             return res
 
         if tool_results:
+            tool_results.append({
+                "tool_name": "harness_note",
+                "arguments": {},
+                "result": (
+                    f"[Harness] Reached the tool step ceiling ({max_steps} steps). "
+                    "No further tool calls are available in this turn. Do NOT emit any "
+                    "<tool_call> tags or tool proposals; provide a clear summary of what "
+                    "was completed and any remaining items."
+                ),
+            })
             try:
                 res = client.send_turn(
                     user_id=user_id,
@@ -578,7 +577,6 @@ def run_agent_turn(
             final_text = res.get("finalOutput") or ""
             if final_text:
                 _last_turn_result = res
-                ui.mark_active_todos_completed()
                 ui.print_final_output(final_text, res)
                 return res
         ui.print_error(
@@ -1240,6 +1238,7 @@ def prompt_command_menu(
             client.clear_agent_memory(new_conv, user_id=user_id, agent=current_agent)
         except Exception:
             pass
+        _archive_scratchpad(workspace_root)
         ui.reset_session_telemetry()
         ui.clear_active_todos()
         ui.console.print(f"[bold {ui.COLOR_PASS}]Started new conversation session:[/] [dim]{new_conv}[/]")
@@ -1253,6 +1252,7 @@ def prompt_command_menu(
             client.clear_agent_memory(new_conv, user_id=user_id, agent=current_agent)
         except Exception:
             pass
+        _archive_scratchpad(workspace_root)
         ui.reset_session_telemetry()
         ui.clear_active_todos()
         ui.record_compression_reset()
@@ -1632,6 +1632,7 @@ def interactive_repl(
                     client.clear_agent_memory(current_conv, user_id=user_id, agent=current_agent)
                 except Exception:
                     pass
+                _archive_scratchpad(workspace_root)
                 ui.reset_session_telemetry()
                 ui.clear_active_todos()
                 ui.record_compression_reset()
@@ -1660,6 +1661,7 @@ def interactive_repl(
                     client.clear_agent_memory(current_conv, user_id=user_id, agent=current_agent)
                 except Exception:
                     pass
+                _archive_scratchpad(workspace_root)
                 ui.reset_session_telemetry()
                 ui.clear_active_todos()
                 ui.record_compression_reset()
@@ -2219,13 +2221,7 @@ def main():
             client.clear_agent_memory(conv_id, user_id=user_id, agent=target_agent)
         except Exception:
             pass
-        try:
-            sp = workspace_root / ".safi" / "scratchpad.md"
-            if sp.is_file():
-                prev_sp = workspace_root / ".safi" / "scratchpad.prev.md"
-                sp.replace(prev_sp)
-        except Exception:
-            pass
+        _archive_scratchpad(workspace_root)
     auto_approve = not args.require_approval
 
     if args.prompt:

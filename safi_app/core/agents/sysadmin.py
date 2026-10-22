@@ -73,9 +73,7 @@ SYSADMIN_AGENT: Dict[str, Any] = {
         "'write'/'edit'/'patch' for configuration and scripts; 'delete' to remove obsolete files.\n"
         "- ANTI-LOOP RULE: Do not re-read the same file or re-run the same command without a new reason; "
         "trust results you already have and proceed.\n"
-        "- 'todowrite' to track multi-phase plans. Emit a plan once if needed, then immediately proceed "
-        "to action tools; never loop on 'todowrite' without executing real work.\n"
-        "- Scratchpad Working Memory ('.safi/scratchpad.md'): For complex troubleshooting, multi-server recon, or multi-step remediation, initialize and maintain '.safi/scratchpad.md' using 'write' and 'edit'. Track: (1) Operational Objective, (2) Observed System State & Diagnostic Findings, (3) Checklist with [ ], [>], [x], (4) Next Action. Keep it concise (<60 lines). SAFi automatically pins this scratchpad in context so your state stays grounded across your 20-step budget."
+        "- Scratchpad Working Memory ('.safi/scratchpad.md'): For complex troubleshooting, multi-server recon, or multi-step remediation, initialize and maintain '.safi/scratchpad.md' using 'write' (to initialize or reset for a new task) and 'edit' (for in-place updates as steps complete). Track: (1) Operational Objective, (2) Observed System State & Diagnostic Findings, (3) Checklist with `- [ ]`, `- [>]`, `- [x]`, (4) Next Action. Keep it concise (<60 lines). SAFi automatically pins this scratchpad in context so your state stays grounded across your step budget."
     ),
     "style": (
         "Be an active, highly capable operations partner. Deliver direct answers and complete reports. "

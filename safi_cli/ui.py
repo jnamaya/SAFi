@@ -384,6 +384,52 @@ def clear_completed_todos() -> None:
         _active_todos = []
 
 
+_SCRATCHPAD_CHECKBOX_RE = re.compile(
+    r"^\s*(?:[-*+]|\d+\.)?\s*\[(?P<mark>[ xX>~!\-])\]\s+(?P<task>.+?)\s*$"
+)
+
+
+def parse_scratchpad_todos(text: str) -> List[Dict[str, Any]]:
+    """Parse markdown checklist items ([ ], [>], [x]) from .safi/scratchpad.md."""
+    todos: List[Dict[str, Any]] = []
+    for idx, line in enumerate((text or "").splitlines(), start=1):
+        m = _SCRATCHPAD_CHECKBOX_RE.match(line)
+        if not m:
+            continue
+        mark = m.group("mark").lower()
+        task = m.group("task").strip()
+        if not task:
+            continue
+        if mark == "x":
+            status = "completed"
+        elif mark in (">", "~", "-"):
+            status = "in_progress"
+        elif mark == "!":
+            status = "failed"
+        else:
+            status = "pending"
+        todos.append({"id": str(len(todos) + 1), "task": task, "status": status})
+    return todos
+
+
+def sync_todos_from_scratchpad(workspace_root: Path, *, render: bool = False) -> List[Dict[str, Any]]:
+    """Sync _active_todos directly from .safi/scratchpad.md when present."""
+    global _active_todos
+    try:
+        sp_path = Path(workspace_root) / ".safi" / "scratchpad.md"
+        if not sp_path.is_file():
+            return list(_active_todos)
+        content = sp_path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return list(_active_todos)
+
+    todos = parse_scratchpad_todos(content)
+    _active_todos = list(todos)
+    if render and _active_todos:
+        render_todo_list(_active_todos)
+    return list(_active_todos)
+
+
 PRICING_PER_1M = {
     "claude-3-5-sonnet": (3.00, 15.00),
     "claude-3-sonnet": (3.00, 15.00),

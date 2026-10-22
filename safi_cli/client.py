@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util import Retry
 
 from .tools import TOOL_SCHEMAS, get_tools_for_agent
 
@@ -25,6 +27,16 @@ class SafiClient:
         self.endpoint = f"{self.api_url}/api/agentic/process_prompt"
 
         self.session = requests.Session()
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=0.3,
+            status_forcelist=[502, 503, 504],
+            raise_on_status=False,
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        self.session.mount("http://", adapter)
+        self.session.mount("https://", adapter)
+
         self.default_ca = Path.home() / ".config" / "safi" / "appliance.crt"
         if verify_ssl is not None:
             self.session.verify = verify_ssl
