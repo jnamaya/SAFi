@@ -402,6 +402,7 @@ def build_task_state_block(user_prompt: str, tool_results: Any) -> str:
     plan: List[Dict[str, Any]] = []
     touched_scratchpad = False
     consecutive_inspections = 0
+    edits_since_scratchpad = 0
     for item in tool_results:
         if not isinstance(item, dict):
             continue
@@ -418,6 +419,9 @@ def build_task_state_block(user_prompt: str, tool_results: Any) -> str:
         if name in MODIFICATION_TOOL_NAMES:
             if "scratchpad.md" in target:
                 touched_scratchpad = True
+                edits_since_scratchpad = 0
+            else:
+                edits_since_scratchpad += 1
             consecutive_inspections = 0
         else:
             consecutive_inspections += 1
@@ -446,6 +450,12 @@ def build_task_state_block(user_prompt: str, tool_results: Any) -> str:
         lines.append(
             "IMPORTANT: If this is a multi-step task, create or update `.safi/scratchpad.md` NOW "
             "with your `- [ ]` checklist before reading more files, then implement 1-2 items at a time."
+        )
+    if touched_scratchpad and edits_since_scratchpad >= 2:
+        lines.append(
+            f"REMINDER: You have applied {edits_since_scratchpad} code modifications since last updating "
+            "`.safi/scratchpad.md`. Update `.safi/scratchpad.md` via `edit` to mark completed items `[x]` "
+            "and set the next active item `[>]` so the live Plan & Tasks progress stays synchronized."
         )
     if consecutive_inspections >= 4:
         lines.append(
@@ -1308,18 +1318,39 @@ class SAFi:
                     )
                 return s
 
-            # Retain up to the last 25 tool results in context, keeping the most recent
-            # full_window results at full detail and compacting older results so cumulative
-            # tool history never overwhelms the model's latency or token budget.
-            tool_window = int(os.environ.get("SAFI_TOOL_RESULTS_WINDOW", "25"))
-            full_window = int(os.environ.get("SAFI_TOOL_RESULTS_FULL_WINDOW", "6"))
-            total_tool_budget = int(os.environ.get("SAFI_TOOL_HISTORY_MAX_CHARS", "55000"))
+            # Retain up to the last 30 tool results in context, keeping the most recent
+            # full_window (14) results at full detail and compacting older results so cumulative
+            # tool history never overwhelms the model's latency or token budget. Also pin up to
+            # 2 initial specification/reference reads if they have slid out of the window.
+            tool_window = int(os.environ.get("SAFI_TOOL_RESULTS_WINDOW", "30"))
+            full_window = int(os.environ.get("SAFI_TOOL_RESULTS_FULL_WINDOW", "14"))
+            total_tool_budget = int(os.environ.get("SAFI_TOOL_HISTORY_MAX_CHARS", "90000"))
             recent_tool_results = client_tool_results[-tool_window:] if len(client_tool_results) > tool_window else client_tool_results
+
+            pinned_spec_blocks: List[str] = []
+            if len(client_tool_results) > tool_window:
+                evicted_results = client_tool_results[:-tool_window]
+                for item in evicted_results[:4]:
+                    if len(pinned_spec_blocks) >= 2:
+                        break
+                    t_name = str(item.get("tool_name") or item.get("tool") or "").strip()
+                    if t_name != "read":
+                        continue
+                    t_args = item.get("arguments") or item.get("parameters") or {}
+                    t_path = str(t_args.get("path") or t_args.get("filePath") or "").lower()
+                    if any(k in t_path for k in (".md", ".txt", ".rst", "docs/", "proposal", "spec")) or len(pinned_spec_blocks) == 0:
+                        header = (
+                            f"TOOL RESULT [PINNED INITIAL SPEC READ] — {t_name} called with "
+                            f"{t_args}\n"
+                        )
+                        body = _bound_result(item.get("result", ""), max_chars=10_000, is_older=False)
+                        pinned_spec_blocks.append(header + body)
+
             num_results = len(recent_tool_results)
-            rendered_tool_blocks: List[str] = []
+            rendered_tool_blocks: List[str] = list(pinned_spec_blocks)
             for idx, item in enumerate(recent_tool_results):
                 is_older_item = idx < (num_results - full_window)
-                cap = 2_000 if is_older_item else 18_000
+                cap = 4_500 if is_older_item else 18_000
                 header = (
                     f"TOOL RESULT — {item.get('tool_name', 'unknown')} called with "
                     f"{item.get('arguments', {})}\n"
@@ -1329,6 +1360,7 @@ class SAFi:
 
             total_chars = sum(len(b) for b in rendered_tool_blocks)
             if total_chars > total_tool_budget:
+                pinned_offset = len(pinned_spec_blocks)
                 for idx in range(num_results):
                     if total_chars <= total_tool_budget:
                         break
@@ -1337,11 +1369,12 @@ class SAFi:
                         f"TOOL RESULT — {item.get('tool_name', 'unknown')} called with "
                         f"{item.get('arguments', {})}\n"
                     )
-                    compact_cap = 800 if idx < (num_results - 2) else 6_000
+                    compact_cap = 1_200 if idx < (num_results - 4) else 8_000
                     new_block = header + _bound_result(item.get("result", ""), max_chars=compact_cap, is_older=True)
-                    if len(new_block) < len(rendered_tool_blocks[idx]):
-                        total_chars -= (len(rendered_tool_blocks[idx]) - len(new_block))
-                        rendered_tool_blocks[idx] = new_block
+                    block_idx = pinned_offset + idx
+                    if len(new_block) < len(rendered_tool_blocks[block_idx]):
+                        total_chars -= (len(rendered_tool_blocks[block_idx]) - len(new_block))
+                        rendered_tool_blocks[block_idx] = new_block
 
             tool_history = "\n\n".join(rendered_tool_blocks)
             if tool_history:

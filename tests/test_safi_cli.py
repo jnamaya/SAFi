@@ -299,7 +299,7 @@ class TestSafiCliAgentSwitching(unittest.TestCase):
         new_agent, new_conv = prompt_switch_agent(
             current_agent="software_engineer",
             client=client,
-            workspace_root=Path("."),
+            workspace_root=Path(self.temp_dir.name),
             requested_agent="fiduciary",
         )
 
@@ -315,7 +315,7 @@ class TestSafiCliAgentSwitching(unittest.TestCase):
             new_agent, new_conv = prompt_switch_agent(
                 current_agent="software_engineer",
                 client=client,
-                workspace_root=Path("."),
+                workspace_root=Path(self.temp_dir.name),
                 requested_agent="fiduciary",
             )
 
@@ -335,7 +335,7 @@ class TestSafiCliAgentSwitching(unittest.TestCase):
             new_agent, new_conv = prompt_switch_agent(
                 current_agent="software_engineer",
                 client=client,
-                workspace_root=Path("."),
+                workspace_root=Path(self.temp_dir.name),
                 requested_agent=None,
             )
 
@@ -350,7 +350,7 @@ class TestSafiCliAgentSwitching(unittest.TestCase):
             new_agent, new_conv = prompt_switch_agent(
                 current_agent="software_engineer",
                 client=client,
-                workspace_root=Path("."),
+                workspace_root=Path(self.temp_dir.name),
                 requested_agent=None,
             )
 
@@ -367,7 +367,7 @@ class TestSafiCliAgentSwitching(unittest.TestCase):
             new_agent, new_conv = prompt_switch_agent(
                 current_agent="software_engineer",
                 client=client,
-                workspace_root=Path("."),
+                workspace_root=Path(self.temp_dir.name),
                 requested_agent=None,
             )
 
@@ -380,7 +380,7 @@ class TestSafiCliAgentSwitching(unittest.TestCase):
             agent, conv, model, user, should_exit = prompt_command_menu(
                 current_agent="software_engineer",
                 client=client,
-                workspace_root=Path("."),
+                workspace_root=Path(self.temp_dir.name),
                 current_conv="conv-1",
             )
         self.assertTrue(should_exit)
@@ -391,7 +391,7 @@ class TestSafiCliAgentSwitching(unittest.TestCase):
             agent, conv, model, user, should_exit = prompt_command_menu(
                 current_agent="software_engineer",
                 client=client,
-                workspace_root=Path("."),
+                workspace_root=Path(self.temp_dir.name),
                 current_conv="conv-1",
             )
         self.assertFalse(should_exit)
@@ -403,7 +403,7 @@ class TestSafiCliAgentSwitching(unittest.TestCase):
             agent, conv, model, user, should_exit = prompt_command_menu(
                 current_agent="software_engineer",
                 client=client,
-                workspace_root=Path("."),
+                workspace_root=Path(self.temp_dir.name),
                 current_conv="conv-1",
             )
         self.assertFalse(should_exit)
@@ -1434,38 +1434,40 @@ class TestSafiCliHardeningAndUiFixes(unittest.TestCase):
         from safi_cli.client import SafiClient
         client = SafiClient("http://mock-backend:5000", "test-key")
 
-        # 1. Test cancel on empty input (Enter key)
-        with patch("builtins.input", return_value=""):
-            agent, conv, model, user, should_exit = prompt_command_menu(
-                current_agent="software_engineer",
-                client=client,
-                workspace_root=Path("."),
-                current_conv="conv-1",
-            )
-            self.assertFalse(should_exit)
-            self.assertEqual(agent, "software_engineer")
-            self.assertEqual(conv, "conv-1")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ws = Path(tmpdir)
+            # 1. Test cancel on empty input (Enter key)
+            with patch("builtins.input", return_value=""):
+                agent, conv, model, user, should_exit = prompt_command_menu(
+                    current_agent="software_engineer",
+                    client=client,
+                    workspace_root=ws,
+                    current_conv="conv-1",
+                )
+                self.assertFalse(should_exit)
+                self.assertEqual(agent, "software_engineer")
+                self.assertEqual(conv, "conv-1")
 
-        # 2. Test selecting command by name with slash (e.g. "/help")
-        with patch("builtins.input", return_value="/help"):
-            agent, conv, model, user, should_exit = prompt_command_menu(
-                current_agent="software_engineer",
-                client=client,
-                workspace_root=Path("."),
-                current_conv="conv-1",
-            )
-            self.assertFalse(should_exit)
+            # 2. Test selecting command by name with slash (e.g. "/help")
+            with patch("builtins.input", return_value="/help"):
+                agent, conv, model, user, should_exit = prompt_command_menu(
+                    current_agent="software_engineer",
+                    client=client,
+                    workspace_root=ws,
+                    current_conv="conv-1",
+                )
+                self.assertFalse(should_exit)
 
-        # 3. Test selecting command by name without slash (e.g. "clear")
-        with patch("builtins.input", return_value="clear"):
-            agent, conv, model, user, should_exit = prompt_command_menu(
-                current_agent="software_engineer",
-                client=client,
-                workspace_root=Path("."),
-                current_conv="conv-1",
-            )
-            self.assertFalse(should_exit)
-            self.assertNotEqual(conv, "conv-1")
+            # 3. Test selecting command by name without slash (e.g. "clear")
+            with patch("builtins.input", return_value="clear"):
+                agent, conv, model, user, should_exit = prompt_command_menu(
+                    current_agent="software_engineer",
+                    client=client,
+                    workspace_root=ws,
+                    current_conv="conv-1",
+                )
+                self.assertFalse(should_exit)
+                self.assertNotEqual(conv, "conv-1")
 
 
 class TestSafiUiEnhancements(unittest.TestCase):

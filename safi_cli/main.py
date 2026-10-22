@@ -22,7 +22,7 @@ from . import config, prompt_input, tools, ui
 from .client import SafiClient, SafiClientError
 
 
-DEFAULT_MAX_STEPS = int(os.environ.get("SAFI_CLI_MAX_STEPS", "100"))
+DEFAULT_MAX_STEPS = int(os.environ.get("SAFI_CLI_MAX_STEPS", "150"))
 _last_turn_result: Optional[Dict[str, Any]] = None
 
 
