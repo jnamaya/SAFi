@@ -1,3 +1,4 @@
+import math
 import mysql.connector
 from mysql.connector import pooling
 import json
@@ -967,9 +968,20 @@ def init_db():
                 UNIQUE KEY uq_gov_msg (message_pk),
                 INDEX idx_gov_org_ts (org_id, created_at),
                 INDEX idx_gov_profile (org_id, profile_key, created_at),
-                INDEX idx_gov_policy (org_id, policy_id, created_at)
+                INDEX idx_gov_policy (org_id, policy_id, created_at),
+                INDEX idx_gov_user (org_id, user_id, created_at)
             )
         ''')
+        # Migration (2026-10-22, proposal B3): user_id is a filter key for the
+        # Audit Hub but had no index; add it idempotently for existing installs.
+        cursor.execute(
+            "SELECT COUNT(*) FROM information_schema.STATISTICS "
+            "WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='governance_records' "
+            "AND INDEX_NAME='idx_gov_user'")
+        if not cursor.fetchone()[0]:
+            cursor.execute(
+                "ALTER TABLE governance_records ADD INDEX idx_gov_user (org_id, user_id, created_at)")
+            logging.info("Governance migration: added idx_gov_user (org_id, user_id, created_at)")
 
         # Migration (2026-07-21): the table originally cascaded from
         # chat_history; drop the constraint where it exists so member
@@ -5135,6 +5147,9 @@ GOVERNANCE_EXPORT_CAP = 10_000
 # That would be a worse defect than the invisibility. The real fix is upstream:
 # stop creating unattributed records. See scripts/audit_unattributed.py.
 UNATTRIBUTED_ORG = "__unattributed__"
+# C3 sentinel: selecting this "user" in a filter matches rows whose user_id
+# is NULL (records no real user filter can ever reach).
+UNATTRIBUTED_USER = "__none__"
 
 
 # Width of EVERY conversation-id column in the schema: conversations.id,
@@ -5156,22 +5171,53 @@ UNATTRIBUTED_ORG = "__unattributed__"
 # benefit over telling integrators the limit.
 CONVERSATION_ID_MAX_LEN = 36
 
-def _governance_where(org_id, profile=None, policy_id=None, date_from=None, date_to=None, user_id=None):
+def _as_id_list(value):
+    """Multi-select support (proposal 2.2): a single id, a comma-joined
+    string, or an iterable all become a de-duplicated list of strings —
+    or None when empty. Values are only ever bound as parameters."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        items = [p.strip() for p in value.split(",")]
+    else:
+        items = [str(p) for p in value]
+    seen, out = set(), []
+    for item in items:
+        if item and item not in seen:
+            seen.add(item)
+            out.append(item)
+    return out or None
+
+
+def _governance_where(org_id, profile=None, policy_id=None, date_from=None,
+                      date_to=None, user_id=None, alias=None):
+    """Builds the plaintext WHERE fragment. `alias` (e.g. 'g') qualifies the
+    governance_records columns for joins. All values are bound parameters."""
+    p = f"{alias}." if alias else ""
     if org_id == UNATTRIBUTED_ORG:
-        where = ["org_id IS NULL"]
+        where = [f"{p}org_id IS NULL"]
         params = []
     else:
-        where = ["org_id=%s"]
+        where = [f"{p}org_id=%s"]
         params = [org_id]
-    if profile:
-        where.append("profile_key=%s")
-        params.append(profile)
-    if policy_id:
-        where.append("policy_id=%s")
-        params.append(policy_id)
-    if user_id:
-        where.append("user_id=%s")
-        params.append(user_id)
+    for values, column in ((profile, "profile_key"), (policy_id, "policy_id"),
+                           (user_id, "user_id")):
+        values = _as_id_list(values)
+        if not values:
+            continue
+        # C3: the "__none__" sentinel selects records with no user at all.
+        # Without it, NULL user_id rows are unreachable from any user filter
+        # and silently accumulate outside every view.
+        if column == "user_id" and UNATTRIBUTED_USER in values:
+            plain = [v for v in values if v != UNATTRIBUTED_USER]
+            clause = f"{p}user_id IS NULL"
+            if plain:
+                clause = f"({clause} OR {p}user_id IN ({','.join(['%s'] * len(plain))}))"
+                params.extend(plain)
+            where.append(clause)
+        else:
+            where.append(f"{p}{column} IN ({','.join(['%s'] * len(values))})")
+            params.extend(values)
     if date_from:
         where.append("created_at>=%s")
         params.append(date_from)
@@ -5205,6 +5251,14 @@ def list_governance_filters(org_id):
         cursor.close()
         conn.close()
 
+def _pct(sorted_vals, q):
+    """Nearest-rank percentile over an ascending list. None when empty."""
+    if not sorted_vals:
+        return None
+    idx = max(0, min(len(sorted_vals) - 1, math.ceil(q * len(sorted_vals)) - 1))
+    return sorted_vals[idx]
+
+
 def governance_summary(org_id, profile=None, policy_id=None, date_from=None, date_to=None, user_id=None):
     """One SQL pass over the plaintext columns. Metric definitions ported
     exactly from the Streamlit Audit Hub (they encode deliberate decisions):
@@ -5228,6 +5282,12 @@ def governance_summary(org_id, profile=None, policy_id=None, date_from=None, dat
             f"FROM governance_records WHERE {where}", tuple(params))
         (total, avg_alignment, avg_redirect_quality, avg_drift,
          interventions, violations, flagged) = cursor.fetchone()
+        # Percentiles (proposal C1): tail behaviour the averages hide. Kept
+        # plaintext — drift is a score, not content.
+        cursor.execute(
+            f"SELECT drift FROM governance_records "
+            f"WHERE {where} AND drift IS NOT NULL ORDER BY drift", tuple(params))
+        drifts = [float(r[0]) for r in cursor.fetchall()]
     finally:
         cursor.close()
         conn.close()
@@ -5251,6 +5311,9 @@ def governance_summary(org_id, profile=None, policy_id=None, date_from=None, dat
         "intervention_rate": (interventions / total * 100) if total else None,
         "violations": int(violations or 0),
         "flagged": int(flagged or 0),
+        "drift_p50": _pct(drifts, 0.50),
+        "drift_p95": _pct(drifts, 0.95),
+        "drift_max": drifts[-1] if drifts else None,
     }
 
 def governance_trend(org_id, bucket="day", profile=None, policy_id=None,
@@ -5264,14 +5327,14 @@ def governance_trend(org_id, bucket="day", profile=None, policy_id=None,
     try:
         cursor.execute(
             f"SELECT DATE_FORMAT(created_at, '{fmt}'), AVG(drift), COUNT(*), "
-            f"COUNT(drift) FROM governance_records WHERE {where} "
-            f"GROUP BY 1 ORDER BY 1", tuple(params))
+            f"COUNT(drift), SUM({_GOV_FLAGGED_SQL}) FROM governance_records "
+            f"WHERE {where} GROUP BY 1 ORDER BY 1", tuple(params))
         rows = cursor.fetchall()
     finally:
         cursor.close()
         conn.close()
     out = []
-    for b, avg_drift, turns, drift_turns in rows:
+    for b, avg_drift, turns, drift_turns, flagged in rows:
         avg_drift = float(avg_drift) if avg_drift is not None else None
         out.append({
             "bucket": b,
@@ -5279,8 +5342,39 @@ def governance_trend(org_id, bucket="day", profile=None, policy_id=None,
             "avg_consistency": (1 - avg_drift) * 100 if avg_drift is not None else None,
             "turns": int(turns),
             "scored_turns": int(drift_turns),
+            "flagged": int(flagged or 0),
         })
     return out
+
+def governance_by_policy(org_id, profile=None, date_from=None, date_to=None, user_id=None):
+    """C2: one aggregate row per policy_id over the window — count, mean
+    alignment (approved turns), mean drift, interventions, violations,
+    flagged. Plaintext columns only; NULL policy_id groups under ''
+    ("unassigned") so those records stay visible rather than vanishing."""
+    where, params = _governance_where(org_id, profile, None, date_from, date_to, user_id=user_id)
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            f"SELECT COALESCE(policy_id, ''), COUNT(*), "
+            f"AVG(CASE WHEN will_decision='approve' THEN spirit_score END), "
+            f"AVG(drift), SUM(will_decision='redirected'), "
+            f"SUM(will_decision='violation'), SUM({_GOV_FLAGGED_SQL}) "
+            f"FROM governance_records WHERE {where} "
+            f"GROUP BY 1 ORDER BY 2 DESC", tuple(params))
+        rows = cursor.fetchall()
+    finally:
+        cursor.close()
+        conn.close()
+    return [{
+        "policy_id": r[0],
+        "turns": int(r[1]),
+        "avg_alignment": float(r[2]) if r[2] is not None else None,
+        "avg_drift": float(r[3]) if r[3] is not None else None,
+        "redirected": int(r[4] or 0),
+        "violations": int(r[5] or 0),
+        "flagged": int(r[6] or 0),
+    } for r in rows]
 
 def governance_trend_by_profile(org_id, bucket="day", profile=None, policy_id=None,
                                 date_from=None, date_to=None, user_id=None):
@@ -5366,11 +5460,27 @@ def list_governance_events(org_id, profile=None, policy_id=None, flt=None,
         conn.close()
 
 def search_governance_events(org_id, q, profile=None, policy_id=None, flt=None,
-                             date_from=None, date_to=None, limit=50, user_id=None):
+                             date_from=None, date_to=None, limit=50, offset=0,
+                             user_id=None, scope=None):
+    """Two-path prompt search (proposal 2.10a/b).
+
+    scope='plaintext' runs a cheap SQL LIKE over chat_history.user_message
+    joined by message_pk — no decryption. The default (prompt) path decrypts
+    the governance record's userPrompt for each row in the capped window,
+    identifies the FULL match set once, and pages it in memory so pagination
+    never re-decrypts. Returns (matches, total_matches, window).
+    """
+    # The plaintext path joins chat_history, so it needs aliased column refs.
     where, params = _governance_where(org_id, profile, policy_id, date_from, date_to, user_id=user_id)
     clause = _gov_filter_clause(flt)
     if clause:
         where += f" AND {clause}"
+    gwhere = _governance_where(org_id, profile, policy_id, date_from, date_to, user_id=user_id, alias="g")[0]
+    if clause:
+        gclause = clause.replace("spirit_score", "g.spirit_score") \
+                        .replace("drift", "g.drift") \
+                        .replace("will_decision", "g.will_decision")
+        gwhere += f" AND {gclause}"
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
@@ -5379,6 +5489,28 @@ def search_governance_events(org_id, q, profile=None, policy_id=None, flt=None,
         if window > GOVERNANCE_SEARCH_CAP:
             raise ValueError(
                 f"search window matches {window} records (cap {GOVERNANCE_SEARCH_CAP}) — narrow the date range")
+        if scope == "plaintext":
+            # Cheap path: substring match against chat_history's plaintext
+            # user-turn content (role='user'). Still capped by the window
+            # count; decryption never happens. LIMIT/OFFSET push paging into
+            # SQL because the match set is identified without decrypting.
+            gcols = ", ".join("g." + c for c in _GOV_EVENT_COLUMNS.split(", "))
+            join = ("FROM governance_records g "
+                    "JOIN chat_history c ON c.id = g.message_pk "
+                    f"WHERE {gwhere} AND c.role='user' AND c.content LIKE %s")
+            cursor.execute(
+                f"SELECT {gcols}, c.content AS _content {join} "
+                f"ORDER BY g.created_at DESC, g.id DESC LIMIT %s OFFSET %s",
+                tuple(params) + (f"%{q}%", limit, offset))
+            rows = cursor.fetchall()
+            cursor.execute(f"SELECT COUNT(*) AS n {join}", tuple(params) + (f"%{q}%",))
+            total = cursor.fetchone()["n"]
+            for r in rows:
+                # Snippet the plaintext turn (2.10c) — content never leaves
+                # this slice; no decryption was involved to produce it.
+                r["prompt_preview"] = _match_snippet(str(r.pop("_content") or ""), q)
+            return _attach_user_names(cursor, rows), total, window
+
         cursor.execute(
             f"SELECT {_GOV_EVENT_COLUMNS}, record_enc FROM governance_records "
             f"WHERE {where} ORDER BY created_at DESC, id DESC", tuple(params))
@@ -5395,27 +5527,44 @@ def search_governance_events(org_id, q, profile=None, policy_id=None, flt=None,
             continue
         prompt = str(record.get("userPrompt") or "")
         if needle in prompt.lower():
-            row["prompt_preview"] = prompt[:160]
+            row["prompt_preview"] = _match_snippet(prompt, q)
             matches.append(row)
-            if len(matches) >= limit:
-                break
-    user_ids = {r["user_id"] for r in matches if r.get("user_id")}
+    total = len(matches)
+    matches = matches[offset:offset + limit]
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        return _attach_user_names(cursor, matches), total, window
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def _match_snippet(prompt, q, radius=60):
+    """Centered snippet around the first match (2.10c) so the user sees the
+    hit in context, not just the head of the prompt."""
+    idx = prompt.lower().find(q.lower())
+    if idx < 0:
+        return prompt[:160]
+    start = max(0, idx - radius)
+    end = min(len(prompt), idx + len(q) + radius)
+    prefix = "…" if start > 0 else ""
+    suffix = "…" if end < len(prompt) else ""
+    return prefix + prompt[start:end] + suffix
+
+
+def _attach_user_names(cursor, rows):
+    user_ids = {r["user_id"] for r in rows if r.get("user_id")}
     if user_ids:
-        conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
-        try:
-            format_strings = ','.join(['%s'] * len(user_ids))
-            cursor.execute(f"SELECT id, name FROM users WHERE id IN ({format_strings})", tuple(user_ids))
-            names = {u["id"]: u["name"] for u in cursor.fetchall()}
-            for r in matches:
-                r["user_name"] = names.get(r.get("user_id")) or r.get("user_id")
-        finally:
-            cursor.close()
-            conn.close()
+        format_strings = ','.join(['%s'] * len(user_ids))
+        cursor.execute(f"SELECT id, name FROM users WHERE id IN ({format_strings})", tuple(user_ids))
+        names = {u["id"]: u["name"] for u in cursor.fetchall()}
+        for r in rows:
+            r["user_name"] = names.get(r.get("user_id")) or r.get("user_id")
     else:
-        for r in matches:
+        for r in rows:
             r["user_name"] = r.get("user_id")
-    return matches, window
+    return rows
 
 def get_governance_event(org_id, message_pk):
     conn = get_db_connection()

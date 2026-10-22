@@ -101,6 +101,25 @@ def audit_summary(org_id):
         return jsonify({"error": "Internal Server Error"}), 500
 
 
+@audit_bp.route('/organizations/<org_id>/audit/by-policy', methods=['GET'])
+@require_any_role(*OBSERVER_ROLES)
+def audit_by_policy(org_id):
+    """C2: per-policy aggregate so a weak policy is visible without
+    hand-building a filter per policy. Plaintext aggregates only."""
+    if _org_forbidden(org_id):
+        return jsonify({"error": "Forbidden"}), 403
+    filters, err = _common_filters()
+    if err:
+        return err
+    filters.pop("flt", None)
+    filters.pop("policy_id", None)  # the breakdown spans all policies
+    try:
+        return jsonify({"items": db.governance_by_policy(org_id, **filters)})
+    except Exception as e:
+        current_app.logger.error(f"Error building policy breakdown: {e}")
+        return jsonify({"error": "Internal Server Error"}), 500
+
+
 @audit_bp.route('/organizations/<org_id>/audit/trend', methods=['GET'])
 @require_any_role(*OBSERVER_ROLES)
 def audit_trend(org_id):
@@ -141,13 +160,21 @@ def audit_events(org_id):
     except ValueError:
         return jsonify({"error": "limit and offset must be integers"}), 400
     q = (request.args.get("q") or "").strip()
+    scope = request.args.get("scope") or "prompt"
+    if scope not in ("prompt", "plaintext"):
+        return jsonify({"error": "scope must be 'prompt' or 'plaintext'"}), 400
     try:
         if q:
-            # Decrypt-scan under the hard cap; offset pagination doesn't
-            # apply (matches stream newest-first up to limit).
-            rows, window = db.search_governance_events(org_id, q, limit=limit, **filters)
-            return jsonify({"items": rows, "total": len(rows), "window": window,
-                            "limit": limit, "offset": 0, "search": q})
+            # Two-path search (proposal 2.10a/b): scope=plaintext is a cheap
+            # SQL LIKE over chat_history.user turns; the default prompt path
+            # decrypts the capped window once and pages the full match set in
+            # memory, so offset pagination no longer re-decrypts.
+            rows, total, window = db.search_governance_events(
+                org_id, q, limit=limit, offset=offset, scope=scope, **filters)
+            return jsonify({"items": rows, "total": total, "window": window,
+                            "cap": db.GOVERNANCE_SEARCH_CAP,
+                            "limit": limit, "offset": offset, "search": q,
+                            "scope": scope})
         rows, total = db.list_governance_events(org_id, limit=limit, offset=offset, **filters)
         return jsonify({"items": rows, "total": total, "limit": limit, "offset": offset})
     except ValueError as e:

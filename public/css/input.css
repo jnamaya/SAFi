@@ -1,3 +1,9 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Dark mode: let the browser render native UI (option lists, date pickers,
+   scrollbars) dark too. darkMode: 'class' is set in tailwind.config.js. */
+.dark {
+  color-scheme: dark;
+}

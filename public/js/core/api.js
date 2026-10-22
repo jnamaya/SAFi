@@ -1004,6 +1004,10 @@ export async function getAuditSummary(orgId, params) {
     return httpGet(j(`/api/organizations/${orgId}/audit/summary${auditQs(params)}`));
 }
 
+export async function getAuditByPolicy(orgId, params) {
+    return httpGet(j(`/api/organizations/${orgId}/audit/by-policy${auditQs(params)}`));
+}
+
 export async function getAuditTrend(orgId, params) {
     return httpGet(j(`/api/organizations/${orgId}/audit/trend${auditQs(params)}`));
 }

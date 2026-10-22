@@ -133,9 +133,27 @@ function flaggedBadge(ev) {
 }
 
 function rangeDates() {
+    if (state.range === 'custom') {
+        const p = {};
+        if (state.dateFrom) p.from = state.dateFrom;
+        if (state.dateTo) p.to = state.dateTo;
+        return p;
+    }
     if (state.range === 'all') return {};
     const days = state.range === '7d' ? 7 : 30;
     return { from: new Date(Date.now() - days * 86400000).toISOString() };
+}
+
+// Local date (YYYY-MM-DD) for the native <input type="date"> value.
+function todayLocalISO() {
+    const d = new Date();
+    const p = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+function daysAgoLocalISO(n) {
+    const d = new Date(Date.now() - n * 86400000);
+    const p = x => String(x).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
 function entityParams() {
@@ -144,6 +162,38 @@ function entityParams() {
     if (state.mode === 'agent' && state.entity) p.profile = state.entity;
     if (state.user_id) p.user_id = state.user_id;
     return p;
+}
+
+// D1 URL-synced filter state: the hub's shareable query (mode, entity, user,
+// range, dates) lives in the tab's hash-free query string so a filtered view
+// can be bookmarked, linked, or restored after a reload. replaceState keeps
+// the history clean — navigating back does not replay filter states.
+function syncUrl() {
+    const p = new URLSearchParams();
+    p.set('mode', state.mode);
+    if (state.entity) p.set('entity', state.entity);
+    if (state.user_id) p.set('user', state.user_id);
+    p.set('range', state.range);
+    if (state.range === 'custom') {
+        p.set('from', state.dateFrom);
+        p.set('to', state.dateTo);
+    }
+    history.replaceState(null, '', `${location.pathname}?${p}`);
+}
+
+function restoreFromUrl() {
+    const p = new URLSearchParams(location.search);
+    const mode = p.get('mode');
+    if (mode === 'policy' || mode === 'agent') state.mode = mode;
+    if (p.get('entity') !== null) state.entity = p.get('entity') || '';
+    if (p.get('user') !== null) state.user_id = p.get('user') || '';
+    const range = p.get('range');
+    if (['7d', '30d', 'all', 'custom'].includes(range)) state.range = range;
+    if (state.range === 'custom') {
+        const from = p.get('from'), to = p.get('to');
+        if (/^\d{4}-\d{2}-\d{2}$/.test(from || '')) state.dateFrom = from;
+        if (/^\d{4}-\d{2}-\d{2}$/.test(to || '')) state.dateTo = to;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -167,12 +217,16 @@ export async function renderSettingsDashboardTab() {
     orgId = org.id;
     // view defaults to 'consistency' so the card's heading and its y-axis agree
     // on load; it used to open on 'deviation' under a "Consistency Trend" title.
-    state = { mode: 'agent', entity: '', user_id: '', range: '30d', filter: '', q: '', offset: 0,
+    state = { mode: 'agent', entity: '', user_id: '', range: '30d',
+              scope: 'prompt',
+              dateFrom: daysAgoLocalISO(30), dateTo: todayLocalISO(),
+              filter: '', q: '', offset: 0, sort: '', sortDir: 'desc',
               maDays: 7, view: 'consistency', showPoints: false, filters: { profiles: [], policies: [], users: [] } };
 
     try {
         state.filters = await api.getAuditFilters(orgId);
     } catch (e) { /* pickers stay empty; data may simply not exist yet */ }
+    restoreFromUrl();
 
     container.innerHTML = `
         <div class="space-y-6">
@@ -184,12 +238,27 @@ export async function renderSettingsDashboardTab() {
                 <div id="ah-controls" class="flex flex-wrap items-center gap-2"></div>
             </div>
             <div id="ah-kpis"></div>
+            <div id="ah-policy"></div>
             <div id="ah-trend" class="settings-card"></div>
             <div id="ah-explorer" class="settings-card"></div>
         </div>`;
 
     renderControls();
     refreshData();
+}
+
+// 2.2 Multi-select filters: the backend already accepts comma-joined filter
+// values via _as_id_list (database.py), so the UI stores selections as a
+// comma-joined string and renders native multi-selects.
+const csv = s => String(s || '').split(',').map(v => v.trim()).filter(Boolean);
+const joined = sel => csv([...sel.selectedOptions].map(o => o.value)).join(',');
+
+const MULTI_SEL_CLS = 'rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-2 py-1 text-xs text-gray-800 dark:text-neutral-200 max-h-24 overflow-y-auto';
+function multiSel(id, entries, cur) {
+    const curSet = new Set(csv(cur));
+    return `<select id="${id}" multiple size="1" class="${MULTI_SEL_CLS}" title="Ctrl/Cmd-click to select several">
+        ${entries.map(([v, l]) => `<option value="${esc(v)}" ${curSet.has(String(v)) ? 'selected' : ''}>${esc(l)}</option>`).join('')}
+    </select>`;
 }
 
 function renderControls() {
@@ -203,35 +272,133 @@ function renderControls() {
         </select>`;
     el.innerHTML = `
         ${sel('ah-mode', [['agent', 'By agent'], ['policy', 'By policy']], state.mode)}
-        ${sel('ah-entity', [['', state.mode === 'policy' ? 'All policies' : 'All agents'],
-            ...opts.map(o => [o, String(o).replace(/_/g, ' ')])], state.entity)}
-        ${userOpts.length > 0 ? sel('ah-user', [['', 'All users'],
-            ...userOpts.map(u => [u.user_id, u.name || u.user_id])], state.user_id) : ''}
-        ${sel('ah-range', [['7d', 'Last 7 days'], ['30d', 'Last 30 days'], ['all', 'All time']], state.range)}
+        ${multiSel('ah-entity', opts.map(o => [o, String(o).replace(/_/g, ' ')]), state.entity)}
+        ${userOpts.length > 0 ? multiSel('ah-user',
+            // C3: the __none__ sentinel (UNATTRIBUTED_USER in database.py)
+            // makes NULL-user_id records selectable instead of unreachable.
+            userOpts.map(u => [u.user_id, u.name || u.user_id])
+                .concat([['__none__', '(no user — unattributed)']]), state.user_id) : ''}
+        ${sel('ah-range', [['7d', 'Last 7 days'], ['30d', 'Last 30 days'], ['all', 'All time'], ['custom', 'Custom']], state.range)}
+        <input type="date" id="ah-from" value="${state.dateFrom}" class="rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-2 py-1.5 text-xs text-gray-800 dark:text-neutral-200">
+        <input type="date" id="ah-to" value="${state.dateTo}" class="rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-2 py-1.5 text-xs text-gray-800 dark:text-neutral-200">
+        <button id="ah-csv" class="px-3 py-1.5 text-xs border border-gray-300 dark:border-neutral-600 rounded-lg whitespace-nowrap text-gray-800 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-700" title="D3: downloads the currently visible explorer rows as CSV — plaintext columns only, no decryption, so no evidence-log entry is needed.">Export CSV</button>
         <button id="ah-export" class="px-3 py-1.5 text-xs border border-gray-300 dark:border-neutral-600 rounded-lg whitespace-nowrap text-gray-800 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-700" title="Downloads the decrypted records matching the current filters. The export is recorded in the compliance evidence log.">Export JSON</button>
     `;
+    const syncDates = () => {
+        const f = el.querySelector('#ah-from'), t = el.querySelector('#ah-to');
+        f.style.display = t.style.display = state.range === 'custom' ? '' : 'none';
+    };
+    syncDates();
     el.querySelector('#ah-mode')?.addEventListener('change', e => {
         state.mode = e.target.value; state.entity = ''; state.offset = 0;
         renderControls(); refreshData();
     });
     el.querySelector('#ah-entity')?.addEventListener('change', e => {
-        state.entity = e.target.value; state.offset = 0; refreshData();
+        state.entity = joined(e.target); state.offset = 0; refreshData();
     });
     el.querySelector('#ah-user')?.addEventListener('change', e => {
-        state.user_id = e.target.value; state.offset = 0; refreshData();
+        state.user_id = joined(e.target); state.offset = 0; refreshData();
     });
     el.querySelector('#ah-range')?.addEventListener('change', e => {
-        state.range = e.target.value; state.offset = 0; refreshData();
+        state.range = e.target.value; state.offset = 0; syncDates(); refreshData();
+    });
+    el.querySelector('#ah-from')?.addEventListener('change', e => {
+        state.dateFrom = e.target.value; state.range = 'custom'; state.offset = 0; syncDates(); refreshData();
+    });
+    el.querySelector('#ah-to')?.addEventListener('change', e => {
+        state.dateTo = e.target.value; state.range = 'custom'; state.offset = 0; syncDates(); refreshData();
     });
     el.querySelector('#ah-export')?.addEventListener('click', () => {
         window.open(api.auditExportUrl(orgId, { ...entityParams(), filter: state.filter || undefined }), '_blank');
     });
+    // D3: plaintext CSV of the visible explorer rows — no decryption, so no
+    // evidence-log entry (compare the JSON export, which is logged).
+    el.querySelector('#ah-csv')?.addEventListener('click', () => {
+        const cols = ['created_at', 'profile_key', 'user_name', 'user_id',
+                      'intellect_model', 'spirit_score', 'drift',
+                      'will_decision', 'will_stage', 'flagged'];
+        const cell = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+        const csv = [cols.join(','),
+            ...lastExplorerItems.map(i => cols.map(c => cell(
+                c === 'flagged' ? (i.spirit_score !== null && i.spirit_score !== undefined && i.spirit_score < 6) || (i.drift !== null && i.drift !== undefined && i.drift > 0.4)
+                    : i[c])).join(','))].join('\n');
+        const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+        const a = Object.assign(document.createElement('a'),
+            { href: url, download: `audit-explorer-${new Date().toISOString().slice(0, 10)}.csv` });
+        a.click();
+        URL.revokeObjectURL(url);
+    });
 }
 
 function refreshData() {
+    syncUrl();
     loadKpis();
+    loadPolicyBreakdown();
     loadTrend();
     renderExplorer();
+}
+
+// --- C2: per-policy breakdown --------------------------------------------------
+
+// One aggregate row per policy so a weak policy is visible at a glance
+// instead of requiring a hand-built filter per policy. Plaintext aggregates
+// only — the endpoint never decrypts anything.
+async function loadPolicyBreakdown() {
+    const el = document.getElementById('ah-policy');
+    if (!el) return;
+    // In By-policy mode the entity picker already scopes a single policy —
+    // a breakdown across policies would just echo that filter back.
+    if (state.mode === 'policy' && state.entity && !state.entity.includes(',')) {
+        el.innerHTML = '';
+        return;
+    }
+    let items;
+    try {
+        items = (await api.getAuditByPolicy(orgId, entityParams())).items || [];
+    } catch (e) {
+        el.innerHTML = '';   // non-critical card; never block the page
+        return;
+    }
+    if (items.length === 0) { el.innerHTML = ''; return; }
+    const label = id => id ? esc(String(id).replace(/_/g, ' ')) : '<span class="text-gray-400">unassigned</span>';
+    el.innerHTML = `
+        <div class="settings-card">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <div>
+                    <h4 class="text-lg font-semibold">By Policy</h4>
+                    <p class="text-xs text-gray-500 mt-0.5">Turns, alignment and interventions grouped by policy version for the period. Click a row to pin the explorer to that policy.</p>
+                </div>
+            </div>
+            <div class="overflow-x-auto rounded-lg border border-gray-200 dark:border-neutral-700">
+                <table class="w-full text-left">
+                    <thead class="bg-gray-50 dark:bg-neutral-800 text-xs uppercase text-gray-500 dark:text-gray-400">
+                        <tr><th class="px-4 py-3">Policy</th><th class="px-4 py-3">Turns</th><th class="px-4 py-3">Avg. Alignment</th><th class="px-4 py-3">Avg. Consistency</th><th class="px-4 py-3">Redirected</th><th class="px-4 py-3">Violations</th><th class="px-4 py-3">Flagged</th></tr>
+                    </thead>
+                    <tbody>
+                        ${items.map(r => `
+                            <tr class="border-b border-gray-100 dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800 cursor-pointer" data-policy-row="${esc(r.policy_id)}">
+                                <td class="px-4 py-3 text-sm font-medium">${label(r.policy_id)}</td>
+                                <td class="px-4 py-3 text-sm tabular-nums">${r.turns}</td>
+                                <td class="px-4 py-3 text-sm tabular-nums">${r.avg_alignment !== null && r.avg_alignment !== undefined ? Number(r.avg_alignment).toFixed(1) : '—'}</td>
+                                <td class="px-4 py-3 text-sm tabular-nums">${r.avg_drift !== null && r.avg_drift !== undefined ? ((1 - r.avg_drift) * 100).toFixed(0) + '%' : '—'}</td>
+                                <td class="px-4 py-3 text-sm tabular-nums">${r.redirected}</td>
+                                <td class="px-4 py-3 text-sm tabular-nums">${r.violations}</td>
+                                <td class="px-4 py-3 text-sm tabular-nums">${r.flagged}</td>
+                            </tr>`).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>`;
+    // Clicking a row pins the explorer to that policy — same affordance as
+    // the trend-chart cross-filter (2.6).
+    el.querySelectorAll('[data-policy-row]').forEach(tr =>
+        tr.addEventListener('click', () => {
+            state.mode = 'policy';
+            state.entity = tr.getAttribute('data-policy-row') || '';
+            state.offset = 0;
+            renderControls();
+            refreshData();
+        }));
 }
 
 // --- KPI row -----------------------------------------------------------------
@@ -293,7 +460,8 @@ async function loadKpis() {
                     ${tile('Avg. Alignment', s.avg_alignment !== null && s.avg_alignment !== undefined ? `${Number(s.avg_alignment).toFixed(1)} <span class="text-sm font-normal text-gray-400">/ 10</span>` : 'N/A',
                            'approved turns only', ALIGNMENT_HELP + ' Redirected turns are scored on a separate redirect-quality rubric and shown in the Interventions card.')}
                     ${tile('Avg. Consistency', s.avg_consistency !== null && s.avg_consistency !== undefined ? `${Number(s.avg_consistency).toFixed(1)}%` : 'N/A',
-                           'all scored turns', CONSISTENCY_HELP)}
+                           (s.drift_p95 !== null && s.drift_p95 !== undefined ? `p95 drift ${Number(s.drift_p95).toFixed(2)}` : 'all scored turns'),
+                           CONSISTENCY_HELP + (s.drift_p50 !== null && s.drift_p50 !== undefined ? ` Drift percentiles for the period: p50 ${Number(s.drift_p50).toFixed(2)}, p95 ${Number(s.drift_p95).toFixed(2)}, max ${Number(s.drift_max).toFixed(2)}.` : ''))}
                     ${tile('Interventions', s.interventions,
                            `${s.intervention_rate !== null && s.intervention_rate !== undefined ? s.intervention_rate.toFixed(1) : '0.0'}% of responses redirected${redirectSub ? ' · ' + redirectSub : ''}${s.violations ? ` · ${s.violations} gateway violation${s.violations === 1 ? '' : 's'}` : ''}`)}
                     ${tile('Total Audits', s.total_audits, `${s.flagged} flagged in period`)}
@@ -325,6 +493,7 @@ const VIEW_METRIC = {
     consistency: 'Consistency Trend',
     drift: 'Drift Trend',
     deviation: 'Drift vs. Period Average',
+    flagged: 'Flagged Turns',
 };
 
 // The heading names the real scope. Previously it read "Agent Consistency
@@ -350,15 +519,19 @@ async function loadTrend() {
         el.innerHTML = `<p class="text-sm text-red-500">Failed to load the trend: ${esc(e.message || e)}</p>`;
         return;
     }
-    const hasDrift = b => b.avg_drift !== null && b.avg_drift !== undefined;
-    const scored = buckets.filter(hasDrift);
+    // The flagged view counts events, so it doesn't need a drift score on the
+    // bucket — only the drift views do.
+    const bucketUsable = b => state.view === 'flagged'
+        ? (b.turns || 0) > 0
+        : b.avg_drift !== null && b.avg_drift !== undefined;
+    const scored = buckets.filter(bucketUsable);
 
     // One line per agent. Drift is per-agent by construction (spirit_memory is
     // keyed on profile_name), so pooling it across agents is turn-weighted and
     // describes no agent in particular — splitting is what makes the label true.
     const split = rawSeries
         .map(s => ({ key: s.profile_key, label: humanAgent(s.profile_key),
-                     color: seriesColor(s.profile_key), days: toDays(s.buckets.filter(hasDrift)) }))
+                     color: seriesColor(s.profile_key), days: toDays(s.buckets.filter(bucketUsable)) }))
         .filter(s => s.days.length > 0);
 
     // Past the palette's fixed slots, N lines stop being readable. Fall back to
@@ -396,7 +569,7 @@ async function loadTrend() {
             </div>
             <div class="flex flex-wrap items-center gap-2">
                 ${sel('ah-ma', [[3, 'MA: 3 days'], [7, 'MA: 7 days'], [14, 'MA: 14 days'], [30, 'MA: 30 days']], state.maDays)}
-                ${sel('ah-view', [['consistency', 'Consistency (%)'], ['drift', 'Drift (0=best)'], ['deviation', 'Drift vs. average']], state.view)}
+                ${sel('ah-view', [['consistency', 'Consistency (%)'], ['drift', 'Drift (0=best)'], ['deviation', 'Drift vs. average'], ['flagged', 'Flagged count']], state.view)}
                 <label class="flex items-center gap-1.5 text-xs text-gray-500"><input type="checkbox" id="ah-points" ${state.showPoints ? 'checked' : ''}> Raw points</label>
             </div>
         </div>
@@ -407,6 +580,32 @@ async function loadTrend() {
     el.querySelector('#ah-ma')?.addEventListener('change', e => { state.maDays = parseInt(e.target.value, 10); loadTrend(); });
     el.querySelector('#ah-view')?.addEventListener('change', e => { state.view = e.target.value; loadTrend(); });
     el.querySelector('#ah-points')?.addEventListener('change', e => { state.showPoints = e.target.checked; loadTrend(); });
+
+    // 2.6 Trend → Explorer cross-filtering: click a point/bucket to pin the
+    // Explorer (and KPIs) to that day. The backend treats date_to as
+    // exclusive (created_at<date_to), so the "to" bound is the next day.
+    el.querySelector('#ah-trend-chart svg')?.addEventListener('click', e => {
+        const svg = e.currentTarget;
+        const W = +svg.getAttribute('data-w') || 800;
+        const PL = +svg.getAttribute('data-pl') || 46;
+        const PR = +svg.getAttribute('data-pr') || 12;
+        const rect = svg.getBoundingClientRect();
+        const vx = (e.clientX - rect.left) / rect.width * W;   // viewBox coords
+        const ts = plottable.flatMap(s => s.days.map(d => d.t));
+        if (!ts.length) return;
+        const tMin = Math.min(...ts), tMax = Math.max(...ts);
+        const span = tMax - tMin || 86400000;
+        const clicked = tMin + ((vx - PL) / (W - PL - PR)) * span;
+        let nearest = ts[0];
+        for (const t of ts) if (Math.abs(t - clicked) < Math.abs(nearest - clicked)) nearest = t;
+        state.range = 'custom';
+        state.dateFrom = new Date(nearest).toISOString().slice(0, 10);
+        state.dateTo = new Date(nearest + 86400000).toISOString().slice(0, 10);
+        state.offset = 0;
+        renderControls();
+        refreshData();
+        ui.showToast(`Explorer filtered to ${new Date(nearest).toLocaleDateString()}. Change the date range to reset.`, 'info');
+    });
 }
 
 function toDays(bkts) {
@@ -414,6 +613,7 @@ function toDays(bkts) {
         t: new Date(b.bucket + 'T00:00:00Z').getTime(),
         drift: b.avg_drift,
         n: b.scored_turns || 1,
+        flagged: b.flagged || 0,
     })).sort((a, b) => a.t - b.t);
 }
 
@@ -452,6 +652,11 @@ function buildTrendChart(series) {
         } else if (state.view === 'deviation') {
             raw = days.map(d => d.drift - ownAvg);
             smooth = ma.map(v => v - ownAvg);
+        } else if (state.view === 'flagged') {
+            // Counts, not smoothed scores: the spike IS the signal. Keep the
+            // MA so long windows stay readable, but always draw raw too.
+            raw = days.map(d => d.flagged);
+            smooth = [...raw];
         } else {
             raw = days.map(d => d.drift);
             smooth = ma;
@@ -465,6 +670,8 @@ function buildTrendChart(series) {
     } else if (state.view === 'deviation') {
         const amp = Math.max(...prepared.flatMap(s => s.raw.map(Math.abs)), 0.01) * 1.15;
         yMin = -amp; yMax = amp; yLabel = 'Drift vs. each series’ period average'; zeroLine = true;
+    } else if (state.view === 'flagged') {
+        yMin = 0; yMax = Math.max(1, ...prepared.flatMap(s => s.raw)) * 1.15; yLabel = 'Flagged turns per day';
     } else {
         yMin = 0; yMax = 1; yLabel = 'Drift (lower is better)';
     }
@@ -481,7 +688,8 @@ function buildTrendChart(series) {
     const PR = labelled ? 116 : 12;
     const x = t => PL + ((t - tMin) / (tMax - tMin)) * (W - PL - PR);
     const y = v => PT + (1 - (v - yMin) / (yMax - yMin)) * (H - PT - PB);
-    const fmt = v => state.view === 'consistency' ? `${Math.round(v)}%` : v.toFixed(2);
+    const fmt = v => state.view === 'consistency' ? `${Math.round(v)}%`
+        : state.view === 'flagged' ? String(Math.round(v)) : v.toFixed(2);
     const dateLabel = t => new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 
     const ticks = [yMin, (yMin + yMax) / 2, yMax];
@@ -513,7 +721,8 @@ function buildTrendChart(series) {
 
     return `
         <div class="overflow-x-auto">
-        <svg viewBox="0 0 ${W} ${H}" class="w-full h-auto min-w-[480px]" role="img"
+        <svg viewBox="0 0 ${W} ${H}" class="w-full h-auto min-w-[480px] cursor-crosshair" role="img"
+             data-w="${W}" data-pl="${PL}" data-pr="${PR}"
              aria-label="${esc(yLabel)} over time${prepared.length > 1 ? `, ${prepared.length} series: ${esc(prepared.map(s => s.label).join(', '))}` : ''}">
             ${ticks.map(v => `
                 <line x1="${PL}" y1="${y(v)}" x2="${W - PR}" y2="${y(v)}" class="stroke-neutral-300/40 dark:stroke-neutral-700/40" stroke-width="1" stroke-dasharray="2 2"/>
@@ -536,14 +745,20 @@ function buildTrendChart(series) {
         </div>
         ${prepared.length > 1 ? `<div class="ah-legend">${prepared.map(s => `
             <span class="ah-legend-item"><span class="ah-legend-swatch" style="background:${s.color}"></span>${esc(s.label)}</span>`).join('')}</div>` : ''}
-        <p class="text-xs text-gray-400 mt-1">${esc(yLabel)} · ${state.maDays}-day moving average over ${dayCount} day${dayCount === 1 ? '' : 's'}.</p>`;
+        <p class="text-xs text-gray-400 mt-1">${esc(yLabel)} · ${state.view === 'flagged' ? 'daily counts, unsmoothed' : `${state.maDays}-day moving average`} over ${dayCount} day${dayCount === 1 ? '' : 's'}.</p>`;
 }
 
 // --- Log Explorer ----------------------------------------------------------------
 
+// In-flight guard (2.10d): each render bumps a token; a stale response is
+// discarded so fast typing never paints an older result over a newer one.
+let explorerToken = 0;
+let lastExplorerItems = [];   // D3: last rendered explorer rows (CSV export source)
+
 async function renderExplorer() {
     const el = document.getElementById('ah-explorer');
     if (!el) return;
+    const token = ++explorerToken;
     el.innerHTML = `<div class="flex items-center justify-center h-32"><div class="thinking-spinner"></div></div>`;
     let res;
     try {
@@ -551,15 +766,19 @@ async function renderExplorer() {
             ...entityParams(),
             filter: state.filter || undefined,
             q: state.q || undefined,
+            scope: state.scope || undefined,
             limit: PAGE_SIZE,
-            offset: state.q ? undefined : state.offset,
+            offset: state.offset,
         });
     } catch (e) {
+        if (token !== explorerToken) return;   // superseded by a newer query
         el.innerHTML = `<p class="text-sm text-red-500">Failed to load events: ${esc(e.message || e)}</p>`;
         return;
     }
+    if (token !== explorerToken) return;       // stale response, drop it
     const items = res.items || [];
     const total = res.total || 0;
+    lastExplorerItems = items;   // D3: CSV export downloads the visible rows
 
     const rows = items.map(i => `
         <tr class="border-b border-gray-100 dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800 cursor-pointer" data-audit-event="${i.message_pk}">
@@ -585,6 +804,10 @@ async function renderExplorer() {
             <div class="flex flex-wrap items-center gap-2">
                 <input type="search" id="ah-search" value="${esc(state.q)}" placeholder="Search prompts…"
                     class="rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-1.5 text-xs w-52">
+                <select id="ah-scope" class="rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-2 py-1.5 text-xs" title="Where to search">
+                    <option value="prompt" ${state.scope === 'prompt' ? 'selected' : ''}>In prompt (decrypt)</option>
+                    <option value="plaintext" ${state.scope === 'plaintext' ? 'selected' : ''}>In user message (plaintext)</option>
+                </select>
                 <select id="ah-filter" class="rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-2 py-1.5 text-xs">
                     <option value="">All decisions</option>
                     <option value="flagged" ${state.filter === 'flagged' ? 'selected' : ''}>Flagged (Alignment &lt; 6 or Consistency &lt; 60%)</option>
@@ -595,7 +818,7 @@ async function renderExplorer() {
             </div>
         </div>
         ${items.length === 0
-            ? `<p class="text-sm text-gray-500 dark:text-gray-400 py-8 text-center">${state.q || state.filter ? 'Nothing matches these filters.' : 'No governance records in this period yet. New turns are recorded from the moment this feature shipped; older history stays in the legacy dashboard until its sunset.'}</p>`
+            ? `<p class="text-sm text-gray-500 dark:text-gray-400 py-8 text-center">${state.q || state.filter ? 'Nothing matches these filters.' : 'No governance records in this period yet. Turns are recorded from the moment governance shipped; widen the date range or clear filters to see more.'}</p>`
             : `<div class="overflow-x-auto rounded-lg border border-gray-200 dark:border-neutral-700">
                 <table class="w-full text-left">
                     <thead class="bg-gray-50 dark:bg-neutral-800 text-xs uppercase text-gray-500 dark:text-gray-400">
@@ -604,9 +827,9 @@ async function renderExplorer() {
                     <tbody>${rows}</tbody>
                 </table>
                </div>`}
-        ${state.q
-            ? `<p class="text-xs text-gray-400 mt-2">Showing the ${items.length} newest match${items.length === 1 ? '' : 'es'} across ${res.window} record${res.window === 1 ? '' : 's'} in the window.</p>`
-            : total > PAGE_SIZE ? `
+        ${state.q ? `<p class="text-xs text-gray-400 mt-2">${total} match${total === 1 ? '' : 'es'} across ${res.window} record${res.window === 1 ? '' : 's'} in the window · ${state.scope === 'plaintext' ? 'plaintext scan (no decryption)' : 'prompt scan (window decrypted once)'}.</p>` : ''}
+        ${res.cap && res.window >= res.cap * 0.8 ? `<p class="text-xs text-amber-600 mt-1">Window is near the ${res.cap}-record scan cap — narrow the date range to stay under it.</p>` : ''}
+        ${total > PAGE_SIZE ? `
             <div class="flex items-center justify-between mt-3 text-xs text-gray-500">
                 <span>Showing ${state.offset + 1}–${Math.min(state.offset + PAGE_SIZE, total)} of ${total}</span>
                 <div class="flex gap-2">
@@ -619,6 +842,9 @@ async function renderExplorer() {
     el.querySelector('#ah-search')?.addEventListener('input', e => {
         clearTimeout(searchTimer);
         searchTimer = setTimeout(() => { state.q = e.target.value.trim(); state.offset = 0; renderExplorer(); }, 400);
+    });
+    el.querySelector('#ah-scope')?.addEventListener('change', e => {
+        state.scope = e.target.value; state.offset = 0; renderExplorer();
     });
     el.querySelector('#ah-filter')?.addEventListener('change', e => {
         state.filter = e.target.value; state.offset = 0; renderExplorer();
@@ -637,6 +863,47 @@ function textCard(title, body, help = '') {
             <div class="px-4 py-2 border-b border-gray-100 dark:border-neutral-800 text-xs uppercase text-gray-400">${title}</div>
             ${help ? `<div class="px-4 pt-2 text-xs text-gray-400">${help}</div>` : ''}
             <div class="px-4 py-3 text-sm whitespace-pre-wrap break-words">${body}</div>
+        </div>`;
+}
+
+// 2.5 Per-value audit breakdown: the aggregate spirit_score is opaque on its
+// own. `profile_values` (already fetched for the conscience modal) carries each
+// value's name, weight and importance; the ledger carries its per-turn score.
+// Rendered as compact bars so a reviewer sees WHY a turn scored as it did.
+function valuesBreakdownCard(values, ledger) {
+    if (!Array.isArray(values) || values.length === 0) return '';
+    const ledgerRows = Array.isArray(ledger) ? ledger : [];
+    const scoreFor = name => {
+        const n = String(name || '').trim().toLowerCase();
+        const row = ledgerRows.find(r => String(r?.value || r?.name || '').trim().toLowerCase() === n);
+        return row ? Number(row.score || 0) : null;
+    };
+    const bars = values.map(v => {
+        const name = v.name || v.Value || v.value || 'Unknown value';
+        const weight = Number(v.weight);
+        const importance = Number(v.importance);
+        const score = scoreFor(name);
+        // score runs -3..+3 in the two-tier model; map to 0..100% bar width.
+        const pct = score === null ? null : Math.max(0, Math.min(100, ((score + 3) / 6) * 100));
+        const scoreCls = score === null ? 'text-gray-400'
+            : score <= -1 ? 'text-red-500' : score < 1 ? 'text-gray-500' : 'text-green-600';
+        return `
+        <div class="flex items-center gap-3 text-sm">
+            <div class="w-40 truncate font-medium text-gray-700 dark:text-gray-300" title="${esc(name)}">${esc(name)}</div>
+            <div class="flex-1 h-2 rounded-full bg-gray-100 dark:bg-neutral-800 overflow-hidden">
+                ${pct === null ? '' : `<div class="h-full rounded-full ${score <= -1 ? 'bg-red-400' : score < 1 ? 'bg-gray-400' : 'bg-green-500'}" style="width:${pct.toFixed(0)}%"></div>`}
+            </div>
+            <div class="w-28 text-right tabular-nums ${scoreCls} whitespace-nowrap">
+                ${score === null ? 'not scored' : `score ${score > 0 ? '+' : ''}${score.toFixed(1)}`}
+                ${Number.isFinite(weight) ? ` · w${weight}` : ''}
+                ${Number.isFinite(importance) ? ` · imp ${importance}` : ''}
+            </div>
+        </div>`;
+    }).join('');
+    return `
+        <div class="rounded-lg border border-gray-200 dark:border-neutral-700">
+            <div class="px-4 py-2 border-b border-gray-100 dark:border-neutral-800 text-xs uppercase text-gray-400">Why this alignment score</div>
+            <div class="px-4 py-3 space-y-2">${bars}</div>
         </div>`;
 }
 
@@ -701,8 +968,11 @@ async function renderDetail(messagePk) {
     }
     const ev = doc.event || {};
     const r = doc.record || {};
+    // D2 cross-surface deep link: the drill-down already joins review_queue, so
+    // the badge is now a link — it switches to the Review tab and opens the
+    // sampled item there instead of forcing the reviewer to hunt for it.
     const reviewNote = doc.review
-        ? `<span class="${BADGE} bg-green-100 text-green-800 dark:bg-green-900/60 dark:text-green-200 capitalize" title="This turn was sampled into the supervisory review queue">In review queue · ${esc(doc.review.status)}</span>`
+        ? `<button type="button" data-open-review="${esc(String(doc.review.queue_id ?? doc.review.id ?? ''))}" class="${BADGE} bg-green-100 text-green-800 dark:bg-green-900/60 dark:text-green-200 capitalize hover:ring-2 hover:ring-green-400" title="This turn was sampled into the supervisory review queue. Click to open it in the Review tab.">In review queue · ${esc(doc.review.status)} &rarr;</button>`
         : '';
     // Org governance records deliberately survive member deletion — flag it.
     const deletedNote = !doc.chat
@@ -811,6 +1081,7 @@ async function renderDetail(messagePk) {
                         <div class="text-2xl font-bold mt-0.5 tabular-nums">${consistencyLabel(ev.drift)}</div>
                     </div>
                 </div>
+                ${valuesBreakdownCard(auditValues, r.conscienceLedger)}
                 ${r.spiritNote ? textCard('Consistency note', esc(r.spiritNote)) : ''}
             </div>`,
         output: `
@@ -846,6 +1117,12 @@ async function renderDetail(messagePk) {
 
     attachTabSwitching(el); // for the conscience report inside Policy Audit
     el.querySelector('#ah-back')?.addEventListener('click', () => renderExplorer());
+    // D2: badge click → switch to the Review tab and open the sampled item.
+    el.querySelector('[data-open-review]')?.addEventListener('click', e => {
+        const id = e.currentTarget.getAttribute('data-open-review');
+        if (!id) return;
+        import('./ui-settings-review.js').then(m => m.openReviewItemDeep(id));
+    });
     el.querySelectorAll('.ah-section-btn').forEach(btn => btn.addEventListener('click', () => {
         el.querySelectorAll('.ah-section-btn').forEach(b => {
             const active = b === btn;

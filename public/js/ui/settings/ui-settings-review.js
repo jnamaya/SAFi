@@ -18,6 +18,22 @@ let filters = { status: 'pending', trigger: '' };
 let offset = 0;
 const PAGE_SIZE = 50;
 
+// D2 cross-surface deep link: the Audit Hub drill-down links into the Review
+// queue. Switches to the Review tab (clicking the sidebar nav so the core
+// module's own tab logic runs), waits for the async tab render, then opens the
+// queue item directly instead of leaving the reviewer to hunt for it.
+export async function openReviewItemDeep(queueId) {
+    if (!document.getElementById('review-queue')) {
+        const nav = document.querySelector('[data-tab="review"]');
+        if (nav) nav.click();
+        // renderSettingsReviewTab fetches the org before it builds the DOM.
+        for (let i = 0; i < 50 && !document.getElementById('review-queue'); i++) {
+            await new Promise(r => setTimeout(r, 100));
+        }
+    }
+    await renderDetail(queueId);
+}
+
 export function setReviewCurrentUser(u) {
     currentUser = u;
 }
