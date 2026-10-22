@@ -169,10 +169,11 @@ OS_TYPE=$(echo "$TARGET_CONFIG" | jq -r '.os // empty')
 # while long-running Install-*/Uninstall-* commands stream live progress via CLIXML parsed below.
 if [[ "${OS_TYPE,,}" == *"win"* ]] || [[ "${DESC,,}" == *"windows"* ]] || [[ "${TARGET,,}" == *"win"* ]] || [[ "$CMD" =~ ^[[:space:]]*(powershell|pwsh)(\.exe)?[[:space:]] ]]; then
     if command -v python3 &>/dev/null; then
-        CMD=$(python3 - "$CMD" << 'PYEOF'
+        CMD=$(python3 - "$TARGET" "$CMD" << 'PYEOF'
 import base64, re, sys
 
-raw = sys.argv[1].strip()
+target = sys.argv[1].strip()
+raw = sys.argv[2].strip()
 m = re.match(
     r'^(?:powershell|pwsh)(?:\.exe)?(?:\s+-(?:NoProfile|NonInteractive|NoLogo|InputFormat\s+\S+|ExecutionPolicy\s+\S+))*\s+(?:-(?:Command|c))\s+(.*)\Z',
     raw,
@@ -185,8 +186,54 @@ if len(inner) >= 2 and inner[0] == inner[-1] and inner[0] in ('"', "'"):
     if quote_char == '"':
         inner = re.sub(r'\\+"', '"', inner).replace(r'\\', '\\')
 
-if re.search(r'\b(?:Install|Uninstall|Update|Restore|Backup)-(?:WindowsFeature|ADDS\w+|Package|Module)\b', inner, re.IGNORECASE):
-    script = inner
+is_long_op = bool(
+    re.search(
+        r'\b(?:Install|Uninstall|Update|Restore|Backup)-(?:WindowsFeature|ADDS\w+|Package|Module)\b',
+        inner,
+        re.IGNORECASE,
+    )
+    and not re.search(r'\bStart-Job\b', inner, re.IGNORECASE)
+)
+
+if is_long_op:
+    script = f"""$ProgressPreference = 'SilentlyContinue'
+$__safi_t0 = [DateTime]::UtcNow
+$__safi_job = Start-Job -ScriptBlock {{
+{inner}
+}}
+$__safi_last = ""
+$__safi_last_ts = [DateTime]::UtcNow
+while ($__safi_job.State -eq 'Running') {{
+    $__now = [DateTime]::UtcNow
+    $__elapsed = [int]($__now - $__safi_t0).TotalSeconds
+    $__p = $__safi_job.ChildJobs[0].Progress | Where-Object {{ $_.Activity -and ($_.Activity -notmatch 'Preparing modules') }} | Select-Object -Last 1
+    $__procs = @(Get-Process TiWorker,dsamain,ServerManager -ErrorAction SilentlyContinue | Select-Object -ExpandProperty ProcessName -Unique)
+    $__proc_note = if ($__procs.Count -gt 0) {{ " [" + ($__procs -join ",") + " active]" }} else {{ "" }}
+    if ($__p) {{
+        $__pct = if ($__p.PercentComplete -ge 0) {{ "$($__p.PercentComplete)% " }} else {{ "" }}
+        $__sd = if ($__p.StatusDescription) {{ ": $($__p.StatusDescription)" }} else {{ "" }}
+        $__base = "[{target}] ${{__pct}}$($__p.Activity)${{__sd}}${{__proc_note}}"
+        if ($__base -ne $__safi_last -or ($__now - $__safi_last_ts).TotalSeconds -ge 10) {{
+            [Console]::Out.WriteLine("[SAFI_PROGRESS] $__base (${{__elapsed}}s)")
+            [Console]::Out.Flush()
+            $__safi_last = $__base
+            $__safi_last_ts = $__now
+        }}
+    }} elseif (($__now - $__safi_last_ts).TotalSeconds -ge 10) {{
+        [Console]::Out.WriteLine("[SAFI_PROGRESS] [{target}] Running operation${{__proc_note}} (${{__elapsed}}s)")
+        [Console]::Out.Flush()
+        $__safi_last_ts = $__now
+    }}
+    Start-Sleep -Seconds 2
+}}
+$__safi_job.ChildJobs[0].Progress.Clear()
+Receive-Job -Job $__safi_job -Wait | Out-String -Width 240
+if ($__safi_job.ChildJobs[0].Error.Count -gt 0) {{
+    foreach ($__err in $__safi_job.ChildJobs[0].Error) {{
+        [Console]::Error.WriteLine($__err.ToString())
+    }}
+}}
+"""
 else:
     script = "$ProgressPreference = 'SilentlyContinue'; " + inner
 encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
@@ -245,31 +292,29 @@ def _read_err():
     global last_activity_ts
     if not proc.stderr:
         return
+    import os
+    fd = proc.stderr.fileno()
     last_prog = ""
     clixml_mode = False
-    for line in iter(proc.stderr.readline, ""):
-        if line.startswith("#< CLIXML") or "<Objs " in line or clixml_mode:
+    buf = ""
+    while True:
+        try:
+            chunk_bytes = os.read(fd, 4096)
+        except Exception:
+            break
+        if not chunk_bytes:
+            break
+        text = chunk_bytes.decode("utf-8", errors="replace")
+        if "#< CLIXML" in text or "<Objs " in text or clixml_mode:
             clixml_mode = True
-            for obj_m in re.finditer(r'<Obj S="progress".*?</Obj>', line):
-                chunk = obj_m.group(0)
-                av_m = re.search(r'<AV>(.*?)</AV>', chunk)
-                pc_m = re.search(r'<PC>(-?\d+)</PC>', chunk)
-                sd_m = re.search(r'<SD>(.*?)</SD>', chunk)
-                av = html.unescape(av_m.group(1)).strip() if av_m else ""
-                pc = int(pc_m.group(1)) if pc_m else -1
-                sd = html.unescape(sd_m.group(1)).strip() if sd_m else ""
-                if av and "Preparing modules for first use" not in av:
-                    prog_str = f"{av}: {sd}" if sd else av
-                    if pc >= 0 and f"{pc}%" not in prog_str:
-                        prog_str += f" ({pc}%)"
-                    if prog_str != last_prog:
-                        last_prog = prog_str
-                        with lock:
-                            last_activity_ts = time.time()
-                            sys.stdout.write(f"[SAFI_PROGRESS] {prog_str}\n")
-                            sys.stdout.flush()
-            for err_m in re.finditer(r'<S S="Error">(.*?)</S>', line):
-                err_txt = html.unescape(err_m.group(1)).replace("_x000D__x000A_", "\n").replace("_x000A_", "\n")
+            buf += text
+            while True:
+                m_err = re.search(r'<S S="Error">(.*?)</S>', buf, re.DOTALL)
+                if not m_err:
+                    break
+                err_raw = m_err.group(1)
+                buf = buf[m_err.end():]
+                err_txt = html.unescape(err_raw).replace("_x000D__x000A_", "\n").replace("_x000A_", "\n")
                 if err_txt.strip():
                     with lock:
                         last_activity_ts = time.time()
@@ -277,10 +322,12 @@ def _read_err():
                         if not err_txt.endswith("\n"):
                             sys.stderr.write("\n")
                         sys.stderr.flush()
+            if len(buf) > 65536:
+                buf = buf[-16384:]
         else:
             with lock:
                 last_activity_ts = time.time()
-                sys.stderr.write(line)
+                sys.stderr.write(text)
                 sys.stderr.flush()
 
 t_out = threading.Thread(target=_read_out, daemon=True)
@@ -295,7 +342,7 @@ while proc.poll() is None:
         idle = now - last_activity_ts
         if idle >= 15.0:
             elapsed = int(now - start_ts)
-            sys.stdout.write(f"[SAFI_PROGRESS] Remote command active on {target} ({elapsed}s elapsed)...\n")
+            sys.stdout.write(f"[SAFI_PROGRESS] [{target}] running ({elapsed}s)\n")
             sys.stdout.flush()
             last_activity_ts = now
 

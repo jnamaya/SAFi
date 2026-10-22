@@ -203,7 +203,7 @@ def build_tool_status_line(
 
     text_width = max((console.width or 80) - 28, 12)
     if clean_out:
-        out_budget = min(40, max(16, text_width // 2))
+        out_budget = min(54, max(24, int(text_width * 0.6)))
         if len(clean_out) > out_budget:
             clean_out = clean_out[: out_budget - 1].rstrip() + "…"
         label_budget = max(12, text_width - len(clean_out) - 4)
