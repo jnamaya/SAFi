@@ -212,10 +212,16 @@ def _execute_tool_with_live_status(
     workspace_root: Path,
     agent: Optional[str] = None,
 ) -> str:
-    """Execute a local tool while displaying a live animated spinner with elapsed seconds."""
+    """Execute a local tool while displaying a live animated spinner with elapsed seconds and streaming output."""
     stop_event = threading.Event()
     start_time = time.time()
+    latest_line: Optional[str] = None
     last_status_markup = ui.build_tool_status_line(tool_name, args, 0.0)
+
+    def _on_output(line: str) -> None:
+        nonlocal latest_line
+        if line and line.strip():
+            latest_line = line.strip()
 
     try:
         with ui.console.status(last_status_markup, spinner="dots") as status_indicator:
@@ -223,13 +229,17 @@ def _execute_tool_with_live_status(
                 nonlocal last_status_markup
                 while not stop_event.wait(0.2):
                     elapsed = time.time() - start_time
-                    last_status_markup = ui.build_tool_status_line(tool_name, args, elapsed)
+                    last_status_markup = ui.build_tool_status_line(
+                        tool_name, args, elapsed, latest_output=latest_line
+                    )
                     status_indicator.update(last_status_markup)
 
             t = threading.Thread(target=_ticker, daemon=True)
             t.start()
             try:
-                return tools.execute_tool(tool_name, args, workspace_root, agent=agent)
+                return tools.execute_tool(
+                    tool_name, args, workspace_root, agent=agent, on_output=_on_output
+                )
             finally:
                 stop_event.set()
                 t.join(timeout=0.3)

@@ -8,9 +8,11 @@ import fnmatch
 import os
 import re
 import shutil
+import signal
 import subprocess
+import threading
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 FORBIDDEN_NAMES = frozenset({
     ".env", "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa",
@@ -508,6 +510,7 @@ def execute_tool(
     args: Dict[str, Any],
     workspace_root: Path,
     agent: Optional[str] = None,
+    on_output: Optional[Callable[[str], None]] = None,
 ) -> str:
     """Execute a tool proposal locally inside workspace_root."""
     try:
@@ -787,7 +790,7 @@ def execute_tool(
         elif name == "bash":
             cmd = args.get("command") or ""
             is_sysadmin = agent is not None and "sysadmin" in agent.lower()
-            bash_timeout = 300 if is_sysadmin else 120
+            bash_timeout = 420 if is_sysadmin else 120
             clean_env = os.environ.copy()
             if not is_sysadmin:
                 for k in (
@@ -803,33 +806,116 @@ def execute_tool(
                     clean_env.pop(k, None)
 
             bwrap_cmd = _build_bwrap_command(cmd, workspace_root, agent=agent)
-            if bwrap_cmd:
-                proc = subprocess.run(
-                    bwrap_cmd,
-                    cwd=str(workspace_root),
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    timeout=bash_timeout,
-                    env=clean_env,
+            popen_args: Any = bwrap_cmd if bwrap_cmd else cmd
+            use_shell = not bool(bwrap_cmd)
+
+            output_lines: List[str] = []
+            last_progress_msg: Optional[str] = None
+            proc = subprocess.Popen(
+                popen_args,
+                shell=use_shell,
+                cwd=str(workspace_root),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                env=clean_env,
+                start_new_session=True,
+            )
+
+            def _read_stdout() -> None:
+                nonlocal last_progress_msg
+                if not proc.stdout:
+                    return
+                try:
+                    for raw_line in iter(proc.stdout.readline, ""):
+                        stripped = raw_line.strip()
+                        if stripped.startswith("[SAFI_PROGRESS]"):
+                            prog = stripped[len("[SAFI_PROGRESS]") :].strip()
+                            if prog:
+                                last_progress_msg = prog
+                                if on_output:
+                                    try:
+                                        on_output(prog)
+                                    except Exception:
+                                        pass
+                            continue
+                        output_lines.append(raw_line)
+                        if stripped and on_output:
+                            try:
+                                on_output(stripped)
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+
+            reader_thread = threading.Thread(target=_read_stdout, daemon=True)
+            reader_thread.start()
+
+            try:
+                returncode = proc.wait(timeout=bash_timeout)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(proc.pid, signal.SIGTERM)
+                except Exception:
+                    try:
+                        proc.terminate()
+                    except Exception:
+                        pass
+                try:
+                    proc.wait(timeout=2)
+                except Exception:
+                    try:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    except Exception:
+                        try:
+                            proc.kill()
+                        except Exception:
+                            pass
+                reader_thread.join(timeout=1.0)
+                partial_out = "".join(output_lines).strip()
+                if len(partial_out) > 4000:
+                    partial_out = "... [earlier output truncated]\n" + partial_out[-4000:]
+                msg_parts = [f"Error: 'bash' timed out after {bash_timeout}s."]
+                if last_progress_msg:
+                    msg_parts.append(f"Last reported progress: {last_progress_msg}")
+                if partial_out:
+                    msg_parts.append(f"Partial output captured before timeout:\n{partial_out}")
+                cmd_lower = cmd.lower()
+                is_remote_or_service = is_sysadmin or any(
+                    tok in cmd_lower
+                    for tok in (
+                        "sys-exec",
+                        "ssh ",
+                        "install-windowsfeature",
+                        "install-adds",
+                        "restart-computer",
+                        "reboot",
+                        "apt ",
+                        "apt-get",
+                        "dnf ",
+                        "yum ",
+                        "systemctl",
+                    )
                 )
-            else:
-                proc = subprocess.run(
-                    cmd,
-                    shell=True,
-                    cwd=str(workspace_root),
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    timeout=bash_timeout,
-                    env=clean_env,
-                )
-            out = proc.stdout or ""
+                if is_remote_or_service:
+                    msg_parts.append(
+                        "IMPORTANT: Remote installations, domain promotions, or reboots may still be "
+                        "completing in the background on the target host. Before re-running this command, "
+                        "inspect the current remote state (e.g. Get-WindowsFeature, Get-Service, "
+                        "Get-Process TiWorker, ps aux, or uptime) to check if the operation already "
+                        "succeeded or is still running."
+                    )
+                else:
+                    msg_parts.append("Narrow the command or run it in smaller steps.")
+                return "\n".join(msg_parts)
+
+            reader_thread.join(timeout=1.0)
+            out = "".join(output_lines)
             if len(out) > 20000:
                 out = out[:20000] + f"\n... [output truncated, {len(out)} chars total]"
-            return f"Exit code {proc.returncode}\n{out}".strip()
+            return f"Exit code {returncode}\n{out}".strip()
 
         elif name in ("task", "delegate_subagent"):
             desc = args.get("description", "")

@@ -835,6 +835,28 @@ class SAFi:
         text = str(exc).split("\n", 1)[0]
         return text[:400] or exc.__class__.__name__
 
+    @staticmethod
+    def _redact_prompt_secrets(draft: str, user_prompt: str) -> str:
+        """Deterministically redact operator-supplied passwords/tokens from final prose drafts."""
+        if not draft or not user_prompt:
+            return draft
+        import re
+        pattern = re.compile(
+            r"(?:recovery\s+|admin\s+|root\s+|ssh\s+|dsrm\s+|safe\s*mode\s+)?"
+            r"(?:password|passphrase|secret|api[_\s-]?key|access[_\s-]?token)\s*[:=]\s*['\"]?([^\s'\",;]{4,})['\"]?",
+            re.IGNORECASE,
+        )
+        redacted = draft
+        for m in pattern.finditer(user_prompt):
+            secret_val = m.group(1)
+            if (
+                secret_val
+                and secret_val.lower() not in ("none", "null", "true", "false", "[redacted]")
+                and secret_val in redacted
+            ):
+                redacted = redacted.replace(secret_val, "[REDACTED]")
+        return redacted
+
     async def _finalize_draft(
         self,
         a_t: str,
@@ -863,6 +885,13 @@ class SAFi:
           ledger / spirit_assessment: populated as far as the draft got
         """
         tag = f" | {label}" if label else ""
+
+        redacted_draft = self._redact_prompt_secrets(a_t, user_prompt)
+        if redacted_draft != a_t:
+            self.log.info(
+                f"[Governance | Phase 3 | Will W1{tag}] Redacted operator-supplied credential from draft (deterministic repair)."
+            )
+            a_t = redacted_draft
 
         if progress_callback:
             progress_callback("structure")
@@ -2409,6 +2438,17 @@ class SAFi:
                     "or failed to answer it directly. Provide a direct, complete, and helpful "
                     "response that answers the user's question within your role."
                 )
+            failing_reasons = []
+            for entry in (result.get("ledger") or []):
+                try:
+                    sc = float(entry.get("score", 0))
+                except (TypeError, ValueError):
+                    sc = 0.0
+                if sc < 0.0 and entry.get("reason"):
+                    failing_reasons.append(f"- {entry.get('value', 'Policy')}: {entry.get('reason')}")
+            if failing_reasons:
+                details = "\n".join(failing_reasons)
+                spirit_directive = f"{spirit_directive}\n{details}".strip() if spirit_directive else details
             spirit_retry_prompt = (
                 f"{prompt_with_date}\n\n"
                 "--- INTERNAL GOVERNANCE FEEDBACK ---\n"

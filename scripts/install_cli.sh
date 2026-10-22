@@ -165,7 +165,8 @@ DESC=$(echo "$TARGET_CONFIG" | jq -r '.description // empty')
 OS_TYPE=$(echo "$TARGET_CONFIG" | jq -r '.os // empty')
 
 # Automatically wrap PowerShell commands on Windows targets into UTF-16LE Base64 (-EncodedCommand)
-# with -NoProfile -NonInteractive -InputFormat None and $ProgressPreference='SilentlyContinue'.
+# with -NoProfile -NonInteractive -InputFormat None. Fast commands use $ProgressPreference='SilentlyContinue',
+# while long-running Install-*/Uninstall-* commands stream live progress via CLIXML parsed below.
 if [[ "${OS_TYPE,,}" == *"win"* ]] || [[ "${DESC,,}" == *"windows"* ]] || [[ "${TARGET,,}" == *"win"* ]] || [[ "$CMD" =~ ^[[:space:]]*(powershell|pwsh)(\.exe)?[[:space:]] ]]; then
     if command -v python3 &>/dev/null; then
         CMD=$(python3 - "$CMD" << 'PYEOF'
@@ -182,9 +183,12 @@ if len(inner) >= 2 and inner[0] == inner[-1] and inner[0] in ('"', "'"):
     quote_char = inner[0]
     inner = inner[1:-1]
     if quote_char == '"':
-        inner = inner.replace(r'\"', '"').replace(r'\\', '\\')
+        inner = re.sub(r'\\+"', '"', inner).replace(r'\\', '\\')
 
-script = "$ProgressPreference = 'SilentlyContinue'; " + inner
+if re.search(r'\b(?:Install|Uninstall|Update|Restore|Backup)-(?:WindowsFeature|ADDS\w+|Package|Module)\b', inner, re.IGNORECASE):
+    script = inner
+else:
+    script = "$ProgressPreference = 'SilentlyContinue'; " + inner
 encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
 print(f"powershell.exe -NoProfile -NonInteractive -InputFormat None -EncodedCommand {encoded}")
 PYEOF
@@ -204,9 +208,106 @@ else
 fi
 
 if [ "$AUTH" = "key" ] || [ "$AUTH" = "ssh" ] || [ "$AUTH" = "ssh_config" ]; then
-    # Key-based / SSH-config execution
-    ssh -o BatchMode=yes "${SSH_OPTS[@]}" "$DEST" "$CMD"
-    exit $?
+    if command -v python3 &>/dev/null; then
+        python3 - "$TARGET" "$DEST" "$CMD" "${SSH_OPTS[@]}" << 'PYEOF'
+import html, re, subprocess, sys, threading, time
+
+target = sys.argv[1]
+dest = sys.argv[2]
+cmd = sys.argv[3]
+ssh_opts = sys.argv[4:]
+
+ssh_cmd = ["ssh", "-o", "BatchMode=yes", *ssh_opts, dest, cmd]
+proc = subprocess.Popen(
+    ssh_cmd,
+    stdin=subprocess.DEVNULL,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+    text=True,
+    bufsize=1,
+)
+
+start_ts = time.time()
+last_activity_ts = start_ts
+lock = threading.Lock()
+
+def _read_out():
+    global last_activity_ts
+    if not proc.stdout:
+        return
+    for line in iter(proc.stdout.readline, ""):
+        with lock:
+            last_activity_ts = time.time()
+            sys.stdout.write(line)
+            sys.stdout.flush()
+
+def _read_err():
+    global last_activity_ts
+    if not proc.stderr:
+        return
+    last_prog = ""
+    clixml_mode = False
+    for line in iter(proc.stderr.readline, ""):
+        if line.startswith("#< CLIXML") or "<Objs " in line or clixml_mode:
+            clixml_mode = True
+            for obj_m in re.finditer(r'<Obj S="progress".*?</Obj>', line):
+                chunk = obj_m.group(0)
+                av_m = re.search(r'<AV>(.*?)</AV>', chunk)
+                pc_m = re.search(r'<PC>(-?\d+)</PC>', chunk)
+                sd_m = re.search(r'<SD>(.*?)</SD>', chunk)
+                av = html.unescape(av_m.group(1)).strip() if av_m else ""
+                pc = int(pc_m.group(1)) if pc_m else -1
+                sd = html.unescape(sd_m.group(1)).strip() if sd_m else ""
+                if av and "Preparing modules for first use" not in av:
+                    prog_str = f"{av}: {sd}" if sd else av
+                    if pc >= 0 and f"{pc}%" not in prog_str:
+                        prog_str += f" ({pc}%)"
+                    if prog_str != last_prog:
+                        last_prog = prog_str
+                        with lock:
+                            last_activity_ts = time.time()
+                            sys.stdout.write(f"[SAFI_PROGRESS] {prog_str}\n")
+                            sys.stdout.flush()
+            for err_m in re.finditer(r'<S S="Error">(.*?)</S>', line):
+                err_txt = html.unescape(err_m.group(1)).replace("_x000D__x000A_", "\n").replace("_x000A_", "\n")
+                if err_txt.strip():
+                    with lock:
+                        last_activity_ts = time.time()
+                        sys.stderr.write(err_txt)
+                        if not err_txt.endswith("\n"):
+                            sys.stderr.write("\n")
+                        sys.stderr.flush()
+        else:
+            with lock:
+                last_activity_ts = time.time()
+                sys.stderr.write(line)
+                sys.stderr.flush()
+
+t_out = threading.Thread(target=_read_out, daemon=True)
+t_err = threading.Thread(target=_read_err, daemon=True)
+t_out.start()
+t_err.start()
+
+while proc.poll() is None:
+    time.sleep(1.0)
+    now = time.time()
+    with lock:
+        idle = now - last_activity_ts
+        if idle >= 15.0:
+            elapsed = int(now - start_ts)
+            sys.stdout.write(f"[SAFI_PROGRESS] Remote command active on {target} ({elapsed}s elapsed)...\n")
+            sys.stdout.flush()
+            last_activity_ts = now
+
+t_out.join(timeout=1.0)
+t_err.join(timeout=1.0)
+sys.exit(proc.returncode or 0)
+PYEOF
+        exit $?
+    else
+        ssh -o BatchMode=yes "${SSH_OPTS[@]}" "$DEST" "$CMD"
+        exit $?
+    fi
 elif [ "$AUTH" = "password" ]; then
     echo "Error: Plain-text password storage has been disabled for security. Please configure SSH key-based authentication for '$TARGET' (e.g. ssh-copy-id)." >&2
     exit 1

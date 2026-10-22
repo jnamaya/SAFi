@@ -165,6 +165,7 @@ def build_tool_status_line(
     tool_name: str,
     args: Optional[Dict[str, Any]],
     elapsed: float,
+    latest_output: Optional[str] = None,
 ) -> str:
     """Render a clean live progress line showing the active tool execution and elapsed time."""
     args = args or {}
@@ -195,7 +196,24 @@ def build_tool_status_line(
     else:
         label = f"Executing {tool_name}"
 
+    clean_out = ""
+    if latest_output:
+        clean_out = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", latest_output).strip()
+        clean_out = " ".join(clean_out.split())
+
     text_width = max((console.width or 80) - 28, 12)
+    if clean_out:
+        out_budget = min(40, max(16, text_width // 2))
+        if len(clean_out) > out_budget:
+            clean_out = clean_out[: out_budget - 1].rstrip() + "…"
+        label_budget = max(12, text_width - len(clean_out) - 4)
+        if len(label) > label_budget:
+            label = label[: label_budget - 1].rstrip() + "…"
+        return (
+            f"[bold {COLOR_BRAND_400}]SAFi[/] [dim]·[/] [white]{escape(label)}[/] "
+            f"[dim]·[/] [dim]{escape(clean_out)}[/] [dim]·[/] [dim]{elapsed:.1f}s[/]"
+        )
+
     if len(label) > text_width:
         label = label[: text_width - 1].rstrip() + "…"
 
