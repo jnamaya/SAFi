@@ -572,13 +572,15 @@ def execute_tool(
             path_str = args.get("path") or args.get("filePath") or args.get("file_path") or ""
             if not path_str.strip():
                 return "Error: 'path' parameter is required for write."
-            content = args.get("content") if args.get("content") is not None else ""
+            content = str(args.get("content") if args.get("content") is not None else "")
+            if path_str.endswith("scratchpad.md") and "\\n" in content and "\n" not in content:
+                content = content.replace("\\n", "\n")
             target = resolve_safe_path(path_str, workspace_root)
             if target == workspace_root.resolve() or target.is_dir():
                 return f"Error: Cannot write to directory '{path_str}'. Specify a target file path."
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(str(content), encoding="utf-8")
-            return f"Successfully wrote {len(str(content))} characters to {path_str}."
+            target.write_text(content, encoding="utf-8")
+            return f"Successfully wrote {len(content)} characters to {path_str}."
 
         elif name == "edit":
             path_str = args.get("path") or args.get("filePath") or args.get("file_path") or ""
@@ -616,6 +618,13 @@ def execute_tool(
                     new_text = normalized_text.replace(normalized_target, normalized_replacement, 1)
                     target.write_text(new_text, encoding="utf-8")
                     return f"Successfully applied edit to {path_str}."
+                if "\\n" in normalized_target and "\n" not in normalized_target:
+                    unescaped_target = normalized_target.replace("\\n", "\n")
+                    unescaped_replacement = normalized_replacement.replace("\\n", "\n")
+                    if unescaped_target in normalized_text and normalized_text.count(unescaped_target) == 1:
+                        new_text = normalized_text.replace(unescaped_target, unescaped_replacement, 1)
+                        target.write_text(new_text, encoding="utf-8")
+                        return f"Successfully applied edit to {path_str}."
                 return f"Error: Target text block not found in {path_str}. Verify whitespace and indentation, or use 'write' to rewrite the full file."
             if count > 1:
                 return f"Error: Target text occurs {count} times in {path_str}. Provide more surrounding lines for uniqueness, or use 'write' to rewrite the full file."
@@ -778,6 +787,7 @@ def execute_tool(
         elif name == "bash":
             cmd = args.get("command") or ""
             is_sysadmin = agent is not None and "sysadmin" in agent.lower()
+            bash_timeout = 300 if is_sysadmin else 120
             clean_env = os.environ.copy()
             if not is_sysadmin:
                 for k in (
@@ -800,7 +810,7 @@ def execute_tool(
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,
-                    timeout=120,
+                    timeout=bash_timeout,
                     env=clean_env,
                 )
             else:
@@ -811,7 +821,7 @@ def execute_tool(
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,
-                    timeout=120,
+                    timeout=bash_timeout,
                     env=clean_env,
                 )
             out = proc.stdout or ""

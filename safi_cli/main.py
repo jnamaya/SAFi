@@ -489,16 +489,22 @@ def run_agent_turn(
                         tool_results=tool_results,
                         subagents_run_count=subagents_run_count,
                     )
-                resume_budget = 3
+                last_tr = tool_results[-1] if tool_results else {}
+                last_tpath = str((last_tr.get("arguments") or {}).get("path") or "")
+                last_tres = str(last_tr.get("result") or "")
+                if not last_tres.startswith("Error:") and not last_tpath.endswith("scratchpad.md"):
+                    resume_budget = 2
                 continue
 
             final_text = res.get("finalOutput") or ""
+            will_dec = str(res.get("willDecision") or "approve").lower()
+            is_intercepted = will_dec not in ("approve", "approved", "pass")
 
             unfinished_todos = [
                 t for t in ui.get_active_todos()
                 if (t.get("status") or "pending").lower() not in ("completed", "done")
             ]
-            if unfinished_todos and resume_budget > 0 and step < max_steps - 1:
+            if not is_intercepted and unfinished_todos and resume_budget > 0 and step < max_steps - 1:
                 resume_budget -= 1
                 remaining = "; ".join(
                     str(t.get("task") or t.get("content") or t.get("description") or "step")
@@ -513,7 +519,9 @@ def run_agent_turn(
                         "the final answer. The plan in '.safi/scratchpad.md' still has unfinished steps: "
                         f"{remaining}. Do not ask the user for permission. Continue "
                         "now with the appropriate tools, or, if the work is genuinely "
-                        f"done, update '.safi/scratchpad.md' to mark the remaining steps [x] complete. (Your note: {pause_note})"
+                        "done, use 'write' to rewrite '.safi/scratchpad.md' with the remaining steps marked [x] complete "
+                        "(prefer 'write' over 'edit' to avoid target-matching errors). Never repeat plaintext passwords or secrets in your summary. "
+                        f"(Your note: {pause_note})"
                     ),
                 })
                 ui.console.print("[dim yellow]↳ Plan incomplete — continuing autonomously…[/dim yellow]")
