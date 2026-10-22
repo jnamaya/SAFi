@@ -274,6 +274,15 @@ class OtherOpenAiCompatibleProvidersAreUnaffected(unittest.TestCase):
                 self.assertEqual(p.get("max_tokens"), 2048)
                 self.assertEqual(p.get("temperature"), 0.1)
 
+    def test_07b_zhipu_glm_disables_thinking_when_tools_present(self):
+        tools = [{"name": "read", "description": "Read file", "input_schema": {"type": "object"}}]
+        p_tools = _params_for("glm-5.3", max_tokens=2048, temperature=0.1, tools=tools)
+        self.assertEqual(p_tools.get("max_tokens"), 2048)
+        self.assertEqual(p_tools.get("extra_body"), {"thinking": {"type": "disabled"}})
+
+        p_prose = _params_for("glm-5.3", max_tokens=2048, temperature=0.1)
+        self.assertIsNone(p_prose.get("extra_body"))
+
 
 class RegistryWiring(unittest.TestCase):
 

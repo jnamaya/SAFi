@@ -735,6 +735,18 @@ class LLMProvider:
                     params["reasoning_effort"] = "none"
             else:
                  params["max_tokens"] = max_tokens
+                 if (
+                     params.get("tools")
+                     and (provider_name == "zhipu" or model_name.lower().startswith("glm-"))
+                     and os.environ.get("SAFI_ZHIPU_TOOL_THINKING", "0").strip().lower() not in ("1", "true", "yes", "on")
+                 ):
+                     # Zhipu GLM-5 models enable deep thinking by default, generating 3,000-10,000
+                     # reasoning_content tokens (~60-120s latency) before emitting a simple tool_calls
+                     # proposal. Disabling thinking when tools are present drops tool-step latency to ~5-8s.
+                     eb = dict(params.get("extra_body") or {})
+                     if "thinking" not in eb:
+                         eb["thinking"] = {"type": "disabled"}
+                     params["extra_body"] = eb
 
             # Sync client off the event loop's thread pool. The blocking call
             # must not run inline in the request coroutine; to_thread keeps the

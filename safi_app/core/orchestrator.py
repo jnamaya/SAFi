@@ -1287,7 +1287,7 @@ class SAFi:
                     + prompt_for_intellect
                 )
 
-            def _bound_result(val: Any, max_chars: int = 14_000, is_older: bool = False) -> str:
+            def _bound_result(val: Any, max_chars: int = 18_000, is_older: bool = False) -> str:
                 s = val if isinstance(val, str) else (json.dumps(val, default=str) if val is not None else "")
                 if is_older:
                     bound_cap = int(os.environ.get("SAFI_OLDER_TOOL_RESULT_MAX_CHARS", str(max_chars)))
@@ -1319,7 +1319,7 @@ class SAFi:
             rendered_tool_blocks: List[str] = []
             for idx, item in enumerate(recent_tool_results):
                 is_older_item = idx < (num_results - full_window)
-                cap = 2_000 if is_older_item else 14_000
+                cap = 2_000 if is_older_item else 18_000
                 header = (
                     f"TOOL RESULT — {item.get('tool_name', 'unknown')} called with "
                     f"{item.get('arguments', {})}\n"

@@ -549,7 +549,7 @@ def execute_tool(
                 return f"Error: offset {offset} is past end of file ({total} lines total)."
 
             slice_lines = lines[offset - 1 : offset - 1 + limit]
-            max_read_chars = 13_500
+            max_read_chars = 18_000
             rendered_lines: List[str] = []
             used_chars = 0
             for i, line in enumerate(slice_lines):
