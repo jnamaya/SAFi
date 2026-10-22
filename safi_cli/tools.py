@@ -549,11 +549,21 @@ def execute_tool(
                 return f"Error: offset {offset} is past end of file ({total} lines total)."
 
             slice_lines = lines[offset - 1 : offset - 1 + limit]
-            body = "".join(f"{offset + i}: {line}" for i, line in enumerate(slice_lines))
-            truncated = (offset - 1 + len(slice_lines)) < total
+            max_read_chars = 13_500
+            rendered_lines: List[str] = []
+            used_chars = 0
+            for i, line in enumerate(slice_lines):
+                entry = f"{offset + i}: {line}"
+                if rendered_lines and used_chars + len(entry) > max_read_chars:
+                    break
+                rendered_lines.append(entry)
+                used_chars += len(entry)
+            body = "".join(rendered_lines)
+            last_line = offset - 1 + len(rendered_lines)
+            truncated = last_line < total
             note = (
-                f"\n... [file truncated at line {offset - 1 + len(slice_lines)} of {total} lines total. "
-                "You have sufficient context; proceed directly to 'edit', 'write', or your response unless specific lines are needed.]"
+                f"\n... [file truncated at line {last_line} of {total} lines total. "
+                f"Use read(path='{path_str}', offset={last_line + 1}, limit=300) or grep if you need lines after {last_line}.]"
                 if truncated else ""
             )
             return body + note

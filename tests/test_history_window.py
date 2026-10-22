@@ -165,5 +165,56 @@ class NothingElseChanged(unittest.TestCase):
         self.assertNotIn("limit=8", ORCH)
 
 
+class ClientOwnedHistoryCleaning(unittest.TestCase):
+
+    def test_drops_intermediate_tool_call_hops_and_strips_envelopes(self):
+        from safi_app.core.orchestrator import _clean_client_owned_history
+
+        raw = [
+            {
+                "role": "user",
+                "content": (
+                    "[Client workspace metadata]\nClient working directory: /repo\n[/Client workspace metadata]\n\n"
+                    "Implement feature X"
+                ),
+            },
+            {"role": "ai", "content": "[tool_calls] read, read"},
+            {
+                "role": "user",
+                "content": (
+                    "[ACTIVE WORKSPACE SCRATCHPAD (.safi/scratchpad.md)]\n- [ ] Step 1\n[/ACTIVE WORKSPACE SCRATCHPAD]\n\n"
+                    "[Client workspace metadata]\nClient working directory: /repo\n[/Client workspace metadata]\n\n"
+                    "Implement feature X\n\nTOOL RESULT — read called with {'path': 'a.py'}\n" + ("A" * 20000)
+                ),
+            },
+            {"role": "ai", "content": "[tool_call] edit({'path': 'a.py'})"},
+            {
+                "role": "user",
+                "content": (
+                    "[Client workspace metadata]\nClient working directory: /repo\n[/Client workspace metadata]\n\n"
+                    "Implement feature X\n\nTOOL RESULT — edit called with {'path': 'a.py'}\nSuccessfully edited."
+                ),
+            },
+            {"role": "ai", "content": "Feature X has been implemented and verified."},
+        ]
+        cleaned = _clean_client_owned_history(raw)
+        self.assertEqual(len(cleaned), 2)
+        self.assertEqual(cleaned[0]["role"], "user")
+        self.assertEqual(cleaned[0]["content"], "Implement feature X")
+        self.assertEqual(cleaned[1]["role"], "ai")
+        self.assertEqual(cleaned[1]["content"], "Feature X has been implemented and verified.")
+
+    def test_in_flight_first_turn_returns_empty_history(self):
+        from safi_app.core.orchestrator import _clean_client_owned_history
+
+        raw = [
+            {"role": "user", "content": "Implement feature X"},
+            {"role": "ai", "content": "[tool_calls] read, read"},
+            {"role": "user", "content": "Implement feature X\n\nTOOL RESULT — read called with {}\nbody"},
+            {"role": "ai", "content": "[tool_calls] bash, bash"},
+        ]
+        self.assertEqual(_clean_client_owned_history(raw), [])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

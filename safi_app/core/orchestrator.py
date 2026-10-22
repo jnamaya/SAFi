@@ -174,6 +174,50 @@ def _render_history(messages, max_chars: int) -> str:
         + "\n".join(kept)
     )
 
+
+def _strip_harness_envelope(text: str) -> str:
+    """Strip workspace metadata, scratchpad headers, and cumulative TOOL RESULT tails
+    from a stored client-owned user message so conversation history only replays the
+    actual user request."""
+    s = text or ""
+    if "[/ACTIVE WORKSPACE SCRATCHPAD]" in s:
+        s = s.split("[/ACTIVE WORKSPACE SCRATCHPAD]", 1)[1].lstrip()
+    if "[/Client workspace metadata]" in s:
+        s = s.split("[/Client workspace metadata]", 1)[1].lstrip()
+    if "\n\nTOOL RESULT — " in s:
+        s = s.split("\n\nTOOL RESULT — ", 1)[0].rstrip()
+    if "\n\n[TASK STATE — " in s:
+        s = s.split("\n\n[TASK STATE — ", 1)[0].rstrip()
+    return s.strip()
+
+
+def _clean_client_owned_history(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Filter intermediate tool-loop hops ([tool_call]/[tool_calls]) and strip
+    cumulative tool-result envelopes from prior client-owned turns so recent_turns_text
+    only replays completed User/Assistant exchanges instead of duplicating tool outputs."""
+    if not messages:
+        return []
+    cleaned: List[Dict[str, Any]] = []
+    pending_user: Optional[Dict[str, Any]] = None
+    for m in messages:
+        role = (m.get("role") or "").lower()
+        content = (m.get("content") or "").strip()
+        if not content:
+            continue
+        if role == "user":
+            stripped = _strip_harness_envelope(content)
+            if stripped:
+                pending_user = {**m, "content": stripped}
+        else:
+            if content.startswith("[tool_call]") or content.startswith("[tool_calls]"):
+                pending_user = None
+                continue
+            if pending_user is not None:
+                cleaned.append(pending_user)
+                pending_user = None
+            cleaned.append(m)
+    return cleaned
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 AUDIT_PARAM_MAXLEN = 120
@@ -356,6 +400,8 @@ def build_task_state_block(user_prompt: str, tool_results: Any) -> str:
 
     actions: "OrderedDict[str, int]" = OrderedDict()
     plan: List[Dict[str, Any]] = []
+    touched_scratchpad = False
+    consecutive_inspections = 0
     for item in tool_results:
         if not isinstance(item, dict):
             continue
@@ -369,6 +415,12 @@ def build_task_state_block(user_prompt: str, tool_results: Any) -> str:
                 plan = [t for t in todos if isinstance(t, dict)]
             continue
         target = _compact_tool_target(args if isinstance(args, dict) else {})
+        if name in MODIFICATION_TOOL_NAMES:
+            if "scratchpad.md" in target:
+                touched_scratchpad = True
+            consecutive_inspections = 0
+        else:
+            consecutive_inspections += 1
         key = f'{name}("{target}")' if target else name
         actions[key] = actions.get(key, 0) + 1
 
@@ -390,6 +442,17 @@ def build_task_state_block(user_prompt: str, tool_results: Any) -> str:
             status = str(todo.get("status") or "pending").lower()
             mark = "x" if status in ("completed", "done") else (">" if status in ("in_progress", "running") else " ")
             lines.append(f"  [{mark}] {' '.join(task.split())[:120]}")
+    if not touched_scratchpad and consecutive_inspections >= 2:
+        lines.append(
+            "IMPORTANT: If this is a multi-step task, create or update `.safi/scratchpad.md` NOW "
+            "with your `- [ ]` checklist before reading more files, then implement 1-2 items at a time."
+        )
+    if consecutive_inspections >= 4:
+        lines.append(
+            f"WARNING: You have executed {consecutive_inspections} consecutive read/inspection calls "
+            "without writing or editing any file. Stop reading ahead across the codebase — write `.safi/scratchpad.md` "
+            "or apply `edit`/`write` for your current checklist item immediately."
+        )
     lines.append(
         "Continue executing the remaining work with tools now. Do NOT ask the user "
         "for permission to proceed, and do NOT re-read or re-run anything listed above."
@@ -1224,25 +1287,63 @@ class SAFi:
                     + prompt_for_intellect
                 )
 
-            def _bound_result(val: Any, max_chars: int = 16_000) -> str:
+            def _bound_result(val: Any, max_chars: int = 14_000, is_older: bool = False) -> str:
                 s = val if isinstance(val, str) else (json.dumps(val, default=str) if val is not None else "")
-                bound_cap = int(os.environ.get("SAFI_TOOL_RESULT_MAX_CHARS", str(max_chars)))
+                if is_older:
+                    bound_cap = int(os.environ.get("SAFI_OLDER_TOOL_RESULT_MAX_CHARS", str(max_chars)))
+                else:
+                    bound_cap = int(os.environ.get("SAFI_TOOL_RESULT_MAX_CHARS", str(max_chars)))
                 if len(s) > bound_cap:
+                    if is_older and bound_cap >= 600:
+                        head_len = int(bound_cap * 0.75)
+                        tail_len = bound_cap - head_len
+                        return (
+                            s[:head_len]
+                            + f"\n... [older tool output compacted ({len(s)} chars total) to fit context window] ...\n"
+                            + s[-tail_len:]
+                        )
                     return s[:bound_cap] + (
                         f"\n... [tool result truncated ({len(s)} characters total). "
                         "You have sufficient context; proceed directly to 'edit', 'write', or your response.]"
                     )
                 return s
 
-            # Retain up to the last 25 tool results in verbatim context so batched tool calls
-            # do not evict recent file reads before the agent can apply its edits.
+            # Retain up to the last 25 tool results in context, keeping the most recent
+            # full_window results at full detail and compacting older results so cumulative
+            # tool history never overwhelms the model's latency or token budget.
             tool_window = int(os.environ.get("SAFI_TOOL_RESULTS_WINDOW", "25"))
+            full_window = int(os.environ.get("SAFI_TOOL_RESULTS_FULL_WINDOW", "6"))
+            total_tool_budget = int(os.environ.get("SAFI_TOOL_HISTORY_MAX_CHARS", "55000"))
             recent_tool_results = client_tool_results[-tool_window:] if len(client_tool_results) > tool_window else client_tool_results
-            tool_history = "\n\n".join(
-                f"TOOL RESULT — {item.get('tool_name', 'unknown')} called with "
-                f"{item.get('arguments', {})}\n{_bound_result(item.get('result', ''))}"
-                for item in recent_tool_results
-            )
+            num_results = len(recent_tool_results)
+            rendered_tool_blocks: List[str] = []
+            for idx, item in enumerate(recent_tool_results):
+                is_older_item = idx < (num_results - full_window)
+                cap = 2_000 if is_older_item else 14_000
+                header = (
+                    f"TOOL RESULT — {item.get('tool_name', 'unknown')} called with "
+                    f"{item.get('arguments', {})}\n"
+                )
+                body = _bound_result(item.get("result", ""), max_chars=cap, is_older=is_older_item)
+                rendered_tool_blocks.append(header + body)
+
+            total_chars = sum(len(b) for b in rendered_tool_blocks)
+            if total_chars > total_tool_budget:
+                for idx in range(num_results):
+                    if total_chars <= total_tool_budget:
+                        break
+                    item = recent_tool_results[idx]
+                    header = (
+                        f"TOOL RESULT — {item.get('tool_name', 'unknown')} called with "
+                        f"{item.get('arguments', {})}\n"
+                    )
+                    compact_cap = 800 if idx < (num_results - 2) else 6_000
+                    new_block = header + _bound_result(item.get("result", ""), max_chars=compact_cap, is_older=True)
+                    if len(new_block) < len(rendered_tool_blocks[idx]):
+                        total_chars -= (len(rendered_tool_blocks[idx]) - len(new_block))
+                        rendered_tool_blocks[idx] = new_block
+
+            tool_history = "\n\n".join(rendered_tool_blocks)
             if tool_history:
                 prompt_for_intellect = f"{prompt_for_intellect}\n\n{tool_history}"
             task_state_block = build_task_state_block(user_prompt, client_tool_results)
@@ -1311,13 +1412,15 @@ class SAFi:
         # thread and others must not pay for it — see _resolve_history_window.
         turns, max_chars = self._resolve_history_window()
         # +2 covers the current user message, which is dropped below.
-        fetch_limit = _HISTORY_FETCH_ALL if turns == 0 else (turns * 2) + 2
+        fetch_limit = _HISTORY_FETCH_ALL if turns == 0 else (max((turns * 2) + 2, 120) if client_owned else (turns * 2) + 2)
         raw_history = self.store.fetch_chat_history_for_conversation(conversation_id, limit=fetch_limit)
         prior_turns = [
             m for m in raw_history
             if m.get("content", "").strip() and m.get("message_id") != message_id
         ]
         recent_window = prior_turns[:-1]          # drop the current user message
+        if client_owned:
+            recent_window = _clean_client_owned_history(recent_window)
         if turns:
             recent_window = recent_window[-(turns * 2):]
         if memory_summary:
