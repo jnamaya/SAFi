@@ -1982,7 +1982,7 @@ class TestWorkspaceScratchpad(unittest.TestCase):
         safi_dir = self.workspace_root / ".safi"
         safi_dir.mkdir(parents=True)
         sp_file = safi_dir / "scratchpad.md"
-        sp_file.write_text("A" * 6000, encoding="utf-8")
+        sp_file.write_text("A" * 8000, encoding="utf-8")
 
         with patch.object(self.client.session, "post") as mock_post:
             mock_post.return_value = MagicMock(status_code=200, json=lambda: {"ok": True})
@@ -1996,7 +1996,7 @@ class TestWorkspaceScratchpad(unittest.TestCase):
             ws_ctx = payload.get("workspace_context", {})
             self.assertIn("scratchpad", ws_ctx)
             self.assertIn("truncated", ws_ctx["scratchpad"])
-            self.assertLessEqual(len(ws_ctx["scratchpad"]), 4100)
+            self.assertLessEqual(len(ws_ctx["scratchpad"]), 6100)
 
     def test_scratchpad_omitted_when_absent(self):
         with patch.object(self.client.session, "post") as mock_post:

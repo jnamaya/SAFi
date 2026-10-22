@@ -1213,7 +1213,7 @@ class SAFi:
                     except Exception:
                         pass
             if isinstance(scratchpad_content, str) and scratchpad_content.strip():
-                max_sp_chars = int(os.environ.get("SAFI_SCRATCHPAD_MAX_CHARS", "4000"))
+                max_sp_chars = int(os.environ.get("SAFI_SCRATCHPAD_MAX_CHARS", "6000"))
                 sp_text = scratchpad_content.strip()
                 if len(sp_text) > max_sp_chars:
                     sp_text = sp_text[:max_sp_chars] + f"\n... [scratchpad truncated to {max_sp_chars} characters]"
@@ -1234,9 +1234,9 @@ class SAFi:
                     )
                 return s
 
-            # Retain up to the last 10 tool results in verbatim context to avoid prompt blowups
-            # while preventing amnesia of earlier reference reads in the same turn.
-            tool_window = int(os.environ.get("SAFI_TOOL_RESULTS_WINDOW", "10"))
+            # Retain up to the last 25 tool results in verbatim context so batched tool calls
+            # do not evict recent file reads before the agent can apply its edits.
+            tool_window = int(os.environ.get("SAFI_TOOL_RESULTS_WINDOW", "25"))
             recent_tool_results = client_tool_results[-tool_window:] if len(client_tool_results) > tool_window else client_tool_results
             tool_history = "\n\n".join(
                 f"TOOL RESULT — {item.get('tool_name', 'unknown')} called with "

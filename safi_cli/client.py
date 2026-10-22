@@ -199,9 +199,10 @@ class SafiClient:
             if sp_path.is_file():
                 raw_sp = sp_path.read_text(encoding="utf-8", errors="replace").strip()
                 if raw_sp:
-                    # Enforce 4,000 char anti-bloat limit
-                    if len(raw_sp) > 4000:
-                        raw_sp = raw_sp[:4000] + "\n... [scratchpad truncated to 4,000 characters]"
+                    # Enforce 6,000 char anti-bloat limit
+                    max_sp_chars = int(os.environ.get("SAFI_SCRATCHPAD_MAX_CHARS", "6000"))
+                    if len(raw_sp) > max_sp_chars:
+                        raw_sp = raw_sp[:max_sp_chars] + f"\n... [scratchpad truncated to {max_sp_chars:,} characters]"
                     ws_context["scratchpad"] = raw_sp
         except Exception:
             pass
