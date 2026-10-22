@@ -5707,23 +5707,53 @@ def _review_row_public(row):
     row["trigger_detail"] = _review_json(row.get("trigger_detail"), {})
     return row
 
+# Server-side sort whitelist for the queue list. Keys are API-facing; values
+# are (order-by SQL fragments). id is always the final tiebreaker so paging is
+# deterministic.
+_REVIEW_QUEUE_SORTS = {
+    "created_at": "created_at {d}, id {d}",
+    "reviewed_at": "reviewed_at {d}, id {d}",
+    "profile_name": "profile_name {d}, id {d}",
+    "status": "status {d}, id {d}",
+}
+
 def list_review_queue(org_id, status=None, trigger=None, profile=None,
-                      limit=50, offset=0):
-    """Queue rows for the org, newest first — workflow fields only, nothing
-    encrypted. Returns (rows, total) where total counts all rows matching the
-    filters (for pagination)."""
+                      limit=50, offset=0, sort=None,
+                      created_from=None, created_to=None):
+    """Queue rows for the org — workflow fields only, nothing encrypted.
+    status/trigger accept a single value or an iterable of values (multi-select
+    filters; trigger rows match ANY selected trigger). sort is a key from
+    _REVIEW_QUEUE_SORTS, optionally ':asc'/' desc'-suffixed via (key, desc).
+    Returns (rows, total) where total counts all rows matching the filters."""
     where = ["org_id=%s"]
     params = [org_id]
-    if status:
-        where.append("status=%s")
-        params.append(status)
-    if trigger:
-        where.append("JSON_CONTAINS(triggers, %s)")
-        params.append(json.dumps(trigger))
+    statuses = [status] if isinstance(status, str) else list(status or [])
+    statuses = [s for s in statuses if s]
+    if statuses:
+        where.append("status IN (" + ",".join(["%s"] * len(statuses)) + ")")
+        params.extend(statuses)
+    triggers = [trigger] if isinstance(trigger, str) else list(trigger or [])
+    triggers = [t for t in triggers if t]
+    if triggers:
+        # ANY-match: a row whose trigger list contains any selected value.
+        where.append("(" + " OR ".join(["JSON_CONTAINS(triggers, %s)"] * len(triggers)) + ")")
+        params.extend(json.dumps(t) for t in triggers)
     if profile:
         where.append("profile_name=%s")
         params.append(profile)
+    if created_from:
+        where.append("created_at >= %s")
+        params.append(created_from)
+    if created_to:
+        where.append("created_at < %s")
+        params.append(created_to)
     where_sql = " AND ".join(where)
+    sort_sql = "id DESC"
+    if sort:
+        key, desc = sort
+        frag = _REVIEW_QUEUE_SORTS.get(key)
+        if frag:
+            sort_sql = frag.format(d="DESC" if desc else "ASC") + ", id DESC"
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
@@ -5732,7 +5762,7 @@ def list_review_queue(org_id, status=None, trigger=None, profile=None,
         total = cursor.fetchone()["n"]
         cursor.execute(
             f"SELECT {_REVIEW_QUEUE_LIST_FIELDS} FROM review_queue "
-            f"WHERE {where_sql} ORDER BY id DESC LIMIT %s OFFSET %s",
+            f"WHERE {where_sql} ORDER BY {sort_sql} LIMIT %s OFFSET %s",
             tuple(params) + (int(limit), int(offset)),
         )
         return [_review_row_public(r) for r in cursor.fetchall()], total
@@ -5889,7 +5919,7 @@ def get_review_report(org_id, date_from, date_to):
         total_turns = cursor.fetchone()["n"]
         cursor.execute(
             "SELECT rq.id, rq.triggers, rq.status, rq.reviewer_email, "
-            "rq.created_at, rq.reviewed_at, ch.id AS live_pk "
+            "rq.profile_name, rq.created_at, rq.reviewed_at, ch.id AS live_pk "
             "FROM review_queue rq LEFT JOIN chat_history ch ON ch.id = rq.message_pk "
             "WHERE rq.org_id=%s AND rq.created_at >= %s AND rq.created_at < %s",
             (org_id, date_from, date_to))
@@ -5900,22 +5930,49 @@ def get_review_report(org_id, date_from, date_to):
 
     trigger_counts, dispositions, per_reviewer = {}, {"pending": 0, "approved": 0, "overridden": 0}, {}
     latencies, purged = [], 0
+    now = datetime.utcnow()
+    # Aging/SLA (X1): how long pending items have been waiting, bucketed.
+    pending_age_buckets = {"under_1d": 0, "1_7d": 0, "7_14d": 0, "14_30d": 0, "over_30d": 0}
+    oldest_pending_age_days = None
+    # Override trend (X2): overrides per UTC day, by trigger and by agent, so a
+    # compliance officer can spot a pattern instead of a single 30-day count.
+    override_trend = {}
     for r in rows:
-        for t in _review_json(r["triggers"], []):
+        triggers = _review_json(r["triggers"], [])
+        for t in triggers:
             trigger_counts[t] = trigger_counts.get(t, 0) + 1
         dispositions[r["status"]] = dispositions.get(r["status"], 0) + 1
         if r["live_pk"] is None:
             purged += 1
+        if r["status"] == "pending":
+            age_days = (now - r["created_at"]).total_seconds() / 86400.0
+            if age_days < 1: pending_age_buckets["under_1d"] += 1
+            elif age_days < 7: pending_age_buckets["1_7d"] += 1
+            elif age_days < 14: pending_age_buckets["7_14d"] += 1
+            elif age_days < 30: pending_age_buckets["14_30d"] += 1
+            else: pending_age_buckets["over_30d"] += 1
+            if oldest_pending_age_days is None or age_days > oldest_pending_age_days:
+                oldest_pending_age_days = age_days
         if r["status"] != "pending" and r["reviewed_at"] and r["created_at"]:
             per_reviewer[r["reviewer_email"] or "unknown"] = \
                 per_reviewer.get(r["reviewer_email"] or "unknown", 0) + 1
             latencies.append((r["reviewed_at"] - r["created_at"]).total_seconds())
+        if r["status"] == "overridden" and r["reviewed_at"]:
+            day = r["reviewed_at"].strftime("%Y-%m-%d")
+            slot = override_trend.setdefault(
+                day, {"total": 0, "by_trigger": {}, "by_profile": {}})
+            slot["total"] += 1
+            for t in triggers:
+                slot["by_trigger"][t] = slot["by_trigger"].get(t, 0) + 1
+            slot["by_profile"][r.get("profile_name") or "unknown"] = \
+                slot["by_profile"].get(r.get("profile_name") or "unknown", 0) + 1
 
     latencies.sort()
     n = len(latencies)
     median_latency = None
     if n:
         median_latency = latencies[n // 2] if n % 2 else (latencies[n // 2 - 1] + latencies[n // 2]) / 2
+    p90 = latencies[min(n - 1, int(round(0.9 * (n - 1))))] if n else None
     sampled = len(rows)
     reviewed = sampled - dispositions.get("pending", 0)
     return {
@@ -5927,6 +5984,11 @@ def get_review_report(org_id, date_from, date_to):
         "reviewed": reviewed,
         "dispositions": dispositions,
         "median_review_latency_seconds": round(median_latency, 1) if median_latency is not None else None,
+        "p90_review_latency_seconds": round(p90, 1) if p90 is not None else None,
+        "max_review_latency_seconds": round(latencies[-1], 1) if n else None,
+        "pending_age_buckets": pending_age_buckets,
+        "oldest_pending_age_days": round(oldest_pending_age_days, 1) if oldest_pending_age_days is not None else None,
+        "override_trend": {d: override_trend[d] for d in sorted(override_trend)},
         "per_reviewer": per_reviewer,
         "purged_message_rows": purged,
         "note": ("total_turns counts governed turns committed since will-decision "

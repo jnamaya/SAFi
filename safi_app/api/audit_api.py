@@ -34,7 +34,10 @@ def _org_forbidden(org_id):
 
 def _actor_email():
     user = session.get('user') or {}
-    return user.get('email') or "unknown"
+    # Local appliance accounts have a username and no email (identity.py shim);
+    # attribute to the best identifier we have rather than 'unknown'.
+    return (user.get('email') or user.get('username')
+            or user.get('name') or user.get('id') or "unknown")
 
 
 def _parse_date(value):

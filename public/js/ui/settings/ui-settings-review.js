@@ -14,9 +14,51 @@ import { renderConscienceReport, attachTabSwitching } from './ui-modal-conscienc
 
 let orgId = null;
 let currentUser = null;
-let filters = { status: 'pending', trigger: '' };
+// Multi-select filter state: arrays (rows match ANY selected value).
+let filters = { status: ['pending'], trigger: [], from: '', to: '' };
+let sort = { key: 'created_at', desc: true }; // server-side sort (see _parse_sort)
 let offset = 0;
-const PAGE_SIZE = 50;
+let pageSize = 50;                            // T3c: page-size control (10–200)
+let selected = new Set();                     // queue ids checked for bulk Approve
+let lastItems = [];                           // last rendered page, for j/k nav
+let cursor = 0;                               // keyboard cursor into lastItems
+let loadSeq = 0;                              // guards stale queue responses
+let keysBound = false;
+
+// --- URL-synced filter state (Tier 1) ----------------------------------------
+// The queue view is linkable: filters, sort, page size and offset live in the
+// URL so a filtered view can be shared/bookmarked (and the Audit Hub drill-down
+// stays stable). replaceState only — no history spam on every keystroke.
+
+function syncUrl() {
+    const p = new URLSearchParams();
+    const defaultStatus = filters.status.length === 1 && filters.status[0] === 'pending';
+    if (filters.status.length && !defaultStatus) p.set('status', filters.status.join(','));
+    if (filters.trigger.length) p.set('trigger', filters.trigger.join(','));
+    if (filters.from) p.set('from', filters.from);
+    if (filters.to) p.set('to', filters.to);
+    if (sort.key !== 'created_at' || !sort.desc) p.set('sort', `${sort.key}:${sort.desc ? 'desc' : 'asc'}`);
+    if (pageSize !== 50) p.set('ps', String(pageSize));
+    if (offset) p.set('off', String(offset));
+    const qs = p.toString();
+    history.replaceState(null, '', window.location.pathname + (qs ? '?' + qs : '') + (window.location.hash || ''));
+}
+
+function readUrl() {
+    const p = new URLSearchParams(window.location.search);
+    const s = p.get('status');
+    if (s !== null) filters.status = s ? s.split(',').filter(Boolean) : [];
+    const t = p.get('trigger');
+    if (t !== null) filters.trigger = t.split(',').filter(Boolean);
+    if (p.get('from')) filters.from = p.get('from');
+    if (p.get('to')) filters.to = p.get('to');
+    const so = p.get('sort');
+    if (so) { const [k, d] = so.split(':'); sort = { key: k, desc: d !== 'asc' }; }
+    const ps = parseInt(p.get('ps'), 10);
+    if (ps) pageSize = Math.min(Math.max(ps, 10), 200);
+    const off = parseInt(p.get('off'), 10);
+    if (off > 0) offset = off;
+}
 
 // D2 cross-surface deep link: the Audit Hub drill-down links into the Review
 // queue. Switches to the Review tab (clicking the sidebar nav so the core
@@ -138,8 +180,8 @@ export async function renderSettingsReviewTab() {
         return;
     }
     orgId = org.id;
-    filters = { status: 'pending', trigger: '' };
-    offset = 0;
+    selected = new Set();
+    readUrl(); // URL-synced state: a shared/bookmarked link reproduces the view
 
     root.innerHTML = `
         <div id="review-alerts"></div>
@@ -161,6 +203,7 @@ export async function renderSettingsReviewTab() {
         }
     });
 
+    bindKeys(); // j/k/Enter/A — one-shot global binding, guarded by keysBound
     loadAlerts();
     loadStats();
     renderQueueList();
@@ -211,12 +254,16 @@ function summariseAlert(a) {
 }
 
 // --- Coverage stats strip ---------------------------------------------------
+// Custom date range (Tier 1): the API already accepted from/to; the UI now
+// exposes it, and both CSV exports inherit the same window.
+let statsFrom = '';
+let statsTo = '';
 
 async function loadStats() {
     const el = document.getElementById('review-stats');
     if (!el) return;
     try {
-        const rep = await api.getReviewReport(orgId);
+        const rep = await api.getReviewReport(orgId, statsFrom || undefined, statsTo || undefined);
         const tile = (label, value, sub = '') => `
             <div class="rounded-lg border border-gray-200 dark:border-neutral-700 px-4 py-3">
                 <div class="text-xs uppercase text-gray-400">${label}</div>
@@ -224,16 +271,32 @@ async function loadStats() {
                 ${sub ? `<div class="text-xs text-gray-400 mt-0.5">${sub}</div>` : ''}
             </div>`;
         const latency = rep.median_review_latency_seconds;
-        const latencyLabel = latency === null || latency === undefined ? '—'
-            : latency < 3600 ? `${Math.round(latency / 60)}m`
-            : latency < 86400 ? `${(latency / 3600).toFixed(1)}h`
-            : `${(latency / 86400).toFixed(1)}d`;
+        const fmtDur = (s) => s === null || s === undefined ? '—'
+            : s < 3600 ? `${Math.round(s / 60)}m`
+            : s < 86400 ? `${(s / 3600).toFixed(1)}h`
+            : `${(s / 86400).toFixed(1)}d`;
+        const b = rep.pending_age_buckets || {};
+        const bucketTotal = Object.values(b).reduce((a, n) => a + n, 0);
+        const bucketPct = (n) => bucketTotal ? Math.round(n * 100 / bucketTotal) : 0;
+        const cell = (n, label) => `
+            <div class="rounded-md bg-gray-50 dark:bg-neutral-800 px-2 py-1.5">
+                <div class="text-xs text-gray-400">${label}</div>
+                <div class="text-sm font-semibold">${n}</div>
+                ${bucketTotal ? `<div class="h-1 mt-1 rounded bg-green-500/70" style="width:${Math.max(bucketPct(n), 2)}%"></div>` : ''}
+            </div>`;
+        const reviewers = Object.entries(rep.per_reviewer || {}).sort((a, c) => c[1] - a[1]).slice(0, 6);
+        const trend = Object.entries(rep.override_trend || {}).slice(-14);
+        const trendMax = Math.max(1, ...trend.map(([, v]) => v.total));
         el.innerHTML = `
             <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
-                <p class="text-xs text-gray-400 max-w-xl">Coverage, last 30 days. Both exports are logged to the compliance evidence log as chain of custody.</p>
+                <p class="text-xs text-gray-400 max-w-xl">Coverage, ${statsFrom && statsTo ? `${statsFrom} → ${statsTo}` : 'last 30 days'}. Both exports are logged to the compliance evidence log as chain of custody.</p>
                 <div class="flex flex-wrap items-center gap-2">
+                    <input type="date" id="review-stats-from" value="${esc(statsFrom)}" class="rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-2 py-1.5 text-xs">
+                    <span class="text-xs text-gray-400">→</span>
+                    <input type="date" id="review-stats-to" value="${esc(statsTo)}" class="rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-2 py-1.5 text-xs">
+                    ${statsFrom || statsTo ? '<button id="review-stats-clear" class="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 underline">Last 30d</button>' : ''}
                     <button id="review-report-csv" class="px-3 py-1.5 text-xs border border-gray-300 dark:border-neutral-600 rounded-lg whitespace-nowrap"
-                            title="The coverage summary above, as 11 aggregate fields.">Export summary CSV</button>
+                            title="The coverage summary above, as aggregate fields.">Export summary CSV</button>
                     <button id="review-items-csv" class="px-3 py-1.5 text-xs border border-gray-300 dark:border-neutral-600 rounded-lg whitespace-nowrap"
                             title="One row per reviewed turn: agent, policy version, triggers, disposition, reviewer, latency, hash-chain verdict and the reviewer's written rationale. Use this for an examiner.">Export items CSV</button>
                 </div>
@@ -241,14 +304,48 @@ async function loadStats() {
             <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
                 ${tile('Governed turns', rep.total_turns)}
                 ${tile('Sampled', rep.sampled, rep.sampled_pct_of_turns !== null && rep.sampled_pct_of_turns !== undefined ? `${rep.sampled_pct_of_turns}% of turns` : '')}
-                ${tile('Pending', rep.dispositions?.pending ?? 0)}
+                ${tile('Pending', rep.dispositions?.pending ?? 0, rep.oldest_pending_age_days !== null && rep.oldest_pending_age_days !== undefined ? `oldest ${rep.oldest_pending_age_days}d` : '')}
                 ${tile('Reviewed', rep.reviewed, `${rep.dispositions?.approved ?? 0} approved · ${rep.dispositions?.overridden ?? 0} overridden`)}
-                ${tile('Median review time', latencyLabel)}
+                ${tile('Review time', fmtDur(latency), `p90 ${fmtDur(rep.p90_review_latency_seconds)} · max ${fmtDur(rep.max_review_latency_seconds)}`)}
+            </div>
+            ${bucketTotal ? `
+            <div class="mt-3">
+                <p class="text-xs uppercase text-gray-400 mb-1.5">Pending aging (SLA) <span class="normal-case font-normal">— ${bucketTotal} pending item${bucketTotal > 1 ? 's' : ''}</span></p>
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-2">
+                    ${cell(b.under_1d, '< 1 day')}${cell(b['1_7d'], '1–7 days')}${cell(b['7_14d'], '7–14 days')}${cell(b['14_30d'], '14–30 days')}${cell(b.over_30d, 'over 30 days')}
+                </div>
+            </div>` : ''}
+            <div class="grid md:grid-cols-2 gap-3 mt-3">
+                ${reviewers.length ? `
+                <div>
+                    <p class="text-xs uppercase text-gray-400 mb-1.5">Reviewer workload</p>
+                    <div class="rounded-lg border border-gray-200 dark:border-neutral-700 divide-y divide-gray-100 dark:divide-neutral-800">
+                        ${reviewers.map(([name, n]) => `
+                        <div class="flex items-center gap-3 px-3 py-1.5 text-sm">
+                            <span class="truncate flex-1">${esc(name)}</span>
+                            <div class="w-24 h-1.5 rounded bg-green-500/60" style="min-width:${Math.max(n * 8, 4)}px"></div>
+                            <span class="text-xs text-gray-400 w-8 text-right">${n}</span>
+                        </div>`).join('')}
+                    </div>
+                </div>` : ''}
+                ${trend.length ? `
+                <div>
+                    <p class="text-xs uppercase text-gray-400 mb-1.5">Overrides per day <span class="normal-case font-normal">— newest ${trend.length} days with activity</span></p>
+                    <div class="flex items-end gap-1 h-20 rounded-lg border border-gray-200 dark:border-neutral-700 px-2 py-1">
+                        ${trend.map(([day, v]) => `
+                        <div class="flex-1 bg-red-400/70 dark:bg-red-500/60 rounded-t relative group" style="height:${Math.max(v.total * 100 / trendMax, 8)}%"
+                             title="${day}: ${v.total} override${v.total > 1 ? 's' : ''}${Object.entries(v.by_trigger).map(([t, n]) => `\n${t}: ${n}`).join('')}">
+                        </div>`).join('')}
+                    </div>
+                </div>` : ''}
             </div>`;
+        el.querySelector('#review-stats-from')?.addEventListener('change', e => { statsFrom = e.target.value; loadStats(); });
+        el.querySelector('#review-stats-to')?.addEventListener('change', e => { statsTo = e.target.value; loadStats(); });
+        el.querySelector('#review-stats-clear')?.addEventListener('click', () => { statsFrom = ''; statsTo = ''; loadStats(); });
         el.querySelector('#review-report-csv')?.addEventListener('click', () =>
-            window.open(api.reviewReportCsvUrl(orgId), '_blank'));
+            window.open(api.reviewReportCsvUrl(orgId, statsFrom || undefined, statsTo || undefined), '_blank'));
         el.querySelector('#review-items-csv')?.addEventListener('click', () =>
-            window.open(api.reviewItemsCsvUrl(orgId), '_blank'));
+            window.open(api.reviewItemsCsvUrl(orgId, statsFrom || undefined, statsTo || undefined), '_blank'));
     } catch (e) {
         el.innerHTML = `<p class="text-sm text-red-500">Failed to load coverage stats: ${esc(e.message || e)}</p>`;
     }
@@ -256,32 +353,65 @@ async function loadStats() {
 
 // --- Queue list --------------------------------------------------------------
 
+// Multi-select popover: <details> keeps it dependency-free; checkboxes toggle
+// array membership and re-fetch. Rows match ANY selected value.
+function multiSel(id, label, opts, selectedArr) {
+    const on = (v) => selectedArr.includes(v) ? 'checked' : '';
+    return `<details id="${id}" class="relative">
+        <summary class="cursor-pointer list-none rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-2 py-1.5 text-xs inline-flex items-center gap-1 select-none">
+            ${label}${selectedArr.length ? ` <span class="font-bold">(${selectedArr.length})</span>` : ''} ▾
+        </summary>
+        <div class="absolute right-0 z-20 mt-1 w-48 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 shadow-lg p-2 text-sm">
+            ${opts.map(([v, l]) => `<label class="flex items-center gap-2 px-1 py-1 cursor-pointer rounded hover:bg-gray-50 dark:hover:bg-neutral-700">
+                <input type="checkbox" class="rms-chk accent-green-600" value="${esc(v)}" ${on(v)}><span>${esc(l)}</span>
+            </label>`).join('')}
+            <button class="w-full mt-1 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 px-1 py-1" data-clear>Clear</button>
+        </div>
+    </details>`;
+}
+
+const SORT_COLS = [
+    ['created_at', 'Sampled'], ['profile_name', 'Agent'], ['status', 'Status'], ['reviewed_at', 'Reviewed'],
+];
+
+function sortHeader(colKey, label) {
+    const active = sort.key === colKey;
+    const arrow = active ? (sort.desc ? ' ↓' : ' ↑') : '';
+    const next = active && sort.desc ? 'asc' : 'desc';
+    return `<th class="px-4 py-3"><button class="uppercase tracking-wide hover:text-gray-700 dark:hover:text-gray-200 ${active ? 'text-gray-700 dark:text-gray-200' : ''}"
+        data-sort="${colKey}" data-dir="${next}" title="Sort by ${label}">${label}${arrow}</button></th>`;
+}
+
 async function renderQueueList() {
     const el = document.getElementById('review-queue');
     if (!el) return;
-    el.innerHTML = `<div class="flex items-center justify-center h-32"><div class="thinking-spinner"></div></div>`;
+    // Skeleton rows, not a spinner: the table shape stays put while loading.
+    el.innerHTML = `<div class="animate-pulse space-y-2 py-6">${'<div class="h-9 bg-gray-100 dark:bg-neutral-800 rounded-lg"></div>'.repeat(6)}</div>`;
+    const seq = ++loadSeq;
     let res;
     try {
         res = await api.listReviewQueue(orgId, {
-            status: filters.status || undefined,
-            trigger: filters.trigger || undefined,
-            limit: PAGE_SIZE, offset,
+            status: filters.status, trigger: filters.trigger,
+            from: filters.from || undefined, to: filters.to || undefined,
+            sort: `${sort.key}:${sort.desc ? 'desc' : 'asc'}`,
+            limit: pageSize, offset,
         });
     } catch (e) {
+        if (seq !== loadSeq) return; // a newer request superseded this failure
         el.innerHTML = `<p class="text-sm text-red-500">Failed to load the review queue: ${esc(e.message || e)}</p>`;
         return;
     }
+    if (seq !== loadSeq) return; // stale response — a newer filter already re-rendered
     const items = res.items || [];
     const total = res.total || 0;
+    lastItems = items;
+    cursor = 0;
+    selected = new Set([...selected].filter(id => items.some(i => i.id === Number(id))));
+    const hasFilters = filters.status.length || filters.trigger.length || filters.from || filters.to;
 
-    const sel = (id, opts, cur, allLabel) => `
-        <select id="${id}" class="rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-2 py-1.5 text-xs">
-            <option value="">${allLabel}</option>
-            ${opts.map(([v, l]) => `<option value="${v}" ${v === cur ? 'selected' : ''}>${l}</option>`).join('')}
-        </select>`;
-
-    const rows = items.map(i => `
-        <tr class="border-b border-gray-100 dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800 cursor-pointer" data-review-item="${i.id}">
+    const rows = items.map((i, idx) => `
+        <tr class="border-b border-gray-100 dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800 cursor-pointer ${idx === cursor ? 'ring-1 ring-inset ring-green-500/50' : ''}" data-review-item="${i.id}" data-idx="${idx}">
+            <td class="px-2 py-3" data-stop><input type="checkbox" class="bulk-chk accent-green-600" data-bulk="${i.id}" ${i.status !== 'pending' ? 'disabled' : ''} ${selected.has(i.id) ? 'checked' : ''}></td>
             <td class="px-4 py-3 text-sm whitespace-nowrap" title="${fmtDate(i.created_at)}">${age(i.created_at)}</td>
             <td class="px-4 py-3 text-sm">${esc((i.profile_name || '—').replace(/_/g, ' '))}</td>
             <td class="px-4 py-3"><div class="flex flex-wrap gap-1">${triggerBadges(i.triggers)}</div></td>
@@ -297,40 +427,141 @@ async function renderQueueList() {
                 <h4 class="text-lg font-semibold">Review queue</h4>
                 <p class="text-xs text-gray-500 mt-0.5">Turns sampled by your supervision rules. Review is post-hoc: items are already delivered; your disposition becomes hash-chained audit evidence.</p>
             </div>
-            <div class="flex items-center gap-2">
-                ${sel('review-filter-status', [['pending', 'Pending'], ['approved', 'Approved'], ['overridden', 'Overridden']], filters.status, 'All statuses')}
-                ${sel('review-filter-trigger', Object.entries(TRIGGER_META).map(([k, m]) => [k, m.label]), filters.trigger, 'All triggers')}
+            <div class="flex flex-wrap items-center gap-2">
+                ${multiSel('review-filter-status', 'Status', [['pending', 'Pending'], ['approved', 'Approved'], ['overridden', 'Overridden']], filters.status)}
+                ${multiSel('review-filter-trigger', 'Triggers', Object.entries(TRIGGER_META).map(([k, m]) => [k, m.label]), filters.trigger)}
+                <input type="date" id="review-filter-from" value="${esc(filters.from)}" class="rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-2 py-1.5 text-xs">
+                <span class="text-xs text-gray-400">→</span>
+                <input type="date" id="review-filter-to" value="${esc(filters.to)}" class="rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-2 py-1.5 text-xs">
+                ${hasFilters ? `<button id="review-filter-reset" class="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 underline">Reset</button>` : ''}
+                <select id="review-page-size" class="rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-2 py-1.5 text-xs" title="Rows per page">
+                    ${[10, 25, 50, 100, 200].map(n => `<option value="${n}" ${n === pageSize ? 'selected' : ''}>${n} / page</option>`).join('')}
+                </select>
             </div>
         </div>
+        ${selected.size ? `
+        <div class="flex items-center gap-3 mb-3 text-sm">
+            <span class="text-xs text-gray-500">${selected.size} pending item${selected.size > 1 ? 's' : ''} selected</span>
+            <button id="review-bulk-approve" class="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-bold">Approve selected</button>
+            <span class="text-xs text-gray-400">Bulk applies approve only — overrides stay per-item so each keeps its own rationale.</span>
+        </div>` : ''}
         ${items.length === 0
-            ? `<p class="text-sm text-gray-500 dark:text-gray-400 py-8 text-center">${filters.status || filters.trigger ? 'Nothing matches these filters.' : 'The queue is empty.'}</p>`
+            ? `<p class="text-sm text-gray-500 dark:text-gray-400 py-8 text-center">${hasFilters ? 'Nothing matches these filters.' : 'The queue is empty.'}</p>`
             : `<div class="overflow-x-auto rounded-lg border border-gray-200 dark:border-neutral-700">
                 <table class="w-full text-left">
                     <thead class="bg-gray-50 dark:bg-neutral-800 text-xs uppercase text-gray-500 dark:text-gray-400">
-                        <tr><th class="px-4 py-3">Sampled</th><th class="px-4 py-3">Agent</th><th class="px-4 py-3">Triggers</th><th class="px-4 py-3">Alignment</th><th class="px-4 py-3">Consistency</th><th class="px-4 py-3">Status</th><th class="px-4 py-3">Reviewer</th></tr>
+                        <tr><th class="px-2 py-3"></th>${SORT_COLS.map(([k, l]) => sortHeader(k, l)).join('')}<th class="px-4 py-3">Triggers</th><th class="px-4 py-3">Alignment</th><th class="px-4 py-3">Consistency</th><th class="px-4 py-3">Reviewer</th></tr>
                     </thead>
                     <tbody>${rows}</tbody>
                 </table>
                </div>`}
-        ${total > PAGE_SIZE ? `
-            <div class="flex items-center justify-between mt-3 text-xs text-gray-500">
-                <span>Showing ${offset + 1}–${Math.min(offset + PAGE_SIZE, total)} of ${total}</span>
-                <div class="flex gap-2">
-                    <button id="review-prev" class="px-3 py-1 border border-gray-300 dark:border-neutral-600 rounded-lg ${offset === 0 ? 'opacity-40' : ''}" ${offset === 0 ? 'disabled' : ''}>Prev</button>
-                    <button id="review-next" class="px-3 py-1 border border-gray-300 dark:border-neutral-600 rounded-lg ${offset + PAGE_SIZE >= total ? 'opacity-40' : ''}" ${offset + PAGE_SIZE >= total ? 'disabled' : ''}>Next</button>
-                </div>
-            </div>` : ''}`;
+        <div class="flex items-center justify-between mt-3 text-xs text-gray-500">
+            <span>${total ? `Showing ${offset + 1}–${Math.min(offset + pageSize, total)} of ${total}` : ''}</span>
+            <div class="flex items-center gap-2">
+                <span class="hidden md:inline">j/k move · Enter opens · A approves the cursor row</span>
+                <button id="review-prev" class="px-3 py-1 border border-gray-300 dark:border-neutral-600 rounded-lg ${offset === 0 ? 'opacity-40' : ''}" ${offset === 0 ? 'disabled' : ''}>Prev</button>
+                <button id="review-next" class="px-3 py-1 border border-gray-300 dark:border-neutral-600 rounded-lg ${offset + pageSize >= total ? 'opacity-40' : ''}" ${offset + pageSize >= total ? 'disabled' : ''}>Next</button>
+            </div>
+        </div>`;
 
-    el.querySelector('#review-filter-status')?.addEventListener('change', e => {
-        filters.status = e.target.value; offset = 0; renderQueueList();
+    const refetch = () => { syncUrl(); renderQueueList(); };
+    el.querySelectorAll('.rms-chk').forEach(chk => chk.addEventListener('change', () => {
+        const arr = chk.closest('details').id === 'review-filter-status' ? filters.status : filters.trigger;
+        const i = arr.indexOf(chk.value);
+        if (chk.checked && i < 0) arr.push(chk.value);
+        if (!chk.checked && i >= 0) arr.splice(i, 1);
+        offset = 0; refetch();
+    }));
+    el.querySelectorAll('details').forEach(d => d.querySelector('[data-clear]')?.addEventListener('click', () => {
+        if (d.id === 'review-filter-status') filters.status = []; else filters.trigger = [];
+        d.removeAttribute('open'); offset = 0; refetch();
+    }));
+    el.querySelector('#review-filter-from')?.addEventListener('change', e => { filters.from = e.target.value; offset = 0; refetch(); });
+    el.querySelector('#review-filter-to')?.addEventListener('change', e => { filters.to = e.target.value; offset = 0; refetch(); });
+    el.querySelector('#review-filter-reset')?.addEventListener('click', () => {
+        filters = { status: ['pending'], trigger: [], from: '', to: '' }; offset = 0; refetch();
     });
-    el.querySelector('#review-filter-trigger')?.addEventListener('change', e => {
-        filters.trigger = e.target.value; offset = 0; renderQueueList();
+    el.querySelector('#review-page-size')?.addEventListener('change', e => { pageSize = Number(e.target.value); offset = 0; refetch(); });
+    el.querySelectorAll('[data-sort]').forEach(b => b.addEventListener('click', () => {
+        sort = { key: b.dataset.sort, desc: b.dataset.dir === 'desc' }; offset = 0; refetch();
+    }));
+    el.querySelector('#review-prev')?.addEventListener('click', () => { offset = Math.max(0, offset - pageSize); refetch(); });
+    el.querySelector('#review-next')?.addEventListener('click', () => { offset += pageSize; refetch(); });
+    el.querySelectorAll('.bulk-chk').forEach(chk => chk.addEventListener('click', e => {
+        e.stopPropagation();
+        const id = Number(chk.dataset.bulk);
+        chk.checked ? selected.add(id) : selected.delete(id);
+        // Restripe the bulk bar in place — cheaper than a refetch round-trip
+        // for a pure selection change.
+        const bar = document.getElementById('review-bulk-approve');
+        if (selected.size && !bar) refetch();
+        else if (!selected.size && bar) refetch();
+    }));
+    el.querySelector('#review-bulk-approve')?.addEventListener('click', bulkApprove);
+    el.querySelectorAll('[data-review-item]').forEach(tr => {
+        tr.addEventListener('click', e => {
+            if (e.target.closest('[data-stop]')) return;
+            cursor = Number(tr.dataset.idx);
+            renderDetail(tr.getAttribute('data-review-item'));
+        });
     });
-    el.querySelector('#review-prev')?.addEventListener('click', () => { offset = Math.max(0, offset - PAGE_SIZE); renderQueueList(); });
-    el.querySelector('#review-next')?.addEventListener('click', () => { offset += PAGE_SIZE; renderQueueList(); });
-    el.querySelectorAll('[data-review-item]').forEach(tr =>
-        tr.addEventListener('click', () => renderDetail(tr.getAttribute('data-review-item'))));
+    syncUrl();
+}
+
+// Bulk Approve: per-item results, because each disposition is one-shot and
+// races (someone else reviewed it, or self-review) must not abort the batch.
+async function bulkApprove() {
+    const ids = [...selected];
+    if (!ids.length) return;
+    if (!confirm(`Approve ${ids.length} pending item${ids.length > 1 ? 's' : ''}? Each disposition is hash-chained and one-shot.`)) return;
+    let ok = 0; const failures = [];
+    for (const id of ids) {
+        try {
+            await api.actOnReviewItem(orgId, id, 'approve', null);
+            ok++;
+        } catch (e) {
+            failures.push(`#${id}: ${e.message || e}`);
+        }
+    }
+    selected.clear();
+    ui.showToast(`Approved ${ok}/${ids.length}${failures.length ? ` — ${failures.length} failed (see console)` : ''}`, failures.length ? 'info' : 'success');
+    if (failures.length) console.warn('Bulk approve failures:', failures);
+    renderQueueList();
+}
+
+// --- Keyboard navigation (Tier 2): j/k move the cursor, Enter opens the
+// detail pane, A approves the cursor row (one-shot, no bulk shortcut for
+// override — rationale discipline). Bound once; ignores typing in inputs.
+function bindKeys() {
+    if (keysBound) return;
+    keysBound = true;
+    document.addEventListener('keydown', (e) => {
+        if (!document.getElementById('review-queue')) return;
+        const tag = (e.target.tagName || '').toLowerCase();
+        if (tag === 'input' || tag === 'select' || tag === 'textarea' || e.target.isContentEditable) return;
+        if (e.metaKey || e.ctrlKey || e.altKey) return;
+        if (e.key === 'j' || e.key === 'k') {
+            e.preventDefault();
+            if (!lastItems.length) return;
+            cursor = e.key === 'j'
+                ? Math.min(cursor + 1, lastItems.length - 1)
+                : Math.max(cursor - 1, 0);
+            document.querySelectorAll('[data-review-item]').forEach(tr =>
+                tr.classList.toggle('ring-1', Number(tr.dataset.idx) === cursor));
+            document.querySelector(`[data-review-item][data-idx="${cursor}"]`)?.scrollIntoView({ block: 'nearest' });
+        } else if (e.key === 'Enter') {
+            const item = lastItems[cursor];
+            if (item) { e.preventDefault(); renderDetail(String(item.id)); }
+        } else if (e.key === 'A' || e.key === 'a') {
+            const item = lastItems[cursor];
+            if (item && item.status === 'pending') {
+                e.preventDefault();
+                api.actOnReviewItem(orgId, item.id, 'approve', null)
+                    .then(() => { ui.showToast('Approved', 'success'); renderQueueList(); })
+                    .catch(err => ui.showToast(err.message || 'Approve failed', 'error'));
+            }
+        }
+    });
 }
 
 // --- Detail pane --------------------------------------------------------------

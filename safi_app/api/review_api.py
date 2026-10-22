@@ -50,6 +50,26 @@ def _org_forbidden(org_id):
     return str(org_id) != str(get_current_org_id())
 
 
+# Server-side sort: "field" or "field:asc"/"field:desc". Whitelisted keys map
+# to SQL fragments in db._REVIEW_QUEUE_SORTS so client input never reaches the
+# ORDER BY as raw SQL.
+_SORT_INVALID = object()
+_SORT_KEYS = ("created_at", "reviewed_at", "profile_name", "status")
+_SORT_ERROR = ("sort must be one of "
+               + ", ".join(k + "[:asc|:desc]" for k in _SORT_KEYS))
+
+
+def _parse_sort(value):
+    if not value:
+        return None
+    key, _, direction = value.partition(":")
+    if key not in _SORT_KEYS:
+        return _SORT_INVALID
+    if direction not in ("", "asc", "desc"):
+        return _SORT_INVALID
+    return (key, direction == "desc")
+
+
 def _parse_date(value):
     if not value:
         return None
@@ -67,12 +87,19 @@ def _parse_date(value):
 def list_queue(org_id):
     if _org_forbidden(org_id):
         return jsonify({"error": "Forbidden"}), 403
-    status = request.args.get("status")
-    trigger = request.args.get("trigger")
-    if status and status not in VALID_STATUS:
+    # Multi-select: status and trigger accept comma-joined values (rows match
+    # ANY selected value). Single values remain valid for existing callers.
+    status_vals = [s for s in (request.args.get("status") or "").split(",") if s]
+    trigger_vals = [t for t in (request.args.get("trigger") or "").split(",") if t]
+    bad_status = [s for s in status_vals if s not in VALID_STATUS]
+    if bad_status:
         return jsonify({"error": f"status must be one of {', '.join(VALID_STATUS)}"}), 400
-    if trigger and trigger not in VALID_TRIGGERS:
+    bad_trigger = [t for t in trigger_vals if t not in VALID_TRIGGERS]
+    if bad_trigger:
         return jsonify({"error": f"trigger must be one of {', '.join(VALID_TRIGGERS)}"}), 400
+    sort = _parse_sort(request.args.get("sort"))
+    if sort is _SORT_INVALID:
+        return jsonify({"error": _SORT_ERROR}), 400
     try:
         limit = min(max(int(request.args.get("limit", 50)), 1), 200)
         offset = max(int(request.args.get("offset", 0)), 0)
@@ -80,8 +107,11 @@ def list_queue(org_id):
         return jsonify({"error": "limit and offset must be integers"}), 400
     try:
         rows, total = db.list_review_queue(
-            org_id, status=status, trigger=trigger,
-            profile=request.args.get("profile"), limit=limit, offset=offset)
+            org_id, status=status_vals or None, trigger=trigger_vals or None,
+            profile=request.args.get("profile"), limit=limit, offset=offset,
+            sort=sort,
+            created_from=_parse_date(request.args.get("from")),
+            created_to=_parse_date(request.args.get("to")))
         # Opportunistic queue_backlog check (design §6): off the request
         # thread so a slow webhook can never delay the queue read.
         threading.Thread(target=review_alerts.check_queue_backlog,

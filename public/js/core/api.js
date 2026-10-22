@@ -930,10 +930,16 @@ export function recordsExportUrl(orgId, from, to, userId) {
     return j(`/api/organizations/${orgId}/records/export?from=${from}&to=${to}${u}`);
 }
 
-export async function listReviewQueue(orgId, { status, trigger, profile, limit, offset } = {}) {
+// status/trigger accept a string or array of strings (multi-select); the API
+// takes comma-joined values and matches rows on ANY selected value.
+export async function listReviewQueue(orgId, { status, trigger, profile, sort, from, to, limit, offset } = {}) {
     const q = new URLSearchParams();
-    if (status) q.set('status', status);
-    if (trigger) q.set('trigger', trigger);
+    const join = (v) => Array.isArray(v) ? v.filter(Boolean).join(',') : (v || '');
+    if (join(status)) q.set('status', join(status));
+    if (join(trigger)) q.set('trigger', join(trigger));
+    if (sort) q.set('sort', sort);
+    if (from) q.set('from', from);
+    if (to) q.set('to', to);
     if (profile) q.set('profile', profile);
     if (limit) q.set('limit', limit);
     if (offset) q.set('offset', offset);
