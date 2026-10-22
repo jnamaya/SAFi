@@ -211,7 +211,7 @@ while ($__safi_job.State -eq 'Running') {{
     $__proc_note = if ($__procs.Count -gt 0) {{ " [" + ($__procs -join ",") + " active]" }} else {{ "" }}
     if ($__p) {{
         $__pct = if ($__p.PercentComplete -ge 0) {{ "$($__p.PercentComplete)% " }} else {{ "" }}
-        $__sd = if ($__p.StatusDescription) {{ ": $($__p.StatusDescription)" }} else {{ "" }}
+        $__sd = if ($__p.StatusDescription -and ($__p.StatusDescription.Trim() -ne "$($__p.PercentComplete)%")) {{ ": $($__p.StatusDescription)" }} else {{ "" }}
         $__base = "[{target}] ${{__pct}}$($__p.Activity)${{__sd}}${{__proc_note}}"
         if ($__base -ne $__safi_last -or ($__now - $__safi_last_ts).TotalSeconds -ge 10) {{
             [Console]::Out.WriteLine("[SAFI_PROGRESS] $__base (${{__elapsed}}s)")
