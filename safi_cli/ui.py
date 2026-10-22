@@ -172,11 +172,18 @@ def build_tool_status_line(
     if tool_name == "bash":
         raw_cmd = (args.get("command") or "").strip()
         first_line = raw_cmd.splitlines()[0] if raw_cmd else ""
-        if len(first_line) > 36:
-            cmd_preview = first_line[:33].rstrip() + "…"
+        # Clean up nested wrappers for cleaner display if it's sys-exec
+        if "sys-exec" in first_line:
+            # e.g., sys-exec win-server 'powershell -Command "Install-WindowsFeature..."' -> sys-exec win-server
+            parts = first_line.split()
+            if len(parts) >= 2 and parts[0] == "sys-exec":
+                label = f"Running sys-exec: {parts[1]}"
+            else:
+                label = "Running sys-exec"
+        elif len(first_line) > 50:
+            label = f"Running bash: {first_line[:47].rstrip()}…"
         else:
-            cmd_preview = first_line
-        label = f"Running bash: {cmd_preview}" if cmd_preview else "Running bash command"
+            label = f"Running bash: {first_line}" if first_line else "Running bash command"
     elif tool_name in ("read", "edit", "write"):
         path = args.get("path") or ""
         verb = "Reading" if tool_name == "read" else ("Editing" if tool_name == "edit" else "Writing")
@@ -201,21 +208,31 @@ def build_tool_status_line(
         clean_out = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", latest_output).strip()
         clean_out = " ".join(clean_out.split())
 
-    text_width = max((console.width or 80) - 28, 12)
+    # Available terminal width minus brand prefix, dots, timers, and spinner margin
+    term_width = console.width or 120
+    # Reserve room for: "SAFi · " (7), " · Xs" (~8), margins/padding (~8) = ~23
+    available_budget = max(term_width - 24, 20)
+
     if clean_out:
-        out_budget = min(54, max(24, int(text_width * 0.6)))
-        if len(clean_out) > out_budget:
-            clean_out = clean_out[: out_budget - 1].rstrip() + "…"
-        label_budget = max(12, text_width - len(clean_out) - 4)
-        if len(label) > label_budget:
-            label = label[: label_budget - 1].rstrip() + "…"
+        # Give progress output maximum available room
+        # Ensure label takes a reasonable prefix, rest goes to clean_out
+        label_len = len(label)
+        if label_len + len(clean_out) + 3 > available_budget:
+            # If both combined exceed the line, keep label concise (max 25) and let clean_out take the rest
+            max_label = min(label_len, max(15, available_budget // 3))
+            if label_len > max_label:
+                label = label[: max_label - 1].rstrip() + "…"
+            remaining_for_out = max(10, available_budget - len(label) - 3)
+            if len(clean_out) > remaining_for_out:
+                clean_out = clean_out[: remaining_for_out - 1].rstrip() + "…"
+
         return (
             f"[bold {COLOR_BRAND_400}]SAFi[/] [dim]·[/] [white]{escape(label)}[/] "
             f"[dim]·[/] [dim]{escape(clean_out)}[/] [dim]·[/] [dim]{elapsed:.1f}s[/]"
         )
 
-    if len(label) > text_width:
-        label = label[: text_width - 1].rstrip() + "…"
+    if len(label) > available_budget:
+        label = label[: available_budget - 1].rstrip() + "…"
 
     return (
         f"[bold {COLOR_BRAND_400}]SAFi[/] [dim]·[/] [white]{escape(label)}[/] "
