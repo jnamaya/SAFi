@@ -161,8 +161,38 @@ HOST="${HOST#ssh }"
 USER=$(echo "$TARGET_CONFIG" | jq -r '.user // empty')
 PORT=$(echo "$TARGET_CONFIG" | jq -r '.port // empty')
 AUTH=$(echo "$TARGET_CONFIG" | jq -r '.auth // "key"')
+DESC=$(echo "$TARGET_CONFIG" | jq -r '.description // empty')
+OS_TYPE=$(echo "$TARGET_CONFIG" | jq -r '.os // empty')
 
-SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=15)
+# Automatically wrap PowerShell commands on Windows targets into UTF-16LE Base64 (-EncodedCommand)
+# with -NoProfile -NonInteractive -InputFormat None and $ProgressPreference='SilentlyContinue'.
+if [[ "${OS_TYPE,,}" == *"win"* ]] || [[ "${DESC,,}" == *"windows"* ]] || [[ "${TARGET,,}" == *"win"* ]] || [[ "$CMD" =~ ^[[:space:]]*(powershell|pwsh)(\.exe)?[[:space:]] ]]; then
+    if command -v python3 &>/dev/null; then
+        CMD=$(python3 - "$CMD" << 'PYEOF'
+import base64, re, sys
+
+raw = sys.argv[1].strip()
+m = re.match(
+    r'^(?:powershell|pwsh)(?:\.exe)?(?:\s+-(?:NoProfile|NonInteractive|NoLogo|InputFormat\s+\S+|ExecutionPolicy\s+\S+))*\s+(?:-(?:Command|c))\s+(.*)\Z',
+    raw,
+    re.IGNORECASE | re.DOTALL,
+)
+inner = m.group(1).strip() if m else raw
+if len(inner) >= 2 and inner[0] == inner[-1] and inner[0] in ('"', "'"):
+    quote_char = inner[0]
+    inner = inner[1:-1]
+    if quote_char == '"':
+        inner = inner.replace(r'\"', '"').replace(r'\\', '\\')
+
+script = "$ProgressPreference = 'SilentlyContinue'; " + inner
+encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
+print(f"powershell.exe -NoProfile -NonInteractive -InputFormat None -EncodedCommand {encoded}")
+PYEOF
+)
+    fi
+fi
+
+SSH_OPTS=(-n -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3)
 if [ -n "$PORT" ] && [ "$PORT" != "null" ]; then
     SSH_OPTS+=(-p "$PORT")
 fi

@@ -807,6 +807,7 @@ def execute_tool(
                 proc = subprocess.run(
                     bwrap_cmd,
                     cwd=str(workspace_root),
+                    stdin=subprocess.DEVNULL,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,
@@ -818,6 +819,7 @@ def execute_tool(
                     cmd,
                     shell=True,
                     cwd=str(workspace_root),
+                    stdin=subprocess.DEVNULL,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,
