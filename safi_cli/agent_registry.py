@@ -218,23 +218,12 @@ AVAILABLE_MODELS: List[Dict[str, Any]] = list(DEFAULT_MODELS)
 
 
 def _infer_provider(model_id: str) -> str:
-    m = model_id.lower()
-    if "claude" in m or "anthropic" in m:
-        return "Anthropic"
-    if "gpt" in m or "openai" in m or "o1" in m or "o3" in m:
-        return "OpenAI"
-    if "gemini" in m or "gemma" in m:
-        return "Google"
-    if "deepseek" in m:
-        return "DeepSeek"
-    if "mistral" in m:
-        return "Mistral"
-    if "qwen" in m:
-        return "Alibaba / Cerebras"
-    if "groq" in m:
-        return "Groq"
-    if "glm" in m or "zhipu" in m:
-        return "Zhipu (Z.ai)"
+    """Deprecated no-op heuristic.
+
+    Provider labels come from the backend /models payload (which uses the
+    authoritative rules in model_routing.detect_provider). Keeping this shim
+    only so existing imports keep working; it never guesses a vendor anymore.
+    """
     return "Cloud Provider"
 
 
@@ -252,7 +241,7 @@ def discover_models(client: SafiClient, force_refresh: bool = False) -> List[Dic
                 merged.append({
                     "id": m_id,
                     "label": m.get("label") or m.get("name") or m_id,
-                    "provider": m.get("provider") or _infer_provider(m_id),
+                    "provider": m.get("provider") or "Cloud Provider",
                     "active": bool(m.get("active")),
                     "local": bool(m.get("local")),
                 })

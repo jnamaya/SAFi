@@ -25,13 +25,27 @@ def test_alias_routing_is_case_insensitive():
     assert detect_provider("SAFi-Qwen3-8B") == "local"
 
 
-def test_unprefixed_local_looking_names_still_default_to_groq():
+def test_unprefixed_local_looking_names_fail_closed():
     # Guards the prefix widening: a raw community id such as "llama3-8b" must
     # not be captured by the safi- rule, and a bare "safi" without the
-    # separator is not an alias.
-    assert detect_provider("llama3-8b") == "groq"
-    assert detect_provider("safi") == "groq"
-    assert detect_provider("saf") == "groq"
+    # separator is not an alias. None of these match a provider, so they now
+    # raise instead of silently defaulting to groq (which would publish a
+    # false HIPAA/ZDR badge).
+    import pytest
+    from safi_app.core.services.model_routing import UnknownModelProviderError
+
+    for bad in ("llama3-8b", "safi", "saf", "totally-unknown-model"):
+        with pytest.raises(UnknownModelProviderError):
+            detect_provider(bad)
+
+
+def test_empty_model_id_fails_closed():
+    from safi_app.core.services.model_routing import UnknownModelProviderError
+
+    with pytest.raises(UnknownModelProviderError):
+        detect_provider("")
+    with pytest.raises(UnknownModelProviderError):
+        detect_provider("   ")
 
 
 def test_local_provider_uses_existing_openai_shape():

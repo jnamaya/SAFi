@@ -96,15 +96,27 @@ def invalidate_custom_models_cache() -> None:
     _custom_models_cache["at"] = None
 
 
+class UnknownModelProviderError(ValueError):
+    """A model id resolved to no provider.
+
+    Raised (fail-closed) instead of silently falling back to a default
+    provider. Silently routing an unrecognised id to Groq would publish a
+    false HIPAA/ZDR badge, so a miss must surface loudly.
+    """
+
+
 def detect_provider(model_name: str) -> str:
     """Map a model name to its provider key.
 
     Precedence: an exact match against an operator-registered id, then the
-    prefix heuristics below. Unknown ids fall back to 'groq' — the cheapest
-    configured tier, and the historical default.
+    prefix heuristics below. An id that matches NO rule raises
+    UnknownModelProviderError — the historical silent 'groq' fallback let an
+    unrecognised id render with Groq's baa_capable=False / zdr="default"
+    badge, publishing a false HIPAA/ZDR claim, so a miss now fails loudly.
     """
     if not model_name:
-        return "groq"
+        raise UnknownModelProviderError(
+            "empty model id: no provider can be resolved")
     m = model_name.lower()
     custom_models()
     custom = _custom_models_cache["map"].get(m)
@@ -120,15 +132,18 @@ def detect_provider(model_name: str) -> str:
         or m == "jaredpalmer/kev-4b"
     ):
         return "typesafe"
+    # The gpt-oss line is served by TWO providers with distinct id spellings,
+    # so the vendor prefix decides: Groq lists it as "openai/gpt-oss-*" (vendor
+    # prefix), Cerebras serves the BARE "gpt-oss-*". The vendor-prefixed id must
+    # resolve to Groq BEFORE the bare cerebras rule can swallow it, and first-
+    # party OpenAI ids are listed bare ("gpt-6-luna"), never as "openai/gpt-*".
+    if m.startswith("openai/gpt-oss") or m.startswith("groq/"):
+        return "groq"
     # Cerebras serves gpt-oss WITHOUT the vendor prefix (Groq's id is
     # "openai/gpt-oss-*"), so this must precede the bare "gpt-" rule.
     # "qwen-" belongs here for a different reason: Qwen is not a Cerebras
     # product, but Cerebras is what serves it, and nothing else in this file
-    # claims the prefix. An id with no matching prefix falls through to groq
-    # BELOW and is routed there silently — a listed model then renders with
-    # Groq's baa_capable=False/zdr="default" badge, publishing a false
-    # HIPAA/ZDR claim. A miss is invisible: groq is a valid provider, so the
-    # known-provider check still passes.
+    # claims the prefix.
     if (m.startswith("gpt-oss") or m.startswith("zai-")
             or m.startswith("qwen-")):
         return "cerebras"
@@ -146,12 +161,15 @@ def detect_provider(model_name: str) -> str:
         return "zhipu"
     # Appliance-selected local models all carry a "safi-" alias (safi-qwen3-8b,
     # safi-qwen3-32b, ...), so match the reserved prefix rather than one literal
-    # name. An unmatched alias would fall through to groq below and send the
-    # prompt to Groq with a placeholder key, which surfaces as an
-    # unreachable-provider error rather than as a routing fault.
+    # name.
     if m.startswith("safi-"):
         return "local"
-    return "groq"
+    # Fail closed: an id matching no rule is unrecognised. Silently routing it
+    # to Groq would publish a false HIPAA/ZDR badge, so surface it as an error
+    # instead of guessing a provider.
+    raise UnknownModelProviderError(
+        f"model id {model_name!r} matched no known provider; "
+        "register it explicitly in the custom_models table to resolve it")
 
 
 def build_providers_config(config) -> dict:
