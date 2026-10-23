@@ -149,9 +149,9 @@ def test_print_user_prompt_no_username(monkeypatch):
 
     buf = StringIO()
     monkeypatch.setattr(ui, "console", Console(file=buf, color_system=None, width=80))
-    ui.print_user_prompt("install redis server", agent="sysadmin", user_name="Alice")
+    ui.print_user_prompt("install redis server\nsecond line of prompt", agent="sysadmin", user_name="Alice")
     val = buf.getvalue()
-    assert "\n> install redis server" in val or val.startswith("> install redis server")
-    assert "  > install redis server" not in val
+    assert ">   install redis server" in val
+    assert "    second line of prompt" in val
     assert "Alice" not in val
     assert "You" not in val

@@ -322,25 +322,23 @@ def print_user_prompt(
     agent: Optional[str] = None,
     user_name: Optional[str] = None,
 ) -> None:
-    """Render the user's prompt cleanly in the conversation history as '> <prompt>'."""
+    """Render the user's prompt cleanly in the conversation history with a hanging indent (>   prompt)."""
     if not prompt or not prompt.strip():
         return
-    row_text = Text()
-    lines = prompt.strip().splitlines()
-    for idx, l in enumerate(lines):
-        if idx == 0:
-            row_text.append("> ", style=f"bold {COLOR_BRAND_400}")
-        else:
-            row_text.append("  ", style="dim")
-        row_text.append(l, style=f"bold {COLOR_USER_ACCENT}")
-        if idx < len(lines) - 1:
-            row_text.append("\n")
+
+    table = Table.grid(padding=(0, 0))
+    table.add_column(width=4, no_wrap=True)
+    table.add_column()
+    table.add_row(
+        Text(">   ", style=f"bold {COLOR_BRAND_400}"),
+        Text(prompt.strip(), style=f"bold {COLOR_USER_ACCENT}"),
+    )
 
     console.print()
     try:
-        console.print(row_text, pad_margin=False)
+        console.print(table, pad_margin=False)
     except TypeError:
-        console.print(row_text)
+        console.print(table)
     console.print()
 
 
