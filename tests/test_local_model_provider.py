@@ -340,6 +340,51 @@ def test_malformed_tool_call_arguments_report_a_parse_failure():
     assert "tool call arguments" in str(exc.value).lower()
 
 
+# --------------------------------------------------------------------------
+# reasoning-effort override (CLI /reasoning) → local llama.cpp
+# --------------------------------------------------------------------------
+
+def _call_with_effort(provider_name, effort):
+    from safi_app.core.services import llm_provider as mod
+
+    provider, sink = _provider_for(provider_name)
+    mod._REASONING_EFFORT.set(effort)
+    try:
+        import asyncio
+
+        asyncio.run(
+            provider._chat_completion(
+                route="conscience", system_prompt="s", user_prompt="u", max_tokens=64
+            )
+        )
+    finally:
+        mod._REASONING_EFFORT.set("")
+    return sink
+
+
+def test_local_reasoning_on_sends_enable_thinking_true():
+    sink = _call_with_effort("local", "high")
+    eb = sink["extra_body"]
+    assert eb["chat_template_kwargs"]["enable_thinking"] is True
+
+
+def test_local_reasoning_off_sends_enable_thinking_false():
+    sink = _call_with_effort("local", "off")
+    assert sink["extra_body"]["chat_template_kwargs"]["enable_thinking"] is False
+
+
+def test_local_no_override_sends_no_chat_template_kwargs():
+    sink = _call_with_effort("local", "")
+    assert "chat_template_kwargs" not in (sink.get("extra_body") or {})
+
+
+def test_cloud_openai_compatible_vendor_never_gets_chat_template_kwargs():
+    # The knob is a llama-server template control; sending it to a cloud
+    # vendor's API would be a rejected unknown field.
+    sink = _call_with_effort("groq", "high")
+    assert "chat_template_kwargs" not in (sink.get("extra_body") or {})
+
+
 def test_explain_provider_error_maps_a_bad_tool_call_to_the_output_cap():
     from safi_app.core.services.llm_provider import LLMProvider
 

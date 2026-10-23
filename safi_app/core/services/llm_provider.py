@@ -768,6 +768,23 @@ class LLMProvider:
                          eb["thinking"] = {"type": "disabled"}
                      params["extra_body"] = eb
 
+            if provider_name == "local" and _REASONING_EFFORT.get():
+                # User-selected reasoning level (CLI /reasoning) for the local
+                # llama.cpp appliance. llama-server has no token-budget knob;
+                # the closest native control is chat_template_kwargs, which the
+                # model's Jinja chat template consumes (Qwen3-family templates
+                # accept "enable_thinking"). Any level (low/medium/high) turns
+                # thinking ON, anything else (e.g. "off") turns it OFF. Gated
+                # on provider_name == "local" so cloud OpenAI-compatible
+                # vendors never receive it: their APIs reject unknown fields
+                # where llama-server just ignores what its template doesn't use.
+                local_effort = _REASONING_EFFORT.get()
+                eb = dict(params.get("extra_body") or {})
+                ctk = dict(eb.get("chat_template_kwargs") or {})
+                ctk["enable_thinking"] = local_effort in ("low", "medium", "high")
+                eb["chat_template_kwargs"] = ctk
+                params["extra_body"] = eb
+
             # Sync client off the event loop's thread pool. The blocking call
             # must not run inline in the request coroutine; to_thread keeps the
             # loop free and, because the client owns no loop, is safe however
@@ -956,13 +973,27 @@ class LLMProvider:
                     ))
                 gemini_tools = [types.Tool(function_declarations=funcs)]
 
-            config = types.GenerateContentConfig(
+            config_kwargs = dict(
                 system_instruction=system_prompt,
                 temperature=temperature,
                 max_output_tokens=max_tokens,
                 tools=gemini_tools,
                 response_mime_type="application/json" if (json_mode and not gemini_tools) else None,
             )
+
+            # User-selected reasoning level (CLI /reasoning) mapped onto
+            # Gemini's thinkingConfig. thinking_budget is in thinking tokens:
+            # 0 disables thinking, -1 is "dynamic" (model decides, up to the
+            # model's max), a positive integer caps it. Only set when the user
+            # explicitly chose a level; otherwise leave Gemini's tuned default.
+            gemini_effort = _REASONING_EFFORT.get()
+            if gemini_effort == "off":
+                config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+            elif gemini_effort in ("low", "medium", "high"):
+                budget = {"low": 1024, "medium": 8192, "high": -1}[gemini_effort]
+                config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=budget)
+
+            config = types.GenerateContentConfig(**config_kwargs)
 
             try:
                 # The sync genai.Client off the loop thread (the async surface
