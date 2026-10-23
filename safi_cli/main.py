@@ -58,6 +58,10 @@ def main():
         code = ssh_keys.run_setup_key(sys.argv[2:]) if len(sys.argv) > 2 else (ssh_keys.interactive_setup_key() or 0)
         sys.exit(code if isinstance(code, int) else 0)
 
+    # Standalone keygen shortcut: safi keygen (local Ed25519 key, no deployment)
+    if len(sys.argv) > 1 and sys.argv[1] in ("keygen", "gen-key"):
+        sys.exit(ssh_keys.keygen_local())
+
     parser = argparse.ArgumentParser(
         prog="safi",
         description="SAFi (The Self-alignment Framework Interface) — The governance engine for AI agents.",

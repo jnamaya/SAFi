@@ -128,6 +128,7 @@ def print_help():
         ("/reset", "Reset session and flush agent working memory"),
         ("/config", "View backend URL, active model, and Policy API key status"),
         ("/setup-key [target]", "Deploy SSH key to Linux or Windows server from inventory"),
+        ("/keygen", "Generate the local Ed25519 key pair (no deployment)"),
         ("/help", "Show this help menu"),
         ("exit, quit, :q", "Exit SAFi CLI"),
     ]
@@ -448,6 +449,11 @@ def prompt_command_menu(
     elif choice_clean in ("setup-key", "push-key", "ssh-key"):
         from . import ssh_keys
         ssh_keys.interactive_setup_key()
+        return current_agent, current_conv, current_model, current_user_name, False
+
+    elif choice_clean in ("keygen", "gen-key"):
+        from . import ssh_keys
+        ssh_keys.keygen_local()
         return current_agent, current_conv, current_model, current_user_name, False
 
     elif choice_clean in ("help", "?"):

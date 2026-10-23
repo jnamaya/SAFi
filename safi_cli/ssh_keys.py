@@ -268,6 +268,47 @@ def deploy_key_native(
         return 1
 
 
+def keygen_local() -> int:
+    """Generate (or verify) the local SAFi Ed25519 key pair without deploying.
+
+    Thin standalone wrapper around ``ensure_local_ssh_key`` so an operator can
+    pre-create ``~/.ssh/id_ed25519[.pub]`` without touching a remote target.
+    Idempotent: if the public key already exists, it is left untouched and its
+    fingerprint is displayed.
+    """
+    try:
+        key_content = ensure_local_ssh_key()
+    except Exception as exc:
+        ui.print_error(f"Local key generation failed: {exc}")
+        return 1
+
+    _, pub_path = get_default_key_paths()
+    fingerprint = ""
+    try:
+        res = subprocess.run(
+            ["ssh-keygen", "-lf", str(pub_path)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        if res.returncode == 0 and res.stdout:
+            parts = res.stdout.split()
+            # Format: "<bits> <fingerprint> <comment> (<type>)"
+            if len(parts) >= 2:
+                fingerprint = parts[1]
+    except Exception:
+        pass
+
+    ui.console.print(f"\n[bold {ui.COLOR_BRAND_400}]SAFi local Ed25519 key[/]")
+    ui.console.print(f"  [dim]Private:[/] {pub_path.parent / pub_path.name.removesuffix('.pub')}")
+    ui.console.print(f"  [dim]Public:[/] {pub_path}")
+    if fingerprint:
+        ui.console.print(f"  [dim]Fingerprint:[/] [cyan]{fingerprint}[/]")
+    ui.console.print(f"  [dim]Public key content:[/] [cyan]{key_content}[/]")
+    ui.console.print("\n[dim]Ready to deploy with:[/] [cyan]safi setup-key <target>[/]")
+    return 0
+
+
 def run_setup_key(args: List[str]) -> int:
     """Parse arguments and deploy SSH key natively."""
     import argparse
