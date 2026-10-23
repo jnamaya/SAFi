@@ -161,6 +161,7 @@ class TestSafiCliConfig(unittest.TestCase):
 
 
 from unittest.mock import MagicMock
+from unittest import mock
 from safi_cli.main import run_agent_turn, DEFAULT_MAX_STEPS
 
 
@@ -521,6 +522,7 @@ class TestSafiCliDynamicAgentDiscovery(unittest.TestCase):
         self.assertIn("demo1_coder", AVAILABLE_AGENTS)
 
     def test_prompt_switch_agent_with_dynamically_discovered_agent(self):
+        import tempfile
         client = MagicMock()
         client.api_url = "https://safi.demo1.com"
         client.api_key = "current-key"
@@ -528,13 +530,14 @@ class TestSafiCliDynamicAgentDiscovery(unittest.TestCase):
             {"key": "billing_auditor", "name": "Billing Auditor", "description": "Audits bills"},
         ]
 
-        with patch("safi_cli.config.resolve_agent_api_key", return_value="sk-billing-key"):
-            new_agent, _ = prompt_switch_agent(
-                current_agent="software_engineer",
-                client=client,
-                workspace_root=Path("."),
-                requested_agent="billing_auditor",
-            )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("safi_cli.config.resolve_agent_api_key", return_value="sk-billing-key"):
+                new_agent, _ = prompt_switch_agent(
+                    current_agent="software_engineer",
+                    client=client,
+                    workspace_root=Path(temp_dir),
+                    requested_agent="billing_auditor",
+                )
 
         self.assertEqual(new_agent, "billing_auditor")
         self.assertEqual(client.api_key, "sk-billing-key")
@@ -871,7 +874,7 @@ class TestSafiModelSelection(unittest.TestCase):
         from safi_cli.client import SafiClient
         client = SafiClient("http://mock-backend:5000", "test-key")
         with unittest.mock.patch("builtins.input", return_value="8"):
-            with unittest.mock.patch("safi_cli.main.prompt_switch_model") as mock_switch:
+            with unittest.mock.patch("safi_cli.repl.prompt_switch_model") as mock_switch:
                 agent, conv, model, user, should_exit = prompt_command_menu(
                     current_agent="software_engineer",
                     client=client,
@@ -1081,7 +1084,7 @@ class TestSafiSubagentDelegation(unittest.TestCase):
             self.assertEqual(len(tool_results), 1)
             self.assertIn("not permitted to execute 'write'", tool_results[0]["result"])
 
-    @patch("safi_cli.main.run_subagent_task")
+    @patch("safi_cli.turn_loop.run_subagent_task")
     def test_run_agent_turn_delegates_to_subagent(self, mock_subagent):
         mock_subagent.return_value = "Subagent found 2 files."
         client = MagicMock()
@@ -1183,6 +1186,7 @@ class TestSafiSubagentDelegation(unittest.TestCase):
                 conversation_id="conv-1",
                 user_id="u-1",
                 agent="software_engineer",
+                auto_approve=True,
             )
         self.assertIsNotNone(res)
         self.assertEqual(mock_render_todo.call_count, 2)
@@ -1674,45 +1678,50 @@ class TestSubagentDelegationGuard(unittest.TestCase):
     the job never finished. The guard refuses those delegations.
     """
 
-    def test_mutation_prompts_are_detected(self):
-        from safi_cli.main import _looks_like_mutation_request
+    def test_client_side_mutation_regex_removed(self):
+        """Mutation policy is enforced by the server Will gate + role tool filtering,
+        not by a heuristic client-side regex (see backlog item: server-driven trust)."""
+        import safi_cli.main as main_mod
 
-        self.assertTrue(_looks_like_mutation_request("convert the remaining legacy pages"))
-        self.assertTrue(_looks_like_mutation_request(
-            "Finish legacy subpages\nContinue and implement conversions for the remaining legacy pages"
-        ))
-        self.assertTrue(_looks_like_mutation_request("implement conversions for the rest"))
-        self.assertTrue(_looks_like_mutation_request("refactor module X"))
-        self.assertTrue(_looks_like_mutation_request("rewrite index.html"))
+        self.assertFalse(hasattr(main_mod, "_looks_like_mutation_request"))
 
-    def test_read_only_prompts_are_not_flagged(self):
-        from safi_cli.main import _looks_like_mutation_request
+    def test_read_only_subagent_blocks_mutating_tools(self):
+        class _FakeSubagentClient:
+            def __init__(self, tool_call, final):
+                self._tool_call = tool_call
+                self._final = final
+                self.calls = 0
 
-        self.assertFalse(_looks_like_mutation_request(
-            "Inspect the repository and report content to preserve. Do not modify files."
-        ))
-        self.assertFalse(_looks_like_mutation_request(
-            "Read-only survey of the redesign; summarize convert recommendations."
-        ))
-        self.assertFalse(_looks_like_mutation_request("Run the test suite and report pass/fail."))
+            def send_turn(self, **kwargs):
+                self.calls += 1
+                if self.calls == 1:
+                    return {"type": "tool_call", "tool_calls": [self._tool_call]}
+                return {"type": "final", "finalOutput": self._final}
 
-    def test_read_only_subagent_refuses_a_mutation_task(self):
+        """A researcher subagent handed an edit proposal gets a role-blocked result,
+        not local execution — enforcement is structural (tool filtering), not regex-based."""
         from safi_cli.main import run_subagent_task
 
-        result = run_subagent_task(
-            client=None,
-            args={
-                "description": "Finish legacy subpages",
-                "prompt": "Convert the remaining legacy pages to the new structure.",
-                "subagent_type": "researcher",
-            },
-            workspace_root=Path("/tmp"),
-            parent_conv_id="conv-1",
-            user_id="cli_test",
-        )
-        self.assertTrue(result.startswith("Refused:"))
-        self.assertIn("read-only", result)
-        self.assertIn("edit", result)
+        with patch("safi_cli.main._execute_tool_with_live_status") as exec_mock:
+            with patch("safi_cli.ui.print_subagent_start"), \
+                 patch("safi_cli.ui.print_subagent_step"), \
+                 patch("safi_cli.ui.print_subagent_done"):
+                result = run_subagent_task(
+                    client=_FakeSubagentClient(
+                        tool_call={"tool_name": "edit", "arguments": {"path": "x.py"}},
+                        final="Survey complete.",
+                    ),
+                    args={
+                        "description": "Finish legacy subpages",
+                        "prompt": "Convert the remaining legacy pages to the new structure.",
+                        "subagent_type": "researcher",
+                    },
+                    workspace_root=Path("/tmp"),
+                    parent_conv_id="conv-1",
+                    user_id="cli_test",
+                )
+        exec_mock.assert_not_called()
+        self.assertIn("Survey complete.", result)
 
     def test_delegation_cap_is_low_and_defined(self):
         from safi_cli.main import MAX_SUBAGENTS_PER_TURN
@@ -2021,3 +2030,28 @@ if __name__ == "__main__":
 
 
 
+
+
+class TestPromptUserPermission(unittest.TestCase):
+    def setUp(self):
+        import safi_cli.ui as ui
+        self.ui = ui
+        ui.reset_approve_all()
+
+    def test_always_grants_session_approval(self):
+        with mock.patch("builtins.input", return_value="a"):
+            self.assertTrue(self.ui.prompt_user_permission("bash", {}))
+        # Subsequent prompts auto-approved without prompting.
+        with mock.patch("builtins.input") as fake_input:
+            self.assertTrue(self.ui.prompt_user_permission("write", {}))
+            fake_input.assert_not_called()
+
+    def test_no_remains_per_prompt(self):
+        with mock.patch("builtins.input", return_value="n"):
+            self.assertFalse(self.ui.prompt_user_permission("bash", {}))
+        self.assertFalse(self.ui.approve_all_enabled())
+
+    def test_reset_approve_all(self):
+        self.ui._APPROVAL_STATE["approve_all"] = True
+        self.ui.reset_approve_all()
+        self.assertFalse(self.ui.approve_all_enabled())

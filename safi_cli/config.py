@@ -7,10 +7,62 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+try:  # Optional: OS keychain storage for API keys, falls back to config.json
+    import keyring
+    from keyring.errors import KeyringError
+except Exception:  # pragma: no cover - keyring simply unavailable
+    keyring = None
+    KeyringError = Exception
+
+KEYRING_SERVICE = "safi-cli"
+
 CONFIG_DIR = Path.home() / ".config" / "safi"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 SESSIONS_FILE = CONFIG_DIR / "sessions.json"
 HISTORY_FILE = CONFIG_DIR / "history"
+
+
+def get_agent_history_file(agent: Optional[str] = None) -> Path:
+    """Return an agent-scoped history file path so prompt histories and suggestions stay isolated."""
+    if not agent:
+        return HISTORY_FILE
+    import re
+    safe_agent = re.sub(r"[^A-Za-z0-9_-]", "_", agent.strip())
+    return CONFIG_DIR / f"history_{safe_agent}"
+
+
+def _keyring_get(agent: str) -> Optional[str]:
+    if keyring is None:
+        return None
+    try:
+        val = keyring.get_password(KEYRING_SERVICE, agent)
+        return val.strip() if isinstance(val, str) and val.strip() else None
+    except KeyringError:
+        return None
+
+
+def _keyring_set(agent: str, key: str) -> bool:
+    if keyring is None:
+        return False
+    try:
+        keyring.set_password(KEYRING_SERVICE, agent, key)
+        return True
+    except KeyringError:
+        return False
+
+
+def _keyring_delete(agent: str) -> None:
+    if keyring is None:
+        return
+    try:
+        keyring.delete_password(KEYRING_SERVICE, agent)
+    except KeyringError:
+        pass
+
+
+def keyring_available() -> bool:
+    """True when an OS keyring backend is usable for secret storage."""
+    return keyring is not None and _keyring_get("__probe__") is None
 
 
 def ensure_config_dir() -> Path:
@@ -55,7 +107,11 @@ def resolve_agent_api_key(agent: str, explicit_key: Optional[str] = None) -> Opt
     cfg = load_config()
     agent_keys = cfg.get("agent_keys") or {}
     if isinstance(agent_keys, dict) and agent in agent_keys and agent_keys[agent]:
-        return str(agent_keys[agent]).strip()
+        stored = _keyring_get(agent) or str(agent_keys[agent]).strip()
+        return stored
+    stored = _keyring_get(agent)
+    if stored:
+        return stored
 
     if agent == "software_engineer":
         gen_env = os.environ.get("SAFI_API_KEY") or os.environ.get("SAFI_POLICY_API_KEY")
@@ -75,6 +131,15 @@ def save_agent_api_key(agent: str, key: str) -> None:
     if not isinstance(agent_keys, dict):
         agent_keys = {}
     clean_key = key.strip()
+    # Prefer the OS keyring; fall back to config.json when unavailable.
+    if _keyring_set(agent, clean_key):
+        agent_keys = cfg.get("agent_keys") or {}
+        if isinstance(agent_keys, dict):
+            agent_keys.pop(agent, None)
+            cfg["agent_keys"] = agent_keys
+        cfg.pop("api_key", None)
+        save_config(cfg)
+        return
     agent_keys[agent] = clean_key
     cfg["agent_keys"] = agent_keys
     cfg.pop("api_key", None)

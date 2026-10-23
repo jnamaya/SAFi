@@ -1,5 +1,6 @@
 """HTTP Client communicating directly with SAFi's governed agentic endpoint."""
 
+import logging
 import os
 import socket
 import ssl
@@ -10,7 +11,20 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 
+from .context import truncate_tool_results
+from .schema import SchemaError, normalize_turn_response
 from .tools import TOOL_SCHEMAS, get_tools_for_agent
+
+logger = logging.getLogger("safi.client")
+
+
+def _json_or_none(resp: "requests.Response"):
+    """Parse a response body as JSON, returning None on failure."""
+    try:
+        return resp.json()
+    except ValueError as exc:
+        logger.debug("Non-JSON response from %s %s: %s", resp.request.method, resp.url, exc)
+        return None
 
 
 class SafiClientError(Exception):
@@ -64,8 +78,8 @@ class SafiClient:
                     der = ssock.getpeercert(True)
                     if der:
                         return ssl.DER_cert_to_PEM_cert(der)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Could not fetch peer cert from %s: %s", self.api_url, exc)
         return None
 
     def _allow_cert_refresh(self) -> bool:
@@ -91,77 +105,45 @@ class SafiClient:
                 except OSError:
                     pass
                 self.session.verify = str(self.default_ca)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Could not persist appliance cert at %s: %s", self.default_ca, exc)
 
-    def get_available_agents(self) -> List[Dict[str, Any]]:
-        """Fetch available agents from the connected SAFi backend URL."""
+    def _get_json(self, path: str, timeout: int = 5) -> Optional[Any]:
+        """GET a JSON document, retrying once after a cert refresh on SSL errors."""
         headers = {}
         if self.api_key:
             headers["X-API-KEY"] = self.api_key
-        for path in ("/api/agents/all",):
+        url = f"{self.api_url}{path}"
+        for attempt in (1, 2):
             try:
-                resp = self.session.get(
-                    f"{self.api_url}{path}",
-                    headers=headers,
-                    timeout=5,
-                )
+                resp = self.session.get(url, headers=headers, timeout=timeout)
                 if resp.status_code == 200:
-                    data = resp.json()
-                    if isinstance(data, dict) and data.get("ok") and isinstance(data.get("available"), list):
-                        return data["available"]
+                    return _json_or_none(resp)
+                logger.debug("GET %s returned HTTP %s", path, resp.status_code)
+                return None
             except requests.exceptions.SSLError:
-                if self._allow_cert_refresh():
+                if attempt == 1 and self._allow_cert_refresh():
                     self._ensure_appliance_cert(force_refresh=True)
-                    try:
-                        resp = self.session.get(
-                            f"{self.api_url}{path}",
-                            headers=headers,
-                            timeout=5,
-                        )
-                        if resp.status_code == 200:
-                            data = resp.json()
-                            if isinstance(data, dict) and data.get("ok") and isinstance(data.get("available"), list):
-                                return data["available"]
-                    except Exception:
-                        continue
-            except Exception:
-                continue
+                    continue
+                logger.debug("SSL failure on GET %s (attempt %d)", path, attempt)
+                return None
+            except Exception as exc:
+                logger.debug("Request to %s failed: %s", path, exc)
+                return None
+        return None
+
+    def get_available_agents(self) -> List[Dict[str, Any]]:
+        """Fetch available agents from the connected SAFi backend URL."""
+        data = self._get_json("/api/agents/all")
+        if isinstance(data, dict) and data.get("ok") and isinstance(data.get("available"), list):
+            return data["available"]
         return []
 
     def get_available_models(self) -> List[Dict[str, Any]]:
         """Fetch available models for the Intellect faculty from the connected SAFi backend."""
-        headers = {}
-        if self.api_key:
-            headers["X-API-KEY"] = self.api_key
-        for path in ("/api/models",):
-            try:
-                resp = self.session.get(
-                    f"{self.api_url}{path}",
-                    headers=headers,
-                    timeout=5,
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    if isinstance(data, dict) and data.get("ok") and isinstance(data.get("models"), list):
-                        return data["models"]
-            except requests.exceptions.SSLError:
-                if self._allow_cert_refresh():
-                    self._ensure_appliance_cert(force_refresh=True)
-                    try:
-                        resp = self.session.get(
-                            f"{self.api_url}{path}",
-                            headers=headers,
-                            timeout=5,
-                        )
-                        if resp.status_code == 200:
-                            data = resp.json()
-                            if isinstance(data, dict) and data.get("ok") and isinstance(data.get("models"), list):
-                                return data["models"]
-                    except Exception:
-                        continue
-            except Exception:
-                continue
+        data = self._get_json("/api/models")
+        if isinstance(data, dict) and data.get("ok") and isinstance(data.get("models"), list):
+            return data["models"]
         return []
 
     def send_turn(
@@ -204,8 +186,8 @@ class SafiClient:
                     if len(raw_sp) > max_sp_chars:
                         raw_sp = raw_sp[:max_sp_chars] + f"\n... [scratchpad truncated to {max_sp_chars:,} characters]"
                     ws_context["scratchpad"] = raw_sp
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Could not attach workspace scratchpad context: %s", exc)
 
         payload: Dict[str, Any] = {
             "user_id": user_id,
@@ -214,7 +196,7 @@ class SafiClient:
             "agent": agent,
             "workspace_context": ws_context,
             "tools": tools_payload,
-            "tool_results": tool_results or [],
+            "tool_results": truncate_tool_results(tool_results or []),
             "recent_turns": recent_turns,
         }
         if model:
@@ -266,12 +248,9 @@ class SafiClient:
             )
         elif resp.status_code != 200:
             err_msg = resp.text[:500]
-            try:
-                err_data = resp.json()
-                if "error" in err_data:
-                    err_msg = err_data["error"]
-            except Exception:
-                pass
+            err_data = _json_or_none(resp)
+            if err_data and "error" in err_data:
+                err_msg = err_data["error"]
             raise SafiClientError(
                 f"Backend rejected turn (HTTP {resp.status_code}): {err_msg}",
                 status_code=resp.status_code,
@@ -279,9 +258,17 @@ class SafiClient:
             )
 
         try:
-            return resp.json()
+            data = resp.json()
         except ValueError:
             raise SafiClientError("Backend returned invalid non-JSON response.", details=resp.text)
+        try:
+            return normalize_turn_response(data)
+        except SchemaError as exc:
+            raise SafiClientError(
+                f"Backend returned a malformed turn response: {exc}",
+                status_code=200,
+                details=str(data)[:500],
+            )
 
     def get_turn_progress(self, message_id: str, user_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Fetch real-time reasoning progress for an in-flight message."""
@@ -300,7 +287,8 @@ class SafiClient:
             )
             if resp.status_code == 200:
                 return resp.json()
-        except Exception:
+        except Exception as exc:
+            logger.debug("Progress poll for %s failed: %s", message_id, exc)
             return None
         return None
 
@@ -338,11 +326,7 @@ class SafiClient:
             )
             if resp.status_code == 200:
                 return resp.json()
-            err_data = {}
-            try:
-                err_data = resp.json()
-            except Exception:
-                pass
+            err_data = _json_or_none(resp) or {}
             return {
                 "ok": False,
                 "error": err_data.get("error", f"Server returned HTTP {resp.status_code}"),
@@ -379,5 +363,6 @@ class SafiClient:
             if resp.status_code == 200:
                 return resp.json()
             return {"ok": False}
-        except Exception:
+        except Exception as exc:
+            logger.warning("Compress request failed: %s", exc)
             return {"ok": False}

@@ -14,8 +14,11 @@ next line. No hard dependency is introduced.
 from __future__ import annotations
 
 import os
+import re
 import sys
 from typing import Callable, List, Optional
+
+
 
 from . import ui
 
@@ -79,6 +82,7 @@ def read_prompt(
 
 _SESSION = None
 _SESSION_HISTORY: Optional[str] = None
+_SESSION_COMPLETER_FN: Optional[CompletionsFn] = None
 _KEY_BINDINGS = None
 _STYLE = None
 
@@ -104,7 +108,13 @@ def _prompt_key_bindings():
 
     @kb.add("enter")
     def _submit(event):
-        event.current_buffer.validate_and_handle()
+        buf = event.current_buffer
+        if buf.text.count("```") % 2 == 1:
+            # Unbalanced code fence: Enter continues the block instead of
+            # submitting a half-finished prompt.
+            buf.insert_text("\n")
+            return
+        buf.validate_and_handle()
 
     @kb.add("escape", "enter")
     def _newline_alt(event):
@@ -148,21 +158,88 @@ class _CallbackCompleter(_CompleterBase):
             yield Completion(match, start_position=-len(text))
 
 
+class _TrimmingHistory(FileHistory):
+    """FileHistory that never lets the file grow unboundedly.
+
+    Every TRIM_INTERVAL appends it drops consecutive duplicates and rewrites
+    the file atomically with only the most recent MAX_ENTRIES lines. Between
+    trims it behaves exactly like FileHistory (plain appends).
+    """
+
+    TRIM_INTERVAL = 500
+    MAX_ENTRIES = 1000
+
+    def __init__(self, filename: str):
+        super().__init__(filename)
+        self._appends_since_trim = 0
+
+    def append_string(self, line: str) -> None:
+        super().append_string(line)
+        self._appends_since_trim += 1
+        if self._appends_since_trim >= self.TRIM_INTERVAL:
+            self._appends_since_trim = 0
+            self._trim()
+
+    def _trim(self) -> None:
+        import tempfile
+
+        try:
+            entries = list(self.load_history_strings())
+        except Exception:
+            return
+        # load_history_strings() yields newest-first, so keeping the head of
+        # the list keeps the most recent entries.
+        trimmed = _TrimmingHistory._drop_consecutive_dupes(entries)[: self.MAX_ENTRIES]
+        oldest_first = list(reversed(trimmed))
+        try:
+            dirname = os.path.dirname(os.path.abspath(self.filename)) or "."
+            os.makedirs(dirname, exist_ok=True)
+            fd, tmp_path = tempfile.mkstemp(dir=dirname, prefix=".history-", suffix=".tmp")
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                    for entry in oldest_first:
+                        # Match FileHistory.store_string's format: a comment
+                        # separator line, then each physical line "+"-prefixed.
+                        fh.write("\n# trimmed\n")
+                        for line in entry.split("\n"):
+                            fh.write("+" + line + "\n")
+                os.replace(tmp_path, self.filename)
+            except BaseException:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise
+        except Exception:
+            # Trimming is best-effort; never break the input loop over it.
+            pass
+
+    @staticmethod
+    def _drop_consecutive_dupes(entries: List[str]) -> List[str]:
+        out: List[str] = []
+        for entry in entries:
+            if not out or out[-1] != entry:
+                out.append(entry)
+        return out
+
+
 def _get_session(history_path: Optional[str]):
-    global _SESSION, _SESSION_HISTORY
+    global _SESSION, _SESSION_HISTORY, _SESSION_COMPLETER_FN
     if _SESSION is not None and _SESSION_HISTORY == history_path:
         return _SESSION
-    history = FileHistory(history_path) if history_path else InMemoryHistory()
+    history = _TrimmingHistory(history_path) if history_path else InMemoryHistory()
     _SESSION = PromptSession(
         history=history,
         key_bindings=_prompt_key_bindings(),
         style=_prompt_style(),
         multiline=True,
         complete_while_typing=False,
+        auto_suggest=AutoSuggestFromHistory(),
         prompt_continuation=_continuation,
         erase_when_done=True,
     )
     _SESSION_HISTORY = history_path
+    _SESSION_COMPLETER_FN = None
     return _SESSION
 
 
@@ -171,7 +248,13 @@ def _read_prompt_toolkit(
     completions_fn: Optional[CompletionsFn],
     history_path: Optional[str],
 ) -> Optional[str]:
+    global _SESSION_COMPLETER_FN
     session = _get_session(history_path)
+    # Swap the active completer when the caller's completion source changes
+    # (e.g. after an agent switch) so stale suggestions never leak across.
+    if completions_fn is not _SESSION_COMPLETER_FN:
+        session.completer = _CallbackCompleter(completions_fn) if completions_fn else None
+        _SESSION_COMPLETER_FN = completions_fn
     try:
         return session.prompt(
             _prompt_text(agent_label),

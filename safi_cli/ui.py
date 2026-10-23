@@ -1007,15 +1007,46 @@ def print_tool_proposal(name: str, args: Dict[str, Any], res: Dict[str, Any]):
     console.print(Group(*items))
 
 
-def prompt_user_permission(name: str, args: Dict[str, Any], auto_approve: bool = True) -> bool:
-    """Prompt the developer before running mutating tools (bash, write, edit, delete)."""
-    if auto_approve or name in ("read", "grep", "glob", "list", "git_status", "git_diff"):
+# Session-scoped approval state: once the developer answers "a" (always) to a
+# confirmation, all subsequent tool approvals in this process are granted.
+_APPROVAL_STATE = {"approve_all": False}
+
+
+def reset_approve_all() -> None:
+    """Re-enable confirmation prompts after 'always' was chosen."""
+    _APPROVAL_STATE["approve_all"] = False
+
+
+def approve_all_enabled() -> bool:
+    return _APPROVAL_STATE["approve_all"]
+
+
+def prompt_user_permission(name: str, args: Dict[str, Any], auto_approve: bool = False) -> bool:
+    """Prompt the developer before running mutating tools (bash, write, edit, delete).
+
+    Answering 'a' (always) grants approval for this and all future tools this
+    session; a fresh session or `reset_approve_all()` restores prompts.
+    """
+    if (
+        auto_approve
+        or _APPROVAL_STATE["approve_all"]
+        or name in ("read", "grep", "glob", "list", "git_status", "git_diff")
+    ):
         return True
 
     margin = " " * CLI_MARGIN if CLI_MARGIN > 0 else ""
-    console.print(f"\n{margin}[bold black on {COLOR_WARN}] ⚠️  ACTION CONFIRMATION [/] [bold white]Allow executing tool [cyan]{escape(name)}[/]? [Y/n]:[/] ", end="")
+    console.print(
+        f"\n{margin}[bold black on {COLOR_WARN}] ⚠️  ACTION CONFIRMATION [/] "
+        f"[bold white]Allow executing tool [cyan]{escape(name)}[/]? "
+        f"[Y/n/a (always)]:[/] ",
+        end="",
+    )
     try:
         choice = input().strip().lower()
+        if choice in ("a", "always"):
+            _APPROVAL_STATE["approve_all"] = True
+            console.print(f"{margin}[dim]All future tool executions approved for this session.[/]")
+            return True
         return choice in ("", "y", "yes")
     except (KeyboardInterrupt, EOFError):
         console.print(f"\n[{COLOR_WARN}]Action cancelled by user.[/]")

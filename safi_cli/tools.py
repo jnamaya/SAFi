@@ -5,6 +5,7 @@ current working directory, under SAFi's Will Gate and path confinement.
 """
 
 import fnmatch
+import logging
 import os
 import re
 import shutil
@@ -13,6 +14,8 @@ import subprocess
 import threading
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
+
+logger = logging.getLogger("safi.tools")
 
 FORBIDDEN_NAMES = frozenset({
     ".env", "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa",
@@ -697,8 +700,8 @@ def execute_tool(
                         return "\n".join(lines)
                     elif proc.returncode == 1:
                         return f"No matches found for pattern: '{pattern}'"
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning("ripgrep fallback failed for pattern %r: %s", pattern, exc)
 
             try:
                 regex = re.compile(pattern, re.IGNORECASE)
@@ -838,17 +841,17 @@ def execute_tool(
                                 if on_output:
                                     try:
                                         on_output(prog)
-                                    except Exception:
-                                        pass
+                                    except Exception as exc:
+                                        logger.debug("Progress callback error: %s", exc)
                             continue
                         output_lines.append(raw_line)
                         if stripped and on_output:
                             try:
                                 on_output(stripped)
-                            except Exception:
-                                pass
-                except Exception:
-                    pass
+                            except Exception as exc:
+                                logger.debug("Output callback error: %s", exc)
+                except Exception as exc:
+                    logger.warning("bash stdout reader thread aborted: %s", exc)
 
             reader_thread = threading.Thread(target=_read_stdout, daemon=True)
             reader_thread.start()
@@ -858,21 +861,24 @@ def execute_tool(
             except subprocess.TimeoutExpired:
                 try:
                     os.killpg(proc.pid, signal.SIGTERM)
-                except Exception:
+                except Exception as exc:
+                    logger.debug("killpg SIGTERM failed for pid %s: %s", proc.pid, exc)
                     try:
                         proc.terminate()
-                    except Exception:
-                        pass
+                    except Exception as exc2:
+                        logger.debug("terminate failed for pid %s: %s", proc.pid, exc2)
                 try:
                     proc.wait(timeout=2)
-                except Exception:
+                except Exception as exc:
+                    logger.debug("bash process %s did not exit after SIGTERM: %s", proc.pid, exc)
                     try:
                         os.killpg(proc.pid, signal.SIGKILL)
-                    except Exception:
+                    except Exception as exc2:
+                        logger.debug("killpg SIGKILL failed for pid %s: %s", proc.pid, exc2)
                         try:
                             proc.kill()
-                        except Exception:
-                            pass
+                        except Exception as exc3:
+                            logger.warning("Could not kill timed-out bash process %s: %s", proc.pid, exc3)
                 reader_thread.join(timeout=1.0)
                 partial_out = "".join(output_lines).strip()
                 if len(partial_out) > 4000:

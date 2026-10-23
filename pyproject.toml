@@ -20,6 +20,11 @@ dependencies = [
 interactive = [
     "prompt_toolkit>=3.0.0",
 ]
+# OS keychain storage for Policy API keys. Optional: config.py falls back to
+# chmod-600 config.json when keyring is unavailable.
+keyring = [
+    "keyring>=23.0.0",
+]
 
 [project.scripts]
 safi = "safi_cli.main:main"
