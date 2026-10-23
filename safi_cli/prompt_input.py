@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import sys
 from typing import Callable, List, Optional
 
@@ -26,17 +27,25 @@ try:
     from prompt_toolkit import PromptSession
     from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
     from prompt_toolkit.completion import Completer, Completion
+    from prompt_toolkit.filters import is_done, to_filter
     from prompt_toolkit.formatted_text import FormattedText
     from prompt_toolkit.history import FileHistory, InMemoryHistory
     from prompt_toolkit.key_binding import KeyBindings
+    from prompt_toolkit.layout import Layout
+    from prompt_toolkit.layout.containers import ConditionalContainer, Window
+    from prompt_toolkit.layout.controls import FormattedTextControl
     from prompt_toolkit.styles import Style
 
     _HAS_PROMPT_TOOLKIT = True
     _CompleterBase = Completer
+    _SessionBase = PromptSession
 except Exception:
     _HAS_PROMPT_TOOLKIT = False
 
     class _CompleterBase:
+        pass
+
+    class _SessionBase:
         pass
 
 try:
@@ -62,7 +71,7 @@ def collect_multiline(initial: str) -> str:
     while parts[-1].rstrip().endswith("\\"):
         parts[-1] = parts[-1].rstrip()[:-1]
         try:
-            cont = input("  … ")
+            cont = input("    ")
         except (KeyboardInterrupt, EOFError):
             break
         parts.append(cont)
@@ -87,14 +96,29 @@ _KEY_BINDINGS = None
 _STYLE = None
 
 
+def _get_divider(cols: Optional[int] = None) -> str:
+    if cols is None:
+        cols = shutil.get_terminal_size((80, 24)).columns
+    return "─" * max(20, cols)
+
+
 def _prompt_style():
     global _STYLE
     if _STYLE is None:
         _STYLE = Style.from_dict({
-            "safi-badge": "bg:#1e293b #4ade80 bold",
-            "safi-agent": "bg:#1e293b #ffffff",
-            "safi-cont": "#64748b",
-            "": "#38bdf8 bold",
+            "safi-divider": "#334155",
+            "safi-badge": "#4ade80 bold",
+            "safi-agent": "#94a3b8",
+            "safi-arrow": "#38bdf8 bold",
+            "": "#f8fafc",
+            "auto-suggest": "#64748b italic",
+            "bottom-toolbar": "noinherit #334155",
+            "completion-menu": "bg:#1e293b #f8fafc",
+            "completion-menu.completion": "bg:#1e293b #cbd5e1",
+            "completion-menu.completion.current": "bg:#334155 #38bdf8 bold",
+            "completion-menu.meta": "bg:#0f172a #94a3b8",
+            "scrollbar.background": "bg:#1e293b",
+            "scrollbar.button": "bg:#475569",
         })
     return _STYLE
 
@@ -130,15 +154,60 @@ def _prompt_key_bindings():
 
 def _prompt_text(agent_label: str) -> "FormattedText":
     margin = " " * int(os.environ.get("SAFI_CLI_MARGIN", "2") or "2")
+    divider = _get_divider()
+    agent = agent_label or "software_engineer"
     return FormattedText([
-        ("", "\n" + margin),
-        ("class:safi-badge", " SAFi "),
-        ("class:safi-agent", f"[{agent_label or 'software_engineer'}] › "),
+        ("", "\n"),
+        ("class:safi-divider", divider + "\n"),
+        ("", margin),
+        ("class:safi-badge", "SAFi "),
+        ("class:safi-agent", f"[{agent}] "),
+        ("class:safi-arrow", "› "),
     ])
 
 
+def _bottom_divider_text() -> "FormattedText":
+    return FormattedText([
+        ("class:safi-divider", _get_divider()),
+    ])
+
+
+_bottom_toolbar = _bottom_divider_text
+
+
+class SafiPromptSession(_SessionBase):
+    """Prompt session that places the bottom border immediately below the input line."""
+
+    def _create_layout(self) -> "Layout":
+        layout = super()._create_layout()
+        bottom_divider_window = ConditionalContainer(
+            Window(
+                FormattedTextControl(_bottom_divider_text),
+                height=1,
+                dont_extend_height=True,
+            ),
+            filter=~is_done,
+        )
+        # Attach directly to the inner HSplit containing the prompt and input buffer,
+        # and prevent the default buffer window from stretching down the terminal.
+        for container in (
+            getattr(layout.container.children[0], "alternative_content", None),
+            getattr(layout.container.children[0], "content", None),
+        ):
+            if container is None:
+                continue
+            hsplit = getattr(container, "content", container)
+            if hasattr(hsplit, "children") and len(hsplit.children) > 1:
+                buf_win = getattr(hsplit.children[1], "content", hsplit.children[1])
+                if hasattr(buf_win, "dont_extend_height"):
+                    buf_win.dont_extend_height = to_filter(True)
+                hsplit.children.insert(2, bottom_divider_window)
+                break
+        return layout
+
+
 def _continuation(width: int, line_number: int, is_soft_wrap: bool) -> "FormattedText":
-    return FormattedText([("class:safi-cont", " " * max(0, width - 2) + "… ")])
+    return FormattedText([("", " " * width)])
 
 
 class _CallbackCompleter(_CompleterBase):
@@ -228,7 +297,7 @@ def _get_session(history_path: Optional[str]):
     if _SESSION is not None and _SESSION_HISTORY == history_path:
         return _SESSION
     history = _TrimmingHistory(history_path) if history_path else InMemoryHistory()
-    _SESSION = PromptSession(
+    _SESSION = SafiPromptSession(
         history=history,
         key_bindings=_prompt_key_bindings(),
         style=_prompt_style(),

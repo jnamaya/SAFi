@@ -147,6 +147,8 @@ def run_agent_turn(
     model: Optional[str] = None,
     auto_approve: bool = True,
     max_steps: int = DEFAULT_MAX_STEPS,
+    cancel_event: Optional[threading.Event] = None,
+    echo_prompt: bool = True,
 ):
     """Run an agentic loop until SAFi produces a final governed response."""
     global _last_turn_result
@@ -155,12 +157,16 @@ def run_agent_turn(
     recent_turns = ""
 
     ui.clear_active_todos()
-    ui.print_user_prompt(prompt, agent=agent, user_name=user_name)
+    if echo_prompt:
+        ui.print_user_prompt(prompt, agent=agent, user_name=user_name)
 
     resume_budget = 3
 
     try:
         for step in range(max_steps):
+            if cancel_event and cancel_event.is_set():
+                ui.console.print("\n[yellow]Turn cancelled by user.[/yellow]")
+                break
             turn_msg_id = str(uuid.uuid4())
             last_status_markup = ui.build_progress_line(None, None, 0.0, model=model)
             try:

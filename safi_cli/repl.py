@@ -672,6 +672,8 @@ def interactive_repl(
     _RICH_COMPLETION_ROOT = workspace_root
 
     current_conv = conversation_id
+    cancel_event = threading.Event()
+
     try:
         while True:
             agent_hist_file = str(config.get_agent_history_file(current_agent))
@@ -705,6 +707,14 @@ def interactive_repl(
             if line.lower() in ("exit", "quit", ":q", "/exit", "/quit"):
                 ui.console.print("[dim]Goodbye.[/dim]")
                 break
+
+            if line.lower() in ("/cancel", "/stop", "/abort"):
+                ui.console.print("[dim]No agent turn is currently running. Press Ctrl+C during a turn to interrupt.[/dim]")
+                continue
+
+            if line.lower() in ("/status", "/progress"):
+                ui.console.print("[dim]Agent is idle. Ready for next prompt.[/dim]")
+                continue
 
             if line.lower() in ("/", "/menu", "/commands", "menu"):
                 current_agent, current_conv, current_model, current_user_name, should_exit = prompt_command_menu(
@@ -974,18 +984,28 @@ def interactive_repl(
                     matched_skill = local_skills[skill_trigger]
                     rendered_prompt = matched_skill.render_prompt(skill_args)
                     ui.console.print(f"[bold {ui.COLOR_BRAND_400}]● Skill:[/] [bold white]{matched_skill.description}[/]")
-                    run_agent_turn(
-                        client=client,
-                        prompt=rendered_prompt,
-                        workspace_root=workspace_root,
-                        conversation_id=current_conv,
-                        user_id=user_id,
-                        agent=current_agent,
-                        user_name=current_user_name,
-                        model=current_model,
-                        auto_approve=auto_approve,
-                        max_steps=max_steps,
-                    )
+                    ui.print_user_prompt(rendered_prompt)
+                    try:
+                        run_agent_turn(
+                            client=client,
+                            prompt=rendered_prompt,
+                            workspace_root=workspace_root,
+                            conversation_id=current_conv,
+                            user_id=user_id,
+                            agent=current_agent,
+                            user_name=current_user_name,
+                            model=current_model,
+                            auto_approve=auto_approve,
+                            max_steps=max_steps,
+                            cancel_event=cancel_event,
+                            echo_prompt=False,
+                        )
+                    except KeyboardInterrupt:
+                        ui.clear_live_status_tail()
+                        ui.console.print("\n[bold yellow]↳ Interrupted.[/bold yellow]")
+                    except Exception as exc:
+                        logger.error("Skill execution error: %s", exc)
+                        ui.print_error(f"Error executing skill: {exc}")
                     continue
                 elif skill_trigger in ("skills", "list-skills"):
                     if local_skills:
@@ -1014,9 +1034,9 @@ def interactive_repl(
                 margin_len = ui.CLI_MARGIN if ui.CLI_MARGIN > 0 else 0
                 prompt_vis_len = margin_len + len(f" SAFi [{current_agent}] › ")
                 input_lines = line.splitlines() or [""]
-                lines_count = 0
+                lines_count = 1  # Account for top divider line
                 for idx_l, l_str in enumerate(input_lines):
-                    prefix_len = prompt_vis_len if idx_l == 0 else len("  … ")
+                    prefix_len = prompt_vis_len if idx_l == 0 else len("    ")
                     total_len = prefix_len + len(l_str)
                     lines_count += max(1, ((total_len - 1) // cols) + 1) if cols > 0 else 1
                 for _ in range(lines_count):
@@ -1026,18 +1046,30 @@ def interactive_repl(
             if is_serving_alias(config.resolve_intellect_model(current_agent)):
                 current_model = resolve_model_preference(client, current_agent, force_refresh=True)
 
-            run_agent_turn(
-                client=client,
-                prompt=line,
-                workspace_root=workspace_root,
-                conversation_id=current_conv,
-                user_id=user_id,
-                agent=current_agent,
-                user_name=current_user_name,
-                model=current_model,
-                auto_approve=auto_approve,
-                max_steps=max_steps,
-            )
+            ui.print_user_prompt(line)
+
+            try:
+                run_agent_turn(
+                    client=client,
+                    prompt=line,
+                    workspace_root=workspace_root,
+                    conversation_id=current_conv,
+                    user_id=user_id,
+                    agent=current_agent,
+                    user_name=current_user_name,
+                    model=current_model,
+                    auto_approve=auto_approve,
+                    max_steps=max_steps,
+                    cancel_event=cancel_event,
+                    echo_prompt=False,
+                )
+            except KeyboardInterrupt:
+                ui.clear_live_status_tail()
+                ui.console.print("\n[bold yellow]↳ Interrupted.[/bold yellow]")
+            except Exception as exc:
+                logger.error("Turn execution error: %s", exc)
+                ui.print_error(f"Error executing turn: {exc}")
+            continue
 
     finally:
         try:

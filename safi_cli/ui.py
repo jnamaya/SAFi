@@ -10,6 +10,7 @@ from datetime import datetime
 import difflib
 import os
 import re
+import shutil
 from collections import deque
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -142,8 +143,8 @@ def build_progress_line(
 
     step = (latest_step or "").rstrip(".…").strip()
     step_lower = step.lower()
-    if step_lower.startswith("drafting"):
-        label = f"Drafting response{f' with {model}' if model else ''}"
+    if step_lower.startswith(("drafting", "thinking")):
+        label = f"Thinking with {model}" if model else "Thinking"
     elif step:
         label = step
     elif codes:
@@ -321,31 +322,39 @@ def print_user_prompt(
     agent: Optional[str] = None,
     user_name: Optional[str] = None,
 ) -> None:
-    """Render the user's prompt or question with a distinct background band."""
+    """Render the user's prompt cleanly in the conversation history as '> <prompt>'."""
     if not prompt or not prompt.strip():
         return
-    agent_label = agent or "software_engineer"
-    table = Table.grid(expand=True)
-    table.style = f"on {COLOR_USER_BG}"
-    table.padding = (0, 1)
-
     row_text = Text()
-    row_text.append("SAFi ", style=f"bold {COLOR_BRAND_400}")
-    row_text.append(f"[{agent_label}] › ", style="white")
-    row_text.append(prompt.strip(), style=f"bold {COLOR_USER_ACCENT}")
+    lines = prompt.strip().splitlines()
+    for idx, l in enumerate(lines):
+        if idx == 0:
+            row_text.append("> ", style=f"bold {COLOR_BRAND_400}")
+        else:
+            row_text.append("  ", style="dim")
+        row_text.append(l, style=f"bold {COLOR_USER_ACCENT}")
+        if idx < len(lines) - 1:
+            row_text.append("\n")
 
-    table.add_row(row_text)
     console.print()
-    console.print(table)
+    try:
+        console.print(row_text, pad_margin=False)
+    except TypeError:
+        console.print(row_text)
+    console.print()
 
 
 def get_input_prompt(agent: Optional[str] = None, user_name: Optional[str] = None) -> str:
     """Format the interactive prompt with SAFi brand label, margin spacing, and distinct style."""
     agent_label = agent or "software_engineer"
     margin = " " * CLI_MARGIN if CLI_MARGIN > 0 else ""
+    cols = shutil.get_terminal_size((80, 24)).columns
+    divider = "─" * max(20, cols)
     return (
-        f"\n{margin}\001\033[48;2;30;41;59m\033[38;2;74;222;128m\033[1m\002 SAFi \001\033[0m"
-        f"\033[48;2;30;41;59m\033[38;2;255;255;255m\002[{agent_label}] › \001\033[0m\033[38;2;56;189;248m\033[1m\002 "
+        f"\n\001\033[38;2;51;65;85m\002{divider}\001\033[0m\n"
+        f"{margin}\001\033[38;2;74;222;128m\033[1m\002SAFi \001\033[0m"
+        f"\033[38;2;148;163;184m\002[{agent_label}] \001\033[0m"
+        f"\033[38;2;56;189;248m\033[1m\002› \001\033[0m\033[38;2;248;250;252m\002"
     )
 
 

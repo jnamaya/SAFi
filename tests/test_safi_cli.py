@@ -1484,9 +1484,9 @@ class TestSafiUiEnhancements(unittest.TestCase):
         self.assertIn("Analyzing the request", line)
         self.assertIn("4.2s", line)
 
-        # Drafting override respects model
+        # Thinking override respects model
         line = build_progress_line(None, "Drafting response", 1.5, model="gpt-4o")
-        self.assertIn("Drafting response with gpt-4o", line)
+        self.assertIn("Thinking with gpt-4o", line)
 
         # No data yet falls back to a sensible label
         line = build_progress_line(None, None, 0.0)
