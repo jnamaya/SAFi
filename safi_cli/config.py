@@ -20,6 +20,24 @@ CONFIG_DIR = Path.home() / ".config" / "safi"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 SESSIONS_FILE = CONFIG_DIR / "sessions.json"
 HISTORY_FILE = CONFIG_DIR / "history"
+INVENTORY_FILE = CONFIG_DIR / "inventory.json"
+
+
+def load_inventory() -> Dict[str, Any]:
+    """Load managed infrastructure hosts from ~/.config/safi/inventory.json."""
+    if not INVENTORY_FILE.exists():
+        return {}
+    try:
+        with open(INVENTORY_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def get_inventory_targets() -> list[str]:
+    """Return list of host alias names defined in the SAFi inventory."""
+    return list(load_inventory().keys())
 
 
 def get_agent_history_file(agent: Optional[str] = None) -> Path:

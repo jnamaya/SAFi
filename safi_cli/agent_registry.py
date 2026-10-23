@@ -444,6 +444,7 @@ COMMAND_OPTIONS = [
     ("last", "Last Tool Output", "Page through the full output of the most recent tool result"),
     ("compact-ui", "Toggle Audit Line", "Hide or show the compact governance audit line on responses"),
     ("sessions", "Manage Sessions", "List, name, or resume stored conversation sessions"),
+    ("setup-key", "Deploy SSH Key", "Deploy SSH public key to Linux or Windows target server"),
 ]
 
 

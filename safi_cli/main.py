@@ -13,7 +13,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from . import config, prompt_input, tools, ui
+from . import config, prompt_input, ssh_keys, tools, ui
 from .client import SafiClient, SafiClientError
 
 # Backwards-compatible re-exports (tests and callers import via safi_cli.main)
@@ -53,6 +53,11 @@ logger = logging.getLogger("safi.main")
 
 
 def main():
+    # Direct command shortcuts: safi setup-key [target], safi push-key [target], safi ssh-key [target]
+    if len(sys.argv) > 1 and sys.argv[1] in ("setup-key", "push-key", "ssh-key"):
+        code = ssh_keys.run_setup_key(sys.argv[2:]) if len(sys.argv) > 2 else (ssh_keys.interactive_setup_key() or 0)
+        sys.exit(code if isinstance(code, int) else 0)
+
     parser = argparse.ArgumentParser(
         prog="safi",
         description="SAFi (The Self-alignment Framework Interface) — The governance engine for AI agents.",
@@ -99,8 +104,23 @@ def main():
     )
     parser.add_argument("--user-name", help="Display name of the user for the agent to address.")
     parser.add_argument("--set-user", help="Save the default user display name to ~/.config/safi/config.json and exit.")
+    parser.add_argument(
+        "--setup-key",
+        "--push-key",
+        dest="setup_key",
+        nargs="*",
+        help="Deploy local SSH public key to Linux or Windows inventory host or user@host.",
+    )
 
     args = parser.parse_args()
+
+    if args.setup_key is not None:
+        if args.setup_key:
+            code = ssh_keys.run_setup_key(args.setup_key)
+        else:
+            ssh_keys.interactive_setup_key()
+            code = 0
+        sys.exit(code if isinstance(code, int) else 0)
 
     if args.set_user:
         config.save_user_name(args.set_user.strip())

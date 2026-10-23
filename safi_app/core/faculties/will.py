@@ -199,8 +199,10 @@ class WillGate:
           R3: external side effect (network send, external mutations)
           R4: privileged or forbidden operation (credentials access, sudo, chmod, uncontained disk wipe)
         """
-        lowered = tool_name.lower().strip()
-        params_str = json.dumps(parameters or {}, default=str).lower()
+        import shlex
+
+        lowered = (tool_name or "").lower().strip()
+        params = parameters if isinstance(parameters, dict) else {}
 
         # Check if this profile authorizes sysadmin commands (e.g. remote sudo, system inspection)
         allow_sysadmin = False
@@ -213,19 +215,73 @@ class WillGate:
             if "systems_admin" in pol_id or "sysadmin" in key:
                 allow_sysadmin = True
 
-        forbidden_indicators = [
-            "/etc/shadow", ".ssh/id_", "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa",
-            "rm -rf /", "chmod 777", "curl | bash", "wget | bash"
+        # Sensitive paths that should never be targeted
+        strictly_forbidden_paths = [
+            "/etc/shadow", ".ssh/id_", "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa"
         ]
         if not allow_sysadmin:
-            forbidden_indicators.extend([
-                "sudo ", "/etc/passwd", "ssh ", "scp ", "sftp ",
-                ".ssh", ".config/safi", "inventory.json", "secrets.json",
-                ".gnupg", ".aws"
+            strictly_forbidden_paths.extend([
+                "/etc/passwd", ".gnupg", ".aws/credentials", "secrets.json"
             ])
 
-        if any(ind in params_str for ind in forbidden_indicators):
-            return "R4", "Privileged or forbidden system command/path"
+        # 1. File path tools (write, edit, patch, read, view, delete, etc.)
+        if lowered in ("write", "edit", "patch", "read", "view", "show", "cat", "delete", "remove", "rm", "unlink"):
+            target_path = str(params.get("path") or params.get("file_path") or params.get("target_path") or "").lower()
+            if any(p in target_path for p in strictly_forbidden_paths):
+                return "R4", "Privileged or forbidden system command/path"
+            if not allow_sysadmin and any(p in target_path for p in (".ssh", ".config/safi")):
+                return "R4", "Privileged or forbidden system command/path"
+
+        # 2. Shell execution tools (bash, sh, exec, terminal, command)
+        elif lowered in ("bash", "sh", "exec", "terminal", "command"):
+            cmd = str(params.get("command") or params.get("cmd") or "").strip()
+            cmd_lower = cmd.lower()
+
+            # Forbidden destructive payloads
+            if any(f in cmd_lower for f in ("rm -rf /", "mkfs", "dd if=", ":(){ :|:& };:")):
+                return "R4", "Forbidden destructive shell payload"
+            if "chmod 777" in cmd_lower or "curl | bash" in cmd_lower or "wget | bash" in cmd_lower:
+                return "R4", "Privileged or forbidden system command/path"
+
+            # Parse pipeline segments to identify actual executed commands
+            segments = re.split(r'(?:\s*(?:&&|\|\||[;\n|])\s*)', cmd)
+            for seg in segments:
+                seg_clean = seg.strip()
+                if not seg_clean:
+                    continue
+
+                try:
+                    tokens = shlex.split(seg_clean)
+                except Exception:
+                    tokens = seg_clean.split()
+
+                if not tokens:
+                    continue
+
+                first_token = tokens[0].lower().split("/")[-1]
+
+                # Check privileged executables
+                if not allow_sysadmin:
+                    if first_token in ("sudo", "su", "ssh", "scp", "sftp"):
+                        return "R4", "Privileged or forbidden system command/path"
+
+                # If invoking git commit/tag/notes, the string arguments (-m) are commit messages, not paths
+                if first_token == "git" and len(tokens) > 1 and tokens[1].lower() in ("commit", "tag", "notes"):
+                    continue
+
+                # Inspect command arguments for forbidden path targets
+                for tok in tokens[1:]:
+                    tok_lower = tok.lower()
+                    if any(p in tok_lower for p in strictly_forbidden_paths):
+                        return "R4", "Privileged or forbidden system command/path"
+                    if not allow_sysadmin and any(p in tok_lower for p in ("/etc/shadow", "/etc/passwd")):
+                        return "R4", "Privileged or forbidden system command/path"
+
+        # 3. Fallback check for any other tool parameters
+        else:
+            params_str = json.dumps(params, default=str).lower()
+            if any(p in params_str for p in strictly_forbidden_paths):
+                return "R4", "Privileged or forbidden system command/path"
 
         if lowered in ("delete", "remove", "drop", "wipe", "rm", "unlink") or \
            any(action in lowered for action in ("drop_table", "truncate_table", "delete_file")):
@@ -245,11 +301,11 @@ class WillGate:
         # Default bash inspection
         if lowered in ("bash", "sh", "exec", "terminal", "command"):
             cmd = str(parameters.get("command") or parameters.get("cmd") or "").strip().lower()
-            if any(f in cmd for f in ("rm -rf", "mkfs", "dd if=", ":(){ :|:& };:")):
+            if any(f in cmd for f in ("rm -rf /", "mkfs", "dd if=", ":(){ :|:& };:")):
                 return "R4", "Forbidden destructive shell payload"
-            if any(w in cmd for w in ("rm ", "unlink ", "truncate ", ">")):
+            if re.search(r"\b(rm|unlink|truncate)\b", cmd) or ">" in cmd:
                 return "R2", "Destructive shell command"
-            if any(w in cmd for w in ("cat", "grep", "ls", "echo", "pwd", "git status", "git log", "git diff", "find")):
+            if re.search(r"\b(cat|grep|ls|echo|pwd|git\s+status|git\s+log|git\s+diff|find)\b", cmd) and not re.search(r"\b(git\s+commit|git\s+push|git\s+pull|npm|pip|cargo|make)\b", cmd):
                 return "R0", "Read-only shell command"
             return "R1", "Shell execution"
 

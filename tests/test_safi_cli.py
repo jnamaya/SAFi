@@ -1,5 +1,6 @@
 """Unit tests for the native SAFi CLI local tools and configuration."""
 
+import json
 import os
 import subprocess
 import sys
@@ -2055,3 +2056,57 @@ class TestPromptUserPermission(unittest.TestCase):
         self.ui._APPROVAL_STATE["approve_all"] = True
         self.ui.reset_approve_all()
         self.assertFalse(self.ui.approve_all_enabled())
+
+
+class TestSshKeyManagement(unittest.TestCase):
+    def test_load_inventory_and_targets(self):
+        from safi_cli import config
+        with tempfile.TemporaryDirectory() as tmpdir:
+            inv_file = Path(tmpdir) / "inventory.json"
+            inv_file.write_text(json.dumps({
+                "test-vm": {"host": "192.168.1.50", "user": "admin", "port": 22},
+                "test-win": {"host": "192.168.1.60", "user": "Administrator", "os": "windows"}
+            }))
+            with patch.object(config, "INVENTORY_FILE", inv_file):
+                inv = config.load_inventory()
+                self.assertIn("test-vm", inv)
+                self.assertIn("test-win", inv)
+                targets = config.get_inventory_targets()
+                self.assertEqual(targets, ["test-vm", "test-win"])
+
+    def test_find_setup_script(self):
+        from safi_cli import ssh_keys
+        script = ssh_keys.find_setup_script()
+        self.assertIsNotNone(script)
+        self.assertTrue(script.is_file())
+
+    def test_run_setup_key_calls_subprocess(self):
+        from safi_cli import ssh_keys
+        with patch.object(ssh_keys, "ensure_local_ssh_key", return_value="ssh-ed25519 AAAA test-key"), \
+             patch("subprocess.run") as mock_run, \
+             patch("subprocess.call", return_value=0) as mock_call:
+            # First run: check existing (returns 1 = not configured)
+            # Second run: verify (returns 0 = success)
+            mock_run.side_effect = [
+                mock.MagicMock(returncode=1),
+                mock.MagicMock(returncode=0),
+            ]
+            ret = ssh_keys.run_setup_key(["local-VM"])
+            self.assertEqual(ret, 0)
+            mock_call.assert_called_once()
+
+    def test_setup_key_completions(self):
+        from safi_cli.repl import _compute_completions
+        from safi_cli import config
+        with tempfile.TemporaryDirectory() as tmpdir:
+            inv_file = Path(tmpdir) / "inventory.json"
+            inv_file.write_text(json.dumps({
+                "local-VM": {"host": "192.168.1.218"},
+                "win-server": {"host": "192.168.1.224"}
+            }))
+            with patch.object(config, "INVENTORY_FILE", inv_file):
+                matches = _compute_completions("/setup-key loc", "loc")
+                self.assertIn("local-VM", matches)
+                matches_win = _compute_completions("/ssh-key win", "win")
+                self.assertIn("win-server", matches_win)
+

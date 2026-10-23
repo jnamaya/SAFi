@@ -32,6 +32,10 @@ if [ -d "${REPO_DIR}/safi_cli" ]; then
     echo "Installing safi_cli from local tree..."
     rm -rf "${INSTALL_DIR}/safi_cli"
     cp -r "${REPO_DIR}/safi_cli" "${INSTALL_DIR}/"
+    if [ -f "${REPO_DIR}/scripts/setup_ssh_key.sh" ]; then
+        cp "${REPO_DIR}/scripts/setup_ssh_key.sh" "${INSTALL_DIR}/setup_ssh_key.sh"
+        chmod +x "${INSTALL_DIR}/setup_ssh_key.sh"
+    fi
 else
     SAFI_BRANCH="${SAFI_BRANCH:-dev}"
     echo "Downloading safi_cli package from repository (${SAFI_BRANCH} branch)..."
@@ -39,6 +43,10 @@ else
     TMP_DIR=$(mktemp -d)
     git clone --depth 1 --branch "${SAFI_BRANCH}" https://github.com/jnamaya/SAFi.git "${TMP_DIR}/safi-repo"
     cp -r "${TMP_DIR}/safi-repo/safi_cli" "${INSTALL_DIR}/"
+    if [ -f "${TMP_DIR}/safi-repo/scripts/setup_ssh_key.sh" ]; then
+        cp "${TMP_DIR}/safi-repo/scripts/setup_ssh_key.sh" "${INSTALL_DIR}/setup_ssh_key.sh"
+        chmod +x "${INSTALL_DIR}/setup_ssh_key.sh"
+    fi
     rm -rf "${TMP_DIR}"
 fi
 
@@ -60,7 +68,7 @@ if [ ${#PKGS[@]} -gt 0 ]; then
     if command -v apt-get &>/dev/null && [ "$(id -u)" -eq 0 ]; then
         apt-get update -qq && apt-get install -y -qq "${PKGS[@]}" || true
     elif command -v apt-get &>/dev/null && command -v sudo &>/dev/null; then
-        sudo apt-get update -qq && sudo apt-get install -y -qq "${PKGS[@]}" || true
+        sudo -n apt-get update -qq && sudo -n apt-get install -y -qq "${PKGS[@]}" 2>/dev/null || true
     fi
 fi
 
@@ -148,6 +156,9 @@ shift
 CMD="$*"
 
 TARGET_CONFIG=$(jq -r --arg t "$TARGET" '.[$t] // empty' "$INVENTORY_FILE")
+if [ -z "$TARGET_CONFIG" ]; then
+    TARGET_CONFIG=$(jq -r --arg t "${TARGET,,}" 'to_entries[] | select(.key | ascii_downcase == $t) | .value' "$INVENTORY_FILE" 2>/dev/null || true)
+fi
 if [ -z "$TARGET_CONFIG" ]; then
     echo "Error: Unknown host alias '$TARGET'. Available hosts:" >&2
     jq -r 'keys[] | "  - \(.)"' "$INVENTORY_FILE" >&2
@@ -365,13 +376,33 @@ fi
 EOF
 chmod +x "${BIN_DIR}/sys-exec"
 
-# 7. Make safi and sys-exec universally available in system PATH
+# 6b. Install safi-setup-key runner
+echo "Writing safi-setup-key runner to ${BIN_DIR}/safi-setup-key..."
+if [ -f "${INSTALL_DIR}/setup_ssh_key.sh" ]; then
+    cp "${INSTALL_DIR}/setup_ssh_key.sh" "${BIN_DIR}/safi-setup-key"
+    chmod +x "${BIN_DIR}/safi-setup-key"
+elif [ -f "${REPO_DIR}/scripts/setup_ssh_key.sh" ]; then
+    cp "${REPO_DIR}/scripts/setup_ssh_key.sh" "${INSTALL_DIR}/setup_ssh_key.sh"
+    cp "${REPO_DIR}/scripts/setup_ssh_key.sh" "${BIN_DIR}/safi-setup-key"
+    chmod +x "${INSTALL_DIR}/setup_ssh_key.sh" "${BIN_DIR}/safi-setup-key"
+else
+    cat << EOF > "${BIN_DIR}/safi-setup-key"
+#!/usr/bin/env bash
+export PYTHONPATH="${INSTALL_DIR}:\${PYTHONPATH}"
+exec "${TARGET_PYTHON}" -m safi_cli.ssh_keys "\$@"
+EOF
+    chmod +x "${BIN_DIR}/safi-setup-key"
+fi
+
+# 7. Make safi, sys-exec, and safi-setup-key universally available in system PATH
 if [ -w "/usr/local/bin" ]; then
     ln -sf "${BIN_DIR}/safi" /usr/local/bin/safi 2>/dev/null || true
     ln -sf "${BIN_DIR}/sys-exec" /usr/local/bin/sys-exec 2>/dev/null || true
+    ln -sf "${BIN_DIR}/safi-setup-key" /usr/local/bin/safi-setup-key 2>/dev/null || true
 elif command -v sudo &>/dev/null; then
-    sudo ln -sf "${BIN_DIR}/safi" /usr/local/bin/safi 2>/dev/null || true
-    sudo ln -sf "${BIN_DIR}/sys-exec" /usr/local/bin/sys-exec 2>/dev/null || true
+    sudo -n ln -sf "${BIN_DIR}/safi" /usr/local/bin/safi 2>/dev/null || true
+    sudo -n ln -sf "${BIN_DIR}/sys-exec" /usr/local/bin/sys-exec 2>/dev/null || true
+    sudo -n ln -sf "${BIN_DIR}/safi-setup-key" /usr/local/bin/safi-setup-key 2>/dev/null || true
 fi
 
 # Fallback: persist ~/.local/bin in user shell profiles
@@ -402,8 +433,13 @@ EOF
 wsl.exe -e sys-exec %*
 exit /b %ERRORLEVEL%
 EOF
-            chmod +x "${WIN_APPS_DIR}/safi.cmd" "${WIN_APPS_DIR}/sys-exec.cmd" 2>/dev/null || true
-            echo "✓ Created Windows bridge in ${WIN_APPS_RAW} (safi.cmd & sys-exec.cmd)"
+            cat << 'EOF' > "${WIN_APPS_DIR}/safi-setup-key.cmd"
+@echo off
+wsl.exe -e safi-setup-key %*
+exit /b %ERRORLEVEL%
+EOF
+            chmod +x "${WIN_APPS_DIR}/safi.cmd" "${WIN_APPS_DIR}/sys-exec.cmd" "${WIN_APPS_DIR}/safi-setup-key.cmd" 2>/dev/null || true
+            echo "✓ Created Windows bridge in ${WIN_APPS_RAW} (safi.cmd, sys-exec.cmd, safi-setup-key.cmd)"
         fi
     fi
 
@@ -420,6 +456,11 @@ EOF
             cat << 'EOF' > "${WIN_PROFILE_DIR}/.local/bin/sys-exec.cmd"
 @echo off
 wsl.exe -e sys-exec %*
+exit /b %ERRORLEVEL%
+EOF
+            cat << 'EOF' > "${WIN_PROFILE_DIR}/.local/bin/safi-setup-key.cmd"
+@echo off
+wsl.exe -e safi-setup-key %*
 exit /b %ERRORLEVEL%
 EOF
             if command -v powershell.exe &>/dev/null; then

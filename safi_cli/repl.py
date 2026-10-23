@@ -127,6 +127,7 @@ def print_help():
         ("/clear [screen]", "Clear screen & reset session memory (or /clear screen for visual only)"),
         ("/reset", "Reset session and flush agent working memory"),
         ("/config", "View backend URL, active model, and Policy API key status"),
+        ("/setup-key [target]", "Deploy SSH key to Linux or Windows server from inventory"),
         ("/help", "Show this help menu"),
         ("exit, quit, :q", "Exit SAFi CLI"),
     ]
@@ -444,6 +445,11 @@ def prompt_command_menu(
         new_conv = prompt_resume_session(current_conv, workspace_root)
         return current_agent, new_conv, current_model, current_user_name, False
 
+    elif choice_clean in ("setup-key", "push-key", "ssh-key"):
+        from . import ssh_keys
+        ssh_keys.interactive_setup_key()
+        return current_agent, current_conv, current_model, current_user_name, False
+
     elif choice_clean in ("help", "?"):
         print_help()
         return current_agent, current_conv, current_model, current_user_name, False
@@ -478,6 +484,8 @@ SLASH_COMMANDS = [
     "/last",
     "/compact-ui",
     "/sessions",
+    "/setup-key",
+    "/ssh-key",
     "/help",
     "/exit",
     "/quit",
@@ -511,6 +519,12 @@ def _compute_completions(
             return exact + sub
 
         cmd = tokens[0].lower() if tokens else ""
+
+        if cmd in ("/setup-key", "/ssh-key", "/push-key"):
+            targets = config.get_inventory_targets()
+            exact = [t for t in targets if t.startswith(text)]
+            sub = [t for t in targets if text.lower() in t.lower() and t not in exact]
+            return exact + sub
 
         if cmd in ("/agent", "/agents", "/switch"):
             agent_keys = list(AVAILABLE_AGENTS.keys())
@@ -759,6 +773,13 @@ def interactive_repl(
 
             if line.lower() in ("/config", "/keys"):
                 show_config(client, workspace_root, current_agent, current_conv, current_model=current_model)
+                continue
+
+            if line.lower().startswith(("/setup-key", "/ssh-key", "/push-key")):
+                parts = line.split(maxsplit=1)
+                sub_target = parts[1].strip() if len(parts) > 1 else ""
+                from . import ssh_keys
+                ssh_keys.interactive_setup_key(target_arg=sub_target or None)
                 continue
 
             if line.lower() in ("/audit", "/ledger"):
