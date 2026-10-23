@@ -650,6 +650,7 @@ def interactive_repl(
     current_agent = agent
     current_user_name = user_name
     current_model = resolve_model_preference(client, current_agent, model)
+    current_effort = config.resolve_reasoning_effort()
     ui.print_banner(
         str(workspace_root),
         current_agent,
@@ -902,6 +903,27 @@ def interactive_repl(
                     )
                 continue
 
+            if line.lower().startswith("/reasoning") or line.lower().startswith("/thinking"):
+                parts = line.split(maxsplit=1)
+                req = parts[1].strip().lower() if len(parts) > 1 else ""
+                if req in config.REASONING_LEVELS:
+                    current_effort = req
+                    config.save_reasoning_effort(req)
+                    ui.console.print(f"[bold {ui.COLOR_PASS}]✓ Reasoning level set to:[/] [magenta]{req}[/] [dim](saved as default)[/]")
+                elif req in ("off", "none", "default", "auto", ""):
+                    current_effort = ""
+                    if req:
+                        config.save_reasoning_effort("")
+                    label = current_effort or "default (provider decides)"
+                    ui.console.print(f"[bold]Reasoning level:[/] [magenta]{current_effort or 'default (provider decides)'}[/]")
+                else:
+                    ui.console.print(
+                        f"[bold]Reasoning level:[/] [magenta]{current_effort or 'default (provider decides)'}[/]\n"
+                        f"[dim]Usage: /reasoning <low|medium|high|off> — controls thinking/reasoning "
+                        f"effort for reasoning-capable models (e.g. gpt-5, o-series, Claude).[/]"
+                    )
+                continue
+
             if line.lower() in ("/usage", "/totals"):
                 ui.console.print()
                 ui.console.print(ui.build_session_usage_panel())
@@ -1005,6 +1027,7 @@ def interactive_repl(
                             max_steps=max_steps,
                             cancel_event=cancel_event,
                             echo_prompt=False,
+                            reasoning_effort=current_effort,
                         )
                     except KeyboardInterrupt:
                         ui.clear_live_status_tail()
@@ -1068,6 +1091,7 @@ def interactive_repl(
                     max_steps=max_steps,
                     cancel_event=cancel_event,
                     echo_prompt=False,
+                    reasoning_effort=current_effort,
                 )
             except KeyboardInterrupt:
                 ui.clear_live_status_tail()

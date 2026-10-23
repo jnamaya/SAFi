@@ -149,6 +149,7 @@ def run_agent_turn(
     max_steps: int = DEFAULT_MAX_STEPS,
     cancel_event: Optional[threading.Event] = None,
     echo_prompt: bool = True,
+    reasoning_effort: Optional[str] = None,
 ):
     """Run an agentic loop until SAFi produces a final governed response."""
     global _last_turn_result
@@ -237,6 +238,7 @@ def run_agent_turn(
                             tool_results=tool_results,
                             recent_turns=recent_turns,
                             message_id=turn_msg_id,
+                            reasoning_effort=reasoning_effort,
                         )
                     finally:
                         stop_poller.set()
@@ -371,6 +373,7 @@ def run_agent_turn(
                     recent_turns=recent_turns,
                     message_id=str(uuid.uuid4()),
                     tools=[],
+                    reasoning_effort=reasoning_effort,
                 )
             except SafiClientError as err:
                 ui.print_error(str(err))

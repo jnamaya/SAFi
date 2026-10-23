@@ -426,6 +426,7 @@ COMMAND_OPTIONS = [
     ("exit", "Exit CLI", "Exit SAFi interactive assistant"),
     ("audit", "Governance Audit", "View full governance audit ledger and rationales for the last turn"),
     ("models", "Select Model", "Select the AI model powering the agent"),
+    ("reasoning", "Reasoning Level", "Set thinking effort: /reasoning <low|medium|high|off>"),
     ("memory", "Working Memory", "View active memory or compact tokens (/memory compress)"),
     ("skills", "Project Skills", "List custom project skills defined in .safi/skills/"),
     ("user", "User Profile", "View or set your display name"),

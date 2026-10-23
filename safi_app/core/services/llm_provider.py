@@ -120,6 +120,20 @@ class ProviderRequestError(RuntimeError):
 # profile, so an attribute would let one request read another's flag.
 _TRUNCATED: ContextVar[bool] = ContextVar("safi_generation_truncated", default=False)
 
+# Per-request reasoning effort override ("low" | "medium" | "high"), set by the
+# API layer from the client's /reasoning selection. Empty string = no override,
+# so each provider keeps its tuned defaults (documented in the branches below).
+_REASONING_EFFORT: ContextVar[str] = ContextVar("safi_reasoning_effort", default="")
+
+
+def set_reasoning_effort(level: str) -> None:
+    """Set the per-request reasoning-effort override ("" clears it)."""
+    _REASONING_EFFORT.set((level or "").strip().lower())
+
+
+def current_reasoning_effort() -> str:
+    return _REASONING_EFFORT.get()
+
 
 # Appended to an answer the provider cut short. Added to the DRAFT, before the
 # Will and the Conscience see it, so the governance record shows the answer was
@@ -733,6 +747,12 @@ class LLMProvider:
                     # rather than a parameter change. Only sent when tools are
                     # present, so ordinary turns keep the model's reasoning.
                     params["reasoning_effort"] = "none"
+            elif _REASONING_EFFORT.get():
+                # User-selected reasoning level (low/medium/high) from the CLI
+                # /reasoning command. Only honored for reasoning-capable OpenAI
+                # lines (o-series + flagship gpt); other OpenAI-compatible
+                # providers reject the parameter.
+                params["reasoning_effort"] = _REASONING_EFFORT.get()
             else:
                  params["max_tokens"] = max_tokens
                  if (
@@ -823,7 +843,9 @@ class LLMProvider:
             # Control Anthropic thinking/reasoning effort.
             # Default to turning thinking off so models (especially Haiku) respond immediately (2-7s)
             # instead of burning thousands of hidden reasoning tokens and truncating.
-            thinking_env = os.environ.get("SAFI_ANTHROPIC_THINKING", "disabled").lower()
+            # A user-selected level (CLI /reasoning) overrides the env default.
+            effort_override = _REASONING_EFFORT.get()
+            thinking_env = effort_override or os.environ.get("SAFI_ANTHROPIC_THINKING", "disabled").lower()
             if thinking_env == "disabled":
                 # Model-specific thinking deactivation based on Anthropic API requirements:
                 # - haiku supports {"type": "disabled"}
@@ -836,9 +858,12 @@ class LLMProvider:
                     kwargs["output_config"] = {"effort": "low"}
                 else:
                     kwargs["thinking"] = {"type": "disabled"}
-            elif thinking_env == "low":
+            elif thinking_env in ("low", "medium", "high"):
+                # Map the user-facing reasoning level onto Anthropic's
+                # adaptive thinking + effort controls. "high" lets the model
+                # reason at full depth (most hidden tokens, slowest).
                 kwargs["thinking"] = {"type": "adaptive"}
-                kwargs["output_config"] = {"effort": "low"}
+                kwargs["output_config"] = {"effort": thinking_env}
 
             try:
                 resp = await asyncio.to_thread(client.messages.create, **kwargs)

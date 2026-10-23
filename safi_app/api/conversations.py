@@ -1829,18 +1829,29 @@ async def agentic_process_prompt_endpoint():
         from ..core.services.usage_tracking import begin_request_usage
         begin_request_usage()
         effective_user_name = user_name or (user_details.get("name") if user_details else None) or "User"
-        result = await saf_system.process_prompt(
-            user_prompt,
-            user_id,
-            conversation_id,
-            user_name=effective_user_name,
-            override_message_id=message_id,
-            org_id=org_id,
-            client_owned_tools=tools,
-            client_tool_results=tool_results,
-            client_recent_turns=recent_turns,
-            client_workspace_context=workspace_context,
-        )
+
+        # Per-request reasoning-effort override (CLI /reasoning): "low" |
+        # "medium" | "high" honored by reasoning-capable models; anything
+        # else falls back to each provider's tuned default. Scoped to this
+        # request and always cleared so it cannot leak into background tasks.
+        raw_effort = (data.get("reasoning_effort") or data.get("thinking") or "").strip().lower()
+        from ..core.services import llm_provider as _llm_provider
+        _llm_provider.set_reasoning_effort(raw_effort if raw_effort in ("low", "medium", "high") else "")
+        try:
+            result = await saf_system.process_prompt(
+                user_prompt,
+                user_id,
+                conversation_id,
+                user_name=effective_user_name,
+                override_message_id=message_id,
+                org_id=org_id,
+                client_owned_tools=tools,
+                client_tool_results=tool_results,
+                client_recent_turns=recent_turns,
+                client_workspace_context=workspace_context,
+            )
+        finally:
+            _llm_provider.set_reasoning_effort("")
         saf_profile = getattr(saf_system, "profile", {}) or {}
         if not result.get("policyName"):
             result["policyName"] = saf_profile.get("policy_name")

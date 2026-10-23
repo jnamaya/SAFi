@@ -441,6 +441,27 @@ def resolve_intellect_model(agent: Optional[str] = None, explicit_model: Optiona
     return None
 
 
+REASONING_LEVELS = ("low", "medium", "high")
+
+
+def resolve_reasoning_effort(explicit: Optional[str] = None) -> str:
+    """Resolve the preferred reasoning/thinking level ('' = provider default)."""
+    candidate = (explicit or os.environ.get("SAFI_REASONING_EFFORT") or "").strip().lower()
+    if candidate in REASONING_LEVELS:
+        return candidate
+    cfg = load_config()
+    saved = str(cfg.get("reasoning_effort") or "").strip().lower()
+    return saved if saved in REASONING_LEVELS else ""
+
+
+def save_reasoning_effort(level: str) -> None:
+    """Persist the default reasoning level; '' clears it (provider default)."""
+    clean = (level or "").strip().lower()
+    if clean and clean not in REASONING_LEVELS:
+        raise ValueError(f"Reasoning level must be one of {REASONING_LEVELS}")
+    save_config({"reasoning_effort": clean})
+
+
 def save_intellect_model(model: str, agent: Optional[str] = None) -> None:
     """Save default AI model preference."""
     ensure_config_dir()

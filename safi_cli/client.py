@@ -160,6 +160,7 @@ class SafiClient:
         recent_turns: str = "",
         message_id: Optional[str] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
+        reasoning_effort: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Dispatch a single turn to SAFi's governed pipeline."""
         headers = {
@@ -206,6 +207,8 @@ class SafiClient:
             payload["user_name"] = user_name
         if message_id:
             payload["message_id"] = message_id
+        if reasoning_effort and reasoning_effort.strip():
+            payload["reasoning_effort"] = reasoning_effort.strip().lower()
 
         try:
             resp = self.session.post(
