@@ -27,35 +27,55 @@ from __future__ import annotations
 # Consumed by the per-org provider allow-list (provider_governance.py), the
 # /models endpoint, and the org-settings UI badges. Keys MUST match
 # build_providers_config below.
+#
+# tier (backlog: core/extended curation):
+#   core     — OpenAI, Anthropic, Google Gemini, Local. Recommended and
+#              documented defaults; every SAFi release is tested against the
+#              latest models of these families before shipping.
+#   extended — everything else. Supported via OpenAI-compatible passthrough
+#              and org allow-list opt-in, but not part of the tested core.
+#              The tier is backend-only metadata (not serialized to the UI)
+#              and is NOT an enforcement mechanism — the org allow-list in
+#              provider_governance.py remains the security boundary.
 PROVIDER_METADATA = {
     "local":     {"label": "Local model (this appliance)", "baa_capable": False, "eu_hostable": False,
+                   "tier": "core",
                    "zdr": "default",
                    "zdr_note": "Runs locally on this appliance; prompts are not sent to a third-party model provider."},
     "openai":    {"label": "OpenAI",        "baa_capable": True,  "eu_hostable": True,
+                  "tier": "core",
                   "zdr": "available",
                   "zdr_note": "Abuse-monitoring logs up to 30 days by default; zero data retention requires OpenAI approval."},
     "anthropic": {"label": "Anthropic",     "baa_capable": True,  "eu_hostable": True,
+                  "tier": "core",
                   "zdr": "available",
                   "zdr_note": "Deletion within 30 days by default; per-org zero-data-retention agreement via sales (some models/features excluded)."},
     "gemini":    {"label": "Google Gemini", "baa_capable": True,  "eu_hostable": True,
+                  "tier": "core",
                   "zdr": "available",
                   "zdr_note": "No at-rest storage; 24h in-memory cache can be disabled per project; abuse-logging exception on request."},
     "mistral":   {"label": "Mistral",       "baa_capable": True,  "eu_hostable": True,
+                  "tier": "extended",
                   "zdr": "available",
                   "zdr_note": "30-day abuse-monitoring retention by default; zero data retention on request (paid tier)."},
     "groq":      {"label": "Groq",          "baa_capable": False, "eu_hostable": False,
+                  "tier": "extended",
                   "zdr": "default",
                   "zdr_note": "Inference requests not retained by default; self-serve ZDR control removes the troubleshooting exception."},
     "cerebras":  {"label": "Cerebras",      "baa_capable": False, "eu_hostable": False,
+                  "tier": "extended",
                   "zdr": "default",
                   "zdr_note": "States prompts, requests, and outputs are processed and discarded — no retention."},
     "deepseek":  {"label": "DeepSeek",      "baa_capable": False, "eu_hostable": False,
+                  "tier": "extended",
                   "zdr": False,
                   "zdr_note": "Data stored in China, retained indefinitely, used for training; no ZDR option."},
     "zhipu":     {"label": "Zhipu (Z.ai)",  "baa_capable": False, "eu_hostable": False,
+                   "tier": "extended",
                    "zdr": False,
                    "zdr_note": "Policy claims real-time processing without storage, but no contractual ZDR program or training-use statement."},
     "typesafe":  {"label": "TypeSafe Jev", "baa_capable": False, "eu_hostable": False,
+                   "tier": "extended",
                    "zdr": "available",
                    "zdr_note": "TypeSafe says API inputs are not used for training; standard retention applies, with enterprise zero-data-retention available."},
 }
