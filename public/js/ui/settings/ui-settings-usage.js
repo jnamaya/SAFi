@@ -14,9 +14,14 @@ import { escapeHtml } from '../../core/utils.js';
  * which is why the tab is named for both rather than for cost alone.
  */
 
-// Longest-substring match against the price map. Returns [in, out] USD per
-// 1M tokens, or null when no price is configured for the model.
-function priceFor(model, prices) {
+// Longest-substring match against the price map, scoped by provider. Returns
+// [in, out] USD per 1M tokens, or null when no price is configured. Rows from
+// the local (self-hosted llama.cpp) provider have no per-token vendor bill, so
+// they are priced 0 explicitly — without this gate, a locally served model
+// whose name matches a cloud entry (e.g. "llama-3.3-70b") would inherit that
+// vendor's rate and show a false cost.
+function priceFor(model, prices, provider) {
+    if (provider === 'local') return [0, 0];
     let best = null;
     let bestLen = -1;
     const m = (model || '').toLowerCase();
@@ -124,7 +129,7 @@ export async function renderSettingsUsageTab(days = 30) {
     let totIn = 0, totOut = 0, totCalls = 0, totCost = 0, unpriced = false;
     for (const r of usage.by_model) {
         totIn += r.tokens_in; totOut += r.tokens_out; totCalls += r.calls;
-        const c = estCost(r.tokens_in, r.tokens_out, priceFor(r.model, prices));
+        const c = estCost(r.tokens_in, r.tokens_out, priceFor(r.model, prices, r.provider));
         if (c === null) unpriced = true; else totCost += c;
     }
 
@@ -201,7 +206,9 @@ export async function renderSettingsUsageTab(days = 30) {
                 r.calls.toLocaleString(),
                 fmtTokens(r.tokens_in),
                 fmtTokens(r.tokens_out),
-                fmtUsd(estCost(r.tokens_in, r.tokens_out, priceFor(r.model, prices))),
+                r.provider === 'local'
+                    ? '<span class="text-gray-400" title="Self-hosted model: no per-token vendor bill">local</span>'
+                    : fmtUsd(estCost(r.tokens_in, r.tokens_out, priceFor(r.model, prices, r.provider))),
             ]),
             2,
         )}
@@ -647,7 +654,7 @@ async function renderDeploymentSection(days, prices) {
         }
         const o = orgs.get(key);
         o.calls += r.calls; o.tokens_in += r.tokens_in; o.tokens_out += r.tokens_out;
-        const c = estCost(r.tokens_in, r.tokens_out, priceFor(r.model, prices));
+        const c = estCost(r.tokens_in, r.tokens_out, priceFor(r.model, prices, r.provider));
         if (c === null) o.unpriced = true; else o.cost += c;
     }
     const rows = [...orgs.values()].sort((a, b) => b.tokens_out - a.tokens_out);
