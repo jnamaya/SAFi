@@ -344,17 +344,17 @@ def test_malformed_tool_call_arguments_report_a_parse_failure():
 # reasoning-effort override (CLI /reasoning) → local llama.cpp
 # --------------------------------------------------------------------------
 
-def _call_with_effort(provider_name, effort):
+def _call_with_effort(provider_name, effort, route="intellect"):
     from safi_app.core.services import llm_provider as mod
 
-    provider, sink = _provider_for(provider_name)
+    provider, sink = _provider_for(provider_name, routes=_both_routes(provider_name))
     mod._REASONING_EFFORT.set(effort)
     try:
         import asyncio
 
         asyncio.run(
             provider._chat_completion(
-                route="conscience", system_prompt="s", user_prompt="u", max_tokens=64
+                route=route, system_prompt="s", user_prompt="u", max_tokens=64
             )
         )
     finally:
@@ -376,6 +376,17 @@ def test_local_reasoning_off_sends_enable_thinking_false():
 def test_local_no_override_sends_no_chat_template_kwargs():
     sink = _call_with_effort("local", "")
     assert "chat_template_kwargs" not in (sink.get("extra_body") or {})
+
+
+def test_local_conscience_route_always_disables_thinking():
+    # Conscience audits must never inherit user-selected reasoning and must
+    # explicitly disable thinking to return fast JSON audits (~4s) instead of
+    # burning ~45s generating hidden thought tokens.
+    sink_high = _call_with_effort("local", "high", route="conscience")
+    assert sink_high["extra_body"]["chat_template_kwargs"]["enable_thinking"] is False
+
+    sink_none = _call_with_effort("local", "", route="conscience")
+    assert sink_none["extra_body"]["chat_template_kwargs"]["enable_thinking"] is False
 
 
 def test_cloud_openai_compatible_vendor_never_gets_chat_template_kwargs():

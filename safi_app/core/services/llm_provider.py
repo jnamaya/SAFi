@@ -747,11 +747,12 @@ class LLMProvider:
                     # rather than a parameter change. Only sent when tools are
                     # present, so ordinary turns keep the model's reasoning.
                     params["reasoning_effort"] = "none"
-            elif _REASONING_EFFORT.get():
+            elif route == "intellect" and _REASONING_EFFORT.get():
                 # User-selected reasoning level (low/medium/high) from the CLI
                 # /reasoning command. Only honored for reasoning-capable OpenAI
                 # lines (o-series + flagship gpt); other OpenAI-compatible
-                # providers reject the parameter.
+                # providers reject the parameter. Background and audit routes
+                # (e.g. conscience) never inherit user-selected reasoning.
                 params["reasoning_effort"] = _REASONING_EFFORT.get()
             else:
                  params["max_tokens"] = max_tokens
@@ -768,22 +769,31 @@ class LLMProvider:
                          eb["thinking"] = {"type": "disabled"}
                      params["extra_body"] = eb
 
-            if provider_name == "local" and _REASONING_EFFORT.get():
+            if provider_name == "local":
                 # User-selected reasoning level (CLI /reasoning) for the local
                 # llama.cpp appliance. llama-server has no token-budget knob;
                 # the closest native control is chat_template_kwargs, which the
                 # model's Jinja chat template consumes (Qwen3-family templates
                 # accept "enable_thinking"). Any level (low/medium/high) turns
-                # thinking ON, anything else (e.g. "off") turns it OFF. Gated
-                # on provider_name == "local" so cloud OpenAI-compatible
-                # vendors never receive it: their APIs reject unknown fields
-                # where llama-server just ignores what its template doesn't use.
-                local_effort = _REASONING_EFFORT.get()
-                eb = dict(params.get("extra_body") or {})
-                ctk = dict(eb.get("chat_template_kwargs") or {})
-                ctk["enable_thinking"] = local_effort in ("low", "medium", "high")
-                eb["chat_template_kwargs"] = ctk
-                params["extra_body"] = eb
+                # thinking ON, anything else (e.g. "off") turns it OFF.
+                # Scoped strictly to route == "intellect" so conscience audits
+                # and background runs never inherit user reasoning.
+                # route == "conscience" explicitly disables thinking so models
+                # like Qwen3.6-35B return fast JSON audits (~4s) instead of
+                # burning ~45s on hidden thought tokens.
+                if route == "intellect" and _REASONING_EFFORT.get():
+                    local_effort = _REASONING_EFFORT.get()
+                    eb = dict(params.get("extra_body") or {})
+                    ctk = dict(eb.get("chat_template_kwargs") or {})
+                    ctk["enable_thinking"] = local_effort in ("low", "medium", "high")
+                    eb["chat_template_kwargs"] = ctk
+                    params["extra_body"] = eb
+                elif route == "conscience":
+                    eb = dict(params.get("extra_body") or {})
+                    ctk = dict(eb.get("chat_template_kwargs") or {})
+                    ctk["enable_thinking"] = False
+                    eb["chat_template_kwargs"] = ctk
+                    params["extra_body"] = eb
 
             # Sync client off the event loop's thread pool. The blocking call
             # must not run inline in the request coroutine; to_thread keeps the
@@ -860,9 +870,12 @@ class LLMProvider:
             # Control Anthropic thinking/reasoning effort.
             # Default to turning thinking off so models (especially Haiku) respond immediately (2-7s)
             # instead of burning thousands of hidden reasoning tokens and truncating.
-            # A user-selected level (CLI /reasoning) overrides the env default.
-            effort_override = _REASONING_EFFORT.get()
+            # A user-selected level (CLI /reasoning) overrides the env default, but only
+            # for the answering route (Intellect); Conscience always disables thinking.
+            effort_override = _REASONING_EFFORT.get() if route == "intellect" else None
             thinking_env = effort_override or os.environ.get("SAFI_ANTHROPIC_THINKING", "disabled").lower()
+            if route == "conscience":
+                thinking_env = "disabled"
             if thinking_env == "disabled":
                 # Model-specific thinking deactivation based on Anthropic API requirements:
                 # - haiku supports {"type": "disabled"}
@@ -984,10 +997,12 @@ class LLMProvider:
             # User-selected reasoning level (CLI /reasoning) mapped onto
             # Gemini's thinkingConfig. thinking_budget is in thinking tokens:
             # 0 disables thinking, -1 is "dynamic" (model decides, up to the
-            # model's max), a positive integer caps it. Only set when the user
-            # explicitly chose a level; otherwise leave Gemini's tuned default.
-            gemini_effort = _REASONING_EFFORT.get()
-            if gemini_effort == "off":
+            # model's max), a positive integer caps it. User level is scoped
+            # strictly to intellect; Conscience explicitly disables thinking.
+            gemini_effort = _REASONING_EFFORT.get() if route == "intellect" else None
+            if route == "conscience":
+                config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+            elif gemini_effort == "off":
                 config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
             elif gemini_effort in ("low", "medium", "high"):
                 budget = {"low": 1024, "medium": 8192, "high": -1}[gemini_effort]
