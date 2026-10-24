@@ -88,11 +88,15 @@ function explainWillReason(code, decision) {
         return `Blocked before generation: the prompt matched an injection-attack pattern (${category}).`;
     }
     if (code.startsWith("Tool '")) return code; // already a human-readable sentence
-    // Tool-risk gate exits (will.py approve_tool_call) also return full
-    // human-readable sentences rather than snake_case codes — show them
-    // verbatim instead of mislabeling them "unrecognized".
-    if (code.includes(' ') && /[.!?]$/.test(code)) return code;
-    return WILL_REASON_EXPLANATIONS[code] || `Unrecognized gate code: ${code}`;
+    // Tool-risk gate exits (will.py approve_tool_call, batch intent gate) also
+    // return full human-readable sentences rather than snake_case codes — show
+    // them verbatim instead of mislabeling them "unrecognized". A snake_case
+    // code never contains spaces or uppercase letters, so anything that does
+    // is treated as pre-written prose.
+    if (code.includes(' ') && (/[.!?]$/.test(code) || /[A-Z]/.test(code) || code.includes(':'))) {
+        return code;
+    }
+    return WILL_REASON_EXPLANATIONS[code] || `Gate decision recorded: ${code}`;
 }
 
 const BADGE = 'inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap';
