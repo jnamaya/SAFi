@@ -333,11 +333,15 @@ class TestAgenticLoopSpecification(unittest.TestCase):
             client_owned_tools=[{"name": "read", "type": "function"}],
         ))
 
-        # Two intellect calls: initial proposal and reflexion replanning
-        self.assertEqual(len(intellect_calls), 2)
-        # Second call must contain the WillGate rejection reason
-        self.assertIn("SYSTEM OBSERVATION: The Will gatekeeper rejected", intellect_calls[1])
-        self.assertIn("not authorized", intellect_calls[1])
+        # Client-owned proposal refusals return directly as a violation tool_call
+        # to the client harness so it can continue the loop seamlessly without
+        # stalling on an unnecessary prose apology turn or stripping tools.
+        self.assertEqual(res.get("type"), "tool_call")
+        self.assertEqual(res.get("willDecision"), "violation")
+        self.assertIn("not authorized", res.get("willReason", "").lower())
+        self.assertEqual(len(intellect_calls), 1)
+        mock_store.update_audit_results.assert_called_once()
+        orch._append_log.assert_called_once()
 
     # --------------------------------------------------------------------------
     # Requirement 5: Phase Zero Scanning & Trusted Local Fast Scan

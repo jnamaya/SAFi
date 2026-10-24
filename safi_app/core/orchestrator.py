@@ -886,7 +886,8 @@ class SAFi:
         """
         tag = f" | {label}" if label else ""
 
-        redacted_draft = self._redact_prompt_secrets(a_t, user_prompt)
+        redact_fn = getattr(self, "_redact_prompt_secrets", None)
+        redacted_draft = redact_fn(a_t, user_prompt) if redact_fn else a_t
         if redacted_draft != a_t:
             self.log.info(
                 f"[Governance | Phase 3 | Will W1{tag}] Redacted operator-supplied credential from draft (deterministic repair)."
@@ -1979,104 +1980,71 @@ class SAFi:
                         agent_context=agent_context_for_prompt,
                     )
 
-                # Harness anti-loop refusals are NOT authorization denials: the
-                # tool itself is authorized, only this repeating call is refused.
-                # The toolless reflexion below would strip the tool catalogue and
-                # force a final prose answer, abandoning the task the agent was
-                # executing (a coding agent stuck re-reading then blocked could
-                # never reach 'edit'/'write'). Hand the refusal back to the owning
-                # client instead: it records the refused call and continues the
-                # loop, so the agent can switch tools and finish. The repeat and
-                # same-file-read counters still cap genuine loops, and WillGate
-                # still gates every subsequent proposal.
-                if loop_stopped:
-                    safe_parameters = self._sanitize_client_tool_parameters(
-                        tool_name, parameters
-                    )
-                    tool_event = [{
-                        "tool_name": tool_name,
-                        "parameters": safe_parameters,
-                        "decision": tool_decision,
-                        "reason": tool_reason,
-                    }]
-                    governance_record = {
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                        "mode": "agentic_integration",
-                        "turnKind": "tool_proposal",
-                        "clientToolProposal": True,
-                        "userPrompt": user_prompt,
-                        "recentTurns": recent_turns_text,
-                        "intellectDraft": tool_summary,
-                        "finalOutput": tool_summary,
-                        "willDecision": tool_decision,
-                        "willReason": tool_reason,
-                        "profileValues": self.values,
-                        "conscienceLedger": tool_preflight_ledger,
-                        "toolProposalLedger": tool_preflight_ledger,
-                        "spiritScore": None,
-                        "toolCalls": tool_event,
-                        "policyId": (self.profile or {}).get("policy_id"),
-                        "policyVersion": (self.profile or {}).get("policy_version"),
-                        "orgId": org_id or (self.profile or {}).get("org_id"),
-                        "userId": user_id,
-                        "agentName": self.active_profile_name,
-                        "intellectModel": self.intellect_model,
-                        "conscienceModel": self.conscience_model,
-                    }
-                    self.store.update_audit_results(
-                        message_id, tool_preflight_ledger, None,
-                        f"Tool intent gate: {tool_decision} — {tool_reason}",
-                        self.active_profile_name, self.values, None,
-                        policy_id=(self.profile or {}).get("policy_id"),
-                        policy_version=(self.profile or {}).get("policy_version"),
-                        model_attribution=self.model_attribution,
-                        will_decision=tool_decision,
-                        will_stage="tool_intent",
-                        governance_record=governance_record,
-                    )
-                    self.store.update_message_content(
-                        message_id, tool_summary, audit_status="complete"
-                    )
-                    self._append_log(governance_record)
-                    return {
-                        "type": "tool_call",
-                        "tool_name": tool_name,
-                        "parameters": safe_parameters,
-                        "messageId": message_id,
-                        "newTitle": new_title,
-                        "willDecision": tool_decision,
-                        "willReason": tool_reason,
-                        "audit_status": "complete",
-                        "conscienceLedger": tool_preflight_ledger,
-                        "toolProposalLedger": tool_preflight_ledger,
-                    }
-
-                observation = (
-                    f"SYSTEM OBSERVATION: The Will gatekeeper rejected the client tool "
-                    f"'{tool_name}'. Reason: {tool_reason}. Do not attempt to call it again. "
-                    "Explain that the tool request was not authorized and offer a safe alternative."
+                # Client-owned proposal refusals: Hand the refusal back to the owning
+                # client so it records the refused call in tool_results and continues
+                # the loop seamlessly. The toolless reflexion previously forced a prose
+                # apology that stripped tools, ran a slow Conscience audit on the apology,
+                # and caused the harness to stall while re-driving incomplete plans.
+                safe_parameters = self._sanitize_client_tool_parameters(
+                    tool_name, parameters
                 )
-                reflexion_intent, r_t, retrieved_context = await self.intellect_engine.generate(
-                    user_prompt=f"{prompt_with_date}\n\n{observation}",
-                    memory_summary=memory_summary,
-                    recent_turns=recent_turns_text,
-                    spirit_feedback=spirit_feedback,
-                    plugin_context=plugin_context_data,
-                    user_profile_json=current_profile_json,
-                    agent_context_json=agent_context_for_prompt,
-                    user_name=user_name,
-                    user_id=user_id,
-                    message_id=message_id,
-                    tools_override=[],
-                    tool_results_supplied=len(client_tool_results),
+                tool_event = [{
+                    "tool_name": tool_name,
+                    "parameters": safe_parameters,
+                    "decision": tool_decision,
+                    "reason": tool_reason,
+                }]
+                governance_record = {
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "mode": "agentic_integration",
+                    "turnKind": "tool_proposal",
+                    "clientToolProposal": True,
+                    "userPrompt": user_prompt,
+                    "recentTurns": recent_turns_text,
+                    "intellectDraft": tool_summary,
+                    "finalOutput": tool_summary,
+                    "willDecision": tool_decision,
+                    "willReason": tool_reason,
+                    "profileValues": self.values,
+                    "conscienceLedger": tool_preflight_ledger,
+                    "toolProposalLedger": tool_preflight_ledger,
+                    "spiritScore": None,
+                    "toolCalls": tool_event,
+                    "policyId": (self.profile or {}).get("policy_id"),
+                    "policyVersion": (self.profile or {}).get("policy_version"),
+                    "orgId": org_id or (self.profile or {}).get("org_id"),
+                    "userId": user_id,
+                    "agentName": self.active_profile_name,
+                    "intellectModel": self.intellect_model,
+                    "conscienceModel": self.conscience_model,
+                }
+                self.store.update_audit_results(
+                    message_id, tool_preflight_ledger, None,
+                    f"Tool intent gate: {tool_decision} — {tool_reason}",
+                    self.active_profile_name, self.values, None,
+                    policy_id=(self.profile or {}).get("policy_id"),
+                    policy_version=(self.profile or {}).get("policy_version"),
+                    model_attribution=self.model_attribution,
+                    will_decision=tool_decision,
+                    will_stage="tool_intent",
+                    governance_record=governance_record,
                 )
-                a_t = (
-                    reflexion_intent.get("content")
-                    if reflexion_intent and reflexion_intent.get("type") == "text"
-                    else f"I'm sorry, I was unable to complete that action. {tool_reason}"
+                self.store.update_message_content(
+                    message_id, tool_summary, audit_status="complete"
                 )
-                D_t = "approve"
-                E_t = f"Tool '{tool_name}' blocked: {tool_reason}."
+                self._append_log(governance_record)
+                return {
+                    "type": "tool_call",
+                    "tool_name": tool_name,
+                    "parameters": safe_parameters,
+                    "messageId": message_id,
+                    "newTitle": new_title,
+                    "willDecision": tool_decision,
+                    "willReason": tool_reason,
+                    "audit_status": "complete",
+                    "conscienceLedger": tool_preflight_ledger,
+                    "toolProposalLedger": tool_preflight_ledger,
+                }
 
             elif tool_decision == "approve":
 
