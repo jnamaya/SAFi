@@ -62,26 +62,10 @@ export function setupControlPanelTabs() {
     setupDelegatedModalListeners();
     ensureProfileModalExists();
 
-    // Mobile Menu Toggle Logic
-    const mobileMenuBtn = document.getElementById('mobile-menu-btn');
-    const mobileMenu = document.getElementById('mobile-menu');
-    const mobileMenuBackdrop = document.getElementById('mobile-menu-backdrop');
-    const mobileMenuClose = document.getElementById('close-mobile-menu');
-
-    function toggleMobileMenu() {
-        if (!mobileMenu || !mobileMenuBackdrop) return;
-        if (mobileMenu.classList.contains('-translate-x-full')) {
-            mobileMenu.classList.remove('-translate-x-full');
-            mobileMenuBackdrop.classList.remove('hidden');
-        } else {
-            mobileMenu.classList.add('-translate-x-full');
-            mobileMenuBackdrop.classList.add('hidden');
-        }
-    }
-
-    if (mobileMenuBtn) mobileMenuBtn.addEventListener('click', toggleMobileMenu);
-    if (mobileMenuClose) mobileMenuClose.addEventListener('click', toggleMobileMenu);
-    if (mobileMenuBackdrop) mobileMenuBackdrop.addEventListener('click', toggleMobileMenu);
+    // Mobile menu open/close is handled by the delegated click listener in
+    // app.js (single source of truth: #mobile-menu-btn opens, #close-mobile-menu
+    // and the backdrop close). A second direct listener here used to fire on the
+    // same clicks and double-toggle the drawer, so it has been removed.
 
     // Sidebar Navigation Logic
     const sidebarButtons = document.querySelectorAll('.sidebar-item');

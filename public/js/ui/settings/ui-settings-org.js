@@ -414,7 +414,7 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                     <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5 max-w-xl">Confirms this installation is an unmodified official SAFi release, by comparing its Trusted Computing Base fingerprint against the official list published on selfalignmentframework.com. Each check is written to the compliance log.</p>
                 </div>
             </div>
-            <div id="tcb-verify-result" class="space-y-3 mt-4">
+            <div id="tcb-verify-result" class="space-y-3 mt-4 min-h-[220px]">
                 <p class="text-sm text-gray-500 dark:text-gray-400">Not checked yet. Run a verification to compare this install against the official release list.</p>
             </div>
             <div class="flex items-center gap-3 mt-3">
@@ -1121,13 +1121,13 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                 ${pinLine}
             </div>
             <dl class="text-xs text-gray-500 dark:text-gray-400 space-y-1">
-                <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Fingerprint</dt><dd>${short(local.fingerprint)}</dd></div>
-                <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Manifest fingerprint</dt><dd>${short(local.manifest_fingerprint)}</dd></div>
-                <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Files vs manifest</dt><dd>${escapeHtml(local.state || 'unavailable')}${local.modified_files && local.modified_files.length ? ` &middot; ${escapeHtml(local.modified_files.join(', '))}` : ''}</dd></div>
-                <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Boot attestation</dt><dd>${escapeHtml(local.boot_state || 'unavailable')}</dd></div>
-                <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Git branch</dt><dd>${local.branch ? `${escapeHtml(local.branch)}${local.revision ? ` @ <code class="font-mono">${escapeHtml(local.revision)}</code>` : ''}` : 'unavailable (no git metadata in this deployment)'}</dd></div>
-                <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Official list</dt><dd>${remote.reachable ? 'reachable' : 'unreachable'}${remote.error ? ` &middot; ${escapeHtml(remote.error)}` : ''}</dd></div>
-                <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Checked</dt><dd>${escapeHtml(r.checked_at || '')}</dd></div>
+                <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Fingerprint</dt><dd class="min-w-0 break-words">${short(local.fingerprint)}</dd></div>
+                <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Manifest fingerprint</dt><dd class="min-w-0 break-words">${short(local.manifest_fingerprint)}</dd></div>
+                <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Files vs manifest</dt><dd class="min-w-0 break-words">${escapeHtml(local.state || 'unavailable')}${local.modified_files && local.modified_files.length ? ` &middot; ${escapeHtml(local.modified_files.join(', '))}` : ''}</dd></div>
+                <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Boot attestation</dt><dd class="min-w-0 break-words">${escapeHtml(local.boot_state || 'unavailable')}</dd></div>
+                <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Git branch</dt><dd class="min-w-0 break-words">${local.branch ? `${escapeHtml(local.branch)}${local.revision ? ` @ <code class="font-mono break-all">${escapeHtml(local.revision)}</code>` : ''}` : 'unavailable (no git metadata in this deployment)'}</dd></div>
+                <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Official list</dt><dd class="min-w-0 break-words">${remote.reachable ? 'reachable' : 'unreachable'}${remote.error ? ` &middot; ${escapeHtml(remote.error)}` : ''}</dd></div>
+                <div class="flex gap-2"><dt class="w-40 shrink-0 font-medium">Checked</dt><dd class="min-w-0 break-words">${escapeHtml(r.checked_at || '')}</dd></div>
             </dl>`;
     }
 

@@ -3147,6 +3147,31 @@ html {
   }
 }
 
+/* --- Control Panel on mobile: full-screen sheet slide-in ---
+   On phones the panel already fills the viewport (w-full h-full); the desktop
+   :has() offset above is gated on min-width:768px and never applies here, so
+   there is no underlying layout shift to neutralize. All this adds is a short
+   slide-in the moment the sheet appears, for polish. It is keyed on
+   :not(.hidden) so the existing open/close handlers — which simply toggle the
+   `hidden` class — drive the animation with no extra JS. */
+@media (max-width: 767px) {
+  #control-panel-view:not(.hidden) {
+    animation: cp-sheet-in 0.2s ease-out;
+  }
+}
+
+@keyframes cp-sheet-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Respect users who prefer no motion: skip the slide-in entirely. */
+@media (prefers-reduced-motion: reduce) {
+  #control-panel-view:not(.hidden) {
+    animation: none;
+  }
+}
+
 /* --- Composer + menu flyouts --- */
 
 /* Below md the submenu is an inline accordion, so the chevron points down
