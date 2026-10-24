@@ -4,7 +4,7 @@ login, password and TOTP-MFA login, the disposable demo login, invite claiming,
 tool-token acquisition (Google Drive, SharePoint), server-side sessions, and
 profile / model-preference management.
 """
-from flask import Blueprint, session, jsonify, request, url_for, redirect, current_app, abort
+from flask import Blueprint, session, jsonify, request, url_for, redirect, current_app, abort, g
 from functools import wraps
 import secrets
 import traceback
@@ -1093,7 +1093,13 @@ def _connector_org():
 
 @auth_bp.route('/me', methods=['GET'])
 def get_me():
-    user_id = session.get('user_id') # Use session['user_id'] for consistency
+    # The slim session cookie only carries 'sid'; identity.resolve_session
+    # hydrates g.user per request. session['user_id'] exists only mid-request
+    # (and is stripped before the cookie is serialized), so it must not be
+    # used as the auth check here — it made freshly-created local-account
+    # sessions look anonymous.
+    user = getattr(g, 'user', None)
+    user_id = (user or {}).get('id') or session.get('user_id')
     if not user_id:
         return jsonify({"ok": False, "error": "Not authenticated"}), 401
 
