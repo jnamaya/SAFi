@@ -1091,6 +1091,29 @@ def _connector_org():
 
 
 
+def _safe_profile(preferred: str, fallback: str):
+    """Best-effort profile resolution for /api/me.
+
+    The stored preference may name an agent that is disabled in the active
+    catalog (e.g. SAFI_BUILTIN_AGENTS without it) — and the fallback may be
+    the very same disabled key. Login must never 500 over this: try the
+    preference, then the configured default, then any active catalog agent,
+    and only surface the problem if the catalog itself is broken.
+    """
+    from ..profile_resolver import get_profile, AGENTS
+    for candidate in (preferred, fallback, Config.DEFAULT_PROFILE):
+        if not candidate:
+            continue
+        try:
+            return get_profile(candidate), candidate
+        except Exception:
+            continue
+    if AGENTS:
+        first = sorted(AGENTS)[0]
+        return get_profile(first), first
+    raise KeyError("No profiles available in the active catalog.")
+
+
 @auth_bp.route('/me', methods=['GET'])
 def get_me():
     # The slim session cookie only carries 'sid'; identity.resolve_session
@@ -1115,9 +1138,11 @@ def get_me():
             # KeyError: agent no longer exists. ValueError: it failed
             # compile-time governance validation (e.g. rubric-less hard gate).
             # Either way, fall back to the default so login still works.
-            db.update_user_profile(user_id, Config.DEFAULT_PROFILE)
-            user_details['active_profile'] = Config.DEFAULT_PROFILE
-            user_details['active_profile_details'] = get_profile(Config.DEFAULT_PROFILE)
+            profile, resolved = _safe_profile(
+                active_profile_name, Config.DEFAULT_PROFILE)
+            db.update_user_profile(user_id, resolved)
+            user_details['active_profile'] = resolved
+            user_details['active_profile_details'] = profile
         except Exception:
             # Unexpected failure (e.g. an agent row carrying a field the
             # compiler cannot handle). Serve the default profile so login
@@ -1127,7 +1152,9 @@ def get_me():
             current_app.logger.exception(
                 "Falling back to default profile for '%s'.", active_profile_name
             )
-            user_details['active_profile_details'] = get_profile(Config.DEFAULT_PROFILE)
+            profile, resolved = _safe_profile(
+                active_profile_name, Config.DEFAULT_PROFILE)
+            user_details['active_profile_details'] = profile
     
         user_details['intellect_model'] = user_details.get('intellect_model') or Config.INTELLECT_MODEL
         user_details['conscience_model'] = user_details.get('conscience_model') or Config.CONSCIENCE_MODEL
