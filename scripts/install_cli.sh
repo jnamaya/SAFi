@@ -86,12 +86,12 @@ if "${PYTHON_BIN}" -m venv "${INSTALL_DIR}/venv" 2>/dev/null; then
 fi
 
 if [ "${USE_VENV}" -eq 0 ]; then
-    if "${PYTHON_BIN}" -c "import requests, rich" 2>/dev/null; then
-        echo "Using existing Python environment (requests and rich already present)."
+    if "${PYTHON_BIN}" -c "import requests, rich, prompt_toolkit" 2>/dev/null; then
+        echo "Using existing Python environment (requests, rich, and prompt_toolkit already present)."
         TARGET_PYTHON="${PYTHON_BIN}"
     else
-        echo "Attempting to install 'requests' and 'rich'..."
-        if "${PYTHON_BIN}" -m pip install --user requests rich 2>/dev/null || "${PYTHON_BIN}" -m pip install --user --break-system-packages requests rich 2>/dev/null; then
+        echo "Attempting to install 'requests', 'rich', and 'prompt_toolkit'..."
+        if "${PYTHON_BIN}" -m pip install --user requests rich prompt_toolkit 2>/dev/null || "${PYTHON_BIN}" -m pip install --user --break-system-packages requests rich prompt_toolkit 2>/dev/null; then
             TARGET_PYTHON="${PYTHON_BIN}"
         else
             echo "Warning: could not auto-install requests and rich."
