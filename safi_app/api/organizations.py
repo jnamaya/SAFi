@@ -743,6 +743,77 @@ def remove_organization_member(org_id, user_id):
         return jsonify({"error": "An internal error occurred."}), 500
 
 
+# ADMIN-PROVISIONED LOCAL ACCOUNTS (appliance/offline deployments)
+
+def _generate_local_password():
+    """Server-side credential generation: the admin never picks the password,
+    so no weak/shared secrets, and the plaintext exists only in the one HTTP
+    response that hands it over — never in a log or in the database."""
+    import secrets
+    # 20 chars of a 70-symbol alphabet ≈ 123 bits: strong, no ambiguous glyphs.
+    alphabet = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#%*-_=+"
+    return "".join(secrets.choice(alphabet) for _ in range(20))
+
+
+@organizations_bp.route('/organizations/<org_id>/members/local', methods=['POST'])
+@require_role('admin')
+def create_local_member(org_id):
+    """[POST .../members/local] Admin creates an appliance account: username +
+    server-generated password, no email, no IdP. Same trust model as an
+    invitation — the admin is the authority — minus the SMTP delivery."""
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
+
+    data = request.get_json(silent=True) or {}
+    username = (data.get('username') or '').strip().lower()
+    name = (data.get('name') or '').strip()
+    role = (data.get('role') or ROLE_CONFIG["default_role"]).strip().lower()
+    if role not in ('admin', 'editor', 'auditor', 'member'):
+        return jsonify({"error": "Invalid role"}), 400
+
+    try:
+        password = _generate_local_password()
+        created = db.create_local_account(username, password, name=name,
+                                          org_id=org_id, role=role)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    if not created:
+        # 409 not 400: the request itself was valid, the identifier is taken.
+        return jsonify({"error": "That username (or matching email) is already in use."}), 409
+
+    db.append_compliance_log(org_id, 'local_account_created', f"user:{_actor()}", {
+        "member": created["user_id"],
+        "username": username,
+        "role": role,
+        "admin_granted": role == 'admin',
+    })
+    current_app.logger.info("Local account created: %s (by %s)", username, _actor())
+    return jsonify({"status": "created", "user_id": created["user_id"],
+                    "username": created["username"],
+                    # Shown once in the admin UI; the admin hands it over out of
+                    # band. Nothing plaintext is persisted anywhere.
+                    "initial_password": password}), 201
+
+
+@organizations_bp.route('/organizations/<org_id>/members/<user_id>/password', methods=['POST'])
+@require_role('admin')
+def reset_member_password(org_id, user_id):
+    """[POST .../members/<id>/password] Admin resets a local account's
+    password; a fresh server-generated one is returned once."""
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
+
+    password = _generate_local_password()
+    if not db.reset_local_account_password(user_id, password):
+        return jsonify({"error": "User not found or not a local (password) account."}), 404
+
+    db.append_compliance_log(org_id, 'local_password_reset', f"user:{_actor()}",
+                             {"member": user_id})
+    return jsonify({"status": "reset", "user_id": user_id,
+                    "initial_password": password})
+
+
 # ENTERPRISE IDENTITY (Phase 1): member sessions, invitations, identity config
 
 def _actor():

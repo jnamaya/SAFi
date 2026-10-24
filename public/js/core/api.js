@@ -624,6 +624,12 @@ export async function revokeInvitation(orgId, inviteId) {
 export async function revokeMemberSessions(orgId, userId) {
     return httpJSON(`/api/organizations/${orgId}/members/${userId}/sessions`, 'DELETE', {});
 }
+export async function createLocalAccount(orgId, username, name, role) {
+    return httpJSON(`/api/organizations/${orgId}/members/local`, 'POST', { username, name, role });
+}
+export async function resetMemberPassword(orgId, userId) {
+    return httpJSON(`/api/organizations/${orgId}/members/${userId}/password`, 'POST', {});
+}
 
 export async function getMyMfa() {
     return httpGet('/api/me/mfa');

@@ -528,6 +528,43 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
         ${(currentUser && currentUser.role === 'admin') ? `
         <div class="settings-card">
             <section>
+                 <h4 class="text-lg font-semibold mb-1">Create Local Account</h4>
+                 <p class="text-xs text-gray-400 mb-4">Provision an account with a username and a server-generated password — no email or external identity provider required. The password is shown once below; it is never stored or logged. Hand it to the user out of band (in person or by phone). The user signs in on the login screen with "Username or email".</p>
+                 <div class="flex flex-wrap gap-2 items-end">
+                     <label class="block">
+                         <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Username</span>
+                         <input type="text" id="inp-local-username" placeholder="jdoe" spellcheck="false" autocomplete="off"
+                             class="mt-1 w-44 rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm font-mono">
+                     </label>
+                     <label class="block">
+                         <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Display name</span>
+                         <input type="text" id="inp-local-name" placeholder="John Doe" autocomplete="off"
+                             class="mt-1 w-48 rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm">
+                     </label>
+                     <label class="block">
+                         <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Role</span>
+                         <select id="sel-local-role" class="mt-1 rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm">
+                             <option value="member">Member</option>
+                             <option value="editor">Editor</option>
+                             <option value="auditor">Auditor</option>
+                             <option value="admin">Admin</option>
+                         </select>
+                     </label>
+                     <button id="btn-create-local" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-bold">Create account</button>
+                 </div>
+                 <div id="local-account-result" class="hidden mt-4 p-4 rounded-lg border border-amber-300 bg-amber-50 dark:border-amber-700/50 dark:bg-amber-900/20">
+                     <div class="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase mb-2">One-time password — copy it now, it will not be shown again</div>
+                     <div class="flex items-center gap-3">
+                         <code id="local-account-password" class="text-base font-mono font-bold text-neutral-900 dark:text-neutral-100 select-all"></code>
+                         <button id="btn-copy-local-password" class="text-xs px-2 py-1 rounded border border-amber-400 text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40 font-bold">Copy</button>
+                     </div>
+                     <div id="local-account-meta" class="text-xs text-amber-700/80 dark:text-amber-400/80 mt-2"></div>
+                 </div>
+            </section>
+        </div>
+
+        <div class="settings-card">
+            <section>
                 <div class="flex items-center justify-between mb-3">
                      <h4 class="text-lg font-semibold">Groups</h4>
                      <span class="text-xs text-neutral-500 bg-neutral-100 dark:bg-neutral-800 px-2 py-1 rounded-full" id="group-count-badge">...</span>
@@ -1234,6 +1271,47 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
         loadPendingInvites(org.id);
     }
 
+    // --- Local accounts (admin only; card rendered above only for admins) ---
+    const btnCreateLocal = document.getElementById('btn-create-local');
+    if (btnCreateLocal) {
+        btnCreateLocal.addEventListener('click', async () => {
+            const username = document.getElementById('inp-local-username').value.trim();
+            const name = document.getElementById('inp-local-name').value.trim();
+            const role = document.getElementById('sel-local-role').value;
+            const resultBox = document.getElementById('local-account-result');
+            if (!username) { ui.showToast('Enter a username', 'error'); return; }
+            if (!/^[a-z0-9._-]{3,64}$/.test(username)) {
+                ui.showToast('Username must be 3-64 chars: lowercase letters, digits, dot, underscore, hyphen', 'error');
+                return;
+            }
+            btnCreateLocal.disabled = true;
+            try {
+                const res = await api.createLocalAccount(org.id, username, name || null, role);
+                document.getElementById('local-account-password').textContent = res.initial_password || '';
+                document.getElementById('local-account-meta').textContent =
+                    `Account "${res.username}" created with role "${role}". This password is shown only once.`;
+                resultBox.classList.remove('hidden');
+                document.getElementById('inp-local-username').value = '';
+                document.getElementById('inp-local-name').value = '';
+                ui.showToast('Local account created', 'success');
+                loadOrganizationMembers(org.id);
+            } catch (e) {
+                ui.showToast(e.message || 'Account creation failed', 'error');
+            } finally {
+                btnCreateLocal.disabled = false;
+            }
+        });
+        document.getElementById('btn-copy-local-password')?.addEventListener('click', async () => {
+            const pw = document.getElementById('local-account-password').textContent;
+            try {
+                await navigator.clipboard.writeText(pw);
+                ui.showToast('Password copied', 'success');
+            } catch {
+                ui.showToast('Copy failed — select the password manually', 'error');
+            }
+        });
+    }
+
     // --- Load Members ---
     // (Retention, legal hold, examiner export, evidence log, and the provider
     // allow-list moved to the Compliance tab — ui-settings-compliance.js.)
@@ -1635,12 +1713,20 @@ function renderMembersTable(container, members, orgId) {
                      </select>
                 </td>
                 <td class="px-4 py-3 text-right">
-                    ${!isSelf ? `
-                        <button class="btn-remove-member text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/30 p-1 rounded transition-colors"
-                            data-user-id="${m.id}" title="Remove from Organization">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                        </button>
-                    ` : ''}
+                    <div class="flex items-center justify-end gap-1">
+                        ${(!isSelf && !m.email) ? `
+                            <button class="btn-reset-password text-amber-500 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-900/30 p-1 rounded transition-colors"
+                                data-user-id="${m.id}" data-name="${m.name || m.username || 'this account'}" title="Reset local password">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a4 4 0 11-3.86 5.01L7 16.17V19H4v-3l6.94-6.94A4 4 0 0115 7z"></path></svg>
+                            </button>
+                        ` : ''}
+                        ${!isSelf ? `
+                            <button class="btn-remove-member text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/30 p-1 rounded transition-colors"
+                                data-user-id="${m.id}" title="Remove from Organization">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                            </button>
+                        ` : ''}
+                    </div>
                 </td>
             </tr>
         `;
@@ -1684,6 +1770,27 @@ function renderMembersTable(container, members, orgId) {
                 ui.showToast(err.message, "error");
                 e.target.value = originalRole; // Revert
                 e.target.disabled = false;
+            }
+        });
+    });
+
+    // Attach Reset-password listeners (local accounts only: no email)
+    container.querySelectorAll('.btn-reset-password').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            const userId = e.currentTarget.dataset.userId;
+            const name = e.currentTarget.dataset.name;
+            if (!confirm(`Generate a new one-time password for "${name}"? The old password stops working immediately and the new one is shown only once.`)) return;
+            e.currentTarget.disabled = true;
+            try {
+                const res = await api.resetMemberPassword(orgId, userId);
+                const pw = res.initial_password || '';
+                const copied = await navigator.clipboard.writeText(pw).then(() => true).catch(() => false);
+                ui.showToast(copied
+                    ? `New password for "${name}" copied to clipboard: ${pw}`
+                    : `New password for "${name}" (shown once): ${pw}`, 'success', 10000);
+            } catch (err) {
+                ui.showToast(err.message || 'Password reset failed', 'error');
+                e.currentTarget.disabled = false;
             }
         });
     });

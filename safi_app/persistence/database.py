@@ -6893,6 +6893,59 @@ def claim_invitation_with_password(invite_id, email, password, name=None):
         conn.close()
 
 
+def create_local_account(username, password, name=None, org_id=None, role=None):
+    """Admin-provisioned local (appliance) account: username + password_hash,
+    email deliberately NULL. Same trust model as invitations/SCIM — only an
+    admin reaches the caller — so no invitation row is required.
+
+    The username is the sole identifier, so it must not collide with any
+    existing username OR email: get_user_by_identifier() matches either, and
+    a collision would make /login/local ambiguous. Returns {"user_id": ...}
+    or None when the identifier is already taken."""
+    import re
+    from werkzeug.security import generate_password_hash
+    username = (username or "").strip().lower()
+    if not re.fullmatch(r"[a-z0-9._-]{3,64}", username):
+        raise ValueError("Username must be 3-64 chars: letters, digits, '.', '_', '-'.")
+    name = (name or "").strip() or username
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT id FROM users WHERE username=%s OR email=%s",
+                       (username, username))
+        if cursor.fetchone():
+            return None
+        user_id = str(uuid.uuid4())
+        cursor.execute(
+            "INSERT INTO users (id, username, email, name, password_hash, org_id, role) "
+            "VALUES (%s, %s, NULL, %s, %s, %s, %s)",
+            (user_id, username, name, generate_password_hash(password), org_id, role),
+        )
+        conn.commit()
+        return {"user_id": user_id, "username": username}
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def reset_local_account_password(user_id, password):
+    """Admin-initiated password reset for a local (password) account. Only
+    touches rows that already have a password_hash: an OAuth/SCIM-only
+    identity must not silently gain an appliance credential. Returns True on
+    success, False if the user doesn't exist or isn't a local account."""
+    from werkzeug.security import generate_password_hash
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("UPDATE users SET password_hash=%s WHERE id=%s AND password_hash IS NOT NULL",
+                       (generate_password_hash(password), user_id))
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def get_policy_id_by_api_key(raw_key):
     # Never log the key, any prefix of it, or its hash. This used to emit
     # `logging.error("DEBUG_KEY_CHECK: Input: <first 15 chars>, Hash: <10>")` on
