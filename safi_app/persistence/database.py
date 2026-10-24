@@ -4090,13 +4090,13 @@ def get_organization_members(org_id, role_order=None):
         if role_order:
             placeholders = ",".join(["%s"] * len(role_order))
             cursor.execute(
-                "SELECT id, name, email, role FROM users WHERE org_id=%s "
+                "SELECT id, name, username, email, role FROM users WHERE org_id=%s "
                 f"ORDER BY FIELD(role, {placeholders}), name",
                 (org_id, *role_order),
             )
         else:
             cursor.execute(
-                "SELECT id, name, email, role FROM users WHERE org_id=%s ORDER BY role, name",
+                "SELECT id, name, username, email, role FROM users WHERE org_id=%s ORDER BY role, name",
                 (org_id,),
             )
         return cursor.fetchall()
@@ -6939,6 +6939,28 @@ def reset_local_account_password(user_id, password):
     try:
         cursor.execute("UPDATE users SET password_hash=%s WHERE id=%s AND password_hash IS NOT NULL",
                        (generate_password_hash(password), user_id))
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def set_local_password(user_id, new_password):
+    """Self-service password change for a local (password) account. Like
+    reset_local_account_password, it only touches rows that already carry a
+    password_hash — an OAuth/SCIM-only identity must not silently gain an
+    appliance credential. The caller is responsible for verifying the CURRENT
+    password before calling this. Returns True on success."""
+    from werkzeug.security import generate_password_hash
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE users SET password_hash=%s "
+            "WHERE id=%s AND password_hash IS NOT NULL",
+            (generate_password_hash(new_password), user_id),
+        )
         conn.commit()
         return cursor.rowcount > 0
     finally:

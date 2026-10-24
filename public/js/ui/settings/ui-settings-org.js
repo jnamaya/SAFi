@@ -1703,7 +1703,7 @@ function renderMembersTable(container, members, orgId) {
             <tr class="border-b border-neutral-100 dark:border-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors">
                 <td class="px-4 py-3">
                     <div class="font-medium text-neutral-900 dark:text-neutral-100">${m.name || 'Unknown'}</div>
-                    <div class="text-xs text-neutral-500">${m.email || ''}</div>
+                    <div class="text-xs text-neutral-500">${m.email ? escapeHtml(m.email) : (m.username ? '@' + escapeHtml(m.username) : '')}</div>
                 </td>
                 <td class="px-4 py-3">
                      <select class="role-select bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 text-xs rounded px-2 py-1 outline-none focus:border-green-500"

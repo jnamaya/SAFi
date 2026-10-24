@@ -630,6 +630,12 @@ export async function createLocalAccount(orgId, username, name, role) {
 export async function resetMemberPassword(orgId, userId) {
     return httpJSON(`/api/organizations/${orgId}/members/${userId}/password`, 'POST', {});
 }
+export async function changeOwnPassword(currentPassword, newPassword) {
+    return httpJSON('/api/me/password', 'POST', {
+        current_password: currentPassword,
+        new_password: newPassword,
+    });
+}
 
 export async function getMyMfa() {
     return httpGet('/api/me/mfa');

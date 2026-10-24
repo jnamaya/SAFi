@@ -68,14 +68,22 @@ function _buildIdentityHeader() {
         ? `<img src="${escapeHtml(pic)}" alt="" class="w-14 h-14 rounded-full object-cover bg-neutral-200 dark:bg-neutral-800 shrink-0">`
         : `<div class="w-14 h-14 rounded-full bg-neutral-200 dark:bg-neutral-800 shrink-0 flex items-center justify-center text-xl font-semibold text-neutral-600 dark:text-neutral-300">${escapeHtml(initial)}</div>`;
 
+    // Local (password) accounts get their self-service password change folded
+    // into this same card: one card for "this is who you are and this is the
+    // credential you sign in with". OAuth/SCIM identities see no password UI.
+    const passwordBlock = _identity.username ? _buildPasswordFields() : '';
+
     return `
-        <div class="flex items-center gap-4 p-4 mb-6 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900/40">
-            ${avatar}
-            <div class="min-w-0">
-                <p class="text-base font-semibold text-neutral-900 dark:text-white truncate" title="${name}">${name}</p>
-                ${email ? `<p class="text-sm text-neutral-500 truncate" title="${email}">${email}</p>` : ''}
-                <p class="text-xs text-neutral-500 mt-1 truncate">${affiliation}</p>
+        <div class="p-4 mb-6 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900/40">
+            <div class="flex items-center gap-4">
+                ${avatar}
+                <div class="min-w-0">
+                    <p class="text-base font-semibold text-neutral-900 dark:text-white truncate" title="${name}">${name}</p>
+                    ${email ? `<p class="text-sm text-neutral-500 truncate" title="${email}">${email}</p>` : ''}
+                    <p class="text-xs text-neutral-500 mt-1 truncate">${affiliation}</p>
+                </div>
             </div>
+            ${passwordBlock}
         </div>
     `;
 }
@@ -293,6 +301,7 @@ function _buildProfileUI(container) {
     container.querySelector('#export-my-data-btn')?.addEventListener('click', () => {
         window.open(api.myDataExportUrl(), '_blank');
     });
+    _attachChangePasswordCard(container);
 
     _attachProfileEventListeners(container);
     _renderAgentMemorySection(container.querySelector('#agent-memory-section'));
@@ -637,4 +646,59 @@ function _handleAddItem(key, container) {
     setTimeout(() => {
         document.getElementById(`profile-input-${key}`)?.focus();
     }, 0);
+}
+
+// --- Self-service password change (local/password accounts only) ---
+
+function _buildPasswordFields() {
+    // Inner block of the identity card (no card chrome of its own) — rendered
+    // only for local accounts, where _identity.username is set.
+    return `
+        <div class="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-700">
+            <p class="text-sm text-neutral-500 dark:text-neutral-400 mb-3">
+                Signed in as <span class="font-medium">@${escapeHtml(_identity.username)}</span>.
+                If you were handed a temporary password, change it here — the change takes effect
+                immediately for your next sign-in.
+            </p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl">
+                <input type="password" id="inp-current-password" placeholder="Current password"
+                       autocomplete="current-password" class="px-3 py-2 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm outline-none focus:border-green-500">
+                <input type="password" id="inp-new-password" placeholder="New password (min 10 chars)"
+                       autocomplete="new-password" class="px-3 py-2 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm outline-none focus:border-green-500">
+            </div>
+            <button id="btn-change-password" class="mt-3 px-4 py-2 rounded-lg font-medium bg-green-600 text-white hover:bg-green-700 text-sm transition-colors">
+                Change password
+            </button>
+        </div>
+    `;
+}
+
+function _attachChangePasswordCard(container) {
+    const btn = container.querySelector('#btn-change-password');
+    if (!btn) return;
+    btn.addEventListener('click', async () => {
+        const cur = container.querySelector('#inp-current-password');
+        const nw = container.querySelector('#inp-new-password');
+        const currentPassword = (cur?.value || '').trim();
+        const newPassword = (nw?.value || '').trim();
+        if (!currentPassword || !newPassword) {
+            ui.showToast('Fill in both password fields.', 'error'); return;
+        }
+        if (newPassword.length < 10) {
+            ui.showToast('New password must be at least 10 characters.', 'error'); return;
+        }
+        if (newPassword === currentPassword) {
+            ui.showToast('New password must differ from the current one.', 'error'); return;
+        }
+        btn.disabled = true;
+        try {
+            await api.changeOwnPassword(currentPassword, newPassword);
+            cur.value = ''; nw.value = '';
+            ui.showToast('Password changed. Use it on your next sign-in.', 'success');
+        } catch (e) {
+            ui.showToast(e.message || 'Could not change password.', 'error');
+        } finally {
+            btn.disabled = false;
+        }
+    });
 }

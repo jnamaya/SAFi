@@ -1336,6 +1336,38 @@ def revoke_my_other_sessions():
 
 # TOTP MFA SELF-SERVICE (enterprise identity Phase 2)
 
+@auth_bp.route('/me/password', methods=['POST'])
+def change_my_password():
+    """[POST /api/me/password] Self-service password change for local
+    (password) accounts. The CURRENT password must be presented — this is
+    what makes the flow safe for a handed-over temp credential: whoever can
+    use the account can replace the credential, and nobody else can. OAuth /
+    SCIM-only identities are refused (they have no password to change, and
+    must not silently gain an appliance credential)."""
+    from werkzeug.security import check_password_hash
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({"error": "Auth required"}), 401
+    data = request.json or {}
+    current_password = data.get('current_password') or ''
+    new_password = data.get('new_password') or ''
+
+    user = db.get_user_details(user_id) or {}
+    if not user.get('password_hash'):
+        return jsonify({"error": "This account signs in with an identity "
+                                 "provider and has no password to change."}), 400
+    if not check_password_hash(user['password_hash'], current_password):
+        return jsonify({"error": "Current password is incorrect."}), 403
+    if len(new_password) < 10:
+        return jsonify({"error": "New password must be at least 10 characters."}), 400
+    if new_password == current_password:
+        return jsonify({"error": "New password must differ from the current one."}), 400
+
+    db.set_local_password(user_id, new_password)
+    current_app.logger.info("Self-service password change for user %s", user_id)
+    return jsonify({"ok": True, "status": "password_changed"})
+
+
 @auth_bp.route('/me/mfa', methods=['GET'])
 def get_my_mfa():
     user_id = session.get('user_id')
