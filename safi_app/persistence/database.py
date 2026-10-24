@@ -5295,7 +5295,7 @@ def governance_summary(org_id, profile=None, policy_id=None, date_from=None, dat
     avg_alignment = float(avg_alignment) if avg_alignment is not None else None
     avg_redirect_quality = float(avg_redirect_quality) if avg_redirect_quality is not None else None
     avg_drift = float(avg_drift) if avg_drift is not None else None
-    consistency = (1 - avg_drift) * 100 if avg_drift is not None else None
+    consistency = max(0.0, min(1.0, 1 - avg_drift)) * 100 if avg_drift is not None else None
     if avg_alignment is not None and avg_drift is not None:
         overall = min(max(avg_alignment - avg_drift * 10, 1.0), 10.0)
     else:
@@ -5339,7 +5339,7 @@ def governance_trend(org_id, bucket="day", profile=None, policy_id=None,
         out.append({
             "bucket": b,
             "avg_drift": avg_drift,
-            "avg_consistency": (1 - avg_drift) * 100 if avg_drift is not None else None,
+            "avg_consistency": max(0.0, min(1.0, 1 - avg_drift)) * 100 if avg_drift is not None else None,
             "turns": int(turns),
             "scored_turns": int(drift_turns),
             "flagged": int(flagged or 0),
@@ -5403,7 +5403,7 @@ def governance_trend_by_profile(org_id, bucket="day", profile=None, policy_id=No
         s["buckets"].append({
             "bucket": b,
             "avg_drift": avg_drift,
-            "avg_consistency": (1 - avg_drift) * 100 if avg_drift is not None else None,
+            "avg_consistency": max(0.0, min(1.0, 1 - avg_drift)) * 100 if avg_drift is not None else None,
             "turns": int(turns),
             "scored_turns": int(drift_turns),
         })
