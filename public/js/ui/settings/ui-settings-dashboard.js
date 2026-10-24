@@ -88,6 +88,10 @@ function explainWillReason(code, decision) {
         return `Blocked before generation: the prompt matched an injection-attack pattern (${category}).`;
     }
     if (code.startsWith("Tool '")) return code; // already a human-readable sentence
+    // Tool-risk gate exits (will.py approve_tool_call) also return full
+    // human-readable sentences rather than snake_case codes — show them
+    // verbatim instead of mislabeling them "unrecognized".
+    if (code.includes(' ') && /[.!?]$/.test(code)) return code;
     return WILL_REASON_EXPLANATIONS[code] || `Unrecognized gate code: ${code}`;
 }
 
