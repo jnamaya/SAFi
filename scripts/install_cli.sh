@@ -79,7 +79,7 @@ USE_VENV=0
 if "${PYTHON_BIN}" -m venv "${INSTALL_DIR}/venv" 2>/dev/null; then
     if [ -f "${INSTALL_DIR}/venv/bin/pip" ]; then
         echo "Created isolated venv in ${INSTALL_DIR}/venv"
-        "${INSTALL_DIR}/venv/bin/pip" install --quiet requests rich
+        "${INSTALL_DIR}/venv/bin/pip" install --quiet requests rich prompt_toolkit
         TARGET_PYTHON="${INSTALL_DIR}/venv/bin/python"
         USE_VENV=1
     fi

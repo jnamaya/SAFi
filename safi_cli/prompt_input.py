@@ -48,6 +48,16 @@ except Exception:
     class _SessionBase:
         pass
 
+    class FileHistory:
+        """Stub used only when prompt_toolkit is absent; never instantiated
+        because _HAS_PROMPT_TOOLKIT is False (see using_prompt_toolkit)."""
+
+        def __init__(self, filename: str) -> None:
+            self.filename = filename
+
+    class InMemoryHistory:
+        pass
+
 try:
     import readline
 except ImportError:
