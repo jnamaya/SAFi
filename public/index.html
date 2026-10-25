@@ -207,6 +207,10 @@
                 <div class="flex-1 h-px bg-neutral-200 dark:bg-neutral-800"></div>
               </div>
                 <form id="local-login-form" class="flex flex-col gap-2 w-full">
+                <input id="local-identifier" type="text" placeholder="Username or email" required autocomplete="username"
+                  class="w-full px-4 py-2.5 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 dark:text-white" />
+                <input id="local-password" type="password" placeholder="Password" required autocomplete="current-password"
+                  class="w-full px-4 py-2.5 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 dark:text-white" />
                 <!-- AD mode toggle (revealed by app-config when LDAP is enabled) -->
                 <label id="ad-login-toggle" class="hidden flex items-center gap-2 text-xs text-neutral-600 dark:text-neutral-300 cursor-pointer select-none">
                   <input id="use-ad-login" type="checkbox"
@@ -216,10 +220,6 @@
                 <p id="ad-login-hint" class="hidden text-xs text-neutral-400 dark:text-neutral-500">
                   Use your domain account, e.g. SAFI\username
                 </p>
-                <input id="local-identifier" type="text" placeholder="Username or email" required autocomplete="username"
-                  class="w-full px-4 py-2.5 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 dark:text-white" />
-                <input id="local-password" type="password" placeholder="Password" required autocomplete="current-password"
-                  class="w-full px-4 py-2.5 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 dark:text-white" />
                 <button type="submit" id="local-login-submit"
                   class="w-full px-4 py-2.5 rounded-lg bg-green-600 hover:bg-green-700 text-white font-semibold text-sm transition">
                   Sign In
