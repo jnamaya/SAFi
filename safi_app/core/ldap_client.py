@@ -37,6 +37,21 @@ _SUBCODE_RE = re.compile(r"data\s+([0-9a-fA-F]{3})", re.IGNORECASE)
 def _parse_bind_error(exc) -> dict:
     """Turn an ldap3 bind exception into {ok: False, code, message}."""
     text = str(exc)
+    low = text.lower()
+    # 0000208D / strongerAuthRequired: the DC refuses unsigned simple binds.
+    # This is a server-side policy/certificate issue, NOT a bad password —
+    # reporting it as "invalid credentials" sends users down the wrong path.
+    if "strongerauthrequired" in low or "signing" in low:
+        return {"ok": False, "code": "ldap_signing_required",
+                "message": "The domain controller rejects unsigned LDAP binds. "
+                           "Install a certificate on the DC and use LDAPS/StartTLS "
+                           "(SAFI_LDAP_URL=ldaps://...), or relax the DC's "
+                           "'LDAP server signing requirements' policy."}
+    if "starttls" in low or "ssl wrapping" in low:
+        return {"ok": False, "code": "ldap_tls_failed",
+                "message": "The directory could not establish TLS. The domain "
+                           "controller likely has no certificate installed "
+                           "(required for LDAPS on 636 and StartTLS on 389)."}
     m = _SUBCODE_RE.search(text)
     if m:
         code, message = _AD_SUBCODES.get(m.group(1), ("invalid_credentials", "Invalid username or password."))
@@ -63,6 +78,30 @@ def split_domain_identifier(identifier: str):
     return identifier, None
 
 
+def _make_server():
+    """Build the ldap3 Server honoring ldaps:// / StartTLS / TLS verification.
+
+    Modern AD DCs commonly reject unsigned simple binds on 389 with
+    LDAP_STRONG_AUTH_REQUIRED ("strongerAuthRequired"); StartTLS (or
+    ldaps://) satisfies them without NTLM's MD4 dependency.
+    """
+    from ldap3 import Server, Tls
+    import ssl as _ssl
+
+    use_ssl = Config.LDAP_URL.lower().startswith("ldaps://")
+    if Config.LDAP_TLS_VERIFY:
+        tls = Tls(validate=_ssl.CERT_REQUIRED, version=_ssl.PROTOCOL_TLS_CLIENT,
+                  ca_certs_file=Config.LDAP_TLS_CA_FILE or None)
+    else:
+        tls = Tls(validate=_ssl.CERT_NONE, version=_ssl.PROTOCOL_TLS_CLIENT)
+    return Server(Config.LDAP_URL, port=Config.LDAP_PORT, use_ssl=use_ssl, tls=tls,
+                  connect_timeout=Config.LDAP_TIMEOUT, get_info=None)
+
+
+def _needs_starttls() -> bool:
+    return bool(Config.LDAP_STARTTLS) and not Config.LDAP_URL.lower().startswith("ldaps://")
+
+
 def authenticate(username: str, password: str) -> dict:
     """Verify an AD password by direct bind.
 
@@ -82,22 +121,23 @@ def authenticate(username: str, password: str) -> dict:
     except ImportError:
         return {"ok": False, "code": "ldap_not_configured", "message": "LDAP support is not installed on this deployment."}
 
-    from ldap3 import Server, Connection, Tls, SUBTREE
-    import ssl as _ssl
+    from ldap3 import Connection, SUBTREE
 
-    use_ssl = Config.LDAP_URL.lower().startswith("ldaps://")
-    tls = Tls(validate=_ssl.CERT_REQUIRED, version=_ssl.PROTOCOL_TLS_CLIENT) if use_ssl else None
-    server = Server(Config.LDAP_URL, port=Config.LDAP_PORT, use_ssl=use_ssl, tls=tls,
-                    connect_timeout=Config.LDAP_TIMEOUT, get_info=None)
+    server = _make_server()
 
     user_dn = None
     email = name = None
     try:
         # 1) Service-account search to resolve the account's DN + attributes.
         if Config.LDAP_BIND_DN:
-            with Connection(server, user=Config.LDAP_BIND_DN,
-                            password=Config.LDAP_BIND_PASSWORD,
-                            auto_bind=True, receive_timeout=Config.LDAP_TIMEOUT) as svc:
+            # TLS must wrap the socket BEFORE the simple bind, or the DC
+            # rejects it with strongerAuthRequired. So: open → start_tls → bind.
+            svc = Connection(server, user=Config.LDAP_BIND_DN,
+                             password=Config.LDAP_BIND_PASSWORD,
+                             receive_timeout=Config.LDAP_TIMEOUT)
+            if not svc.open() or (_needs_starttls() and not svc.start_tls()) or not svc.bind():
+                raise Exception(f"service bind failed: {svc.last_error or svc.result}")
+            try:
                 filt = Config.LDAP_USER_FILTER.format(username=_escape_filter(username))
                 svc.search(Config.LDAP_BASE_DN, filt, SUBTREE,
                            attributes=[Config.LDAP_EMAIL_ATTR, Config.LDAP_NAME_ATTR])
@@ -108,6 +148,8 @@ def authenticate(username: str, password: str) -> dict:
                 user_dn = entry.entry_dn
                 email = (str(entry[Config.LDAP_EMAIL_ATTR]) if Config.LDAP_EMAIL_ATTR in entry else "") or None
                 name = (str(entry[Config.LDAP_NAME_ATTR]) if Config.LDAP_NAME_ATTR in entry else "") or None
+            finally:
+                svc.unbind()
         else:
             # Anonymous resolution is not possible on AD; require the DN
             # filter to produce a full DN ({username} placeholder position).
@@ -117,8 +159,12 @@ def authenticate(username: str, password: str) -> dict:
                         "message": "SAFI_LDAP_BIND_DN is required to resolve accounts."}
 
         # 2) Direct bind as the located DN — the actual password check.
+        # Same open → start_tls → bind ordering: the DC requires a signed
+        # channel before it will accept any simple bind on 389.
         conn = Connection(server, user=user_dn, password=password,
-                          auto_bind=True, receive_timeout=Config.LDAP_TIMEOUT)
+                          receive_timeout=Config.LDAP_TIMEOUT)
+        if not conn.open() or (_needs_starttls() and not conn.start_tls()) or not conn.bind():
+            raise Exception(f"user bind failed: {conn.last_error or conn.result}")
         conn.unbind()
     except Exception as exc:  # noqa: BLE001 — every failure maps to a code
         return _parse_bind_error(exc)
@@ -140,16 +186,15 @@ def get_groups(user_dn: str):
         return None
     try:
         import ldap3
-        from ldap3 import Server, Connection, Tls, SUBTREE
-        import ssl as _ssl
+        from ldap3 import Connection, SUBTREE
 
-        use_ssl = Config.LDAP_URL.lower().startswith("ldaps://")
-        tls = Tls(validate=_ssl.CERT_REQUIRED, version=_ssl.PROTOCOL_TLS_CLIENT) if use_ssl else None
-        server = Server(Config.LDAP_URL, port=Config.LDAP_PORT, use_ssl=use_ssl, tls=tls,
-                        connect_timeout=Config.LDAP_TIMEOUT, get_info=None)
-        with Connection(server, user=Config.LDAP_BIND_DN,
-                        password=Config.LDAP_BIND_PASSWORD,
-                        auto_bind=True, receive_timeout=Config.LDAP_TIMEOUT) as svc:
+        server = _make_server()
+        svc = Connection(server, user=Config.LDAP_BIND_DN,
+                         password=Config.LDAP_BIND_PASSWORD,
+                         receive_timeout=Config.LDAP_TIMEOUT)
+        if not svc.open() or (_needs_starttls() and not svc.start_tls()) or not svc.bind():
+            return None
+        try:
             svc.search(user_dn, "(objectClass=*)", search_scope="BASE",
                        attributes=["memberOf"])
             if not svc.entries:
@@ -158,6 +203,11 @@ def get_groups(user_dn: str):
             if "memberOf" not in entry:
                 return []
             return [str(v) for v in entry["memberOf"].values]
+        finally:
+            try:
+                svc.unbind()
+            except Exception:
+                pass
     except Exception:  # noqa: BLE001 — directory unreachable: caller keeps current role
         return None
 

@@ -576,6 +576,11 @@ class Config:
     LDAP_EMAIL_ATTR = os.environ.get("SAFI_LDAP_EMAIL_ATTR", "mail")
     LDAP_NAME_ATTR = os.environ.get("SAFI_LDAP_NAME_ATTR", "displayName")
     LDAP_TIMEOUT = int(os.environ.get("SAFI_LDAP_TIMEOUT", "5"))     # seconds per bind/search
+    # Modern DCs reject unsigned simple binds on 389 (strongerAuthRequired).
+    # StartTLS upgrades the 389 connection in place; ldaps:// implies TLS already.
+    LDAP_STARTTLS = os.environ.get("SAFI_LDAP_STARTTLS", "false").strip().lower() in ("1", "true", "yes", "on")
+    LDAP_TLS_VERIFY = os.environ.get("SAFI_LDAP_TLS_VERIFY", "false").strip().lower() in ("1", "true", "yes", "on")
+    LDAP_TLS_CA_FILE = os.environ.get("SAFI_LDAP_TLS_CA_FILE", "").strip()  # optional CA bundle path
 
     SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
     SMTP_USERNAME = os.environ.get("SMTP_USERNAME", "").strip()
