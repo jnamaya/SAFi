@@ -6485,6 +6485,32 @@ def sweep_expired_sessions(older_than_days=90):
         conn.close()
 
 
+def any_org_ldap_enabled():
+    """True if any organization has LDAP/AD sign-in turned on. Used by the
+    pre-login /api/app-config feature flag: the login screen has no org
+    context (the user hasn't authenticated yet), so the checkbox is shown
+    only when at least one org could actually accept an AD login. Per-org
+    enforcement still happens in the login route / _org_claim_gate."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT settings FROM organizations")
+        for row in cursor.fetchall():
+            raw = row[0] if not isinstance(row, dict) else row.get('settings')
+            if not raw:
+                continue
+            try:
+                settings = json.loads(raw) if isinstance(raw, str) else raw
+            except (ValueError, TypeError):
+                continue
+            if (settings.get("identity") or {}).get("ldap_enabled") is True:
+                return True
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def get_org_identity_config(org_id):
     """Org identity settings with platform defaults. No org → defaults."""
     cfg = dict(IDENTITY_DEFAULTS)

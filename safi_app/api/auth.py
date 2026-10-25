@@ -476,7 +476,12 @@ def app_config():
         "sso_login_enabled":   Config.SSO_LOGIN_ENABLED and (google_configured or microsoft_configured),
         "google_login_enabled": Config.SSO_LOGIN_ENABLED and google_configured,
         "microsoft_login_enabled": Config.SSO_LOGIN_ENABLED and microsoft_configured,
-        "ldap_login_enabled":    Config.ldap_configured(),
+        # Env config alone is not enough: the login screen is pre-auth and has
+        # no org context, so the AD checkbox is only offered when the
+        # deployment is LDAP-configured AND at least one org has the
+        # "LDAP / Active Directory sign-in" toggle switched on. Per-org
+        # enforcement still happens at bind time via _org_claim_gate.
+        "ldap_login_enabled":    Config.ldap_configured() and db.any_org_ldap_enabled(),
     })
 
 # MAIN APP AUTHENTICATION (OpenID Connect for Login)
