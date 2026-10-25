@@ -219,6 +219,26 @@
               </form>
             </div>
 
+            <!-- LDAP / Active Directory login (shown only when SAFI_LDAP_URL is set) -->
+            <div id="ldap-login-section" class="hidden w-full max-w-xs mt-2">
+              <div class="flex items-center gap-3 my-3">
+                <div class="flex-1 h-px bg-neutral-200 dark:bg-neutral-800"></div>
+                <span class="text-xs text-neutral-400 dark:text-neutral-500">Domain account</span>
+                <div class="flex-1 h-px bg-neutral-200 dark:bg-neutral-800"></div>
+              </div>
+              <form id="ldap-login-form" class="flex flex-col gap-2 w-full">
+                <input id="ldap-identifier" type="text" placeholder="DOMAIN\username" required autocomplete="username"
+                  class="w-full px-4 py-2.5 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 dark:text-white" />
+                <input id="ldap-password" type="password" placeholder="AD Password" required autocomplete="current-password"
+                  class="w-full px-4 py-2.5 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 dark:text-white" />
+                <button type="submit"
+                  class="w-full px-4 py-2.5 rounded-lg bg-green-600 hover:bg-green-700 text-white font-semibold text-sm transition">
+                  Sign In with AD
+                </button>
+                <p id="ldap-login-error" class="hidden text-red-500 text-xs text-center mt-1"></p>
+              </form>
+            </div>
+
             <!-- Accept Invitation (shown only when the URL carries an emailed claim token) -->
             <div id="invite-claim-section" class="hidden w-full max-w-xs mt-2">
               <p class="text-sm text-neutral-600 dark:text-neutral-300 text-center mb-3">
@@ -1130,6 +1150,10 @@
           const section = document.getElementById('local-login-section');
           if (section) section.classList.remove('hidden');
         }
+        if (cfg.ldap_login_enabled && !_inviteToken) {
+          const section = document.getElementById('ldap-login-section');
+          if (section) section.classList.remove('hidden');
+        }
       })
       .catch(() => {}); // fail silently — don't break the login page
 
@@ -1248,10 +1272,52 @@
       }
     });
 
+    // LDAP / Active Directory login form submission. Mirrors the local flow:
+    // bind first, then either a session, an MFA code step (TOTP enrolled), or
+    // a restricted MFA-enrollment session (reload — app.js routes to setup).
+    document.getElementById('ldap-login-form')?.addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const identifier = document.getElementById('ldap-identifier').value.trim();
+      const password = document.getElementById('ldap-password').value;
+      const errorEl  = document.getElementById('ldap-login-error');
+      const submitBtn = this.querySelector('button[type="submit"]');
+
+      errorEl.classList.add('hidden');
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Signing in…';
+
+      try {
+        const res = await fetch(`${_HOST}/api/login/ldap`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: _isNative ? 'include' : 'same-origin',
+          body: JSON.stringify({ identifier, password })
+        });
+        const data = await res.json().catch(() => ({}));
+
+        if (res.ok && data.ok) {
+          // Session (or restricted enrollment session) established via cookie.
+          window.location.reload();
+        } else if (res.ok && data.mfa_required && data.mfa_token) {
+          showMfaCodeStep(data.mfa_token, `${_HOST}/api/login/ldap/mfa`);
+        } else {
+          errorEl.textContent = data.error || 'Invalid directory credentials.';
+          errorEl.classList.remove('hidden');
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Sign In with AD';
+        }
+      } catch {
+        errorEl.textContent = 'Connection error. Please try again.';
+        errorEl.classList.remove('hidden');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Sign In with AD';
+      }
+    });
+
     // Second factor for TOTP-enrolled local accounts: replace the form
     // contents with a one-time-code prompt bound to the short-lived
     // mfa_pending token from step one.
-    function showMfaCodeStep(mfaToken) {
+    function showMfaCodeStep(mfaToken, endpoint = `${_HOST}/api/login/local/mfa`) {
       const form = document.getElementById('local-login-form');
       form.innerHTML = `
         <p class="text-sm text-neutral-600 dark:text-neutral-300 text-center mb-1">Enter the 6-digit code from your authenticator app</p>
@@ -1269,7 +1335,7 @@
         const errEl = document.getElementById('local-mfa-error');
         errEl.classList.add('hidden');
         try {
-          const res = await fetch(`${_HOST}/api/login/local/mfa`, {
+          const res = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: _isNative ? 'include' : 'same-origin',

@@ -557,6 +557,26 @@ class Config:
     # APPROVED output to its owner's account address. Unset = the feature
     # reports "email not configured" and schedules simply don't fire mail.
     SMTP_HOST = os.environ.get("SMTP_HOST", "").strip()
+    # --- LDAP / Active Directory sign-in (Phase 1) ---------------------------
+    #
+    # Direct bind against a local domain controller. The DC is the sole
+    # password authority — SAFi never stores an AD password. Minimal viable
+    # set: URL + base DN + a service account to resolve sAMAccountName to a
+    # DN. Everything else has a sane AD default. When SAFI_LDAP_URL is unset,
+    # /login/ldap is unreachable and every other subsystem is unaffected
+    # (ldap3 is imported lazily in core/ldap_client.py).
+    LDAP_URL = os.environ.get("SAFI_LDAP_URL", "").strip()          # ldap://dc01.example.local or ldaps://...
+    LDAP_PORT = int(os.environ.get("SAFI_LDAP_PORT", "0") or 0) or None  # 389/636 default by scheme
+    LDAP_BASE_DN = os.environ.get("SAFI_LDAP_BASE_DN", "").strip()   # e.g. DC=example,DC=local
+    LDAP_BIND_DN = os.environ.get("SAFI_LDAP_BIND_DN", "").strip()   # service account CN
+    LDAP_BIND_PASSWORD = os.environ.get("SAFI_LDAP_BIND_PASSWORD", "")
+    # Search filter with {username}; default matches AD sAMAccountName.
+    LDAP_USER_FILTER = os.environ.get("SAFI_LDAP_USER_FILTER",
+                                      "(&(objectClass=user)(sAMAccountName={username}))")
+    LDAP_EMAIL_ATTR = os.environ.get("SAFI_LDAP_EMAIL_ATTR", "mail")
+    LDAP_NAME_ATTR = os.environ.get("SAFI_LDAP_NAME_ATTR", "displayName")
+    LDAP_TIMEOUT = int(os.environ.get("SAFI_LDAP_TIMEOUT", "5"))     # seconds per bind/search
+
     SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
     SMTP_USERNAME = os.environ.get("SMTP_USERNAME", "").strip()
     SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
@@ -577,6 +597,13 @@ class Config:
         invite-claim account still needs a pre-existing admin to invite it,
         so SMTP alone can never bootstrap a deployment's first login."""
         return bool(cls.ENABLE_LOCAL_LOGIN or cls.smtp_configured())
+
+    @classmethod
+    def ldap_configured(cls) -> bool:
+        """Whether /login/ldap should be offered. The URL and base DN are the
+        irreducible minimum; without a service account the user filter itself
+        must already produce a full DN (checked again at bind time)."""
+        return bool(cls.LDAP_URL and cls.LDAP_BASE_DN)
 
     # Character budget for the work-context memory injected into the prompt each
     # turn (the RAG equivalent is MAX_CONTEXT_CHARS above).

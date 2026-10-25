@@ -6302,6 +6302,7 @@ IDENTITY_DEFAULTS = {
         "require_mfa": False,                  # org opt-in security posture
     "ms_tenant_id": None,                  # Entra tid to enforce (Phase 2)
     "google_hd": None,                     # Workspace hosted domain to enforce
+    "ldap_enabled": False,                 # LDAP/AD sign-in allowed for this org
 }
 JOIN_POLICIES = ("invite_only", "domain_auto_join", "both")
 
@@ -6502,6 +6503,8 @@ def get_org_identity_config(org_id):
             v = ident.get(claim_key)
             if isinstance(v, str) and v.strip():
                 cfg[claim_key] = v.strip()
+        if isinstance(ident.get("ldap_enabled"), bool):
+            cfg["ldap_enabled"] = ident["ldap_enabled"]
         return cfg
     finally:
         cursor.close()
@@ -6532,6 +6535,10 @@ def set_org_identity_config(org_id, changes, actor):
         if not isinstance(changes["require_mfa"], bool):
             raise ValueError("require_mfa must be true or false")
         validated["require_mfa"] = changes["require_mfa"]
+    if "ldap_enabled" in changes:
+        if not isinstance(changes["ldap_enabled"], bool):
+            raise ValueError("ldap_enabled must be true or false")
+        validated["ldap_enabled"] = changes["ldap_enabled"]
     if "ms_tenant_id" in changes:
         v = changes["ms_tenant_id"]
         if v is not None:

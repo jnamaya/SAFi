@@ -29,6 +29,9 @@ faiss-cpu>=1.8.0
 # ── Authentication ─────────────────────────────────────────────────────────────
 authlib>=1.3.0
 flask-cors>=4.0.0
+# LDAP / Active Directory sign-in (core/ldap_client.py; imported lazily so a
+# deployment without SAFI_LDAP_URL set never loads it)
+ldap3>=2.9.0
 PyJWT>=2.8.0
 requests>=2.31.0
 google-auth>=2.29.0

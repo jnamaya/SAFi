@@ -174,6 +174,13 @@ def _org_claim_gate(user_details, idp, claims):
         want_hd = cfg.get('google_hd')
         if want_hd and (claims.get('hd') or '').lower() != want_hd:
             reason = 'hd_mismatch'  # consumer accounts have no hd → rejected
+    elif idp == 'ldap':
+        # LDAP/AD sign-in is org-opt-in: the deployment is configured
+        # globally (SAFI_LDAP_*), but each org must also allow it, so a
+        # directory user whose email happens to match a member of an
+        # unrelated org cannot use AD as an entry point into it.
+        if not cfg.get('ldap_enabled'):
+            reason = 'ldap_not_enabled'
     elif idp == 'microsoft':
         want_tid = cfg.get('ms_tenant_id')
         if want_tid and (claims.get('tid') or '').lower() != want_tid:
@@ -469,6 +476,7 @@ def app_config():
         "sso_login_enabled":   Config.SSO_LOGIN_ENABLED and (google_configured or microsoft_configured),
         "google_login_enabled": Config.SSO_LOGIN_ENABLED and google_configured,
         "microsoft_login_enabled": Config.SSO_LOGIN_ENABLED and microsoft_configured,
+        "ldap_login_enabled":    Config.ldap_configured(),
     })
 
 # MAIN APP AUTHENTICATION (OpenID Connect for Login)
@@ -736,6 +744,128 @@ def login_local_mfa():
     _mfa_attempts.pop(user_id, None)
     _establish_session(user, idp='local', extra_context={"amr": ["pwd", "otp"], "mfa": True})
     current_app.logger.info(f"Local MFA login: {user.get('email')}")
+    return jsonify({"ok": True})
+
+
+# LDAP / ACTIVE DIRECTORY LOGIN (enterprise identity LDAP Phase 1)
+#
+# Design: docs/internal/DESIGN_LDAP_AD_AUTH.md. AD is the sole password
+# authority (direct bind, never stored); SAFi chains its own TOTP on top
+# when the org mandates MFA, mirroring /login/local exactly. First login
+# for a TOTP-less account under require_mfa issues the restricted
+# enrollment session, not a full one.
+
+@auth_bp.route('/login/ldap', methods=['POST'])
+def login_ldap():
+    """
+    [POST /api/login/ldap]
+    Step 1: verify DOMAIN\\user + AD password by direct bind, reconcile the
+    account to a SAFi user by email, then either establish a session (no
+    MFA required), hand back an mfa_pending token (TOTP enrolled), or a
+    restricted enrollment session (org requires MFA, no TOTP yet).
+    """
+    from ..core import ldap_client
+
+    if not Config.ldap_configured():
+        return jsonify({"error": "LDAP sign-in is not configured on this instance."}), 404
+
+    data = request.get_json(silent=True) or {}
+    identifier = (data.get('identifier') or '').strip()
+    password = data.get('password') or ''
+    if not identifier or not password:
+        return jsonify({"error": "Directory username and password are required."}), 400
+
+    username, _domain_hint = ldap_client.split_domain_identifier(identifier)
+    result = ldap_client.authenticate(username, password)
+    if not result.get('ok'):
+        status = 503 if result.get('code') in ('directory_unreachable', 'directory_timeout') else 401
+        db.log_auth_event('login_denied', f"ldap:{username}",
+                          detail={"idp": "ldap", "reason": result.get('code')})
+        return jsonify({"error": result.get('message') or "Invalid credentials.",
+                        "code": result.get('code')}), status
+
+    email = result.get('email')
+    if not email:
+        # Without a mail attribute there is nothing to reconcile against —
+        # the SSO identity model is email-keyed by design.
+        db.log_auth_event('login_denied', f"ldap:{username}",
+                          detail={"idp": "ldap", "reason": "no_email_attribute"})
+        return jsonify({"error": "Your directory account has no email attribute; "
+                                 "it cannot be matched to a SAFi account."}), 401
+
+    user = db.get_user_by_email(email)
+    if not user:
+        # Phase 1 does not auto-provision: an admin invites or pre-creates the
+        # account, exactly like the SSO-with-join_policy=invite_only posture.
+        db.log_auth_event('login_denied', f"ldap:{username}", org_id=None,
+                          user_id=None, detail={"idp": "ldap", "reason": "no_safi_account",
+                                                "email": email})
+        return jsonify({"error": "Directory sign-in succeeded, but no SAFi account "
+                                 "exists for this email. Ask your administrator for an invite."}), 403
+
+    denied = _org_claim_gate(user, 'ldap', {'dn': result.get('dn')})
+    if denied:
+        return jsonify({"error": "Your organization has not enabled LDAP sign-in."}), 403
+
+    totp_state = db.get_user_totp(user['id'])
+    if totp_state['enabled']:
+        # AD password verified, but the second factor is still owed. The
+        # mfa_pending token is only issued after a successful bind.
+        current_app.logger.info(f"LDAP login (MFA pending): {email}")
+        return jsonify({"ok": False, "mfa_required": True,
+                        "mfa_token": _issue_mfa_token(user['id'])})
+
+    cfg = db.get_org_identity_config(user.get('org_id'))
+    if cfg.get('require_mfa'):
+        # Same restricted enrollment session as local login: /me + TOTP
+        # enrollment + logout only (enforced in core/identity.resolve_session).
+        _establish_session(user, idp='ldap', extra_context={
+            "amr": ["pwd"], "mfa": False, "mfa_pending_enrollment": True,
+            "ldap_dn": result.get('dn')})
+        current_app.logger.info(f"LDAP login (MFA enrollment required): {email}")
+        return jsonify({"ok": True, "mfa_setup_required": True})
+
+    _establish_session(user, idp='ldap', extra_context={
+        "amr": ["pwd"], "mfa": False, "ldap_dn": result.get('dn')})
+    current_app.logger.info(f"LDAP login: {email}")
+    return jsonify({"ok": True})
+
+
+@auth_bp.route('/login/ldap/mfa', methods=['POST'])
+def login_ldap_mfa():
+    """
+    [POST /api/login/ldap/mfa]
+    Step 2: exchange the mfa_pending token (issued after a successful AD
+    bind) plus a live TOTP code for a real session. Identical contract to
+    /login/local/mfa — only the step-1 authority differs.
+    """
+    if not Config.ldap_configured():
+        return jsonify({"error": "LDAP sign-in is not configured on this instance."}), 404
+
+    data = request.get_json(silent=True) or {}
+    user_id = _verify_mfa_token(data.get('mfa_token') or '')
+    if not user_id:
+        return jsonify({"error": "MFA challenge expired. Sign in again."}), 401
+
+    if _mfa_rate_limited(user_id):
+        db.log_auth_event('mfa_rate_limited', f"user:{user_id}", user_id=user_id)
+        return jsonify({"error": "Too many attempts. Wait a few minutes."}), 429
+
+    user = db.get_user_details(user_id)
+    totp_state = db.get_user_totp(user_id)
+    if not user or not totp_state['enabled'] or not totp_state['secret']:
+        return jsonify({"error": "Invalid credentials."}), 401
+
+    if not totp_lib.verify_code(totp_state['secret'], data.get('code') or ''):
+        _mfa_record_attempt(user_id)
+        db.log_auth_event('mfa_failed', f"user:{user_id}", org_id=user.get('org_id'),
+                          user_id=user_id, detail={"method": "totp", "phase": "login",
+                                                   "idp": "ldap"})
+        return jsonify({"error": "Invalid code."}), 401
+
+    _mfa_attempts.pop(user_id, None)
+    _establish_session(user, idp='ldap', extra_context={"amr": ["pwd", "otp"], "mfa": True})
+    current_app.logger.info(f"LDAP MFA login: {user.get('email')}")
     return jsonify({"ok": True})
 
 
