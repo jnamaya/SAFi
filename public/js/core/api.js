@@ -373,6 +373,9 @@ export async function fetchMySharedIds() {
 export async function fetchConversationsSharedWithMe() {
     return httpGet(`${urls.CONVERSATIONS}/shared-with-me`);
 }
+export async function removeConversationSharedWithMe(id) {
+    return httpJSON(`${urls.CONVERSATIONS}/shared-with-me/${encodeURIComponent(id)}`, 'DELETE', {});
+}
 
 export async function getProjectShares(id) {
     return httpGet(`${urls.PROJECT(id)}/shares`);
@@ -386,6 +389,9 @@ export async function revokeProjectShare(id, granteeType, granteeId) {
 }
 export async function fetchProjectsSharedWithMe() {
     return httpGet(`${urls.PROJECTS}/shared-with-me`);
+}
+export async function removeProjectSharedWithMe(id) {
+    return httpJSON(`${urls.PROJECTS}/shared-with-me/${encodeURIComponent(id)}`, 'DELETE', {});
 }
 
 export async function listGroups() {

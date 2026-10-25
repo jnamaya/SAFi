@@ -516,14 +516,43 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
     // an endpoint that would 404 for a non-owner.
     if (sharedProjects.length > 0 || sharedConversations.length > 0) {
         const notOwner = (verb) => () => ui.showToast(`Only the owner can ${verb} this conversation.`, 'info');
+
+        // Grantee-side removal: drops MY grant only. If access still reaches
+        // us via a group or the folder, say so instead of implying it is gone.
+        const removeFromShared = async (kind, id, label) => {
+            if (!window.confirm(`Remove "${label}" from your shared-with-me list?`)) return;
+            try {
+                const res = kind === 'project'
+                    ? await api.removeProjectSharedWithMe(id)
+                    : await api.removeConversationSharedWithMe(id);
+                if (res?.still_shared === 'group') {
+                    ui.showToast('Removed your direct access, but a group you belong to is still shared this item.', 'info');
+                } else if (res?.still_shared === 'project') {
+                    ui.showToast('Removed your direct access, but this conversation is inside a folder shared with you.', 'info');
+                } else if (res?.ok) {
+                    ui.showToast('Removed from shared with me.', 'success');
+                } else {
+                    ui.showToast('Nothing to remove — this may not be shared with you directly.', 'info');
+                }
+                await refreshConvoListOnly(activeProfileData, user, showModal);
+            } catch (e) {
+                console.error('Failed to remove shared item:', e);
+                ui.showToast('Failed to remove shared item.', 'error');
+            }
+        };
         const sharedConvoHandlers = {
             switchHandler: handlers.switchHandler,
             pinHandler: notOwner('pin'),
             renameHandler: notOwner('rename'),
+            // 'delete' on a shared-with-me row means removing MY grant, never
+            // the owner's conversation — the menu renders this as
+            // "Remove from shared with me" via unshareHandler.
             deleteHandler: notOwner('delete'),
+            unshareHandler: (id, title) => removeFromShared('conversation', id, title || 'conversation'),
         };
         const sharedProjectHandlers = {
             toggleHandler: (pid) => handleToggleProject(pid, activeProfileData, user),
+            unshareHandler: (pid, name) => removeFromShared('project', pid, name || 'folder'),
         };
 
         // A conversation reached via a folder grant renders inside that

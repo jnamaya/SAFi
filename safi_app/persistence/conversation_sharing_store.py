@@ -508,6 +508,87 @@ def _list_shared_by_me_query(user_id, org_id):
         conn.close()
 
 
+# ---------------------------------------------------------------------------
+# Self-removal ("remove from shared with me")
+# ---------------------------------------------------------------------------
+# A grantee may drop their OWN access to something shared with them. Only
+# direct user grants are removable this way: a group grant belongs to the
+# group (removing it would unshare for every member), and a project grant
+# belongs to the folder, not this conversation. In those cases the caller is
+# told the access remains and why, instead of silently succeeding.
+
+def _still_reaches(table, id_col, resource_id, user_id, org_id) -> str | None:
+    """If any grant other than the caller's direct one still reaches the
+    caller, return how ('group' for a group grant, 'direct' otherwise);
+    None when nothing remains."""
+    conn = db.get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            f"""
+            SELECT g.grantee_type, g.grantee_id FROM {table} g
+            WHERE g.{id_col} = %s AND g.org_id = %s
+              AND (
+                    (g.grantee_type = 'user' AND g.grantee_id = %s)
+                 OR (g.grantee_type = 'group' AND g.grantee_id IN (
+                        SELECT m.group_id FROM group_memberships m
+                        JOIN custom_groups c ON c.id = m.group_id
+                        WHERE m.user_id = %s AND c.org_id = %s))
+              )
+            """,
+            (resource_id, org_id, user_id, user_id, org_id),
+        )
+        rows = cursor.fetchall()
+        for grantee_type, _grantee_id in rows:
+            if grantee_type == 'group':
+                return 'group'
+        return 'direct' if rows else None
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def remove_conversation_share_with_me(user_id, org_id, conversation_id):
+    """Drop the caller's direct grant on a conversation shared with them.
+    Returns {'removed': bool, 'still_shared': 'group'|'project'|None}.
+    Access arriving through a shared folder is detected live so the caller
+    can be told removal is not theirs to make."""
+    if not user_id or not org_id:
+        return {"removed": False, "still_shared": None}
+    removed = _revoke_grant('conversation_visibility_grants', 'conversation_id',
+                             conversation_id, 'user', user_id)
+    still = _still_reaches('conversation_visibility_grants', 'conversation_id',
+                           conversation_id, user_id, org_id)
+    if not still:
+        # Access may also arrive via the conversation's current folder.
+        conn = db.get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT project_id FROM conversations WHERE id = %s",
+                           (conversation_id,))
+            row = cursor.fetchone()
+        finally:
+            cursor.close()
+            conn.close()
+        if row and row[0]:
+            if _still_reaches('project_visibility_grants', 'project_id',
+                              row[0], user_id, org_id):
+                still = 'project'
+    return {"removed": removed, "still_shared": still}
+
+
+def remove_project_share_with_me(user_id, org_id, project_id):
+    """Drop the caller's direct grant on a folder shared with them.
+    Same contract as remove_conversation_share_with_me."""
+    if not user_id or not org_id:
+        return {"removed": False, "still_shared": None}
+    removed = _revoke_grant('project_visibility_grants', 'project_id',
+                             project_id, 'user', user_id)
+    still = _still_reaches('project_visibility_grants', 'project_id',
+                           project_id, user_id, org_id)
+    return {"removed": removed, "still_shared": still}
+
+
 def remove_user_from_org_sharing(user_id, org_id) -> None:
     """Off-boarding: drop this user's direct grants (both tables) in this
     org. Mirrors sharing_store.remove_user_from_org_sharing; group

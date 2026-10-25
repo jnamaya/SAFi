@@ -442,14 +442,28 @@ function populateConvoMenu(menu, convoId, isPinned, handlers, currentProjectId) 
     }));
   }
 
-  menu.appendChild(menuDivider());
-
-  menu.appendChild(menuItem({
-    icon: iconTrashMenu,
-    label: 'Delete',
-    danger: true,
-    onClick: () => { ui.closeAllConvoMenus(); handlers.deleteHandler(convoId); },
-  }));
+  // Grantee-side: for a conversation shared WITH the current user, the
+  // destructive action removes their own grant, not the owner's data.
+  if (typeof handlers.unshareHandler === 'function') {
+    menu.appendChild(menuItem({
+      icon: iconSharedMark,
+      label: 'Remove from shared with me',
+      danger: true,
+      onClick: () => {
+        ui.closeAllConvoMenus();
+        const titleEl = document.querySelector(`a[data-id="${convoId}"] .convo-title`);
+        handlers.unshareHandler(convoId, titleEl ? titleEl.textContent : '');
+      },
+    }));
+  } else {
+    menu.appendChild(menuDivider());
+    menu.appendChild(menuItem({
+      icon: iconTrashMenu,
+      label: 'Delete',
+      danger: true,
+      onClick: () => { ui.closeAllConvoMenus(); handlers.deleteHandler(convoId); },
+    }));
+  }
 }
 
 /**
@@ -682,6 +696,20 @@ export function renderProjectFolder(project, convos, isExpanded, projectHandlers
     actions.appendChild(newChatBtn);
     actions.appendChild(menuBtn);
     header.appendChild(actions);
+  } else if (typeof projectHandlers.unshareHandler === 'function') {
+    // Read-only shared folder: the only action a grantee has is dropping
+    // their own grant. Rendered inline (no menu) because there is exactly one.
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.title = 'Remove from shared with me';
+    removeBtn.className = 'p-1 rounded-full opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-neutral-300 dark:hover:bg-neutral-700 text-neutral-500';
+    removeBtn.innerHTML = iconSharedMark;
+    removeBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      projectHandlers.unshareHandler(project.id, project.name);
+    });
+    header.appendChild(removeBtn);
   }
   wrap.appendChild(header);
 

@@ -1178,6 +1178,44 @@ def list_conversations_shared_with_me():
     return jsonify(conversation_sharing_store.list_shared_with_me(user_id, org_id))
 
 
+@conversations_bp.route('/conversations/shared-with-me/<conversation_id>',
+                        methods=['DELETE'], strict_slashes=False)
+def remove_conversation_shared_with_me(conversation_id):
+    """Grantee-side removal: drop MY OWN grant on a conversation someone
+    shared with me. Distinct from the owner's revoke route — no ownership
+    check, only the caller's own grant row is touched. Group grants and
+    folder-derived access are reported back, not removed."""
+    user_id = get_user_id()
+    if not user_id:
+        return jsonify({"error": "Authentication required."}), 401
+    org_id = (session.get('user') or {}).get('org_id')
+    result = conversation_sharing_store.remove_conversation_share_with_me(
+        user_id, org_id, conversation_id)
+    if result.get('removed'):
+        db.append_compliance_log(org_id, 'conversation_share_declined', f"user:{user_id}",
+                                 {"conversation_id": conversation_id,
+                                  "grantee_type": "user", "grantee": user_id})
+    return jsonify({"ok": bool(result.get('removed')), **result})
+
+
+@conversations_bp.route('/projects/shared-with-me/<project_id>',
+                        methods=['DELETE'], strict_slashes=False)
+def remove_project_shared_with_me(project_id):
+    """Grantee-side removal for a shared folder. Same contract as the
+    conversation route above."""
+    user_id = get_user_id()
+    if not user_id:
+        return jsonify({"error": "Authentication required."}), 401
+    org_id = (session.get('user') or {}).get('org_id')
+    result = conversation_sharing_store.remove_project_share_with_me(
+        user_id, org_id, project_id)
+    if result.get('removed'):
+        db.append_compliance_log(org_id, 'project_share_declined', f"user:{user_id}",
+                                 {"project_id": project_id,
+                                  "grantee_type": "user", "grantee": user_id})
+    return jsonify({"ok": bool(result.get('removed')), **result})
+
+
 @conversations_bp.route('/conversations/my-shares', methods=['GET'], strict_slashes=False)
 def list_my_shares():
     """Which of the caller's OWN conversations and folders carry a grant, so
