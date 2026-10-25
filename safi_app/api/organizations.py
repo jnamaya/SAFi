@@ -165,7 +165,7 @@ def verify_domain_dns():
         if found:
             db.confirm_domain_verification(org_id)
             
-            # Auto-rename to the verified domain (e.g. "My Org" -> "safinstitute.org").
+            # Auto-rename to the verified domain (e.g. "My Org" -> "example.com").
             try:
                 db.update_organization_name(org_id, domain)
                 current_app.logger.info(f"Auto-renamed Org {org_id} to {domain}")

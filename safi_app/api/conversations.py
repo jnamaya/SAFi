@@ -283,7 +283,7 @@ async def bot_process_prompt_endpoint():
                 "sub": user_id,
                 "id": user_id,
                 "name": f"Bot User {user_id[-4:]}",
-                "email": f"{user_id}@bot.safinstitute.org",
+                "email": f"{user_id}@{Config.BOT_EMAIL_DOMAIN}",
                 "picture": ""
             })
             db.update_user_profile(user_id, agent_key)
@@ -1755,7 +1755,7 @@ async def agentic_process_prompt_endpoint():
                 "sub": user_id,
                 "id": user_id,
                 "name": user_name or f"User {user_id[-4:]}",
-                "email": f"{user_id}@bot.safinstitute.org",
+                "email": f"{user_id}@{Config.BOT_EMAIL_DOMAIN}",
                 "picture": "",
             })
             db.update_user_profile(user_id, agent_key)

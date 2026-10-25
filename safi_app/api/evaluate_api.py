@@ -64,7 +64,7 @@ async def evaluate_endpoint():
                 "sub": user_id,
                 "id": user_id,
                 "name": f"Gateway Agent {agent_id}",
-                "email": f"{agent_id}@gateway.safinstitute.org",
+                "email": f"{agent_id}@{Config.GATEWAY_EMAIL_DOMAIN}",
                 "picture": ""
             })
 

@@ -311,6 +311,12 @@ class Config:
 
     BOT_API_SECRET = os.environ.get("SAFI_BOT_API_SECRET", "safi-bot-secret-123")
 
+    # Synthetic email domains for machine principals (JIT bot users and
+    # gateway agents). These are internal, non-deliverable placeholder
+    # addresses used purely for attribution — override per deployment.
+    BOT_EMAIL_DOMAIN = os.environ.get("SAFI_BOT_EMAIL_DOMAIN", "bot.safi.local")
+    GATEWAY_EMAIL_DOMAIN = os.environ.get("SAFI_GATEWAY_EMAIL_DOMAIN", "gateway.safi.local")
+
     # Master key for application-level encryption at rest (Fernet). Accepts a
     # comma-separated list: the FIRST key encrypts, ALL keys decrypt, so keys
     # can be rotated by prepending a new one. Unset = passthrough (plaintext)

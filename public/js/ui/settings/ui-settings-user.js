@@ -660,15 +660,17 @@ function _buildPasswordFields() {
                 If you were handed a temporary password, change it here — the change takes effect
                 immediately for your next sign-in.
             </p>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl">
-                <input type="password" id="inp-current-password" placeholder="Current password"
-                       autocomplete="current-password" class="px-3 py-2 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm outline-none focus:border-green-500">
-                <input type="password" id="inp-new-password" placeholder="New password (min 10 chars)"
-                       autocomplete="new-password" class="px-3 py-2 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm outline-none focus:border-green-500">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:gap-3 max-w-2xl">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 flex-1">
+                    <input type="password" id="inp-current-password" placeholder="Current password"
+                           autocomplete="current-password" class="px-3 py-2 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm outline-none focus:border-green-500">
+                    <input type="password" id="inp-new-password" placeholder="New password (min 10 chars)"
+                           autocomplete="new-password" class="px-3 py-2 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm outline-none focus:border-green-500">
+                </div>
+                <button id="btn-change-password" class="mt-3 sm:mt-0 px-4 py-2 rounded-lg font-medium bg-green-600 text-white hover:bg-green-700 text-sm transition-colors whitespace-nowrap self-start sm:self-auto">
+                    Change password
+                </button>
             </div>
-            <button id="btn-change-password" class="mt-3 px-4 py-2 rounded-lg font-medium bg-green-600 text-white hover:bg-green-700 text-sm transition-colors">
-                Change password
-            </button>
         </div>
     `;
 }

@@ -26,7 +26,7 @@ SAFI_API_URL = os.environ.get("SAFI_API_URL", "http://localhost:5001/api/bot/pro
 # Policy API key for the backend's /api/bot endpoint (minted in the SAFi
 # policy UI, checked against the api_keys table). Never hardcode it.
 SAFI_BOT_SECRET = os.environ.get("SAFI_BOT_POLICY_API_KEY", "")
-SAFI_PERSONA = os.environ.get("SAFI_BOT_PERSONA", "safinstitute_org_health")  # The persona this bot will assume
+SAFI_PERSONA = os.environ.get("SAFI_BOT_PERSONA", "")  # The persona (agent profile key) this bot will assume; must be set per deployment
 
 # Create Flask app
 app = Flask(__name__)
