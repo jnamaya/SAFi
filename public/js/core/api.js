@@ -618,6 +618,15 @@ export async function getOrgIdentity(orgId) {
 export async function updateOrgIdentity(orgId, changes) {
     return httpJSON(`/api/organizations/${orgId}/identity`, 'PUT', changes);
 }
+export async function listLdapGroupMappings(orgId) {
+    return httpGet(`/api/organizations/${orgId}/ldap/group-mappings`);
+}
+export async function upsertLdapGroupMapping(orgId, groupDn, role) {
+    return httpJSON(`/api/organizations/${orgId}/ldap/group-mappings`, 'PUT', { group_dn: groupDn, role });
+}
+export async function deleteLdapGroupMapping(orgId, mappingId) {
+    return httpJSON(`/api/organizations/${orgId}/ldap/group-mappings/${mappingId}`, 'DELETE', {});
+}
 export async function listInvitations(orgId) {
     return httpGet(`/api/organizations/${orgId}/invitations`);
 }

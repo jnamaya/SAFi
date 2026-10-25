@@ -973,7 +973,8 @@ def update_identity_config(org_id):
     data = request.json or {}
     changes = {k: data[k] for k in
                ('idle_timeout_minutes', 'session_lifetime_hours', 'join_policy',
-                'require_mfa', 'ms_tenant_id', 'google_hd') if k in data}
+                'require_mfa', 'ms_tenant_id', 'google_hd',
+                'ldap_enabled', 'ldap_auto_provision') if k in data}
     try:
         return jsonify(db.set_org_identity_config(org_id, changes, _actor()))
     except ValueError as e:
@@ -981,6 +982,49 @@ def update_identity_config(org_id):
     except Exception as e:
         current_app.logger.error(f"Error updating identity config: {e}")
         return jsonify({"error": "An internal error occurred."}), 500
+
+
+# LDAP PHASE 2 — directory group → role mappings (admin-managed, evaluated
+# at login time; see _apply_ldap_role_mapping in api/auth.py).
+
+@organizations_bp.route('/organizations/<org_id>/ldap/group-mappings', methods=['GET'])
+@require_role('admin')
+def list_ldap_group_mappings(org_id):
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
+    from ..persistence import scim_store
+    return jsonify({"mappings": db.list_ldap_group_mappings(org_id),
+                    "roles": sorted(scim_store.VALID_ROLES)})
+
+
+@organizations_bp.route('/organizations/<org_id>/ldap/group-mappings', methods=['PUT'])
+@require_role('admin')
+def upsert_ldap_group_mapping(org_id):
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
+    data = request.json or {}
+    group_dn = (data.get('group_dn') or '').strip()
+    role = data.get('role')
+    from ..persistence import scim_store
+    if not group_dn:
+        return jsonify({"error": "group_dn is required"}), 400
+    if role not in scim_store.VALID_ROLES:
+        return jsonify({"error": f"role must be one of: {', '.join(sorted(scim_store.VALID_ROLES))}"}), 400
+    try:
+        return jsonify(db.upsert_ldap_group_mapping(org_id, group_dn, role, _actor()))
+    except Exception as e:
+        current_app.logger.error(f"Error upserting LDAP group mapping: {e}")
+        return jsonify({"error": "An internal error occurred."}), 500
+
+
+@organizations_bp.route('/organizations/<org_id>/ldap/group-mappings/<mapping_id>', methods=['DELETE'])
+@require_role('admin')
+def delete_ldap_group_mapping(org_id, mapping_id):
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
+    ok = db.delete_ldap_group_mapping(org_id, mapping_id)
+    return (jsonify({"ok": True}) if ok
+            else (jsonify({"error": "Mapping not found"}), 404))
 
 # CHARTER ROUTES
 

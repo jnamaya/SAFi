@@ -755,6 +755,60 @@ def login_local_mfa():
 # for a TOTP-less account under require_mfa issues the restricted
 # enrollment session, not a full one.
 
+def _ldap_jit_target_org(email):
+    """Org eligible to JIT-provision this directory user: a live invitation
+    (any role the admin chose), else the verified-domain owner when it has
+    BOTH ldap_enabled and ldap_auto_provision. Returns {id, role} or None."""
+    inv = db.match_pending_invitation(email)
+    if inv:
+        if db.get_org_identity_config(inv['org_id']).get('ldap_enabled'):
+            return {"id": inv['org_id'], "role": inv['role'] or 'member'}
+        return None
+    domain = (email.split('@')[-1] or '').lower()
+    if domain and '@' in email:
+        org = db.get_organization_by_domain(domain)
+        if org:
+            cfg = db.get_org_identity_config(org['id'])
+            if cfg.get('ldap_enabled') and cfg.get('ldap_auto_provision'):
+                return {"id": org['id'], "role": 'member'}
+    return None
+
+
+def _ldap_provision_user(email, bind_result, jit_org, username):
+    """Create the email-keyed user row for a first-time directory login.
+    No password hash — the AD bind IS the credential (same posture as SSO)."""
+    user_id = f"ldap_{uuid.uuid4()}"
+    db.upsert_user({
+        "id": user_id, "email": email,
+        "name": bind_result.get('name') or username,
+        "org_id": jit_org['id'], "role": jit_org['role'],
+    })
+    return db.get_user_by_email(email)
+
+
+def _apply_ldap_role_mapping(user, user_dn):
+    """Group→role mapping (Phase 2): resolve the directory groups' mapped role
+    and update membership when it changed. Nothing is cached on the user row —
+    the directory is re-read at every sign-in, so demotions/promotions in AD
+    apply at the next login. Best-effort: a directory that fails to answer
+    memberOf keeps the existing role rather than blocking login."""
+    if not user or not user.get('org_id'):
+        return
+    from ..core import ldap_client
+    group_dns = ldap_client.get_groups(user_dn)
+    if group_dns is None:
+        return
+    new_role = db.resolve_ldap_role(user['org_id'], group_dns)
+    if new_role != (user.get('role') or 'member'):
+        db.update_user_org_and_role(user['id'], user['org_id'], new_role)
+        db.log_auth_event('role_changed', f"user:{user['id']}", org_id=user['org_id'],
+                          user_id=user['id'],
+                          detail={"source": "ldap_group_mapping", "old": user.get('role'),
+                                  "new": new_role, "groups": group_dns})
+        current_app.logger.info(
+            f"LDAP role mapping: {user.get('email')} {user.get('role')} -> {new_role}")
+
+
 @auth_bp.route('/login/ldap', methods=['POST'])
 def login_ldap():
     """
@@ -795,17 +849,26 @@ def login_ldap():
 
     user = db.get_user_by_email(email)
     if not user:
-        # Phase 1 does not auto-provision: an admin invites or pre-creates the
-        # account, exactly like the SSO-with-join_policy=invite_only posture.
-        db.log_auth_event('login_denied', f"ldap:{username}", org_id=None,
-                          user_id=None, detail={"idp": "ldap", "reason": "no_safi_account",
-                                                "email": email})
-        return jsonify({"error": "Directory sign-in succeeded, but no SAFi account "
-                                 "exists for this email. Ask your administrator for an invite."}), 403
+        # Phase 2 optional JIT provisioning: only for an org that BOTH enabled
+        # LDAP and opted into auto-provision, resolved via a pending invitation
+        # or the email's verified domain. Never a free-floating account.
+        jit_org = _ldap_jit_target_org(email)
+        if not jit_org:
+            db.log_auth_event('login_denied', f"ldap:{username}", org_id=None,
+                              user_id=None, detail={"idp": "ldap", "reason": "no_safi_account",
+                                                    "email": email})
+            return jsonify({"error": "Directory sign-in succeeded, but no SAFi account "
+                                     "exists for this email. Ask your administrator for an invite."}), 403
+        user = _ldap_provision_user(email, result, jit_org, username)
+        db.log_auth_event('member_joined', f"user:{user['id']}", org_id=jit_org['id'],
+                          user_id=user['id'],
+                          detail={"join_method": "ldap_jit", "idp": "ldap", "email": email})
 
     denied = _org_claim_gate(user, 'ldap', {'dn': result.get('dn')})
     if denied:
         return jsonify({"error": "Your organization has not enabled LDAP sign-in."}), 403
+
+    _apply_ldap_role_mapping(user, result.get('dn'))
 
     totp_state = db.get_user_totp(user['id'])
     if totp_state['enabled']:

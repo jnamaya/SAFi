@@ -127,6 +127,41 @@ def authenticate(username: str, password: str) -> dict:
             "name": (name or "").strip() or None}
 
 
+def get_groups(user_dn: str):
+    """Read the user's memberOf attribute via the service account.
+
+    Returns a list of group DNs, [] when the user is in no groups, or None
+    when the directory could not answer (misconfig / transient failure).
+    Callers must treat None as "skip role mapping": a directory outage must
+    never silently demote admins to member. Never raises — a group lookup
+    failure must not block login.
+    """
+    if not Config.ldap_configured() or not Config.LDAP_BIND_DN or not user_dn:
+        return None
+    try:
+        import ldap3
+        from ldap3 import Server, Connection, Tls, SUBTREE
+        import ssl as _ssl
+
+        use_ssl = Config.LDAP_URL.lower().startswith("ldaps://")
+        tls = Tls(validate=_ssl.CERT_REQUIRED, version=_ssl.PROTOCOL_TLS_CLIENT) if use_ssl else None
+        server = Server(Config.LDAP_URL, port=Config.LDAP_PORT, use_ssl=use_ssl, tls=tls,
+                        connect_timeout=Config.LDAP_TIMEOUT, get_info=None)
+        with Connection(server, user=Config.LDAP_BIND_DN,
+                        password=Config.LDAP_BIND_PASSWORD,
+                        auto_bind=True, receive_timeout=Config.LDAP_TIMEOUT) as svc:
+            svc.search(user_dn, "(objectClass=*)", search_scope="BASE",
+                       attributes=["memberOf"])
+            if not svc.entries:
+                return []
+            entry = svc.entries[0]
+            if "memberOf" not in entry:
+                return []
+            return [str(v) for v in entry["memberOf"].values]
+    except Exception:  # noqa: BLE001 — directory unreachable: caller keeps current role
+        return None
+
+
 def _escape_filter(value: str) -> str:
     """RFC 4515 filter escaping — the username goes into the search filter."""
     return re.sub(r"([\\\*\(\)\x00-\x1f])", lambda m: "\\" + format(ord(m.group(1)), "02x"), value)

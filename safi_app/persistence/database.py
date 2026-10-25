@@ -1087,6 +1087,19 @@ def init_db():
                 INDEX idx_auth_events_user (user_id, ts)
             )
         ''')
+        # LDAP Phase 2 — per-org directory group → SAFi role mapping,
+        # evaluated at login time so directory changes apply at next sign-in.
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS ldap_group_mappings (
+                id         CHAR(36) PRIMARY KEY,
+                org_id     VARCHAR(36) NOT NULL,
+                group_dn   VARCHAR(512) NOT NULL,
+                role       VARCHAR(100) NOT NULL,
+                created_by VARCHAR(255) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_ldap_group (org_id, group_dn)
+            )
+        ''')
 
         # --- Encryption-at-rest column migrations ---
         # Fernet ciphertext is base64 (~1.34x + 57 bytes), so TEXT columns that
@@ -6303,6 +6316,7 @@ IDENTITY_DEFAULTS = {
     "ms_tenant_id": None,                  # Entra tid to enforce (Phase 2)
     "google_hd": None,                     # Workspace hosted domain to enforce
     "ldap_enabled": False,                 # LDAP/AD sign-in allowed for this org
+    "ldap_auto_provision": False,          # create user rows on first LDAP bind
 }
 JOIN_POLICIES = ("invite_only", "domain_auto_join", "both")
 
@@ -6505,13 +6519,15 @@ def get_org_identity_config(org_id):
                 cfg[claim_key] = v.strip()
         if isinstance(ident.get("ldap_enabled"), bool):
             cfg["ldap_enabled"] = ident["ldap_enabled"]
+        if isinstance(ident.get("ldap_auto_provision"), bool):
+            cfg["ldap_auto_provision"] = ident["ldap_auto_provision"]
         return cfg
     finally:
         cursor.close()
         conn.close()
 
 
-def set_org_identity_config(org_id, changes, actor):
+def set_org_identity_config(org_id, changes, actor):  # noqa: C901 (validation ladder)
     """Merge identity settings AND journal the change to auth_events in the
     same transaction (mirror of set_org_retention_config's contract).
     changes: any of idle_timeout_minutes (int|None resets), session_lifetime_hours
@@ -6539,6 +6555,10 @@ def set_org_identity_config(org_id, changes, actor):
         if not isinstance(changes["ldap_enabled"], bool):
             raise ValueError("ldap_enabled must be true or false")
         validated["ldap_enabled"] = changes["ldap_enabled"]
+    if "ldap_auto_provision" in changes:
+        if not isinstance(changes["ldap_auto_provision"], bool):
+            raise ValueError("ldap_auto_provision must be true or false")
+        validated["ldap_auto_provision"] = changes["ldap_auto_provision"]
     if "ms_tenant_id" in changes:
         v = changes["ms_tenant_id"]
         if v is not None:
@@ -6595,6 +6615,92 @@ def set_org_identity_config(org_id, changes, actor):
         cursor.close()
         conn.close()
     return get_org_identity_config(org_id)
+
+
+# -------------------------------------------------------------------------
+# LDAP PHASE 2 — directory group → SAFi role mapping
+# Evaluated at login time so directory changes apply at next sign-in;
+# nothing is cached on the user row.
+# -------------------------------------------------------------------------
+
+def list_ldap_group_mappings(org_id) -> list:
+    """All group_dn → role mappings for an org, oldest first."""
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT id, group_dn, role, created_by, created_at "
+                       "FROM ldap_group_mappings WHERE org_id=%s ORDER BY created_at",
+                       (org_id,))
+        return cursor.fetchall()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def upsert_ldap_group_mapping(org_id, group_dn, role, actor):
+    """Insert or update (org_id, group_dn) → role. Returns the mapping row."""
+    group_dn = (group_dn or "").strip()
+    if not group_dn:
+        raise ValueError("group_dn is required")
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            INSERT INTO ldap_group_mappings (id, org_id, group_dn, role, created_by)
+            VALUES (%s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE role=VALUES(role), created_by=VALUES(created_by)
+        """, (str(uuid.uuid4()), org_id, group_dn, role, actor))
+        log_auth_event("ldap_group_mapping_changed", actor, org_id=org_id,
+                       detail={"group_dn": group_dn, "role": role}, cursor=cursor)
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+    return {"org_id": org_id, "group_dn": group_dn, "role": role}
+
+
+def delete_ldap_group_mapping(org_id, mapping_id) -> bool:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM ldap_group_mappings WHERE org_id=%s AND id=%s",
+                       (org_id, mapping_id))
+        deleted = cursor.rowcount > 0
+        if deleted:
+            log_auth_event("ldap_group_mapping_removed", _actor_default(), org_id=org_id,
+                           detail={"mapping_id": mapping_id}, cursor=cursor)
+        conn.commit()
+        return deleted
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def _actor_default():
+    return "admin"
+
+
+def resolve_ldap_role(org_id, group_dns) -> str:
+    """Highest-ranked mapped role for the user's directory groups; 'member'
+    when nothing matches. group_dn comparison is case-insensitive (DNs are)."""
+    if not group_dns:
+        return "member"
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT group_dn, role FROM ldap_group_mappings WHERE org_id=%s",
+                       (org_id,))
+        rows = cursor.fetchall()
+    finally:
+        cursor.close()
+        conn.close()
+    from .scim_store import ROLE_RANK
+    wanted = {str(dn).strip().lower() for dn in group_dns}
+    best, best_rank = "member", -1
+    for group_dn, role in rows:
+        if str(group_dn).strip().lower() in wanted and ROLE_RANK.get(role, 0) > best_rank:
+            best, best_rank = role, ROLE_RANK.get(role, 0)
+    return best
 
 
 def update_session_auth_context(sid, auth_context):

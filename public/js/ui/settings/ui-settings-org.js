@@ -480,6 +480,36 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                          class="mt-1 w-full rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm font-mono">
                      <span class="block text-xs text-gray-400 mt-1">When set, only Google sign-ins from this Workspace domain are accepted; consumer Gmail accounts are rejected.</span>
                  </label>
+                 <label class="block">
+                     <span class="text-sm font-bold text-gray-700 dark:text-gray-300">LDAP / Active Directory sign-in</span>
+                     <select id="sel-ldap-enabled" class="mt-1 w-full rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm">
+                         <option value="false">Off</option>
+                         <option value="true">Enabled</option>
+                     </select>
+                     <span class="block text-xs text-gray-400 mt-1">Lets members sign in with their directory account (DOMAIN&#92;user or user@domain) once the instance is configured with SAFI_LDAP_* settings. The directory password is never stored; accounts match by email.</span>
+                 </label>
+                 <label class="block">
+                     <span class="text-sm font-bold text-gray-700 dark:text-gray-300">LDAP auto-provision</span>
+                     <select id="sel-ldap-auto-provision" class="mt-1 w-full rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm">
+                         <option value="false">Off (invite-only)</option>
+                         <option value="true">Provision on first sign-in</option>
+                     </select>
+                     <span class="block text-xs text-gray-400 mt-1">When on, a directory user whose email matches a pending invitation — or whose verified domain belongs to this org — gets a SAFi account on first successful bind (role: member, or the invitation's role). Requires LDAP sign-in enabled.</span>
+                 </label>
+             </div>
+             <div class="mt-4">
+                 <h5 class="text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Directory group &rarr; role mappings</h5>
+                 <p class="text-xs text-gray-400 mb-2">Map AD group DNs to SAFi roles. Evaluated at every sign-in from the directory's memberOf attribute — promote or demote in AD and it applies on the next login. A user in no mapped group keeps their current role; the highest-ranked matching mapping wins.</p>
+                 <div id="ldap-group-mappings" class="space-y-2 mb-3"></div>
+                 <div class="flex flex-col sm:flex-row gap-2">
+                     <input type="text" id="inp-ldap-group-dn" placeholder="CN=SAFi Admins,OU=Groups,DC=corp,DC=example,DC=com" spellcheck="false"
+                         class="flex-1 rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm font-mono">
+                     <select id="sel-ldap-group-role" class="rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm">
+                         <option value="admin">admin</option>
+                         <option value="member">member</option>
+                     </select>
+                     <button id="btn-add-ldap-mapping" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-bold">Add</button>
+                 </div>
              </div>
              <p class="text-xs text-gray-400 mt-4">
                  Verifying your domain above (DNS TXT record) fills these two fields in
@@ -1229,6 +1259,8 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
             document.getElementById('sel-require-mfa').value = String(!!cfg.require_mfa);
             document.getElementById('inp-ms-tenant').value = cfg.ms_tenant_id || '';
             document.getElementById('inp-google-hd').value = cfg.google_hd || '';
+            document.getElementById('sel-ldap-enabled').value = String(!!cfg.ldap_enabled);
+            document.getElementById('sel-ldap-auto-provision').value = String(!!cfg.ldap_auto_provision);
         }).catch(() => {});
         document.getElementById('btn-save-identity').addEventListener('click', async () => {
             const idleRaw = document.getElementById('inp-idle-timeout').value;
@@ -1241,12 +1273,59 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                     require_mfa: document.getElementById('sel-require-mfa').value === 'true',
                     ms_tenant_id: document.getElementById('inp-ms-tenant').value.trim() || null,
                     google_hd: document.getElementById('inp-google-hd').value.trim() || null,
+                    ldap_enabled: document.getElementById('sel-ldap-enabled').value === 'true',
+                    ldap_auto_provision: document.getElementById('sel-ldap-auto-provision').value === 'true',
                 });
                 ui.showToast('Identity settings saved', 'success');
             } catch (e) {
                 ui.showToast(e.message || 'Save failed', 'error');
             }
         });
+    }
+
+    // --- LDAP group→role mappings (Identity & Access card, admin) ---
+    const btnAddMapping = document.getElementById('btn-add-ldap-mapping');
+    if (btnAddMapping) {
+        const renderMappings = (mappings) => {
+            const box = document.getElementById('ldap-group-mappings');
+            if (!mappings?.length) {
+                box.innerHTML = '<p class="text-xs text-gray-400">No mappings yet — users keep their current role unless a mapped group applies.</p>';
+                return;
+            }
+            box.innerHTML = mappings.map(m => `
+                <div class="flex items-center justify-between gap-2 rounded-lg border border-gray-200 dark:border-neutral-700 px-3 py-2">
+                    <span class="text-xs font-mono text-gray-700 dark:text-gray-300 break-all">${m.group_dn.replace(/</g, '&lt;')}</span>
+                    <span class="flex items-center gap-2 shrink-0">
+                        <span class="text-xs font-bold text-green-700 dark:text-green-400">${m.role}</span>
+                        <button data-mapping-id="${m.id}" class="mapping-del text-xs text-red-600 hover:text-red-700 dark:text-red-400">Remove</button>
+                    </span>
+                </div>`).join('');
+            box.querySelectorAll('.mapping-del').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    try {
+                        await api.deleteLdapGroupMapping(org.id, btn.dataset.mappingId);
+                        loadMappings();
+                    } catch (e) { ui.showToast(e.message || 'Delete failed', 'error'); }
+                });
+            });
+        };
+        const loadMappings = () => {
+            api.listLdapGroupMappings(org.id)
+                .then(res => renderMappings(res.mappings))
+                .catch(() => {});
+        };
+        btnAddMapping.addEventListener('click', async () => {
+            const dn = document.getElementById('inp-ldap-group-dn').value.trim();
+            const role = document.getElementById('sel-ldap-group-role').value;
+            if (!dn || !dn.includes('=')) { ui.showToast('Enter a full group DN (e.g. CN=SAFi Admins,OU=Groups,DC=...)', 'error'); return; }
+            try {
+                await api.upsertLdapGroupMapping(org.id, dn, role);
+                document.getElementById('inp-ldap-group-dn').value = '';
+                ui.showToast('Mapping saved', 'success');
+                loadMappings();
+            } catch (e) { ui.showToast(e.message || 'Save failed', 'error'); }
+        });
+        loadMappings();
     }
 
     // --- Invitations ---
