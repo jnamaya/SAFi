@@ -206,36 +206,25 @@
                 <div class="flex-1 h-px bg-neutral-200 dark:bg-neutral-800"></div>
                 <div class="flex-1 h-px bg-neutral-200 dark:bg-neutral-800"></div>
               </div>
-              <form id="local-login-form" class="flex flex-col gap-2 w-full">
+                <form id="local-login-form" class="flex flex-col gap-2 w-full">
+                <!-- AD mode toggle (revealed by app-config when LDAP is enabled) -->
+                <label id="ad-login-toggle" class="hidden flex items-center gap-2 text-xs text-neutral-600 dark:text-neutral-300 cursor-pointer select-none">
+                  <input id="use-ad-login" type="checkbox"
+                    class="w-4 h-4 accent-green-600" />
+                  Login with Active Directory
+                </label>
+                <p id="ad-login-hint" class="hidden text-xs text-neutral-400 dark:text-neutral-500">
+                  Use your domain account, e.g. SAFI\username
+                </p>
                 <input id="local-identifier" type="text" placeholder="Username or email" required autocomplete="username"
                   class="w-full px-4 py-2.5 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 dark:text-white" />
                 <input id="local-password" type="password" placeholder="Password" required autocomplete="current-password"
                   class="w-full px-4 py-2.5 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 dark:text-white" />
-                <button type="submit"
+                <button type="submit" id="local-login-submit"
                   class="w-full px-4 py-2.5 rounded-lg bg-green-600 hover:bg-green-700 text-white font-semibold text-sm transition">
                   Sign In
                 </button>
                 <p id="local-login-error" class="hidden text-red-500 text-xs text-center mt-1"></p>
-              </form>
-            </div>
-
-            <!-- LDAP / Active Directory login (shown only when SAFI_LDAP_URL is set) -->
-            <div id="ldap-login-section" class="hidden w-full max-w-xs mt-2">
-              <div class="flex items-center gap-3 my-3">
-                <div class="flex-1 h-px bg-neutral-200 dark:bg-neutral-800"></div>
-                <span class="text-xs text-neutral-400 dark:text-neutral-500">Domain account</span>
-                <div class="flex-1 h-px bg-neutral-200 dark:bg-neutral-800"></div>
-              </div>
-              <form id="ldap-login-form" class="flex flex-col gap-2 w-full">
-                <input id="ldap-identifier" type="text" placeholder="DOMAIN\username" required autocomplete="username"
-                  class="w-full px-4 py-2.5 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 dark:text-white" />
-                <input id="ldap-password" type="password" placeholder="AD Password" required autocomplete="current-password"
-                  class="w-full px-4 py-2.5 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 dark:text-white" />
-                <button type="submit"
-                  class="w-full px-4 py-2.5 rounded-lg bg-green-600 hover:bg-green-700 text-white font-semibold text-sm transition">
-                  Sign In with AD
-                </button>
-                <p id="ldap-login-error" class="hidden text-red-500 text-xs text-center mt-1"></p>
               </form>
             </div>
 
@@ -1146,13 +1135,20 @@
         if (!cfg.microsoft_login_enabled) {
           document.getElementById('login-microsoft-button')?.remove();
         }
-        if (cfg.local_login_enabled && !_inviteToken) {
-          const section = document.getElementById('local-login-section');
-          if (section) section.classList.remove('hidden');
+        if (_inviteToken) return;
+        // Show the single combined form if either local or LDAP login is
+        // available; the AD checkbox is only revealed when LDAP is enabled.
+        if (cfg.local_login_enabled || cfg.ldap_login_enabled) {
+          document.getElementById('local-login-section')?.classList.remove('hidden');
         }
-        if (cfg.ldap_login_enabled && !_inviteToken) {
-          const section = document.getElementById('ldap-login-section');
-          if (section) section.classList.remove('hidden');
+        if (cfg.ldap_login_enabled) {
+          document.getElementById('ad-login-toggle')?.classList.remove('hidden');
+        }
+        if (!cfg.local_login_enabled && cfg.ldap_login_enabled) {
+          // LDAP-only deployment: default the checkbox on so users aren't
+          // forced to notice the toggle before the form works.
+          const cb = document.getElementById('use-ad-login');
+          if (cb) { cb.checked = true; cb.dispatchEvent(new Event('change')); }
         }
       })
       .catch(() => {}); // fail silently — don't break the login page
@@ -1165,7 +1161,7 @@
     (function () {
       if (!_inviteToken) return;
 
-      ['login-button', 'login-microsoft-button', 'login-demo-button', 'local-login-section']
+      ['login-button', 'login-microsoft-button', 'login-demo-button', 'local-login-section', 'ad-login-toggle']
         .forEach(id => document.getElementById(id)?.classList.add('hidden'));
       document.getElementById('invite-claim-section')?.classList.remove('hidden');
 
@@ -1211,83 +1207,42 @@
       });
     })();
 
-    // Local admin login form submission
+    // Combined login form: one set of credential fields serves both local
+    // accounts and Active Directory binds. The "Login with Active Directory"
+    // checkbox (revealed only when cfg.ldap_login_enabled) switches the
+    // endpoint, placeholders, and MFA follow-up between the two flows.
+    const _adToggle = document.getElementById('use-ad-login');
+    function _isAdMode() { return !!(_adToggle && _adToggle.checked); }
+
+    _adToggle?.addEventListener('change', function () {
+      const idField = document.getElementById('local-identifier');
+      const pwField = document.getElementById('local-password');
+      const btn     = document.getElementById('local-login-submit');
+      const hint    = document.getElementById('ad-login-hint');
+      const on = this.checked;
+      if (idField) idField.placeholder = on ? 'DOMAIN\\username' : 'Username or email';
+      if (pwField) pwField.placeholder = on ? 'AD Password' : 'Password';
+      if (btn) btn.textContent = on ? 'Sign In with AD' : 'Sign In';
+      if (hint) hint.classList.toggle('hidden', !on);
+      const err = document.getElementById('local-login-error');
+      if (err) err.classList.add('hidden');
+    });
+
     document.getElementById('local-login-form')?.addEventListener('submit', async function(e) {
       e.preventDefault();
+      const adMode = _isAdMode();
       const identifier = document.getElementById('local-identifier').value.trim();
       const password = document.getElementById('local-password').value;
       const errorEl  = document.getElementById('local-login-error');
       const submitBtn = this.querySelector('button[type="submit"]');
+      const idleLabel = adMode ? 'Sign In with AD' : 'Sign In';
 
       errorEl.classList.add('hidden');
       submitBtn.disabled = true;
       submitBtn.textContent = 'Signing in…';
 
       try {
-        const res = await fetch(`${_HOST}/api/login/local`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: _isNative ? 'include' : 'same-origin',
-          body: JSON.stringify({ identifier, password })
-        });
-
-        if (res.ok) {
-          const data = await res.json().catch(() => ({}));
-          if (data.mfa_required && data.mfa_token) {
-            // Two-factor step: swap the password form for a code prompt.
-            showMfaCodeStep(data.mfa_token);
-            return;
-          }
-          if (data.token) {
-            // Server returned a bearer token — store it and reload
-            const TOKEN_KEY = 'safi_auth_token';
-            localStorage.setItem(TOKEN_KEY, data.token);
-            window.location.reload();
-          } else {
-            // Server may have used a cookie session (redirect-based flow).
-            // Verify it actually works before reloading, so we can show a clear
-            // error instead of silently bouncing back to the login screen.
-            const meRes = await fetch(`${_HOST}/api/me`, { credentials: 'include' }).catch(() => null);
-            if (meRes && meRes.ok) {
-              window.location.reload();
-            } else {
-              errorEl.textContent = 'Login succeeded on the server but the session could not be established. Make sure local accounts are configured correctly.';
-              errorEl.classList.remove('hidden');
-              submitBtn.disabled = false;
-              submitBtn.textContent = 'Sign In';
-            }
-          }
-        } else {
-          const data = await res.json().catch(() => ({}));
-          errorEl.textContent = data.error || 'Invalid credentials.';
-          errorEl.classList.remove('hidden');
-          submitBtn.disabled = false;
-          submitBtn.textContent = 'Sign In';
-        }
-      } catch {
-        errorEl.textContent = 'Connection error. Please try again.';
-        errorEl.classList.remove('hidden');
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Sign In';
-      }
-    });
-
-    // LDAP / Active Directory login form submission. Mirrors the local flow:
-    // bind first, then either a session, an MFA code step (TOTP enrolled), or
-    // a restricted MFA-enrollment session (reload — app.js routes to setup).
-    document.getElementById('ldap-login-form')?.addEventListener('submit', async function(e) {
-      e.preventDefault();
-      const identifier = document.getElementById('ldap-identifier').value.trim();
-      const password = document.getElementById('ldap-password').value;
-      const errorEl  = document.getElementById('ldap-login-error');
-      const submitBtn = this.querySelector('button[type="submit"]');
-
-      errorEl.classList.add('hidden');
-      submitBtn.disabled = true;
-      submitBtn.textContent = 'Signing in…';
-
-      try {
-        const res = await fetch(`${_HOST}/api/login/ldap`, {
+        const res = await fetch(`${_HOST}${adMode ? '/api/login/ldap' : '/api/login/local'}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: _isNative ? 'include' : 'same-origin',
@@ -1295,22 +1250,43 @@
         });
         const data = await res.json().catch(() => ({}));
 
-        if (res.ok && data.ok) {
+        if (res.ok && adMode && data.ok) {
           // Session (or restricted enrollment session) established via cookie.
           window.location.reload();
         } else if (res.ok && data.mfa_required && data.mfa_token) {
-          showMfaCodeStep(data.mfa_token, `${_HOST}/api/login/ldap/mfa`);
+          // Two-factor step: swap the password form for a code prompt.
+          showMfaCodeStep(data.mfa_token,
+            adMode ? `${_HOST}/api/login/ldap/mfa` : undefined);
+        } else if (res.ok && !adMode && data.token) {
+          // Server returned a bearer token — store it and reload
+          const TOKEN_KEY = 'safi_auth_token';
+          localStorage.setItem(TOKEN_KEY, data.token);
+          window.location.reload();
+        } else if (res.ok && !adMode) {
+          // Server may have used a cookie session (redirect-based flow).
+          // Verify it actually works before reloading, so we can show a clear
+          // error instead of silently bouncing back to the login screen.
+          const meRes = await fetch(`${_HOST}/api/me`, { credentials: 'include' }).catch(() => null);
+          if (meRes && meRes.ok) {
+            window.location.reload();
+          } else {
+            errorEl.textContent = 'Login succeeded on the server but the session could not be established. Make sure local accounts are configured correctly.';
+            errorEl.classList.remove('hidden');
+            submitBtn.disabled = false;
+            submitBtn.textContent = idleLabel;
+          }
         } else {
-          errorEl.textContent = data.error || 'Invalid directory credentials.';
+          errorEl.textContent = data.error ||
+            (adMode ? 'Invalid directory credentials.' : 'Invalid credentials.');
           errorEl.classList.remove('hidden');
           submitBtn.disabled = false;
-          submitBtn.textContent = 'Sign In with AD';
+          submitBtn.textContent = idleLabel;
         }
       } catch {
         errorEl.textContent = 'Connection error. Please try again.';
         errorEl.classList.remove('hidden');
         submitBtn.disabled = false;
-        submitBtn.textContent = 'Sign In with AD';
+        submitBtn.textContent = idleLabel;
       }
     });
 
