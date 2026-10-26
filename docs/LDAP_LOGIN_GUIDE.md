@@ -2,6 +2,38 @@
 
 A quick end-user guide for signing in to SAFi with your corporate directory (Active Directory / LDAP) credentials.
 
+## Prerequisites
+
+Before LDAP sign-in can work, the following must be in place on the server side:
+
+1. **A functional domain controller on the network.** SAFi must be able to reach the DC (LDAP/LDAPS) from the app container — check DNS or host pinning if you use an internal name.
+2. **A certificate installed on the DC.** The DC needs a server-authentication certificate whose Subject or SAN matches the hostname in `SAFI_LDAP_URL`. A **self-signed certificate or internal-CA certificate is fine** — you just have to trust it from SAFi (see `SAFI_LDAP_TLS_CA_FILE` below, and the appendix at the bottom of this guide for install steps). Without TLS, domains that require LDAP channel signing will reject every bind.
+3. **LDAP settings configured in `.env`.** The working reference configuration (copy of the current lab `.env`; supply your own bind password):
+
+   ```dotenv
+   # The LDAP login card only appears when SAFI_LDAP_URL and SAFI_LDAP_BASE_DN
+   SAFI_LDAP_URL=ldaps://safi-DC1.safi.local
+   SAFI_LDAP_BASE_DN=DC=safi,DC=local
+   SAFI_LDAP_BIND_DN=CN=safi,CN=Users,DC=safi,DC=local
+   SAFI_LDAP_BIND_PASSWORD=<your-service-account-password>
+
+   # SAFI_LDAP_PORT=            # 389/636 by scheme when unset
+   # SAFI_LDAP_USER_FILTER=(sAMAccountName={login})
+   SAFI_LDAP_EMAIL_ATTR=userPrincipalName
+   # SAFI_LDAP_NAME_ATTR=displayName
+   SAFI_LDAP_TIMEOUT=5
+   SAFI_LDAP_TLS_VERIFY=true
+   SAFI_LDAP_TLS_CA_FILE=/app/certs/safi-ca.pem
+
+   SAFI_LDAP_STARTTLS=false
+   ```
+
+   Notes:
+   - `SAFI_LDAP_EMAIL_ATTR=userPrincipalName` is used here because AD `mail` attributes are often empty; set it to `mail` if your directory populates email.
+   - `SAFI_LDAP_TLS_CA_FILE` is a path **inside the app container** — mount your CA bundle (e.g. `./certs:/app/certs` in `docker-compose.override.yml`).
+   - Restart the app container after changing these.
+4. **LDAP sign-in enabled for your organization** (Admin → Settings → Identity & Access → **Enable LDAP sign-in**).
+
 ## Before you start
 
 LDAP sign-in must be enabled for your organization by an admin (Admin → Settings → Identity & Access → **Enable LDAP sign-in**). If you don't see the LDAP card on the login page, contact your SAFi administrator.
