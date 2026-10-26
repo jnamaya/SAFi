@@ -43,6 +43,11 @@ def org_key_map(org_id) -> Dict[str, str]:
     except Exception as e:
         logging.warning(f"Org provider keys unavailable for {org_id}: {e}")
         keys = hit[1] if hit else {}
+    # Drop entries whose decrypted value is empty or whitespace-only: a row
+    # with a blank key must not make the provider appear "configured" in the
+    # model picker while failing at dispatch (mirrors the .strip() guard the
+    # .env layer applies in configured_providers).
+    keys = {p: k for p, k in keys.items() if (k or "").strip()}
     with _lock:
         _cache[org_id] = (now, keys)
     return keys

@@ -50,6 +50,11 @@ def deployment_key_map() -> Dict[str, str]:
     except Exception as e:
         logging.warning(f"Deployment provider keys unavailable: {e}")
         keys = hit[1] if hit else {}
+    # Drop entries whose decrypted value is empty or whitespace-only: a row
+    # with a blank key must not make the provider appear "configured" in the
+    # model picker while failing at dispatch (the .env layer already filters
+    # via .strip(); this mirrors that guard for the DB layer).
+    keys = {p: k for p, k in keys.items() if (k or "").strip()}
     with _lock:
         _cache_entry = (now, keys)
     return keys
