@@ -138,6 +138,25 @@ class TestCagedRedirectConscience(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('reason == "low_alignment_score"', orch_source)
         self.assertIn('res.get("verdict") == "approve"', orch_source)
 
+    def test_agent_profiles_have_optimized_directives(self):
+        """Sysadmin and Software Engineer must have customized internal_rephrase_directives."""
+        from safi_app.core.agents.sysadmin import SYSADMIN_AGENT
+        from safi_app.core.agents.software_engineer import SOFTWARE_ENGINEER_AGENT
+
+        for agent in (SYSADMIN_AGENT, SOFTWARE_ENGINEER_AGENT):
+            directives = agent.get("internal_rephrase_directives", {})
+            self.assertIn("scope_violation", directives)
+            self.assertIn("ethical_violation", directives)
+            self.assertIn("grounding_violation", directives)
+
+    def test_software_engineer_deterministic_fallback_is_concise(self):
+        """The deterministic fallback for Software Engineer should be crisp and concise, not 500 characters."""
+        from safi_app.core.agents.software_engineer import SOFTWARE_ENGINEER_AGENT
+        self.safi.profile = SOFTWARE_ENGINEER_AGENT
+        fallback = self.safi._deterministic_redirect_fallback("scope_violation")
+        self.assertIn("Software engineering in any language", fallback)
+        self.assertLess(len(fallback), 250)
+
 
 if __name__ == "__main__":
     unittest.main()

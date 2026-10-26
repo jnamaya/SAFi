@@ -3143,9 +3143,14 @@ class SAFi:
 
         if violation_type in ("scope_violation", "scope_validation"):
             if scope:
+                clean_scope = scope.strip()
+                if len(clean_scope) > 160 and ":" in clean_scope:
+                    clean_scope = clean_scope.split(":")[0].strip()
+                if not clean_scope.endswith("."):
+                    clean_scope += "."
                 return (
                     f"That request falls outside my operational scope as {agent_name}. "
-                    f"My focus is: {scope.strip()} "
+                    f"My focus is: {clean_scope} "
                     f"Please feel free to ask a question within that area."
                 )
             return (
