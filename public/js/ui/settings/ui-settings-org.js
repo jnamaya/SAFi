@@ -136,6 +136,9 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                              <button id="btn-check-verify" data-org-id="${org.id}" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-semibold transition-colors">
                                 Check DNS Records
                             </button>
+                             <button id="btn-check-verify-directory" data-org-id="${org.id}" class="px-4 py-2 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 rounded-lg text-sm font-semibold transition-colors" title="For internal domains with no public DNS (e.g. Active Directory namespaces): prove ownership through your LDAP/AD directory instead of a TXT record.">
+                                 Verify via Directory
+                             </button>
                             <button id="btn-cancel-verify" data-org-id="${org.id}" class="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 dark:bg-red-900/30 dark:hover:bg-red-900/50 dark:text-red-300 rounded-lg text-sm font-semibold transition-colors">
                                 Cancel
                             </button>
@@ -1068,6 +1071,29 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                 ui.showToast(e.message, "error");
                 checkBtn.disabled = false;
                 checkBtn.textContent = "Check Again";
+            }
+        });
+    }
+
+    const checkDirBtn = document.getElementById('btn-check-verify-directory');
+    if (checkDirBtn) {
+        checkDirBtn.addEventListener('click', async () => {
+            checkDirBtn.disabled = true;
+            checkDirBtn.textContent = "Checking...";
+            try {
+                const res = await api.checkDomainVerificationByDirectory(checkDirBtn.dataset.orgId);
+                if (res && res.status === 'verified') {
+                    ui.showToast(`Domain verified via your directory (${res.directory_contexts ? res.directory_contexts.join(', ') : 'LDAP'}).`, 'success');
+                    renderSettingsOrganizationTab(); // Refresh
+                } else {
+                    ui.showToast(res && res.error ? res.error : "The directory could not confirm this domain.", "warning");
+                    checkDirBtn.disabled = false;
+                    checkDirBtn.textContent = "Verify via Directory";
+                }
+            } catch (e) {
+                ui.showToast(e.message, "error");
+                checkDirBtn.disabled = false;
+                checkDirBtn.textContent = "Verify via Directory";
             }
         });
     }

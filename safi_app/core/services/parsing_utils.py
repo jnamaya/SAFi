@@ -41,9 +41,25 @@ def robust_json_parse(raw_text: str, log: "logging.Logger") -> Dict[str, Any]:
         json_text = json_text[start:end+1]
     
     try:
-        obj = json.loads(json_text)
+        obj = json.loads(json_text, strict=False)
         return obj
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    # Trailing commas repair (without destroying newlines)
+    try:
+        no_trailing_commas = re.sub(r",\s*([}\]])", r"\1", json_text)
+        obj = json.loads(no_trailing_commas, strict=False)
+        return obj
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    # Invalid-escape repair (without destroying newlines)
+    try:
+        repaired = re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', no_trailing_commas)
+        obj = json.loads(repaired, strict=False)
+        return obj
+    except (json.JSONDecodeError, TypeError):
         pass
 
     # Sanitized retry: newline flattening, trailing commas, whitespace runs.
@@ -52,9 +68,9 @@ def robust_json_parse(raw_text: str, log: "logging.Logger") -> Dict[str, Any]:
         sanitized = re.sub(r",\s*([}\]])", r"\1", sanitized) 
         sanitized = re.sub(r"\s{2,}", " ", sanitized).strip()
         
-        obj = json.loads(sanitized)
+        obj = json.loads(sanitized, strict=False)
         return obj
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, TypeError):
         pass
 
     # Invalid-escape repair.
@@ -65,9 +81,9 @@ def robust_json_parse(raw_text: str, log: "logging.Logger") -> Dict[str, Any]:
     # escape and retry.
     try:
         repaired = re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', sanitized)
-        obj = json.loads(repaired)
+        obj = json.loads(repaired, strict=False)
         return obj
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, TypeError):
         log.warning(f"Robust JSON parse failed. Content start: {json_text[:100]}...")
         return {"error": "JSONDecodeError", "raw_content": raw_text}
 
@@ -326,3 +342,157 @@ def parse_tool_calls_from_text(raw_text: str, log: Optional["logging.Logger"] = 
         log.info(f"parse_tool_calls_from_text: Successfully salvaged {len(calls)} tool call(s) from XML tags.")
 
     return calls
+
+
+def salvage_tool_call_arguments(
+    tool_name: str,
+    raw_args: str,
+    log: Optional["logging.Logger"] = None,
+) -> Optional[Dict[str, Any]]:
+    """Salvage malformed or non-JSON tool call arguments.
+
+    Models occasionally emit raw shell scripts, code blocks, or broken JSON with
+    unescaped quotes/newlines inside `tool_calls.function.arguments`.
+    This function extracts and standardizes arguments based on known tool schemas
+    so turns do not fail due to surface formatting defects.
+    """
+    if not raw_args:
+        return None
+
+    norm_tool = (tool_name or "").strip().lower()
+
+    # 1. bash / shell execution
+    if norm_tool in ("bash", "sh", "shell"):
+        text = raw_args.strip()
+
+        # Check if the model attempted a JSON structure with "command" or "cmd"
+        m_json_cmd = re.search(r'["\'](?:command|cmd)["\']\s*:\s*["\'](.*)["\']\s*\}?\s*$', text, re.DOTALL)
+        if m_json_cmd:
+            cmd = m_json_cmd.group(1).strip()
+            if cmd:
+                if log:
+                    log.info("salvage_tool_call_arguments: salvaged command from broken JSON for '%s'", tool_name)
+                return {"command": cmd}
+
+        # Unwrap markdown code fence if present
+        if "```" in text:
+            m_fence = re.search(r"```(?:bash|sh|shell|zsh|dotenv|env)?\s*(.*?)\s*```", text, re.DOTALL | re.IGNORECASE)
+            if m_fence:
+                text = m_fence.group(1).strip()
+            else:
+                text = re.sub(r"^```[a-zA-Z0-9_-]*\s*", "", text).strip()
+                text = re.sub(r"\s*```$", "", text).strip()
+
+        # Strip leading language or shell tags (e.g. "bash\n", "dotenv\n", "env\n")
+        text = re.sub(r"^(?:bash|sh|shell|zsh|dotenv|env)[\r\n\s]+", "", text, flags=re.IGNORECASE).strip()
+
+        if text:
+            if log:
+                log.info("salvage_tool_call_arguments: salvaged raw shell script into {'command': ...} for '%s'", tool_name)
+            return {"command": text}
+        return None
+
+    # 2. File read or list
+    if norm_tool in ("read", "list", "read_file"):
+        text = raw_args.strip()
+        m_path = re.search(r'["\'](?:path|filePath)["\']\s*:\s*["\']([^"\']+)["\']', text)
+        if m_path:
+            return {"path": m_path.group(1).strip()}
+        cleaned = text.strip("'\"` \t\r\n")
+        if cleaned and "\n" not in cleaned and "{" not in cleaned and "}" not in cleaned:
+            if log:
+                log.info("salvage_tool_call_arguments: salvaged raw path for '%s'", tool_name)
+            return {"path": cleaned}
+        return None
+
+    # 3. Glob
+    if norm_tool in ("glob", "glob_files"):
+        text = raw_args.strip()
+        m_pat = re.search(r'["\']pattern["\']\s*:\s*["\']([^"\']+)["\']', text)
+        if m_pat:
+            return {"pattern": m_pat.group(1).strip()}
+        cleaned = text.strip("'\"` \t\r\n")
+        if cleaned and "\n" not in cleaned and "{" not in cleaned:
+            return {"pattern": cleaned}
+        return None
+
+    # 4. Grep
+    if norm_tool in ("grep", "grep_files"):
+        text = raw_args.strip()
+        m_pat = re.search(r'["\']pattern["\']\s*:\s*["\']([^"\']+)["\']', text)
+        if m_pat:
+            res: Dict[str, Any] = {"pattern": m_pat.group(1)}
+            m_path = re.search(r'["\'](?:path|search_path)["\']\s*:\s*["\']([^"\']+)["\']', text)
+            if m_path:
+                res["path"] = m_path.group(1)
+            return res
+        cleaned = text.strip("'\"` \t\r\n")
+        if cleaned and "\n" not in cleaned and "{" not in cleaned:
+            return {"pattern": cleaned}
+        return None
+
+    # 5. Write file
+    if norm_tool in ("write", "write_file"):
+        text = raw_args.strip()
+        m_path = re.search(r'["\'](?:filePath|path)["\']\s*:\s*["\']([^"\']+)["\']', text)
+        m_content = re.search(r'["\']content["\']\s*:\s*["\'](.*)["\']\s*\}?\s*$', text, re.DOTALL)
+        if m_path and m_content:
+            if log:
+                log.info("salvage_tool_call_arguments: salvaged write file parameters for '%s'", tool_name)
+            return {
+                "filePath": m_path.group(1).strip(),
+                "content": m_content.group(1),
+            }
+        return None
+
+    # 6. Edit file
+    if norm_tool in ("edit", "edit_file"):
+        text = raw_args.strip()
+        m_path = re.search(r'["\'](?:filePath|path)["\']\s*:\s*["\']([^"\']+)["\']', text)
+        m_old = re.search(r'["\']oldString["\']\s*:\s*["\'](.*?)["\']\s*,\s*["\']newString["\']', text, re.DOTALL)
+        m_new = re.search(r'["\']newString["\']\s*:\s*["\'](.*)["\']\s*\}?\s*$', text, re.DOTALL)
+        if m_path and m_old and m_new:
+            if log:
+                log.info("salvage_tool_call_arguments: salvaged edit file parameters for '%s'", tool_name)
+            return {
+                "filePath": m_path.group(1).strip(),
+                "oldString": m_old.group(1),
+                "newString": m_new.group(1),
+            }
+        return None
+
+    # 7. Web search / query
+    if norm_tool in ("websearch", "web_search"):
+        text = raw_args.strip()
+        m_q = re.search(r'["\']query["\']\s*:\s*["\'](.*)["\']\s*\}?\s*$', text, re.DOTALL)
+        if m_q:
+            return {"query": m_q.group(1).strip()}
+        cleaned = text.strip("'\"` \t\r\n")
+        if cleaned and "{" not in cleaned:
+            return {"query": cleaned}
+        return None
+
+    # 8. Web fetch / url
+    if norm_tool in ("webfetch", "web_fetch"):
+        text = raw_args.strip()
+        m_u = re.search(r'["\']url["\']\s*:\s*["\'](.*)["\']\s*\}?\s*$', text, re.DOTALL)
+        if m_u:
+            return {"url": m_u.group(1).strip()}
+        cleaned = text.strip("'\"` \t\r\n")
+        if cleaned and "{" not in cleaned:
+            return {"url": cleaned}
+        return None
+
+    # 9. Skill invocation
+    if norm_tool == "skill":
+        text = raw_args.strip()
+        m_name = re.search(r'["\']name["\']\s*:\s*["\'](.*)["\']\s*\}?\s*$', text, re.DOTALL)
+        if m_name:
+            return {"name": m_name.group(1).strip()}
+        cleaned = text.strip("'\"` \t\r\n")
+        if cleaned and "{" not in cleaned:
+            return {"name": cleaned}
+        return None
+
+    return None
+

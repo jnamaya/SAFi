@@ -254,6 +254,129 @@ def verify_domain_dns():
         current_app.logger.error(f"DNS Lookup Failed: {e}")
         return jsonify({"error": f"DNS Lookup Failed: {str(e)}"}), 500
 
+
+@organizations_bp.route('/organizations/domain/verify-directory', methods=['POST'])
+@require_role('admin')
+def verify_domain_directory():
+    """Verify a domain through the configured LDAP/AD directory instead of DNS.
+
+    Internal namespaces (safi.local, corp.ad, ...) have no public DNS to put
+    a TXT record on, so DNS verification is structurally impossible for them.
+    The equivalent ownership proof for such a domain is the directory itself:
+    if the deployment's bound directory lists the domain as a naming context
+    (rootDSE namingContexts / rootDomainNamingContext), then whoever controls
+    the directory controls every identity on that domain — the same claim a
+    TXT record makes for a public domain. Nothing about any specific domain
+    is hardcoded: the proof is read live from whatever directory this
+    deployment is configured against.
+
+    Guards:
+    - Only allowed when the domain is NOT publicly resolvable: a domain with
+      real DNS must go through TXT verification, the stronger,
+      deployment-independent proof. Directory verification is a fallback for
+      namespaces that have no DNS to check.
+    - Same one-owner-per-domain rule and moment-of-commit recheck as the DNS
+      path (backlog 78), and the same org_id scoping.
+    """
+    from ..core import ldap_client
+
+    data = request.json or {}
+    org_id = data.get('org_id')
+
+    if not org_id:
+        return jsonify({"error": "Missing org_id"}), 400
+    if str(org_id) != str(get_current_org_id()):
+        return jsonify({"error": "Forbidden"}), 403
+
+    org = db.get_organization(org_id)
+    if not org:
+        return jsonify({"error": "Organization not found"}), 404
+
+    domain = (org.get('domain_to_verify') or '').strip().lower()
+    token = org.get('verification_token')
+    if not domain or not token:
+        return jsonify({"error": "No verification in progress."}), 400
+
+    # One-owner rule, rechecked at commit (mirrors verify_domain_dns).
+    owner = db.get_organization_by_domain(domain)
+    if owner and str(owner['id']) != str(org_id):
+        return jsonify({
+            "status": "failed",
+            "error": "That domain has since been verified by another "
+                     "organization on this deployment. Contact support to "
+                     "reconcile the two organizations."
+        }), 409
+
+    if not Config.ldap_configured():
+        return jsonify({
+            "status": "failed",
+            "error": "Directory verification is unavailable: this deployment "
+                     "has no LDAP/AD directory configured. Use DNS TXT "
+                     "verification instead."
+        }), 200
+
+    # Guard: only for domains without public DNS. If the domain resolves
+    # publicly, TXT verification is available and is the stronger proof.
+    try:
+        dns.resolver.resolve(domain, 'SOA')
+        return jsonify({
+            "status": "failed",
+            "error": "This domain resolves in public DNS, so it must be "
+                     "verified with a TXT record (the stronger proof). "
+                     "Directory verification is only for internal "
+                     "namespaces without public DNS."
+        }), 200
+    except dns.exception.DNSException:
+        pass  # NXDOMAIN / no answer / timeout: internal namespace, proceed
+    except Exception as e:
+        current_app.logger.error(f"SOA precheck failed for {domain}: {e}")
+
+    proof = ldap_client.directory_owns_domain(domain)
+    if proof is None:
+        return jsonify({
+            "status": "failed",
+            "error": "The directory could not be reached to answer. Try "
+                     "again in a minute, or check the LDAP configuration."
+        }), 200
+    if not proof["ok"]:
+        return jsonify({
+            "status": "failed",
+            "error": f"The configured directory does not own '{domain}'. Its "
+                     f"naming contexts are: {', '.join(proof['contexts']) or '(none)'}."
+        }), 200
+
+    db.confirm_domain_verification(org_id)
+    db.log_auth_event("domain_verified_by_directory",
+                      f"user:{_actor()}", org_id=org_id,
+                      detail={"domain": domain,
+                              "directory_contexts": proof["contexts"]})
+
+    # Same post-verification action as the DNS path: absorb existing
+    # accounts on the domain into this org. (No auto-rename and no
+    # google_hd/ms_tenant_id autoconfig: an internal directory domain has
+    # no Workspace/Entra counterpart to discover.)
+    absorbed = {"moved": [], "skipped": [], "emptied_orgs": [],
+                "orgs_without_authority": []}
+    try:
+        absorbed = db.absorb_domain_users(
+            org_id, domain, f"user:{_actor()}",
+            administrator_roles=ROLE_CONFIG["organization_admin_roles"],
+            default_role=ROLE_CONFIG["default_role"],
+        )
+    except Exception as e:
+        current_app.logger.error(f"Domain absorption failed for {domain}: {e}")
+
+    return jsonify({
+        "status": "verified",
+        "domain": domain,
+        "method": "directory",
+        "directory_contexts": proof["contexts"],
+        "absorbed": absorbed["moved"],
+        "orgs_without_admin": absorbed["orgs_without_authority"],
+        "emptied_orgs": absorbed["emptied_orgs"],
+    })
+
+
 @organizations_bp.route('/organizations/<org_id>/usage', methods=['GET'])
 @require_role('admin')
 def get_org_usage(org_id):

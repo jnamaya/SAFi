@@ -57,6 +57,7 @@ export const urls = {
     ORG_VERIFY_START: j('/api/organizations/domain/start'),
     ORG_VERIFY_CHECK: j('/api/organizations/domain/verify'),
     ORG_VERIFY_CANCEL: j('/api/organizations/domain/cancel'),
+    ORG_VERIFY_DIRECTORY: j('/api/organizations/domain/verify-directory'),
     TCB_VERIFY: (id) => j(`/api/organizations/${id}/tcb-verify`),
     TCB_VERIFY_LAST: (id) => j(`/api/organizations/${id}/tcb-verify/last`),
 
@@ -598,6 +599,10 @@ export async function cancelDomainVerification(orgId) {
 
 export async function checkDomainVerification(orgId) {
     return httpJSON(urls.ORG_VERIFY_CHECK, 'POST', { org_id: orgId });
+}
+
+export async function checkDomainVerificationByDirectory(orgId) {
+    return httpJSON(urls.ORG_VERIFY_DIRECTORY, 'POST', { org_id: orgId });
 }
 
 export async function updateOrganization(orgId, data) {

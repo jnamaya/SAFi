@@ -218,7 +218,7 @@
                   Login with Active Directory
                 </label>
                 <p id="ad-login-hint" class="hidden text-xs text-neutral-400 dark:text-neutral-500">
-                  Use your domain account, e.g. SAFI\username
+                  Use your directory username, e.g. username (DOMAIN\user or user@domain also work)
                 </p>
                 <button type="submit" id="local-login-submit"
                   class="w-full px-4 py-2.5 rounded-lg bg-green-600 hover:bg-green-700 text-white font-semibold text-sm transition">
@@ -1220,7 +1220,7 @@
       const btn     = document.getElementById('local-login-submit');
       const hint    = document.getElementById('ad-login-hint');
       const on = this.checked;
-      if (idField) idField.placeholder = on ? 'DOMAIN\\username' : 'Username or email';
+      if (idField) idField.placeholder = on ? 'AD username' : 'Username or email';
       if (pwField) pwField.placeholder = on ? 'AD Password' : 'Password';
       if (btn) btn.textContent = on ? 'Sign In with AD' : 'Sign In';
       if (hint) hint.classList.toggle('hidden', !on);

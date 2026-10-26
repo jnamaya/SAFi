@@ -11,7 +11,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from safi_app.core.services.parsing_utils import parse_tool_calls_from_text
+from safi_app.core.services.parsing_utils import (
+    parse_tool_calls_from_text,
+    salvage_tool_call_arguments,
+)
+from safi_app.core.services.llm_provider import LLMProvider
 
 
 class TestToolCallSalvage(unittest.TestCase):
@@ -177,6 +181,103 @@ class TestToolCallSalvage(unittest.TestCase):
             calls[0]["arguments"]["command"],
             "grep -rn 'audit' /var/www/safi/safi_app/",
         )
+
+    def test_salvage_bash_raw_script(self):
+        raw = (
+            "bash\n"
+            "# From the host running the SAFi app container:\n"
+            "nslookup safi-DC1.safi.local\n"
+            "openssl s_client -connect safi-DC1.safi.local:636 -showcerts"
+        )
+        res = salvage_tool_call_arguments("bash", raw)
+        self.assertIsNotNone(res)
+        self.assertIn("command", res)
+        self.assertTrue(res["command"].startswith("# From the host"))
+        self.assertIn("nslookup safi-DC1.safi.local", res["command"])
+
+    def test_salvage_bash_fenced_markdown(self):
+        raw = (
+            "```bash\n"
+            "nc -vz dc01.safi.local 636\n"
+            "```"
+        )
+        res = salvage_tool_call_arguments("bash", raw)
+        self.assertIsNotNone(res)
+        self.assertEqual(res["command"], "nc -vz dc01.safi.local 636")
+
+    def test_salvage_bash_dotenv_tag(self):
+        raw = (
+            "dotenv\n"
+            "SAFI_LDAP_URL=ldaps://safi-DC1.safi.local:636\n"
+            "SAFI_LDAP_BASE_DN=DC=safi,DC=local"
+        )
+        res = salvage_tool_call_arguments("bash", raw)
+        self.assertIsNotNone(res)
+        self.assertEqual(
+            res["command"],
+            "SAFI_LDAP_URL=ldaps://safi-DC1.safi.local:636\nSAFI_LDAP_BASE_DN=DC=safi,DC=local"
+        )
+
+    def test_salvage_bash_broken_json(self):
+        raw = '{"command": "python3 -c "import ssl; print(ssl.OPENSSL_VERSION)""}'
+        res = salvage_tool_call_arguments("bash", raw)
+        self.assertIsNotNone(res)
+        self.assertEqual(res["command"], 'python3 -c "import ssl; print(ssl.OPENSSL_VERSION)"')
+
+    def test_salvage_read_file(self):
+        # Raw path without JSON
+        res1 = salvage_tool_call_arguments("read", "docs/LDAP_LOGIN_GUIDE.md")
+        self.assertIsNotNone(res1)
+        self.assertEqual(res1["path"], "docs/LDAP_LOGIN_GUIDE.md")
+
+        # Broken JSON
+        res2 = salvage_tool_call_arguments("read", '{"path": "safi_app/core/orchestrator.py"')
+        self.assertIsNotNone(res2)
+        self.assertEqual(res2["path"], "safi_app/core/orchestrator.py")
+
+    def test_salvage_write_file(self):
+        raw = '{"filePath": "notes.txt", "content": "Line 1\nLine "quoted" 2"}'
+        res = salvage_tool_call_arguments("write", raw)
+        self.assertIsNotNone(res)
+        self.assertEqual(res["filePath"], "notes.txt")
+        self.assertIn("Line 1", res["content"])
+
+    def test_salvage_edit_file(self):
+        raw = '{"filePath": "a.py", "oldString": "foo", "newString": "bar"}'
+        res = salvage_tool_call_arguments("edit", raw)
+        self.assertIsNotNone(res)
+        self.assertEqual(res["filePath"], "a.py")
+        self.assertEqual(res["oldString"], "foo")
+        self.assertEqual(res["newString"], "bar")
+
+    def test_salvage_glob_and_grep(self):
+        res_glob = salvage_tool_call_arguments("glob", "**/*.py")
+        self.assertIsNotNone(res_glob)
+        self.assertEqual(res_glob["pattern"], "**/*.py")
+
+        res_grep = salvage_tool_call_arguments("grep", '{"pattern": "def _audit", "path": "safi_app"}')
+        self.assertIsNotNone(res_grep)
+        self.assertEqual(res_grep["pattern"], "def _audit")
+        self.assertEqual(res_grep["path"], "safi_app")
+
+    def test_explain_provider_error_distinction(self):
+        # 1. Truncated at token cap
+        exc_trunc = RuntimeError(
+            "the model's tool call arguments were not valid JSON (JSONDecodeError); "
+            "the generation was truncated at the output-token cap before the arguments closed"
+        )
+        msg_trunc = LLMProvider.explain_provider_error(exc_trunc)
+        self.assertIn("truncated at the output-token cap", msg_trunc)
+        self.assertIn("Raise SAFI_LOCAL_INTELLECT_MAX_TOKENS", msg_trunc)
+
+        # 2. Malformed JSON (not token truncation)
+        exc_malformed = RuntimeError(
+            "the model's tool call arguments were not valid JSON (JSONDecodeError); "
+            "the model emitted malformed tool-call JSON"
+        )
+        msg_malformed = LLMProvider.explain_provider_error(exc_malformed)
+        self.assertIn("malformed arguments that could not be parsed", msg_malformed)
+        self.assertNotIn("Raise SAFI_LOCAL_INTELLECT_MAX_TOKENS", msg_malformed)
 
 
 if __name__ == "__main__":

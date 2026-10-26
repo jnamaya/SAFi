@@ -8,17 +8,16 @@ LDAP sign-in must be enabled for your organization by an admin (Admin → Settin
 
 You will need:
 
-- Your AD username, e.g. `CORP\jnelson` or `jnelson@corp.example.com`
+- Your AD username — just the plain username (e.g. `jnelson`) is the normal case. `DOMAIN\username` and `user@domain` are also accepted, but not required.
 - Your AD password
 - Your email address on file must match your directory email (SAFi matches accounts by email)
-- The email is read from the attribute named by `SAFI_LDAP_EMAIL_ATTR` (default `mail`). If AD accounts have an empty `mail`, set `SAFI_LDAP_EMAIL_ATTR=userPrincipalName` and make the UPN (e.g. `chepa@safi.local`) match the SAFi account email
+- The email is read from the attribute named by `SAFI_LDAP_EMAIL_ATTR` (default `mail`). If AD accounts have an empty `mail`, set `SAFI_LDAP_EMAIL_ATTR=userPrincipalName` and make the UPN (e.g. `nelson@safi.local`) match the SAFi account email
 
 ## How to log in
 
 1. Open the SAFi login page.
-2. Click the **Sign in with Active Directory** card (below the standard email/password form).
-3. Enter your AD identifier in `DOMAIN\username` or `user@domain` format and your AD password.
-4. Click **Sign in**.
+2. Enter your AD username and password in the standard email/password form, then tick the **Login with Active Directory** checkbox below the password field.
+3. Click **Sign in**.
 
 If your credentials check out, one of three things happens:
 
@@ -45,6 +44,15 @@ SAFi is invite-only by default:
 - **If you were invited** (or your organization has auto-provisioning enabled), your account is created automatically on your first successful LDAP login, with the role you were invited as.
 - **If you have no invitation and auto-provisioning is off**, login is rejected even with correct AD credentials. Ask an admin for an invitation.
 
+## Auto-provisioning and domain verification
+
+Organizations that want automatic account creation for directory users must have their email domain **verified** first:
+
+- **Public domains** (resolvable in public DNS) are verified with a DNS TXT record — the standard flow.
+- **Internal-only namespaces** (e.g. `safi.local`, which does not resolve publicly) can use **Verify via Directory** instead: an admin clicks the button in Admin → Settings → Organization, and SAFi proves ownership by binding with its LDAP service account and checking that the domain appears in the directory's root DSE naming contexts. No DNS or hardcoding required, and it works for any AD/OpenLDAP forest.
+
+Auto-provisioning then fires on first login when the user's email domain matches a verified domain on an org with **Enable LDAP sign-in** and **Auto-provision directory users** both on. Without either a matching invite or a verified+auto-provisioned domain, login is rejected (403) even with correct credentials.
+
 ## Roles and groups
 
 Your SAFi role is read from your AD group memberships **at every login** — it is not cached. If an admin changes your groups in AD, your SAFi role updates the next time you sign in. Users not matching any group mapping get the default `member` role.
@@ -53,7 +61,7 @@ Your SAFi role is read from your AD group memberships **at every login** — it 
 
 | Symptom | Likely cause / fix |
 |---|---|
-| "No LDAP card on the login page" | LDAP sign-in disabled for your org — ask your admin. |
+| "No AD checkbox on the login page" | LDAP sign-in disabled for your org (or not configured server-side) — ask your admin. |
 | "Invalid credentials" | Wrong username format or expired AD password — reset it via your usual IT channel. |
 | Login rejected with correct credentials (403) | No SAFi account/invitation for your email — request an invite. |
 | "Directory unavailable" (503) | Your domain controller is unreachable — SAFi will retry once it's back; contact IT. |

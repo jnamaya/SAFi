@@ -38,6 +38,7 @@ from .parsing_utils import (
     parse_conscience_response,
     parse_tool_calls_from_text,
     robust_json_parse,
+    salvage_tool_call_arguments,
 )
 
 # The Conscience's sampling temperature is a governance parameter, not a
@@ -823,16 +824,26 @@ class LLMProvider:
                     # Raw json.loads turned that last case into an opaque
                     # "Unterminated string" that read as an unreachable provider
                     # (see explain_provider_error's tool-call branch).
-                    arguments = robust_json_parse(tc.function.arguments or "", self.log)
+                    raw_args_str = tc.function.arguments or ""
+                    arguments = robust_json_parse(raw_args_str, self.log)
                     if "error" in arguments:
-                        raise RuntimeError(
-                            "the model's tool call arguments were not valid JSON "
-                            f"({arguments.get('error')}); "
-                            + ("the generation was truncated at the output-token cap "
-                               "before the arguments closed"
-                               if finish_reason == "length"
-                               else "the model emitted malformed tool-call JSON")
-                        )
+                        salvaged = salvage_tool_call_arguments(tc.function.name, raw_args_str, self.log)
+                        if salvaged is not None:
+                            self.log.info(
+                                "LLMProvider: salvaged malformed arguments for tool '%s': %s",
+                                tc.function.name,
+                                repr(raw_args_str[:120])
+                            )
+                            arguments = salvaged
+                        else:
+                            raise RuntimeError(
+                                f"the model's tool call '{tc.function.name}' arguments were not valid JSON "
+                                f"({arguments.get('error')}); "
+                                + ("the generation was truncated at the output-token cap "
+                                   "before the arguments closed"
+                                   if finish_reason == "length"
+                                   else "the model emitted malformed tool-call JSON")
+                            )
                     calls.append({
                         "id": tc.id,
                         "name": tc.function.name,
@@ -1119,7 +1130,7 @@ class LLMProvider:
         would deterministically generate the exact same long output and fail again,
         burning minutes of inference time."""
         text = f"{type(exc).__name__}: {exc}".lower()
-        return "truncated" in text and ("token cap" in text or "tool call arguments" in text)
+        return "truncated at the output-token cap" in text or ("truncated" in text and "token cap" in text)
 
     @staticmethod
     def explain_provider_error(exc: Exception) -> str:
@@ -1158,12 +1169,14 @@ class LLMProvider:
         if "insufficient" in low or "quota" in low or "billing" in low:
             return ("the provider rejected the request for quota or billing reasons. Check the "
                     "account behind the configured API key.")
-        if "tool call arguments" in low or "tool-call" in low:
-            return ("the model returned a tool call the governance layer could not parse, "
-                    "usually because the generation was cut off at the output-token cap before "
-                    "the arguments closed. Raise SAFI_LOCAL_INTELLECT_MAX_TOKENS "
+        if "truncated at the output-token cap" in low:
+            return ("the model returned a tool call whose arguments were truncated at the "
+                    "output-token cap before closing. Raise SAFI_LOCAL_INTELLECT_MAX_TOKENS "
                     "(or SAFI_LOCAL_MAX_TOKENS on older configs) / SAFI_MAX_INTELLECT_TOKENS "
                     "and retry.")
+        if "tool call" in low or "tool-call" in low:
+            return ("the model returned a tool call with malformed arguments that could not "
+                    "be parsed or salvaged. Try rephrasing your request to clarify the expected action or format.")
         return f"the model provider call failed — {text[:200]}"
 
     @staticmethod

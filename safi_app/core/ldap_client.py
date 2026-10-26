@@ -237,6 +237,67 @@ def _escape_filter(value: str) -> str:
     return re.sub(r"([\\\*\(\)\x00-\x1f])", lambda m: "\\" + format(ord(m.group(1)), "02x"), value)
 
 
+def dn_to_domain(dn: str):
+    """'DC=safi,DC=local' -> 'safi.local'; None if the DN has no DC parts."""
+    parts = []
+    for comp in (dn or "").split(","):
+        attr, _, val = comp.strip().partition("=")
+        if attr.strip().lower() == "dc" and val.strip():
+            parts.append(val.strip().lower())
+    return ".".join(parts) if parts else None
+
+
+def directory_owns_domain(domain: str):
+    """Prove a domain is a naming context of the configured directory.
+
+    Reads the rootDSE with the service account and checks the domain against
+    namingContexts / rootDomainNamingContext. This is the ownership proof for
+    domains that have no public DNS (internal namespaces like safi.local):
+    whoever controls the directory the deployment binds against controls who
+    holds identities on that domain — which is the same claim DNS TXT
+    verification makes for public domains.
+
+    Returns {"ok": bool, "contexts": [..]} or None when the directory could
+    not answer (never treat an outage as a failed proof).
+    """
+    if not Config.ldap_configured() or not Config.LDAP_BIND_DN or not domain:
+        return None
+    domain = domain.strip().lower()
+    try:
+        import ldap3
+        from ldap3 import Connection
+
+        server = _make_server()
+        conn = Connection(server, user=Config.LDAP_BIND_DN,
+                          password=Config.LDAP_BIND_PASSWORD,
+                          receive_timeout=Config.LDAP_TIMEOUT)
+        conn.open()
+        if _needs_starttls() and not conn.start_tls():
+            return None
+        if not conn.bind():
+            return None
+        try:
+            conn.search("", "(objectClass=*)", search_scope="BASE",
+                        attributes=["namingContexts", "rootDomainNamingContext"])
+            if not conn.entries:
+                return None
+            entry = conn.entries[0]
+            contexts = []
+            for attr in ("namingContexts", "rootDomainNamingContext"):
+                if attr in entry:
+                    contexts.extend(dn_to_domain(str(v)) for v in entry[attr].values)
+            contexts = sorted({c for c in contexts if c})
+            owns = domain in contexts
+            return {"ok": owns, "contexts": contexts}
+        finally:
+            try:
+                conn.unbind()
+            except Exception:
+                pass
+    except Exception:  # noqa: BLE001 — directory outage is "no answer", not "no"
+        return None
+
+
 def _escape_dn(value: str) -> str:
     """RFC 4514 DN escaping for the no-service-account DN template path."""
     specials = '\\,+"\'<>;=#'

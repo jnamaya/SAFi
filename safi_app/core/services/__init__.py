@@ -10,6 +10,7 @@ from .parsing_utils import (
     parse_will_response,
     parse_conscience_response,
     parse_tool_calls_from_text,
+    salvage_tool_call_arguments,
 )
 from .rag_service import RAGService
 from .mcp_manager import MCPManager
@@ -23,4 +24,5 @@ __all__ = [
     "parse_will_response",
     "parse_conscience_response",
     "parse_tool_calls_from_text",
+    "salvage_tool_call_arguments",
 ]
