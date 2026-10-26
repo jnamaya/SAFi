@@ -22,23 +22,32 @@ def robust_json_parse(raw_text: str, log: "logging.Logger") -> Dict[str, Any]:
     if not raw_text:
         return {"error": "Empty input"}
 
-    json_text = raw_text 
+    json_text = raw_text.strip()
 
-    # A ```json fence is unwrapped BEFORE brace-scanning, or the `{` in a
-    # prose preamble gets taken as the start of the object.
-    if "```" in raw_text:
-        parts = raw_text.split("```")   # [preamble, code, postamble]
-        if len(parts) >= 3:
-            candidate = parts[1]
-            if candidate.startswith("json"):
-                candidate = candidate[4:]
-            json_text = candidate.strip()
-            
-    start = json_text.find('{')
-    end = json_text.rfind('}')
-    
-    if start != -1 and end != -1 and end > start:
-        json_text = json_text[start:end+1]
+    # If the payload is wrapped in outer markdown code fences, unwrap ONLY the outer fence.
+    # Do NOT blindly split on "```" because string literals inside JSON (e.g. code edits,
+    # scripts, markdown files) frequently contain internal code fences!
+    if json_text.startswith("```"):
+        m_fence = re.match(r"^```(?:json)?\s*(\{.*\})\s*```\s*$", json_text, re.DOTALL | re.IGNORECASE)
+        if m_fence:
+            json_text = m_fence.group(1).strip()
+        else:
+            json_text = re.sub(r"^```(?:json)?\s*", "", json_text, flags=re.IGNORECASE)
+            json_text = re.sub(r"\s*```$", "", json_text).strip()
+    elif not json_text.startswith("{") and "```" in json_text:
+        m_block = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", json_text, re.DOTALL | re.IGNORECASE)
+        if m_block:
+            json_text = m_block.group(1).strip()
+
+    if json_text.startswith("{"):
+        end = json_text.rfind('}')
+        if end != -1 and end < len(json_text) - 1:
+            json_text = json_text[:end+1]
+    else:
+        start = json_text.find('{')
+        end = json_text.rfind('}')
+        if start != -1 and end != -1 and end > start:
+            json_text = json_text[start:end+1]
     
     try:
         obj = json.loads(json_text, strict=False)
@@ -434,8 +443,8 @@ def salvage_tool_call_arguments(
     # 5. Write file
     if norm_tool in ("write", "write_file"):
         text = raw_args.strip()
-        m_path = re.search(r'["\'](?:filePath|path)["\']\s*:\s*["\']([^"\']+)["\']', text)
-        m_content = re.search(r'["\']content["\']\s*:\s*["\'](.*)["\']\s*\}?\s*$', text, re.DOTALL)
+        m_path = re.search(r'["\']?(?:filePath|path|file|filename)["\']?\s*[:=]\s*["\']?([^"\'\s,]+)["\']?', text)
+        m_content = re.search(r'["\']?(?:content|body|text)["\']?\s*[:=]\s*["\'](.*)["\']\s*\}?\s*$', text, re.DOTALL)
         if m_path and m_content:
             if log:
                 log.info("salvage_tool_call_arguments: salvaged write file parameters for '%s'", tool_name)
@@ -448,16 +457,20 @@ def salvage_tool_call_arguments(
     # 6. Edit file
     if norm_tool in ("edit", "edit_file"):
         text = raw_args.strip()
-        m_path = re.search(r'["\'](?:filePath|path)["\']\s*:\s*["\']([^"\']+)["\']', text)
-        m_old = re.search(r'["\']oldString["\']\s*:\s*["\'](.*?)["\']\s*,\s*["\']newString["\']', text, re.DOTALL)
-        m_new = re.search(r'["\']newString["\']\s*:\s*["\'](.*)["\']\s*\}?\s*$', text, re.DOTALL)
-        if m_path and m_old and m_new:
+        m_path = re.search(r'["\']?(?:filePath|path|file|filename)["\']?\s*[:=]\s*["\']?([^"\'\s,]+)["\']?', text)
+        m_old_new = re.search(
+            r'["\']?(?:oldString|old_string|old_str|oldText|old)["\']?\s*[:=]\s*["\'](.*?)["\']\s*,\s*'
+            r'["\']?(?:newString|new_string|new_str|newText|new)["\']?\s*[:=]\s*["\'](.*)["\']\s*\}?\s*$',
+            text,
+            re.DOTALL
+        )
+        if m_path and m_old_new:
             if log:
                 log.info("salvage_tool_call_arguments: salvaged edit file parameters for '%s'", tool_name)
             return {
                 "filePath": m_path.group(1).strip(),
-                "oldString": m_old.group(1),
-                "newString": m_new.group(1),
+                "oldString": m_old_new.group(1),
+                "newString": m_old_new.group(2),
             }
         return None
 

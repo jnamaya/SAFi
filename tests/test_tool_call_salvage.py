@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from safi_app.core.services.parsing_utils import (
     parse_tool_calls_from_text,
     salvage_tool_call_arguments,
+    robust_json_parse,
 )
 from safi_app.core.services.llm_provider import LLMProvider
 
@@ -249,6 +250,36 @@ class TestToolCallSalvage(unittest.TestCase):
         self.assertEqual(res["filePath"], "a.py")
         self.assertEqual(res["oldString"], "foo")
         self.assertEqual(res["newString"], "bar")
+
+    def test_robust_json_parse_with_internal_code_blocks(self):
+        # Exact reproduction of the failure mode where content/newString
+        # embeds markdown code blocks and template variables like {login}.
+        import logging
+        logger = logging.getLogger("test")
+        raw = (
+            '{\n'
+            '  "filePath": "docs/LDAP_LOGIN_GUIDE.md",\n'
+            '  "oldString": "# Logging in with LDAP",\n'
+            '  "newString": "## Prerequisites\\n```bash\\nsAMAccountName={login}\\n```\\n"\n'
+            '}'
+        )
+        parsed = robust_json_parse(raw, logger)
+        self.assertNotIn("error", parsed)
+        self.assertEqual(parsed["filePath"], "docs/LDAP_LOGIN_GUIDE.md")
+        self.assertEqual(parsed["oldString"], "# Logging in with LDAP")
+        self.assertIn("{login}", parsed["newString"])
+
+    def test_salvage_edit_snake_case_and_internal_code_blocks(self):
+        raw = (
+            '{"path": "docs/LDAP_LOGIN_GUIDE.md", '
+            '"old_string": "# Logging in", '
+            '"new_string": "## Prerequisites\n```bash\n# Filter: {login}\n```"}'
+        )
+        res = salvage_tool_call_arguments("edit", raw)
+        self.assertIsNotNone(res)
+        self.assertEqual(res["filePath"], "docs/LDAP_LOGIN_GUIDE.md")
+        self.assertEqual(res["oldString"], "# Logging in")
+        self.assertIn("{login}", res["newString"])
 
     def test_salvage_glob_and_grep(self):
         res_glob = salvage_tool_call_arguments("glob", "**/*.py")
