@@ -776,9 +776,13 @@ def list_organization_members(org_id):
         return jsonify({"error": "Forbidden"}), 403
 
     try:
+        page = max(1, int(request.args.get('page', 1)))
+        per_page = min(100, max(1, int(request.args.get('per_page', 25))))
+        search = (request.args.get('search') or '').strip() or None
+
         role_order = sorted(ROLE_CONFIG["levels"], key=ROLE_CONFIG["levels"].get, reverse=True)
-        members = db.get_organization_members(org_id, role_order)
-        return jsonify({"members": members})
+        members, total = db.get_organization_members(org_id, role_order, search=search, page=page, per_page=per_page)
+        return jsonify({"members": members, "total": total, "page": page, "per_page": per_page})
     except Exception as e:
         current_app.logger.error(f"Error listing members: {e}")
         return jsonify({"error": "An internal error occurred."}), 500

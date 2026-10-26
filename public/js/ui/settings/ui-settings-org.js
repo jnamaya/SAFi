@@ -534,6 +534,18 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                      <h4 class="text-lg font-semibold">Members</h4>
                      <span class="text-xs text-neutral-500 bg-neutral-100 dark:bg-neutral-800 px-2 py-1 rounded-full" id="member-count-badge">...</span>
                 </div>
+                <div class="mb-3 flex items-center gap-2">
+                    <input type="text" id="inp-member-search" placeholder="Search by name, email, or username…"
+                        class="flex-1 min-w-0 rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm">
+                    <button id="btn-member-search" type="button" title="Search"
+                        class="shrink-0 rounded-lg bg-green-600 hover:bg-green-700 text-white px-4 py-2 text-sm font-medium transition-colors">
+                        Search
+                    </button>
+                    <button id="btn-member-search-clear" type="button" title="Clear search"
+                        class="shrink-0 rounded-lg border border-gray-300 dark:border-neutral-600 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 px-3 py-2 text-sm transition-colors">
+                        Clear
+                    </button>
+                </div>
                 <div id="org-members-table-container" class="bg-white dark:bg-neutral-900 rounded-lg border border-neutral-200 dark:border-neutral-800 overflow-hidden min-h-[100px]">
                      <div class="p-8 text-center text-neutral-500">
                          <div class="animate-spin inline-block w-6 h-6 border-[3px] border-current border-t-transparent text-green-600 rounded-full" role="status" aria-label="loading"></div>
@@ -1767,29 +1779,41 @@ function renderCharterValues(valuesData, container, mode = 'charter') {
     });
 }
 
+// --- Members pagination & search state ---
+let _membersState = { page: 1, per_page: 25, search: '', total: 0 };
+let _membersSearchTimer = null;
+
 async function loadOrganizationMembers(orgId) {
     const container = document.getElementById('org-members-table-container');
     const countBadge = document.getElementById('member-count-badge');
     if (!container) return;
 
+    const { page, per_page, search } = _membersState;
+
     try {
-        const res = await api.getOrganizationMembers(orgId);
+        const res = await api.getOrganizationMembers(orgId, { page, per_page, search });
         if (res && res.members) {
-            renderMembersTable(container, res.members, orgId);
-            if (countBadge) countBadge.textContent = `${res.members.length} Users`;
+            _membersState.total = res.total;
+            renderMembersTable(container, res.members, orgId, res.total, page, per_page);
+            if (countBadge) countBadge.textContent = `${res.total} Users`;
         } else {
             container.innerHTML = `<div class="p-4 text-center text-red-500">Failed to load members</div>`;
         }
     } catch (e) {
         console.error("Error loading members:", e);
-        // Only show error if we are admin/editor having expected access, otherwise it might just be Forbidden
         container.innerHTML = `<div class="p-4 text-center text-neutral-400 text-sm">Unable to view member list.</div>`;
     }
 }
 
-function renderMembersTable(container, members, orgId) {
+function renderMembersTable(container, members, orgId, total = 0, page = 1, per_page = 25) {
+    const totalPages = Math.ceil(total / per_page) || 1;
+
     if (!members.length) {
-        container.innerHTML = `<div class="p-8 text-center text-neutral-500">No members found.</div>`;
+        container.innerHTML = `
+            <div class="p-8 text-center text-neutral-500">No members found.</div>
+            ${_renderPaginationBar(orgId, total, page, per_page, totalPages)}
+        `;
+        _wireMembersControls(container, orgId);
         return;
     }
 
@@ -1850,6 +1874,7 @@ function renderMembersTable(container, members, orgId) {
                 ${rows}
             </tbody>
         </table>
+        ${_renderPaginationBar(orgId, total, page, per_page, totalPages)}
     `;
 
     // Attach Change Listeners
@@ -1900,6 +1925,9 @@ function renderMembersTable(container, members, orgId) {
         });
     });
 
+    // Wire pagination + search controls (was previously only wired in the empty branch)
+    _wireMembersControls(container, orgId);
+
     // Attach Remove Listeners
     container.querySelectorAll('.btn-remove-member').forEach(btn => {
         btn.addEventListener('click', async (e) => {
@@ -1919,6 +1947,80 @@ function renderMembersTable(container, members, orgId) {
                 ui.showToast(err.message, "error");
             }
         });
+    });
+}
+
+function _renderPaginationBar(orgId, total, page, per_page, totalPages) {
+    if (totalPages <= 1) return '';
+    const from = (page - 1) * per_page + 1;
+    const to = Math.min(page * per_page, total);
+    return `
+        <div class="flex items-center justify-between px-4 py-3 border-t border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900/50">
+            <span class="text-xs text-neutral-500">Showing ${from}&ndash;${to} of ${total}</span>
+            <div class="flex items-center gap-1">
+                <button data-page="${page - 1}" ${page <= 1 ? 'disabled' : ''}
+                    class="btn-page-prev px-2 py-1 text-xs rounded border border-neutral-300 dark:border-neutral-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-neutral-100 dark:hover:bg-neutral-800">
+                    &larr; Prev
+                </button>
+                <span class="text-xs text-neutral-600 dark:text-neutral-400 px-2">Page ${page} / ${totalPages}</span>
+                <button data-page="${page + 1}" ${page >= totalPages ? 'disabled' : ''}
+                    class="btn-page-next px-2 py-1 text-xs rounded border border-neutral-300 dark:border-neutral-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-neutral-100 dark:hover:bg-neutral-800">
+                    Next &rarr;
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+function _wireMembersControls(container, orgId) {
+    // Pagination buttons
+    container.querySelectorAll('[data-page]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const targetPage = parseInt(btn.dataset.page, 10);
+            if (targetPage < 1) return;
+            _membersState.page = targetPage;
+            loadOrganizationMembers(orgId);
+        });
+    });
+
+    // Search input (debounced)
+    const searchInput = document.getElementById('inp-member-search');
+    if (searchInput) {
+        const runSearch = () => {
+            clearTimeout(_membersSearchTimer);
+            _membersState.search = searchInput.value.trim();
+            _membersState.page = 1;
+            loadOrganizationMembers(orgId);
+        };
+
+        // Live filtering as you type (debounced)
+        searchInput.oninput = () => {
+            clearTimeout(_membersSearchTimer);
+            _membersSearchTimer = setTimeout(runSearch, 350);
+        };
+
+        // Enter key triggers immediately
+        searchInput.onkeydown = (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); runSearch(); }
+        };
+    }
+
+    // Search / Clear buttons
+    document.getElementById('btn-member-search')?.addEventListener('click', () => {
+        const input = document.getElementById('inp-member-search');
+        if (input) { input.focus(); }
+        clearTimeout(_membersSearchTimer);
+        _membersState.search = (document.getElementById('inp-member-search')?.value || '').trim();
+        _membersState.page = 1;
+        loadOrganizationMembers(orgId);
+    });
+    document.getElementById('btn-member-search-clear')?.addEventListener('click', () => {
+        const input = document.getElementById('inp-member-search');
+        if (input) input.value = '';
+        clearTimeout(_membersSearchTimer);
+        _membersState.search = '';
+        _membersState.page = 1;
+        loadOrganizationMembers(orgId);
     });
 }
 

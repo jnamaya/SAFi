@@ -4095,24 +4095,43 @@ def delete_charter(org_id):
         cursor.close()
         conn.close()
 
-def get_organization_members(org_id, role_order=None):
+def get_organization_members(org_id, role_order=None, search=None, page=1, per_page=25):
+    """Return paginated, optionally filtered members of an org.
+
+    Returns (members_list, total_count).
+    """
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
         role_order = list(role_order or [])
+        params = [org_id]
+        where = "WHERE org_id=%s"
+
+        if search:
+            where += " AND (name LIKE %s OR email LIKE %s OR username LIKE %s)"
+            search_term = f"%{search}%"
+            params.extend([search_term, search_term, search_term])
+
         if role_order:
             placeholders = ",".join(["%s"] * len(role_order))
-            cursor.execute(
-                "SELECT id, name, username, email, role FROM users WHERE org_id=%s "
-                f"ORDER BY FIELD(role, {placeholders}), name",
-                (org_id, *role_order),
-            )
+            order_clause = f"ORDER BY FIELD(role, {placeholders}), name"
+            params.extend(role_order)
         else:
-            cursor.execute(
-                "SELECT id, name, username, email, role FROM users WHERE org_id=%s ORDER BY role, name",
-                (org_id,),
-            )
-        return cursor.fetchall()
+            order_clause = "ORDER BY role, name"
+
+        # Total count (no LIMIT)
+        count_sql = f"SELECT COUNT(*) AS cnt FROM users {where}"
+        cursor.execute(count_sql, list(params[:len(params) - len(role_order)] if role_order else params))
+        total = cursor.fetchone()["cnt"]
+
+        # Paginated rows
+        offset = (page - 1) * per_page
+        sql = (f"SELECT id, name, username, email, role FROM users {where} "
+               f"{order_clause} LIMIT %s OFFSET %s")
+        full_params = list(params) + [per_page, offset]
+        cursor.execute(sql, full_params)
+        members = cursor.fetchall()
+        return members, total
     finally:
         cursor.close()
         conn.close()

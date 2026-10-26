@@ -609,8 +609,10 @@ export async function updateOrganization(orgId, data) {
     return httpJSON(`/api/organizations/${orgId}`, 'PUT', data);
 }
 
-export async function getOrganizationMembers(orgId) {
-    return httpGet(`/api/organizations/${orgId}/members`);
+export async function getOrganizationMembers(orgId, { page = 1, per_page = 25, search = '' } = {}) {
+    const params = new URLSearchParams({ page, per_page });
+    if (search) params.set('search', search);
+    return httpGet(`/api/organizations/${orgId}/members?${params}`);
 }
 
 export async function updateMemberRole(orgId, userId, role) {
