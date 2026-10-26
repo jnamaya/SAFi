@@ -58,6 +58,15 @@ services:
       # which branch this deployment is on. The Dockerfile deliberately never
       # copies .git, so release images stay clean and report no branch.
       - ./.git:/app/.git:ro
+      # Lab CA that signed the DC's LDAPS certificate (192.168.1.224).
+      # Referenced by SAFI_LDAP_TLS_CA_FILE=/app/certs/safi-ca.pem in .env.
+      - ./certs:/app/certs
+    # The DC's LDAPS cert has SAN DNS:safi-DC1.safi.local (+ IP SAN, which
+    # ldap3 does not check), so the app must connect by hostname. Docker's
+    # embedded DNS can't resolve the lab DC, so pin it here — this survives
+    # container recreation, unlike an /etc/hosts edit.
+    extra_hosts:
+      - "safi-DC1.safi.local:192.168.1.224"
     restart: unless-stopped
 
   # ── Retention purge (daily) ──────────────────────────────────────────────────

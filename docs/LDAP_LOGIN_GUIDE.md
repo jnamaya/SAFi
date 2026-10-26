@@ -11,6 +11,7 @@ You will need:
 - Your AD username, e.g. `CORP\jnelson` or `jnelson@corp.example.com`
 - Your AD password
 - Your email address on file must match your directory email (SAFi matches accounts by email)
+- The email is read from the attribute named by `SAFI_LDAP_EMAIL_ATTR` (default `mail`). If AD accounts have an empty `mail`, set `SAFI_LDAP_EMAIL_ATTR=userPrincipalName` and make the UPN (e.g. `chepa@safi.local`) match the SAFi account email
 
 ## How to log in
 
