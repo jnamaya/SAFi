@@ -2466,75 +2466,50 @@ class SAFi:
                 )
                 a_t_spirit = retry_result.get("draft", a_t_spirit)
 
-            # A draft is committable if it passed every gate, or dipped only on the
-            # soft low-alignment threshold — committed with its honest low score
-            # rather than discarding the user's request via a vacuum redirect
-            # (which produced the "replies but not full" behavior).
+            # A draft is committable ONLY if it cleanly passed governance.
+            # In classical ethics, a defective act is never willed; the machine must
+            # not ship the "lesser of two evils" when both drafts failed alignment.
             def _committable(res: Optional[Dict[str, Any]]) -> bool:
                 if not res:
                     return False
-                if res["verdict"] != "violation":
-                    return True
-                return res["stage"] == "spirit" and res["reason"] == "low_alignment_score"
+                return res.get("verdict") == "approve"
 
             candidates = []
-            if _committable(result):
-                candidates.append((result, a_t, r_t, retrieved_context))
             if _committable(retry_result):
                 candidates.append((retry_result, a_t_spirit, r_t_spirit, context_spirit))
 
             if not candidates:
-                if correctable_gate:
-                    # Both drafts failed the content hard gate. There is no
-                    # valid answer to ship and no scope story to tell — the
-                    # vacuum redirect would falsely claim the question was out
-                    # of scope, so send the honest deterministic notice.
-                    return self._ship_system_failure_notice(
-                        original_prompt=user_prompt,
-                        violation_type=result["reason"],
-                        message_id=message_id,
-                        new_title=new_title,
-                        user_id=user_id,
-                        org_id=org_id,
-                        failing_ledger=result["ledger"],
-                        blocked_draft=a_t,
-                        will_stage=result["stage"],
-                        notice=(
-                            "I'm sorry — I wasn't able to put together a response that fits "
-                            "how this assistant is meant to help with that question. Your "
-                            "question itself was fine; try rephrasing it, or asking about a "
-                            "smaller piece of it, and I'll give it another go."
-                        ),
-                    )
-                # Neither draft is fit to ship. Redirect on the ORIGINAL audit's
-                # reason: it is the authoritative read on the user's request (its
-                # hard gates passed); the retry's failures are draft-specific.
-                return await self.trigger_agent_redirect(
+                # Both the original draft and the reflexion retry failed governance.
+                # Refuse to deliver defective output; ship an honest, deterministic
+                # system failure notice with zero LLM calls.
+                self.log.warning(
+                    f"[Governance | Gate] Reflexion retry failed to meet alignment standards ({result.get('reason')}). "
+                    f"Refusing to deliver defective output; shipping deterministic system notice."
+                )
+                return self._ship_system_failure_notice(
                     original_prompt=user_prompt,
-                    violation_type=E_spirit,
-                    conversation_id=conversation_id,
+                    violation_type=result["reason"],
                     message_id=message_id,
                     new_title=new_title,
                     user_id=user_id,
                     org_id=org_id,
-                    failing_ledger=result["ledger"],
-                    blocked_draft=a_t,
+                    failing_ledger=(retry_result or {}).get("ledger") or result["ledger"],
+                    blocked_draft=a_t_spirit or a_t,
                     will_stage=result["stage"],
-                    agent_context=agent_context_for_prompt,
+                    notice=(
+                        "I'm sorry — I wasn't able to put together a verified response that fits "
+                        "how this assistant is meant to help with that question. Your "
+                        "question itself was fine; try rephrasing it, or asking about a "
+                        "smaller piece of it, and I'll give it another go."
+                    ),
                 )
 
-            # Commit the best candidate: a clean approve beats a low-alignment
-            # commit; ties break on the higher measured alignment score.
-            best = max(candidates, key=lambda c: (
-                c[0]["verdict"] != "violation",
-                float((c[0]["spirit_assessment"] or {}).get("alignment_score", 0.0)),
-            ))
+            # The retry successfully passed governance:
+            best = candidates[0]
             chosen, a_t, r_t, retrieved_context = best
             ledger = chosen["ledger"]
             commit_reason = chosen["reason"]
-            will_stage_final = "spirit" if chosen["verdict"] == "violation" else None
-            if chosen["verdict"] == "violation":
-                self.log.info("[Governance | Phase 5 | Spirit] Low alignment after retry — committing best draft with recorded score.")
+            will_stage_final = None
 
         # compute() runs against the FRESH mu under a DB row lock, so two
         # concurrent turns on this profile serialize their EMA updates instead
@@ -2904,16 +2879,17 @@ class SAFi:
         if result.get("verdict") != "violation" or result.get("stage") != "hard_gate":
             return False
         reason = result.get("reason")
-        if reason == "ethical_violation":
+        if reason in ("ethical_violation", "grounding_violation"):
             return True
         if reason == "scope_violation":
             # If the user's prompt was in-scope but the draft failed to answer,
-            # was a fragment, or derailed, it is a content-quality defect
-            # (correctable via reflexion retry) rather than an out-of-scope request.
+            # was a fragment, derailed, or contradicted observed facts, it is a
+            # content-quality defect (correctable via reflexion retry) rather than
+            # an out-of-scope request.
             ledger = result.get("ledger") or []
             for entry in ledger:
                 val = str(entry.get("value") or "").lower()
-                if "scope" in val:
+                if "scope" in val or "grounding" in val:
                     if float(entry.get("score", 0)) <= -1.0:
                         audit_reason = str(entry.get("reason") or "").lower()
                         in_scope = any(k in audit_reason for k in (
@@ -2921,7 +2897,8 @@ class SAFi:
                         ))
                         draft_failure = any(k in audit_reason for k in (
                             "fails to answer", "failed to answer", "fragment", "derails", "derailed",
-                            "refuses", "refusal", "failure to engage", "incomplete"
+                            "refuses", "refusal", "failure to engage", "incomplete",
+                            "contradiction", "contradicts", "false assertion", "unverified", "stale verification"
                         ))
                         if in_scope and draft_failure:
                             return True
@@ -3155,6 +3132,47 @@ class SAFi:
             "briefly say so and ask a focused clarifying question instead of refusing."
         )
 
+    def _deterministic_redirect_fallback(self, violation_type: str) -> str:
+        """Deterministic policy fallback when an agent's dynamic redirect fails Conscience audit.
+
+        Zero LLM calls. Provides an immutable, governed refusal corresponding to the violation,
+        ensuring no rebellious or unaligned response bypasses governance to reach the user.
+        """
+        agent_name = (self.profile or {}).get("name") or "This agent"
+        scope = (self.profile or {}).get("scope_statement")
+
+        if violation_type in ("scope_violation", "scope_validation"):
+            if scope:
+                return (
+                    f"That request falls outside my operational scope as {agent_name}. "
+                    f"My focus is: {scope.strip()} "
+                    f"Please feel free to ask a question within that area."
+                )
+            return (
+                f"That request falls outside my operational scope as {agent_name}. "
+                f"Please feel free to ask an in-scope question."
+            )
+
+        if violation_type == "pii_detected":
+            return self._PII_REFUSAL
+
+        if violation_type.startswith("injection") or violation_type == "early_prompt_blacklist":
+            return (
+                "I am unable to process requests that attempt to override my role, instructions, "
+                "or governing constraints. Please provide an operational task within my designated scope."
+            )
+
+        if "grounding" in violation_type or "verification" in violation_type:
+            return (
+                "I am unable to provide a verified response to that request at this time. "
+                "Please clarify or provide additional details so I can assist you properly."
+            )
+
+        return (
+            f"I cannot process this request under system governance policies. "
+            f"Please submit a request that aligns with {agent_name}'s designated role."
+        )
+
     async def trigger_agent_redirect(
         self,
         original_prompt: str,
@@ -3196,11 +3214,7 @@ class SAFi:
         # instructed to add it via the worldview, but that is not enforced.
         safe_output = self._repair_pii_redirect(safe_output, violation_type)
         safe_output = self._enforce_redirect_structure(safe_output)
-
-        # NOTE: generate_forced_response never receives the original malicious
-        # content (see intellect.py), so the redirect is safe to commit here
-        # without a second gate pass.
-        self.store.update_message_content(message_id, safe_output, audit_status="complete")
+        raw_redirect_draft = safe_output
 
         self.store.update_message_reasoning(message_id, "Auditing governance response...")
         try:
@@ -3231,6 +3245,37 @@ class SAFi:
         _sm_readonly = self.store.load_spirit_memory(self.active_profile_name) or {"turn": 0}
         redirect_turn = int(_sm_readonly.get("turn", 0))
 
+        # Classical Conscience Gate on Redirects:
+        # In Thomistic ethics, no act may pass from the intellect to the patient
+        # without the seal of Conscience and the sanction of the Will. If Conscience
+        # finds the redirect defective (S_t < 6, or any rubric evaluated negative,
+        # such as Reason Fidelity, Tone and Respect, or Redirect Clarity), or if the
+        # audit could not verify the response, the dynamic output is VETOED.
+        # The harness suppresses the rogue draft and enforces an immutable,
+        # deterministic policy statement.
+        is_redirect_deficient = (
+            not ledger
+            or S_t < 6
+            or any(float(r.get("score", 0.0)) < 0.0 for r in ledger)
+        )
+        if is_redirect_deficient:
+            failing_rubrics = [
+                f"{r.get('value')}: {r.get('score')}"
+                for r in ledger
+                if float(r.get("score", 0.0)) < 0.0
+            ]
+            self.log.warning(
+                f"[Governance | Conscience Gate] Dynamic redirect rejected by Conscience "
+                f"(Score: {S_t}/10, Deficiencies: {failing_rubrics or 'audit_unavailable'}). "
+                f"Suppressing dynamic output and enforcing deterministic policy statement."
+            )
+            safe_output = self._deterministic_redirect_fallback(violation_type)
+            safe_output = self._enforce_redirect_structure(safe_output)
+            note = f"{note} [Conscience Veto: dynamic redirect rejected ({S_t}/10); deterministic policy fallback enforced]"
+
+        # Commit to database ONLY after Conscience audit and gate approval.
+        self.store.update_message_content(message_id, safe_output, audit_status="complete")
+
         self.store.update_message_reasoning(message_id, "Preparing your answer...")
 
         governance_record = {
@@ -3238,7 +3283,7 @@ class SAFi:
             "t": redirect_turn,
             "t_sequence": "agent_baseline_shared",
             "userPrompt": self._redact_pii(original_prompt, org_id),
-            "intellectDraft": safe_output,
+            "intellectDraft": raw_redirect_draft,
             "intellectReflection": "",
             "finalOutput": safe_output,
             "willDecision": "redirected",

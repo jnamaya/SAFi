@@ -69,7 +69,7 @@ This document defines the formal mathematical foundation of SAFi's five-stage ar
 │      │             │                                                   │        │                      │
 │      │             │                                                   │  still violation?             │
 │      │             │                                                   │  ├ low_align →                │
-│      │             │                                                   │  │  commit best               │
+│      │             │                                                   │  │  system notice             │
 │      │             │                                                   │  └ ethical →                  │
 │      ▼             ▼                                                   ▼     redirect                   │
 │  redirect ◀──────────────────────────────────────────────────────────┘        │                      │
@@ -96,7 +96,7 @@ All gates above run synchronously. Summarization and profile extraction run asyn
 | Pass 1: audit unavailable (fail-closed) | System failure notice. No retry. |
 | Pass 2: scope/grounding reason | Agent redirect. No retry. |
 | Pass 2: `ethical_violation` reason | Reflexion retry. |
-| Pass 3: `low_alignment_score` | Reflexion retry, then commit best draft. |
+| Pass 3: `low_alignment_score` | Reflexion retry, then system failure notice if unapproved. |
 | Pass 3: `ethical_violation` | Reflexion retry, then agent redirect. |
 
 ---
@@ -242,7 +242,7 @@ That override is itself the **stricter** of the two governance tiers, resolved a
 with an absent value on either side simply omitted from the max.
 
 **If $D^3_t = \text{violation}$** → run **Stage 2.1 (Reflexion Retry)** once. After the retry, the outcome depends on the residual reason:
-- `low_alignment_score` (a soft quality signal) → **commit the best available draft** with its honest low score recorded. SAFi does **not** vacuum-redirect on residual low alignment; scope/injection are already gated at Phase 0 / Pass 2.
+- `low_alignment_score` (or any unapproved residual state) → ship **deterministic system failure notice** via `_ship_system_failure_notice()`. In accordance with classical governance, a defective act is never willed; the system does not deliver low-alignment drafts.
 - `ethical_violation` (critical) → call `trigger_agent_redirect()`.
 
 **If $D^3_t = \text{approve}$** → return $a_t$ to user.
@@ -291,7 +291,7 @@ D'^1_t = W_1(a'_t), \quad L'_t = C(a'_t, x_t, R), \quad D'^2_t = W_2(L'_t, V), \
 - Continue to the Spirit memory update (Stage 4 `compute`).
 
 **If $D'^3_t = \text{violation}$:**
-- `low_alignment_score` → commit the best available draft ($a_t \leftarrow a'_t$ if produced) with its low score recorded. SAFi never returns silence or an empty redirect for a soft quality dip.
+- `low_alignment_score` (or unapproved retry) → ship deterministic system failure notice (`_ship_system_failure_notice()`). A defective draft is never released to the user.
 - `ethical_violation` → call `trigger_agent_redirect()`.
 
 **Code Reference:** [`orchestrator.py#_finalize_draft`](../safi_app/core/orchestrator.py)
@@ -369,9 +369,11 @@ A numerical guard $\epsilon = 10^{-8}$ prevents division by zero when either vec
 
 $$M_{t+1} = U(M_t, L_t, S_t, \mu_t, d_t)$$
 
-### Feedback to Intellect
+### Feedback to Intellect & Redirect Gating
 
-A natural-language coaching note $f_t$ is generated from $S_t$ and $d_t$ to steer the next turn. Redirect turns use a separate `compute_redirect()` path that scores redirect quality without updating the EMA, keeping the Spirit memory free from non-content scores.
+A natural-language coaching note $f_t$ is generated from $S_t$ and $d_t$ to steer the next turn.
+
+Redirect turns invoke Conscience via `evaluate_redirect()` and compute quality via `compute_redirect()` without updating the Spirit EMA (keeping memory free from non-content scores). Conscience actively gates the redirect output: if redirect quality is deficient ($S_t < 6$ or any redirect rubric scores negative), the dynamic draft is vetoed and replaced with an immutable, deterministic policy statement (`_deterministic_redirect_fallback`).
 
 **Code Reference:** [`spirit.py#compute()`](../safi_app/core/faculties/spirit.py)
 
@@ -425,7 +427,7 @@ The reference provider routes across OpenAI, Anthropic, Gemini, Groq/DeepSeek/Mi
 
 2. **Two Spirit aggregations:** `integrate` produces the gating alignment $A_t \in [0,1]$ (weight-normalized average of rescaled scores, **confidence-free**) consumed by Will Pass 3. `compute` produces the display coherence score $S_t \in [1,10]$ (**confidence-weighted**, clipped, then mapped `(raw + 1) / 2 * 9 + 1` and rounded). They are independent numbers; the $0.5$ gate threshold applies to $A_t$, never to $S_t$.
 
-3. **No hard rejections:** SAFi never returns silence or an error to the user. Every failure produces a governed response, through two distinct channels: verdicts on the *request* (scope/grounding gates, Phase 0, residual ethical violations) route through `trigger_agent_redirect()`, while faults of the *system* (structural failures after repair, audit unavailability) ship a deterministic system failure notice that is honest about being an internal issue rather than blaming the user's request.
+3. **No hard rejections & Governed Delivery:** SAFi never returns silence or an error to the user. Every failure produces a governed response, through distinct channels: verdicts on the *request* (scope/grounding gates, Phase 0, residual ethical violations) route through `trigger_agent_redirect()` (actively gated by Conscience with deterministic fallback on audit failure), while faults of the *system* or exhausted retry failures (structural failures after repair, audit unavailability, unapproved retries failing Pass 3) ship a deterministic system failure notice that is honest about the inability to produce a verified answer rather than delivering a defective draft or falsely blaming the user's request. Approved drafts only cross to the user when passing all required governance gates.
 
 4. **Reflexion limit:** Only one retry is attempted to prevent infinite loops.
 
