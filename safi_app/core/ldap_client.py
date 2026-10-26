@@ -135,7 +135,13 @@ def authenticate(username: str, password: str) -> dict:
             svc = Connection(server, user=Config.LDAP_BIND_DN,
                              password=Config.LDAP_BIND_PASSWORD,
                              receive_timeout=Config.LDAP_TIMEOUT)
-            if not svc.open() or (_needs_starttls() and not svc.start_tls()) or not svc.bind():
+            # open() may return None on some ldap3/LDAPS paths even on
+            # success, so it must not be treated as a boolean; failures
+            # either raise or surface as a failed bind() below.
+            svc.open()
+            if _needs_starttls() and not svc.start_tls():
+                raise Exception(f"service TLS failed: {svc.last_error or svc.result}")
+            if not svc.bind():
                 raise Exception(f"service bind failed: {svc.last_error or svc.result}")
             try:
                 filt = Config.LDAP_USER_FILTER.format(username=_escape_filter(username))
@@ -163,7 +169,15 @@ def authenticate(username: str, password: str) -> dict:
         # channel before it will accept any simple bind on 389.
         conn = Connection(server, user=user_dn, password=password,
                           receive_timeout=Config.LDAP_TIMEOUT)
-        if not conn.open() or (_needs_starttls() and not conn.start_tls()) or not conn.bind():
+        # Do NOT pre-open the socket: with this ldap3/LDAPS path an explicit
+        # open() before bind() yields a silent None-result failure (no
+        # last_error, no result), indistinguishable from a bad password.
+        # bind() opens the socket itself, applying TLS per the server config;
+        # start_tls is still issued explicitly for the StartTLS-on-389 case.
+        if _needs_starttls():
+            if not conn.open() or not conn.start_tls():
+                raise Exception(f"user TLS failed: {conn.last_error or conn.result}")
+        if not conn.bind():
             raise Exception(f"user bind failed: {conn.last_error or conn.result}")
         conn.unbind()
     except Exception as exc:  # noqa: BLE001 — every failure maps to a code
@@ -192,7 +206,13 @@ def get_groups(user_dn: str):
         svc = Connection(server, user=Config.LDAP_BIND_DN,
                          password=Config.LDAP_BIND_PASSWORD,
                          receive_timeout=Config.LDAP_TIMEOUT)
-        if not svc.open() or (_needs_starttls() and not svc.start_tls()) or not svc.bind():
+        # open() may return None on success (see authenticate); treat only a
+        # failed bind() as failure so a group lookup never spuriously returns
+        # None (which would skip role mapping).
+        svc.open()
+        if _needs_starttls() and not svc.start_tls():
+            return None
+        if not svc.bind():
             return None
         try:
             svc.search(user_dn, "(objectClass=*)", search_scope="BASE",
