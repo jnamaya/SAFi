@@ -386,9 +386,20 @@ def get_tools_for_agent(agent: Optional[str]) -> List[Dict[str, Any]]:
     low = agent.lower()
     if "sysadmin" in low:
         return list(SYSADMIN_TOOL_SCHEMAS)
-    if "software_engineer" in low or "engineer" in low or "coding" in low:
+    if (
+        "software_engineer" in low
+        or "engineer" in low
+        or "coding" in low
+        or "red_team" in low
+        or "security" in low
+        or "operator" in low
+        or "adversarial" in low
+    ):
         return list(SOFTWARE_ENGINEER_TOOL_SCHEMAS)
-    return []
+    # Default fallback for any custom or unlisted agent connected through the CLI harness:
+    # Offer the harness tools so the client advertises them; the server's WillGate
+    # policy remains the authoritative enforcement layer.
+    return list(SOFTWARE_ENGINEER_TOOL_SCHEMAS)
 
 
 def _is_secret_name(name: str) -> bool:

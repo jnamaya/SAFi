@@ -69,7 +69,7 @@ def main():
     parser.add_argument("--setup", "--init", dest="setup_wizard", action="store_true", help="Launch the interactive first-run setup wizard.")
     parser.add_argument("prompt", nargs="?", help="Task prompt. If omitted, starts interactive REPL mode.")
     parser.add_argument("-k", "--api-key", help="SAFi Policy API Key (defaults to SAFI_API_KEY env or config).")
-    parser.add_argument("-u", "--api-url", help="SAFi backend URL (default: http://localhost:5000).")
+    parser.add_argument("-u", "--api-url", help="SAFi backend URL (one-off override; default is the URL saved via `safi --set-url`).")
     parser.add_argument("-a", "--agent", default=None, help="Agent (default: last used in workspace, or software_engineer).")
     parser.add_argument(
         "-m",
@@ -156,7 +156,7 @@ def main():
         sys.exit(0)
 
     # Run setup wizard if requested via --setup or on first run in an interactive terminal
-    is_first_run = (not config.has_configured_api_url() and not args.api_url and not os.environ.get("SAFI_API_URL"))
+    is_first_run = (not config.has_configured_api_url() and not args.api_url)
     if args.setup_wizard or (is_first_run and sys.stdin.isatty()):
         wizard_url, wizard_agent, wizard_key = run_setup_wizard()
         if not args.api_url:

@@ -210,12 +210,13 @@ class SafiClient:
         if reasoning_effort and reasoning_effort.strip():
             payload["reasoning_effort"] = reasoning_effort.strip().lower()
 
+        client_timeout = int(os.environ.get("SAFI_CLIENT_TIMEOUT", "1800"))
         try:
             resp = self.session.post(
                 self.endpoint,
                 headers=headers,
                 json=payload,
-                timeout=600,
+                timeout=client_timeout,
             )
         except requests.exceptions.SSLError as exc:
             if self._allow_cert_refresh():
@@ -225,7 +226,7 @@ class SafiClient:
                         self.endpoint,
                         headers=headers,
                         json=payload,
-                        timeout=600,
+                        timeout=client_timeout,
                     )
                 except requests.exceptions.RequestException as retry_exc:
                     raise SafiClientError(

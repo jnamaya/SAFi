@@ -1136,7 +1136,7 @@ def run_setup_wizard() -> tuple[str, str, Optional[str]]:
     )
 
     # 1. Ask for SAFi Appliance URL
-    existing_url = config.load_config().get("api_url") or os.environ.get("SAFI_API_URL") or "http://localhost:5000"
+    existing_url = str(config.load_config().get("api_url") or "").strip() or "http://192.168.1.223:5001"
     ui.console.print("\n[bold white]1. SAFi Appliance Endpoint[/]")
     ui.console.print(
         "[dim]Enter the base URL of your SAFi server or Mini-PC appliance.\n"

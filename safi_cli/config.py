@@ -178,18 +178,27 @@ def resolve_api_key(explicit_key: Optional[str] = None, agent: str = "software_e
 
 
 def resolve_api_url(explicit_url: Optional[str] = None) -> str:
+    """Resolve the backend URL from the explicit flag or config.json ONLY.
+
+    Environment variables and implicit localhost defaults are deliberately
+    ignored so the CLI never silently targets a shadowing local instance.
+    """
     if explicit_url:
         return explicit_url.rstrip("/")
-    env_url = os.environ.get("SAFI_API_URL")
-    if env_url:
-        return env_url.rstrip("/")
     cfg = load_config()
-    return cfg.get("api_url", "http://localhost:5000").rstrip("/")
+    url = str(cfg.get("api_url") or "").strip().rstrip("/")
+    if not url:
+        raise SystemExit(
+            "No SAFi backend URL configured.\n"
+            "Run:  safi --set-url http://<host>:5000\n"
+            "(or pass -u/--api-url explicitly for a one-off override)"
+        )
+    return url
 
 
 def has_configured_api_url() -> bool:
-    """Return True if an API URL has been explicitly configured in config.json or environment."""
-    return bool(os.environ.get("SAFI_API_URL") or load_config().get("api_url"))
+    """Return True if an API URL has been explicitly configured in config.json."""
+    return bool(str(load_config().get("api_url") or "").strip())
 
 
 def get_default_agent() -> Optional[str]:

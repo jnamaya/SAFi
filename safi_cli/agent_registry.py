@@ -214,7 +214,7 @@ DEFAULT_MODELS = [
     {"id": "mistral-small-2603", "label": "Mistral Small", "provider": "Mistral"},
 ]
 
-AVAILABLE_MODELS: List[Dict[str, Any]] = list(DEFAULT_MODELS)
+AVAILABLE_MODELS: List[Dict[str, Any]] = []
 
 
 def _infer_provider(model_id: str) -> str:
@@ -228,28 +228,28 @@ def _infer_provider(model_id: str) -> str:
 
 
 def discover_models(client: SafiClient, force_refresh: bool = False) -> List[Dict[str, Any]]:
-    """Discover available AI models from the SAFi backend policy, updating cache."""
+    """Discover available AI models from the SAFi backend policy.
+
+    The backend is the single source of truth. If it returns nothing (no
+    configured providers, or the request is unauthorized), the list is empty —
+    we never fall back to a bundled/static catalog.
+    """
     global AVAILABLE_MODELS
     remote = client.get_available_models()
-    if remote:
-        seen = set()
-        merged = []
-        for m in remote:
-            m_id = m.get("id") or m.get("model_id") or ""
-            if m_id and m_id not in seen:
-                seen.add(m_id)
-                merged.append({
-                    "id": m_id,
-                    "label": m.get("label") or m.get("name") or m_id,
-                    "provider": m.get("provider") or "Cloud Provider",
-                    "active": bool(m.get("active")),
-                    "local": bool(m.get("local")),
-                })
-        for m in DEFAULT_MODELS:
-            if m["id"] not in seen:
-                seen.add(m["id"])
-                merged.append(m)
-        AVAILABLE_MODELS = merged
+    seen = set()
+    merged = []
+    for m in remote or []:
+        m_id = m.get("id") or m.get("model_id") or ""
+        if m_id and m_id not in seen:
+            seen.add(m_id)
+            merged.append({
+                "id": m_id,
+                "label": m.get("label") or m.get("name") or m_id,
+                "provider": m.get("provider") or "Cloud Provider",
+                "active": bool(m.get("active")),
+                "local": bool(m.get("local")),
+            })
+    AVAILABLE_MODELS = merged
     return AVAILABLE_MODELS
 
 
