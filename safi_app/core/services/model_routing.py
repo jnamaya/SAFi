@@ -358,9 +358,10 @@ def resolve_faculty_model_pair(
         intellect = llm_models[0]
 
     if intellect and conscience and intellect.casefold() == conscience.casefold():
-        alternatives = [model for model in llm_models if model.casefold() != conscience.casefold()]
-        if alternatives:
-            intellect = alternatives[0]
+        if not (intellect_explicit and conscience_explicit):
+            alternatives = [model for model in llm_models if model.casefold() != conscience.casefold()]
+            if alternatives:
+                intellect = alternatives[0]
 
     return intellect, conscience
 

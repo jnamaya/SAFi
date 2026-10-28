@@ -823,10 +823,16 @@ async def generate_policy_content_endpoint():
         _DOCUMENT_TASKS = ('compile_rules', 'ai_standards')
         model = Config.CONSCIENCE_MODEL if gen_type in _DOCUMENT_TASKS else Config.BACKEND_MODEL
         detected_provider = _detect_provider(model)
-        
+
+        route_cfg = { "provider": detected_provider, "model": model }
+        if gen_type in _DOCUMENT_TASKS and detected_provider == "local":
+            conscience_url = (getattr(Config, "CONSCIENCE_BASE_URL", "") or "").strip()
+            if conscience_url:
+                route_cfg["base_url"] = conscience_url
+
         llm_config = {
             "providers": _build_providers_config(Config),
-            "routes": { "intellect": { "provider": detected_provider, "model": model } }
+            "routes": { "intellect": route_cfg }
         }
         activate_org(get_current_org_id())  # provider allow-list applies to wizard calls too
         provider = LLMProvider(llm_config)

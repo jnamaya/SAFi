@@ -64,6 +64,37 @@ def build_conscience_route(config, conscience_model: str) -> dict:
     return route
 
 
+def _enrich_model_attribution(provider: str, model_name: str) -> str:
+    """Enrich an alias (like 'safi-intellect' or 'safi-conscience') with its concrete
+    underlying model id and weights artifact from local-models.json for tamper-proof
+    governance and audit trail attribution."""
+    if not model_name:
+        return f"{provider}/"
+    if provider == "local" or model_name.startswith("safi-"):
+        try:
+            catalogue_path = Path("/etc/safi/local-models.json")
+            if catalogue_path.is_file():
+                with open(catalogue_path, encoding="utf-8") as handle:
+                    cat = json.load(handle)
+                for entry in cat.get("models", []) or []:
+                    entry_id = entry.get("id", "")
+                    entry_alias = entry.get("alias", "")
+                    entry_aliases = entry.get("aliases", [])
+                    entry_file = entry.get("file", "")
+                    if (
+                        model_name == entry_id
+                        or model_name == entry_alias
+                        or (isinstance(entry_aliases, list) and model_name in entry_aliases)
+                    ):
+                        if model_name != entry_id and entry_file:
+                            return f"{provider}/{model_name} [{entry_id}:{entry_file}]"
+                        elif entry_file:
+                            return f"{provider}/{model_name} [{entry_file}]"
+        except Exception:
+            pass
+    return f"{provider}/{model_name}"
+
+
 def build_safi(
     *,
     config,
@@ -90,8 +121,12 @@ def build_safi(
     rag_service = RAGService(knowledge_base_name=(profile or {}).get("rag_knowledge_base"))
     mcp_manager = MCPManager(getattr(config, "MCP_CONFIG", {}))
     attribution = json.dumps({
-        "intellect": f"{llm_config['routes']['intellect']['provider']}/{intellect_model}",
-        "conscience": f"{llm_config['routes']['conscience']['provider']}/{conscience_model}",
+        "intellect": _enrich_model_attribution(
+            llm_config["routes"]["intellect"]["provider"], intellect_model
+        ),
+        "conscience": _enrich_model_attribution(
+            llm_config["routes"]["conscience"]["provider"], conscience_model
+        ),
     })
     application_prompts_path = Path(__file__).with_name("application_prompts.json")
     try:
