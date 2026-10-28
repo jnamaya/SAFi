@@ -5496,8 +5496,9 @@ def search_governance_events(org_id, q, profile=None, policy_id=None, flt=None,
                              user_id=None, scope=None):
     """Two-path prompt search (proposal 2.10a/b).
 
-    scope='plaintext' runs a cheap SQL LIKE over chat_history.user_message
-    joined by message_pk — no decryption. The default (prompt) path decrypts
+    scope='plaintext' decrypts only chat_history's user-turn content (a
+    small per-row payload, so it carries no window cap). The default
+    (prompt) path decrypts
     the governance record's userPrompt for each row in the capped window,
     identifies the FULL match set once, and pages it in memory so pagination
     never re-decrypts. Returns (matches, total_matches, window).
@@ -5525,26 +5526,38 @@ def search_governance_events(org_id, q, profile=None, policy_id=None, flt=None,
             raise ValueError(
                 f"search window matches {window} records (cap {GOVERNANCE_SEARCH_CAP}) — narrow the date range")
         if scope == "plaintext":
-            # Cheap path: substring match against chat_history's plaintext
-            # user-turn content (role='user'). Still capped by the window
-            # count; decryption never happens. LIMIT/OFFSET push paging into
-            # SQL because the match set is identified without decrypting.
+            # User-turn content in chat_history is ENCRYPTED at rest (the
+            # same ciphertext that goes to the trail entry), so SQL LIKE can
+            # never match. Instead: fetch the joined window once, decrypt
+            # each user turn in Python (cheap symmetric decrypt, no cap —
+            # that's the entire point of this scope), match
+            # case-insensitively, and page the match set in memory.
             gcols = ", ".join("g." + c for c in _GOV_EVENT_COLUMNS.split(", "))
-            join = ("FROM governance_records g "
-                    "JOIN chat_history c ON c.id = g.message_pk "
-                    f"WHERE {gwhere} AND c.role='user' AND c.content LIKE %s")
             cursor.execute(
-                f"SELECT {gcols}, c.content AS _content {join} "
-                f"ORDER BY g.created_at DESC, g.id DESC LIMIT %s OFFSET %s",
-                tuple(params) + (f"%{q}%", limit, offset))
+                f"SELECT {gcols}, c.content AS _content "
+                "FROM governance_records g "
+                "JOIN chat_history c ON c.id = g.message_pk "
+                f"WHERE {gwhere} AND c.role='user' "
+                "ORDER BY g.created_at DESC, g.id DESC",
+                tuple(params))
             rows = cursor.fetchall()
-            cursor.execute(f"SELECT COUNT(*) AS n {join}", tuple(params) + (f"%{q}%",))
-            total = cursor.fetchone()["n"]
-            for r in rows:
-                # Snippet the plaintext turn (2.10c) — content never leaves
-                # this slice; no decryption was involved to produce it.
-                r["prompt_preview"] = _match_snippet(str(r.pop("_content") or ""), q)
-            return _attach_user_names(cursor, rows), total, window
+            needle = q.lower()
+            matches = []
+            for row in rows:
+                try:
+                    # decrypt_value passes legacy plaintext rows through
+                    # untouched, so mixed-encryption history still matches.
+                    content = str(crypto.decrypt_value(row.pop("_content")) or "")
+                except (ValueError, TypeError):
+                    continue
+                if needle in content.lower():
+                    # Snippet the decrypted turn (2.10c) — content never
+                    # leaves this slice.
+                    row["prompt_preview"] = _match_snippet(content, q)
+                    matches.append(row)
+            total = len(matches)
+            matches = matches[offset:offset + limit]
+            return _attach_user_names(cursor, matches), total, window
 
         cursor.execute(
             f"SELECT {_GOV_EVENT_COLUMNS}, record_enc FROM governance_records "
