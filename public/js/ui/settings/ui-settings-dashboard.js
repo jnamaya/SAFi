@@ -780,7 +780,10 @@ async function renderExplorer() {
         });
     } catch (e) {
         if (token !== explorerToken) return;   // superseded by a newer query
-        el.innerHTML = `<p class="text-sm text-red-500">Failed to load events: ${esc(e.message || e)}</p>`;
+        const hint = /cap \d+\)/.test(String(e.message || e))
+            ? '<p class="text-xs text-gray-500 mt-1">Tip: switch the scope dropdown to “In user message (plaintext)” — it searches the same window without decryption and has no cap.</p>'
+            : '';
+        el.innerHTML = `<p class="text-sm text-red-500">Failed to load events: ${esc(e.message || e)}</p>${hint}`;
         return;
     }
     if (token !== explorerToken) return;       // stale response, drop it
@@ -836,7 +839,7 @@ async function renderExplorer() {
                 </table>
                </div>`}
         ${state.q ? `<p class="text-xs text-gray-400 mt-2">${total} match${total === 1 ? '' : 'es'} across ${res.window} record${res.window === 1 ? '' : 's'} in the window · ${state.scope === 'plaintext' ? 'plaintext scan (no decryption)' : 'prompt scan (window decrypted once)'}.</p>` : ''}
-        ${res.cap && res.window >= res.cap * 0.8 ? `<p class="text-xs text-amber-600 mt-1">Window is near the ${res.cap}-record scan cap — narrow the date range to stay under it.</p>` : ''}
+        ${res.cap && state.scope !== 'plaintext' && res.window >= res.cap * 0.8 ? `<p class="text-xs text-amber-600 mt-1">Window is near the ${res.cap}-record decrypt cap — narrow the date range, or switch the scope to “In user message (plaintext)” which has no cap.</p>` : ''}
         ${total > PAGE_SIZE ? `
             <div class="flex items-center justify-between mt-3 text-xs text-gray-500">
                 <span>Showing ${state.offset + 1}–${Math.min(state.offset + PAGE_SIZE, total)} of ${total}</span>

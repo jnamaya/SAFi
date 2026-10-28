@@ -5518,7 +5518,10 @@ def search_governance_events(org_id, q, profile=None, policy_id=None, flt=None,
     try:
         cursor.execute(f"SELECT COUNT(*) AS n FROM governance_records WHERE {where}", tuple(params))
         window = cursor.fetchone()["n"]
-        if window > GOVERNANCE_SEARCH_CAP:
+        # The cap bounds per-row decryption, which only the prompt scope pays
+        # for. The plaintext scope is pure SQL LIKE + LIMIT/OFFSET, so it can
+        # search any window size safely.
+        if scope != "plaintext" and window > GOVERNANCE_SEARCH_CAP:
             raise ValueError(
                 f"search window matches {window} records (cap {GOVERNANCE_SEARCH_CAP}) — narrow the date range")
         if scope == "plaintext":
@@ -7143,9 +7146,14 @@ def get_policy_id_by_api_key(raw_key):
             cursor.execute("SELECT policy_id FROM api_keys WHERE key_hash=%s", (h,))
             row = cursor.fetchone()
             if row:
-                cursor.execute("UPDATE api_keys SET last_used_at=NOW() WHERE key_hash=%s", (h,))
-                conn.commit()
-                return row[0]
+                pid = row[0]
+                try:
+                    cursor.execute("UPDATE api_keys SET last_used_at=NOW() WHERE key_hash=%s", (h,))
+                    conn.commit()
+                except Exception as update_err:
+                    conn.rollback()
+                    logging.debug("Could not update last_used_at: %s", update_err)
+                return pid
             
             logging.warning(f"API key verification failed (no hash match).")
             return None

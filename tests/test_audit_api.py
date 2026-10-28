@@ -237,6 +237,18 @@ class TestAuditApi(unittest.TestCase):
                 f"/api/organizations/{self.org_id}/audit/events?q=xyzzy")
         self.assertEqual(res.status_code, 413)
 
+    def test_09b_plaintext_scope_bypasses_cap(self):
+        # The cap bounds per-row decryption; the plaintext scope is pure SQL
+        # LIKE, so a large window must not 413.
+        with patch.object(db, "GOVERNANCE_SEARCH_CAP", 1):
+            res = self.client().get(
+                f"/api/organizations/{self.org_id}/audit/events"
+                f"?q=xyzzy&scope=plaintext")
+        self.assertEqual(res.status_code, 200)
+        data = json.loads(res.data)
+        self.assertEqual(data["window"], 4)
+        self.assertEqual(len(data["items"]), 1)
+
     # -- drill-down --------------------------------------------------------------
 
     def test_10_event_detail_decrypts_and_verifies(self):
