@@ -72,6 +72,11 @@ CONNECTOR_TOOLS: Dict[str, Tuple[str, ...]] = {
         "bash", "write", "edit", "delete",
         "webfetch", "websearch", "todowrite", "question",
     ),
+    "security_engineer_tools": (
+        "read", "grep", "glob", "list",
+        "bash", "write", "edit", "patch", "delete",
+        "webfetch", "websearch", "task", "todowrite", "question",
+    ),
     "find_places": ("find_places",),
     "get_analyst_recommendations": ("get_analyst_recommendations",),
     "get_company_news": ("get_company_news",),

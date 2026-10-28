@@ -373,7 +373,7 @@ class MCPManager:
         # from what the Will will authorize.
         _CODING_CONNECTORS = (
             "agentic_coding", "coding_harness",
-            "software_engineer_tools", "sysadmin_tools",
+            "software_engineer_tools", "sysadmin_tools", "security_engineer_tools",
         )
         _coding_declared = [c for c in _CODING_CONNECTORS if c in allowed_tools]
         _emit_coding = bool(_coding_declared)

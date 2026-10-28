@@ -681,10 +681,10 @@ class Config:
     BUILTIN_AGENTS = [
         a.strip().lower()
         for a in os.environ.get(
-            "SAFI_BUILTIN_AGENTS", "software_engineer,sysadmin,tutor"
+            "SAFI_BUILTIN_AGENTS", "software_engineer,sysadmin,security_engineer"
         ).split(",")
         if a.strip()
-    ] or ["software_engineer", "sysadmin", "tutor"]
+    ] or ["software_engineer", "sysadmin", "security_engineer"]
 
     @classmethod
     def builtin_agent_enabled(cls, key: str) -> bool:
