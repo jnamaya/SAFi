@@ -468,11 +468,16 @@ def _build_bwrap_command(
     - Workspace is mounted read-write (--bind ws ws).
     - /tmp is a private in-memory filesystem (--tmpfs /tmp).
     - Process namespace is unshared (--unshare-pid).
+    - Session is isolated (--new-session) to prevent terminal injection (TIOCSTI ioctl attacks).
     - For non-sysadmin agents, sensitive credential directories (~/.ssh, ~/.config/safi,
-      ~/.aws, ~/.azure, ~/.gnupg, ~/.kube, ~/.docker) are masked with empty tmpfs mounts.
+      ~/.aws, ~/.azure, ~/.gnupg, ~/.kube, ~/.docker, ~/.config/gh) and shell histories / auth tokens
+      are masked with empty tmpfs or /dev/null mounts.
     """
     bwrap_path = shutil.which("bwrap")
     if not bwrap_path:
+        logger.warning(
+            "Bubblewrap (bwrap) binary not found on PATH. Commands will execute unconfined on the host."
+        )
         return None
 
     ws = str(workspace_root.resolve())
@@ -483,6 +488,7 @@ def _build_bwrap_command(
         "--proc", "/proc",
         "--tmpfs", "/tmp",
         "--unshare-pid",
+        "--new-session",
         "--die-with-parent",
         "--bind", ws, ws,
         "--chdir", ws,
@@ -495,15 +501,29 @@ def _build_bwrap_command(
         sensitive_dirs = [
             home / ".ssh",
             home / ".config" / "safi",
+            home / ".config" / "gh",
             home / ".aws",
             home / ".azure",
             home / ".gnupg",
             home / ".kube",
             home / ".docker",
+            home / ".local" / "share" / "keyrings",
         ]
         for sdir in sensitive_dirs:
             if sdir.exists() and sdir.is_dir():
                 bwrap_cmd.extend(["--tmpfs", str(sdir)])
+
+        sensitive_files = [
+            home / ".bash_history",
+            home / ".zsh_history",
+            home / ".netrc",
+            home / ".git-credentials",
+            home / ".npmrc",
+            home / ".pypirc",
+        ]
+        for sfile in sensitive_files:
+            if sfile.exists():
+                bwrap_cmd.extend(["--ro-bind-try", "/dev/null", str(sfile)])
 
         # Allow read-only access to known_hosts and ssh config so git/ssh can verify
         # remote host identities (e.g. github.com) and use ssh configs without exposing any private key files.
@@ -822,6 +842,12 @@ def execute_tool(
             bwrap_cmd = _build_bwrap_command(cmd, workspace_root, agent=agent)
             popen_args: Any = bwrap_cmd if bwrap_cmd else cmd
             use_shell = not bool(bwrap_cmd)
+
+            if not bwrap_cmd and on_output:
+                try:
+                    on_output("[SANDBOX NOTICE] Bubblewrap (bwrap) not installed — running unconfined on host.")
+                except Exception:
+                    pass
 
             output_lines: List[str] = []
             last_progress_msg: Optional[str] = None
