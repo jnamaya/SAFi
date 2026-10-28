@@ -783,19 +783,20 @@ async function renderExplorer() {
         // Auto-fallback: the decrypt cap only applies to the prompt scope.
         // Rather than dead-ending the user with a "narrow the date range"
         // error, transparently retry the identical query as a plaintext
-        // scan (pure SQL LIKE, no decryption, no cap) and say so once.
+        // scan (decrypts only the small user-turn payload, so there is no
+        // window cap) and say so once.
         if (state.q && state.scope !== 'plaintext' && /cap \d+\)/.test(String(e.message || e))) {
             state.scope = 'plaintext';
             const sel = document.getElementById('ah-scope');
             if (sel) sel.value = 'plaintext';
             const notice = document.getElementById('ah-cap-notice');
             if (notice) { notice.textContent =
-                `Window exceeded the 5,000-record decrypt cap — automatically re-run as a plaintext scan (no decryption, no cap). Switch the scope back manually to re-enable prompt search on a narrower range.`;
+                `Window exceeded the 5,000-record decrypt cap — automatically re-run as a plaintext scan (decrypts only the user-turn text, so there is no cap). Switch the scope back manually to re-enable prompt search on a narrower range.`;
                 notice.classList.remove('hidden'); }
             return renderExplorer();
         }
         const hint = /cap \d+\)/.test(String(e.message || e))
-            ? '<p class="text-xs text-gray-500 mt-1">Tip: switch the scope dropdown to “In user message (plaintext)” — it searches the same window without decryption and has no cap.</p>'
+            ? '<p class="text-xs text-gray-500 mt-1">Tip: switch the scope dropdown to “In user message (plaintext)” — it decrypts only the user-turn text (no window cap), so it works on any range.</p>'
             : '';
         el.innerHTML = `<p class="text-sm text-red-500">Failed to load events: ${esc(e.message || e)}</p>${hint}`;
         return;
@@ -853,7 +854,7 @@ async function renderExplorer() {
                     <tbody>${rows}</tbody>
                 </table>
                </div>`}
-        ${state.q ? `<p class="text-xs text-gray-400 mt-2">${total} match${total === 1 ? '' : 'es'} across ${res.window} record${res.window === 1 ? '' : 's'} in the window · ${state.scope === 'plaintext' ? 'plaintext scan (no decryption)' : 'prompt scan (window decrypted once)'}.</p>` : ''}
+        ${state.q ? `<p class="text-xs text-gray-400 mt-2">${total} match${total === 1 ? '' : 'es'} across ${res.window} record${res.window === 1 ? '' : 's'} in the window · ${state.scope === 'plaintext' ? 'plaintext scan (user turns decrypted)' : 'prompt scan (window decrypted once)'}.</p>` : ''}
         ${res.cap && state.scope !== 'plaintext' && res.window >= res.cap * 0.8 ? `<p class="text-xs text-amber-600 mt-1">Window is near the ${res.cap}-record decrypt cap — narrow the date range, or switch the scope to “In user message (plaintext)” which has no cap.</p>` : ''}
         ${total > PAGE_SIZE ? `
             <div class="flex items-center justify-between mt-3 text-xs text-gray-500">
