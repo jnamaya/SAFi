@@ -780,6 +780,20 @@ async function renderExplorer() {
         });
     } catch (e) {
         if (token !== explorerToken) return;   // superseded by a newer query
+        // Auto-fallback: the decrypt cap only applies to the prompt scope.
+        // Rather than dead-ending the user with a "narrow the date range"
+        // error, transparently retry the identical query as a plaintext
+        // scan (pure SQL LIKE, no decryption, no cap) and say so once.
+        if (state.q && state.scope !== 'plaintext' && /cap \d+\)/.test(String(e.message || e))) {
+            state.scope = 'plaintext';
+            const sel = document.getElementById('ah-scope');
+            if (sel) sel.value = 'plaintext';
+            const notice = document.getElementById('ah-cap-notice');
+            if (notice) { notice.textContent =
+                `Window exceeded the 5,000-record decrypt cap — automatically re-run as a plaintext scan (no decryption, no cap). Switch the scope back manually to re-enable prompt search on a narrower range.`;
+                notice.classList.remove('hidden'); }
+            return renderExplorer();
+        }
         const hint = /cap \d+\)/.test(String(e.message || e))
             ? '<p class="text-xs text-gray-500 mt-1">Tip: switch the scope dropdown to “In user message (plaintext)” — it searches the same window without decryption and has no cap.</p>'
             : '';
@@ -819,6 +833,7 @@ async function renderExplorer() {
                     <option value="prompt" ${state.scope === 'prompt' ? 'selected' : ''}>In prompt (decrypt)</option>
                     <option value="plaintext" ${state.scope === 'plaintext' ? 'selected' : ''}>In user message (plaintext)</option>
                 </select>
+                <span id="ah-cap-notice" class="text-xs text-amber-600 hidden" aria-live="polite"></span>
                 <select id="ah-filter" class="rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-2 py-1.5 text-xs">
                     <option value="">All decisions</option>
                     <option value="flagged" ${state.filter === 'flagged' ? 'selected' : ''}>Flagged (Alignment &lt; 6 or Consistency &lt; 60%)</option>
