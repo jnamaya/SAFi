@@ -119,3 +119,4 @@ docs/internal/
 # Lab PKI / deployment-only material (LDAPS CA cert, compose backups)
 certs/
 *.bak-*
+*.db
