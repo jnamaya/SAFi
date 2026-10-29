@@ -6,6 +6,7 @@ import argparse
 import importlib.util
 import json
 import subprocess
+import time
 from pathlib import Path
 
 CATALOGUE = Path("/etc/safi/local-models.json")
@@ -56,6 +57,23 @@ def main() -> int:
     CHOICE.write_text(json.dumps({"model": args.model, "backend": backend_id,
                                   "activate": args.activate}), encoding="utf-8")
     CHOICE.chmod(0o600)
+
+    # Immediately publish the running state so API polls never observe a prior run's 'done'
+    STATUS.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
+    STATUS.write_text(json.dumps({
+        "state": "running",
+        "phase": "starting",
+        "model": args.model,
+        "alias": model.get("alias", args.model),
+        "model_label": model.get("label", args.model),
+        "percent": 0,
+        "label": "Loading model into memory..." if args.activate else "Preparing download...",
+        "activated": args.activate,
+        "started": time.time(),
+        "updated": time.time()
+    }, indent=2), encoding="utf-8")
+    STATUS.chmod(0o644)
+
     subprocess.run(["systemctl", "start", "--no-block", "safi-model-fetch.service"], check=True)
     return 0
 

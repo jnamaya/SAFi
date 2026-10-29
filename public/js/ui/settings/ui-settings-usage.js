@@ -273,6 +273,8 @@ async function renderModelCatalogSection(orgId) {
     const host = document.getElementById('usage-model-catalog-section');
     if (!host) return;
 
+    const prevSelected = host.querySelector('.catalog-pane-btn[aria-selected="true"]')?.dataset.pane;
+
     host.innerHTML = `
         <div class="settings-card">
             <div class="flex flex-wrap items-center justify-between gap-3">
@@ -325,7 +327,7 @@ async function renderModelCatalogSection(orgId) {
 
     renderLocalPane(panes.local, local, orgId);
     renderCloudPane(panes.cloud, orgId);
-    show(localHas ? 'local' : 'cloud');
+    show(prevSelected || (localHas ? 'local' : 'cloud'));
 }
 
 // Local: what this box has. Hardware fit matters here because the download has
@@ -389,15 +391,23 @@ async function renderLocalPane(host, res, orgId) {
                 : 'No local model is being served, so no local model is offered in the composer.'}
         </p>`;
 
+    // If any model is currently downloading or loading into memory, start/resume watching progress
+    const busyModel = models.find(m => m.downloading || m.loading);
+    if (busyModel) {
+        watchLocalFetch(host, orgId, busyModel.id);
+    }
+
     host.querySelectorAll('.local-model-action').forEach(btn => {
         btn.addEventListener('click', async () => {
             btn.disabled = true;
             const activate = btn.dataset.activate === 'true';
+            const modelId = btn.dataset.modelId;
             btn.textContent = activate ? 'Loading...' : 'Starting download...';
             try {
-                const result = await api.downloadLocalModel(btn.dataset.modelId, activate);
+                const result = await api.downloadLocalModel(modelId, activate);
                 if (!result || !result.ok) throw new Error((result && result.error) || (activate ? 'Unable to load model' : 'Unable to start download'));
-                watchLocalFetch(host, orgId);
+                _localFetchPolling = false; // ensure new poll cycle runs
+                await renderModelCatalogSection(orgId);
             } catch (e) {
                 btn.disabled = false;
                 btn.textContent = activate ? 'Activate' : 'Download';
@@ -407,14 +417,30 @@ async function renderLocalPane(host, res, orgId) {
     });
 }
 
-function watchLocalFetch(host, orgId) {
+let _localFetchPolling = false;
+
+function watchLocalFetch(host, orgId, targetModelId = null) {
     const statusEl = host.querySelector('#local-fetch-status');
-    if (!statusEl) return;
+    if (!statusEl || _localFetchPolling) return;
+    _localFetchPolling = true;
+
     const poll = async () => {
+        if (!document.body.contains(statusEl)) {
+            _localFetchPolling = false;
+            return;
+        }
         try {
             const result = await api.getLocalModelStatus();
             const status = (result && result.status) || {};
+
+            // If we are waiting for a specific model, ignore stale status from other models
+            if (targetModelId && status.model && status.model !== targetModelId && status.state === 'done') {
+                setTimeout(poll, 1500);
+                return;
+            }
+
             if (status.state === 'done') {
+                _localFetchPolling = false;
                 statusEl.textContent = status.activated
                     ? 'Model loaded into memory and ready. Refreshing catalog...'
                     : 'Download verified. Refreshing catalog...';
@@ -422,7 +448,9 @@ function watchLocalFetch(host, orgId) {
                 return;
             }
             if (status.state === 'error') {
+                _localFetchPolling = false;
                 statusEl.textContent = status.error || (status.activated ? 'Local model loading failed.' : 'Local model download failed.');
+                setTimeout(() => renderModelCatalogSection(orgId), 3000);
                 return;
             }
             if (status.percent != null) {
@@ -432,9 +460,9 @@ function watchLocalFetch(host, orgId) {
                 const fallbackLabel = status.activated ? 'Loading model into memory...' : 'Preparing local model download...';
                 statusEl.textContent = status.label || fallbackLabel;
             }
-            setTimeout(poll, 2000);
+            setTimeout(poll, 1500);
         } catch (_) {
-            setTimeout(poll, 3000);
+            setTimeout(poll, 2500);
         }
     };
     poll();
