@@ -3233,6 +3233,8 @@ class SAFi:
                 redirect_output=safe_output,
                 user_prompt=self._redact_pii(original_prompt, org_id),
                 violation_type=violation_type,
+                agent_name=self.active_profile_name,
+                scope_statement=self.profile.get("scope_statement") if isinstance(self.profile, dict) else None,
             )
         except Exception as e:
             self.log.exception(f"ConscienceAuditor.evaluate_redirect() failed for agent redirect: {e}")

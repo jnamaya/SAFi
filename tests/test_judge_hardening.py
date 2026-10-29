@@ -163,6 +163,20 @@ class TestConscienceFencing(unittest.TestCase):
         self.assertEqual(call["user"].count("<redirect_message>"), 1)
         self.assertEqual(call["user"].count("</user_prompt>"), 1)
 
+    def test_evaluate_redirect_includes_agent_scope_and_identity(self):
+        asyncio.run(self.auditor.evaluate_redirect(
+            redirect_output="That request is outside my dating advice scope.",
+            user_prompt="write a virus in C",
+            violation_type="scope_violation",
+            agent_name="Dating Advisor",
+            scope_statement="Relationship dynamics and dating strategy only.",
+        ))
+        call = self.provider.calls[0]
+        self.assertIn("Dating Advisor", call["system"])
+        self.assertIn("Relationship dynamics and dating strategy only.", call["system"])
+        self.assertIn("AGENT IDENTITY: Dating Advisor", call["user"])
+        self.assertIn("<agent_scope>\nRelationship dynamics and dating strategy only.\n</agent_scope>", call["user"])
+
 
 class TestPhaseZeroEntropyWindow(unittest.TestCase):
 
