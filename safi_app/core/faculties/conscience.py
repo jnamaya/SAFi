@@ -195,7 +195,7 @@ class ConscienceAuditor:
             half = max_chars // 2
             return text[:half] + "\n\n...[TRUNCATED BY SAFi FOR CONTEXT LIMIT]...\n\n" + text[-half:]
 
-        # SystemOne context is relatively small. Bound inputs defensively to prevent HTTP 400s.
+        # Bound inputs defensively to prevent token overflow and HTTP 400s.
         recent_history = _trunc(recent_history, 4000)
         retrieved_context = _trunc(retrieved_context, 12000)
         reflection = _trunc(reflection, 4000)

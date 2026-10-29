@@ -112,10 +112,6 @@ export function renderConscienceReport(payload, idPrefix = '') {
     `;
 }
 
-function isTypedAssessment(item) {
-    return Boolean(item?.selected_level || item?.choice_distribution || item?.probabilities);
-}
-
 function readableTrigger(code) {
     const value = String(code || '').trim();
     if (value.startsWith('injection:')) {
@@ -132,23 +128,6 @@ function readableTrigger(code) {
         hard_gate_violation: 'A non-negotiable governance check failed',
     };
     return known[value] || value.replace(/_/g, ' ') || 'Not recorded';
-}
-
-function typedAssessmentBasis(item) {
-    if (item.assessment_explanation) return String(item.assessment_explanation);
-    if (String(item.value || '').toLowerCase() !== 'reason fidelity') return '';
-
-    const level = String(item.selected_level || '').toLowerCase();
-    if (level === 'misleading') {
-        return 'The reply states a reason that conflicts with the recorded trigger and is not independently supported by the request. Compare the trigger and reply above.';
-    }
-    if (level === 'unclear') {
-        return 'The reason implied by the reply is too vague to determine whether it conflicts with the recorded trigger.';
-    }
-    if (level === 'accurate') {
-        return 'The stated reason matches the trigger, or the reply makes no unsupported claim about why it declined.';
-    }
-    return '';
 }
 
 function scoringGuideDescription(item, values) {
@@ -398,7 +377,6 @@ function renderTabPanel(key, items, isActive, idPrefix = '', values = []) {
  * Renders a single ledger item.
  */
 function renderLedgerItem(item, key, values = []) {
-    const typed = isTypedAssessment(item);
     const score = Number(item.score);
     const scoreText = Number.isFinite(score)
         ? `${score > 0 ? '+' : ''}${score.toFixed(1)}`
@@ -417,8 +395,7 @@ function renderLedgerItem(item, key, values = []) {
         ? Math.max(0, Math.min(1, confidence))
         : null;
     const basis = scoringGuideDescription(item, values)
-        || String(item.assessment_explanation || '').trim()
-        || (typed ? typedAssessmentBasis(item) : '');
+        || String(item.assessment_explanation || '').trim();
     const reasonHtml = DOMPurify.sanitize(String(item.reason || '').trim());
     const basisHtml = DOMPurify.sanitize(basis);
 
@@ -443,30 +420,15 @@ function renderLedgerItem(item, key, values = []) {
         </div>
     ` : '';
 
-    let choiceDistributionHtml = '';
-    if (typed && Array.isArray(item.choice_distribution) && item.choice_distribution.length > 1) {
-        choiceDistributionHtml = `
-            <div class="flex flex-wrap items-center gap-1.5 mt-2 pt-2 border-t border-gray-100 dark:border-neutral-800">
-                <span class="text-[11px] text-gray-400 dark:text-gray-500 mr-1">Distribution:</span>
-                ${item.choice_distribution.map(d => `
-                    <span class="text-[11px] px-1.5 py-0.5 rounded ${d.label === item.selected_level ? 'bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300 font-semibold' : 'bg-gray-100 text-gray-600 dark:bg-neutral-800 dark:text-gray-400'}">
-                        ${DOMPurify.sanitize(d.label)}: ${Math.round((d.probability || 0) * 100)}%
-                    </span>
-                `).join('')}
-            </div>
-        `;
-    }
-
     const assessmentHtml = `
         <div class="min-w-0 flex-1 text-sm">
             <div class="reason-text ${isLong ? 'truncated' : ''}">${primaryText}</div>
             ${isLong ? '<button class="expand-btn">Show More</button>' : ''}
-            ${choiceDistributionHtml}
         </div>
     `;
-    const findingHtml = (typed || scoreText) ? `
+    const findingHtml = scoreText ? `
         <div class="mb-2 flex items-start gap-2">
-            ${scoreText ? `<span class="inline-block shrink-0 rounded px-1.5 py-0.5 text-xs font-mono font-bold ${scoreToneClass}">${scoreText}</span>` : ''}
+            <span class="inline-block shrink-0 rounded px-1.5 py-0.5 text-xs font-mono font-bold ${scoreToneClass}">${scoreText}</span>
             ${assessmentHtml}
         </div>
     ` : '';
@@ -595,7 +557,7 @@ function copyAuditToClipboard(payload) {
         const neutral = payload.ledger.filter(r => r.score === 0);
 
         const getItemText = (item) => {
-            const basis = scoringGuideDescription(item, payload.values || []) || item.assessment_explanation || (isTypedAssessment(item) ? typedAssessmentBasis(item) : '');
+            const basis = scoringGuideDescription(item, payload.values || []) || item.assessment_explanation || '';
             const reason = String(item.reason || '').trim();
             const desc = (reason && reason !== basis) ? reason : (basis || reason || '');
             return `- ${item.value} (${Number(item.score) > 0 ? '+' : ''}${Number(item.score).toFixed(1)}): ${desc}\n`;
