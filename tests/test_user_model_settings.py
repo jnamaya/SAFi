@@ -12,9 +12,9 @@ def _client():
     return app.test_client()
 
 
-def test_intellect_only_change_preserves_jev_conscience(monkeypatch):
+def test_intellect_only_change_preserves_conscience(monkeypatch):
     stored = {"intellect_model": "gpt-5.6-luna", "will_model": None,
-              "conscience_model": "jev-1.13.0"}
+              "conscience_model": "claude-haiku-4-5-20251001"}
     written = []
     monkeypatch.setattr(auth_api.db, "get_user_details", lambda _user: dict(stored))
     monkeypatch.setattr(auth_api.db, "update_user_models",
@@ -27,7 +27,7 @@ def test_intellect_only_change_preserves_jev_conscience(monkeypatch):
     response = client.put("/api/me/models", json={"intellect_model": "gemini-3.7-flash"})
 
     assert response.status_code == 200
-    assert written == [("gemini-3.7-flash", None, "jev-1.13.0")]
+    assert written == [("gemini-3.7-flash", None, "claude-haiku-4-5-20251001")]
 
 
 def test_explicit_conscience_change_updates_only_the_requested_faculty(monkeypatch):
@@ -43,7 +43,7 @@ def test_explicit_conscience_change_updates_only_the_requested_faculty(monkeypat
     with client.session_transaction() as session:
         session["user_id"] = "user-1"
 
-    response = client.put("/api/me/models", json={"conscience_model": "jev-1.13.0"})
+    response = client.put("/api/me/models", json={"conscience_model": "claude-haiku-4-5-20251001"})
 
     assert response.status_code == 200
-    assert written == [("gpt-5.6-luna", None, "jev-1.13.0")]
+    assert written == [("gpt-5.6-luna", None, "claude-haiku-4-5-20251001")]

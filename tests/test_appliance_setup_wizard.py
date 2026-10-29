@@ -238,12 +238,7 @@ def test_local_commit_writes_the_chosen_alias_to_every_faculty(env_paths):
 
 
 def test_local_commit_leaves_conscience_unpinned(env_paths):
-    """Conscience must stay auto-selectable so a later TypeSafe key promotes Jev.
-
-    An explicit SAFI_CONSCIENCE_MODEL is the operator's own choice and blocks
-    the automatic Jev promotion in resolve_faculty_model_pair, so pinning the
-    local alias at setup would make a Model Catalog key a no-op forever.
-    """
+    """Conscience stays auto-selectable so the operator can choose an independent auditor."""
     text = _commit(env_paths, {"mode": "local", "model": "qwen3-32b",
                                "alias": "safi-qwen3-32b", "backend": "cuda-13.4",
                                "size": 19762149024})

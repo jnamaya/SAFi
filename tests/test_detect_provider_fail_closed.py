@@ -31,9 +31,6 @@ def test_known_prefixes_still_resolve():
     assert detect_provider("openai/gpt-oss-120b") == "groq"
     assert detect_provider("openai/gpt-oss-20b") == "groq"
     assert detect_provider("safi-qwen3-8b") == "local"
-    assert detect_provider("jev-1.13.0") == "typesafe"
-    assert detect_provider("kev-4b") == "typesafe"
-    assert detect_provider("jaredpalmer/kev-4b") == "typesafe"
 
 
 def test_case_insensitive_known_ids():

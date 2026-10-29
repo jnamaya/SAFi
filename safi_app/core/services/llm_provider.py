@@ -243,11 +243,6 @@ class LLMProvider:
                         api_key=api_key,
                         http_options=types.HttpOptions(timeout=LLM_TIMEOUT_SECONDS * 1000),  # ms
                     )
-                elif p_type == "typesafe":
-                    # Jev exposes typed decisions at /v1/systemone, not a chat
-                    # completions endpoint. Conscience sends typed questions
-                    # through run_conscience_structured() instead of a client.
-                    continue
                 else:
                     self.log.error(f"Unknown provider type '{p_type}' for '{name}'")
             except Exception as e:
@@ -289,10 +284,7 @@ class LLMProvider:
                 )
 
     def uses_typed_conscience(self) -> bool:
-        route = self.config.get("routes", {}).get("conscience", {})
-        provider = route.get("provider")
-        details = self.config.get("providers", {}).get(provider, {})
-        return details.get("type") == "typesafe"
+        return False
 
     def tool_call_history_entry(self, tool_name: str, arguments: str,
                                 raw_turn: Optional[Dict[str, Any]] = None):
@@ -318,188 +310,6 @@ class LLMProvider:
             part = types.Part.from_function_response(name=tool_name, response={"result": result})
             return types.Content(role="user", parts=[part])
         return f"TOOL RESULT for {tool_name}:\n{result}"
-
-    async def run_conscience_structured(
-        self,
-        *,
-        state: Dict[str, Any],
-        rubrics: List[Dict[str, Any]],
-        instructions: str,
-    ) -> List[Dict[str, Any]]:
-        """Run Jev's typed Choice questions and convert them into SAFi's ledger.
-
-        The score comes from the rubric band selected by Jev; its probability
-        distribution and derived confidence are retained for review. Jev does
-        not generate evidence prose, so the reason string records the selected
-        band rather than inventing a factual explanation.
-        """
-        route = self.config.get("routes", {}).get("conscience", {})
-        provider_name = route.get("provider")
-        model_name = route.get("model")
-        details = self.config.get("providers", {}).get(provider_name, {})
-        if details.get("type") != "typesafe":
-            raise ValueError("Structured Conscience dispatch requires the TypeSafe provider")
-
-        from .provider_governance import assert_provider_allowed
-        assert_provider_allowed(provider_name, context=f"route:conscience, model:{model_name}")
-
-        # An appliance with a verified local Laya bundle serves the same contract
-        # in process, so it must not be stopped by the key check below: the ISO
-        # ships no Jev key, and requiring one would make typed Conscience
-        # permanently unavailable offline. is_available() is a stat-only test,
-        # and an absent or partial bundle falls through to the hosted path
-        # unchanged.
-        from . import jev_local
-        local_jev = jev_local.is_available()
-        if not local_jev:
-            from .deployment_keys import resolve_provider_key
-            api_key = resolve_provider_key(provider_name, details.get("api_key"))
-            if not api_key:
-                raise RuntimeError("TypeSafe API key is not configured")
-
-        questions: Dict[str, Any] = {}
-        mapping: Dict[str, Dict[str, Dict[str, Any]]] = {}
-        for index, rubric in enumerate(rubrics):
-            value = str(rubric.get("value") or f"value_{index}")
-            guide = rubric.get("scoring_guide") or []
-            if not guide:
-                raise ValueError(f"Conscience rubric '{value}' has no scoring guide")
-
-            question_id = f"audit_{index}"
-            criteria: Dict[str, Any] = {}
-            mapping[question_id] = {}
-            for level_index, level in enumerate(guide):
-                if not isinstance(level, dict) or "score" not in level:
-                    raise ValueError(f"Conscience rubric '{value}' has an invalid scoring level")
-                option = f"level_{level_index}"
-                score = float(level["score"])
-                label = str(level.get("label") or f"Score {score:g}")
-                description = str(
-                    level.get("description")
-                    or level.get("descriptor")
-                    or level.get("criteria")
-                    or ""
-                )
-                criteria[option] = {
-                    "score": score,
-                    "label": label,
-                    "description": description,
-                }
-                mapping[question_id][option] = {
-                    "score": score,
-                    "label": label,
-                    "description": description,
-                }
-
-            questions[question_id] = {
-                "type": "choice",
-                "instructions": {
-                    "question": f"Which scoring-guide level best describes the final output for {value}?",
-                    "rubric_description": str(rubric.get("description") or ""),
-                    "guidance": instructions,
-                },
-                "criteria": criteria,
-            }
-
-        if not questions:
-            return []
-
-        if local_jev:
-            # A blocking ONNX call in a worker thread: a forward pass over a few
-            # short questions is milliseconds of CPU, but the first call in a
-            # process also loads the 1.7 GB bundle, which must not stall the
-            # event loop and time out every concurrent request behind it.
-            try:
-                result = await asyncio.to_thread(jev_local.system_one, state, questions)
-            except jev_local.LocalJevUnavailable:
-                # The bundle vanished between the availability check and the
-                # call. Failing the turn is correct: re-running the question
-                # against a different backend than the one that approved the
-                # route would put a second, different judgement in the ledger
-                # with no trace of the first.
-                raise RuntimeError("Local Jev bundle became unavailable during the audit")
-            except Exception as exc:
-                self.log.error("Local Jev failed, refusing to fall back to a remote call: %s", exc)
-                raise RuntimeError(f"Local Jev inference failed: {exc}") from exc
-        else:
-            base_url = (details.get("base_url") or "https://api.typesafe.ai/v1").rstrip("/")
-            payload = {"model": model_name, "state": state, "questions": questions}
-            async with httpx.AsyncClient(timeout=LLM_TIMEOUT_SECONDS) as client:
-                response = await client.post(
-                    f"{base_url}/systemone",
-                    headers={"Authorization": f"Bearer {api_key}"},
-                    json=payload,
-                )
-                if response.is_error:
-                    raise ProviderRequestError(
-                        provider_name,
-                        "/systemone",
-                        response.status_code,
-                        _provider_error_detail(response),
-                    )
-                result = response.json()
-
-        answers = result.get("answers")
-        if not isinstance(answers, dict):
-            raise ValueError("TypeSafe returned no answers map")
-
-        ledger: List[Dict[str, Any]] = []
-        for index, rubric in enumerate(rubrics):
-            question_id = f"audit_{index}"
-            answer = answers.get(question_id)
-            if not isinstance(answer, dict):
-                raise ValueError(f"Typed Conscience backend omitted value {rubric.get('value')!r}")
-            choice = answer.get("choice")
-            selected = mapping[question_id].get(choice)
-            if selected is None:
-                raise ValueError(f"Typed Conscience backend returned an unknown scoring level for {rubric.get('value')!r}")
-            confidence = float(answer.get("confidence"))
-            if not 0.0 <= confidence <= 1.0:
-                raise ValueError(f"Typed Conscience backend returned invalid confidence for {rubric.get('value')!r}")
-            probabilities = answer.get("probabilities")
-            if not isinstance(probabilities, dict):
-                raise ValueError(f"Typed Conscience backend omitted probabilities for {rubric.get('value')!r}")
-            choice_distribution = []
-            for option, band in mapping[question_id].items():
-                try:
-                    probability = float(probabilities.get(option, 0.0))
-                except (TypeError, ValueError):
-                    probability = 0.0
-                choice_distribution.append({
-                    "label": band["label"],
-                    "probability": probability,
-                })
-            entry = {
-                "value": rubric.get("value"),
-                "score": selected["score"],
-                "confidence": confidence,
-                "reason": selected["description"],
-                "probabilities": probabilities,
-                "choice_distribution": choice_distribution,
-                "selected_level": selected["label"],
-                "assessment_explanation": selected["description"],
-            }
-            recorded_violation = state.get("violation_type")
-            if isinstance(recorded_violation, str) and recorded_violation:
-                entry["recorded_violation"] = recorded_violation
-            ledger.append(entry)
-
-        usage = result.get("usage") or {}
-        try:
-            tokens_in = int(usage.get("input_tokens", 0))
-            tokens_out = int(usage.get("output_tokens", 0))
-            if tokens_in or tokens_out:
-                from .usage_tracking import capture_call_usage, record_usage
-                actual_model = result.get("model") or model_name
-                capture_call_usage(
-                    "conscience", provider_name, actual_model, tokens_in, tokens_out
-                )
-                record_usage(
-                    "conscience", provider_name, actual_model, tokens_in, tokens_out,
-                )
-        except (TypeError, ValueError):
-            self.log.warning("Typed Conscience backend returned malformed token usage; not recording it.")
-        return ledger
 
     def _org_override_client(self, provider_name: str, provider_details: Dict[str, Any]):
         """A client bound to a DB-stored key — the active org's own key, else

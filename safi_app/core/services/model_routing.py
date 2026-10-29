@@ -74,10 +74,6 @@ PROVIDER_METADATA = {
                    "tier": "extended",
                    "zdr": False,
                    "zdr_note": "Policy claims real-time processing without storage, but no contractual ZDR program or training-use statement."},
-    "typesafe":  {"label": "TypeSafe Jev", "baa_capable": False, "eu_hostable": False,
-                   "tier": "extended",
-                   "zdr": "available",
-                   "zdr_note": "TypeSafe says API inputs are not used for training; standard retention applies, with enterprise zero-data-retention available."},
 }
 
 
@@ -144,14 +140,6 @@ def detect_provider(model_name: str) -> str:
         return custom
     if m.startswith("models/"):
         m = m[7:]
-    if (
-        m.startswith("jev-")
-        or m.startswith("typesafe/")
-        or m.startswith("kev-")
-        or "kev-4b" in m
-        or m == "jaredpalmer/kev-4b"
-    ):
-        return "typesafe"
     # The gpt-oss line is served by TWO providers with distinct id spellings,
     # so the vendor prefix decides: Groq lists it as "openai/gpt-oss-*" (vendor
     # prefix), Cerebras serves the BARE "gpt-oss-*". The vendor-prefixed id must
@@ -242,38 +230,15 @@ def build_providers_config(config) -> dict:
             "api_key": getattr(config, "LOCAL_MODEL_API_KEY", ""),
             "base_url": "http://127.0.0.1:8081/v1",
         },
-        # Jev has a typed-decision endpoint, not OpenAI Chat Completions.
-        # LLMProvider dispatches it through the structured Conscience adapter.
-        "typesafe": {
-            "type": "typesafe",
-            # Empty when an appliance answers typed Conscience from a local Laya
-            # bundle: the "key" for that transport is the bundle, and configured_
-            # providers() below treats it as configured. No placeholder value is
-            # stored, so nothing that reads TYPESAFE_API_KEY as a bearer token can
-            # mistake it for a real credential and attempt an authenticated call.
-            "api_key": getattr(config, "TYPESAFE_API_KEY", ""),
-            "base_url": getattr(config, "TYPESAFE_BASE_URL", "") or "https://api.typesafe.ai/v1",
-        },
     }
 
 
 def configured_providers(config) -> frozenset:
-    """Provider keys that can actually reach a backend in the running config.
-
-    Usually this is "has an API key", derived from build_providers_config so it
-    can never drift from the set of providers the dispatch layer knows how to
-    reach. The exception is typesafe: an appliance with a verified local Laya
-    bundle dispatches typed Conscience in process and ships no key at all, so
-    the bundle counts as its credential. The import is local and cheap because
-    is_available() only stats five files; the 1.7 GB load happens on first use.
-    """
-    from . import jev_local
-
-    local_jev = jev_local.is_available()
+    """Provider keys that can actually reach a backend in the running config."""
     return frozenset(
         name
         for name, p in build_providers_config(config).items()
-        if (p.get("api_key") or "").strip() or (local_jev and name == "typesafe")
+        if (p.get("api_key") or "").strip()
     )
 
 
@@ -299,26 +264,18 @@ def effective_configured_providers(config, org_id=None) -> frozenset:
         return configured_providers(config)
 
 
-JEV_CONSCIENCE_MODEL = "jev-1.13.0"
-
-
 def resolve_faculty_model_pair(
     intellect_model: str,
     conscience_model: str,
     available_models: list,
     *,
-    jev_available: bool,
     conscience_explicit: bool = False,
     intellect_explicit: bool = False,
 ) -> tuple[str, str]:
     """Resolve usable faculty models and keep Intellect distinct when possible.
 
     `available_models` are catalogue entries (dicts) or, in tests, model-id
-    strings. Jev availability — a hosted key or a local Laya bundle on an
-    appliance — makes Jev the automatic Conscience choice, but an explicit
-    user/agent Conscience choice always stays in force. Without Jev, a stale
-    automatic Jev selection falls back to an available chat model. Intellect
-    never receives the typed-only Jev route.
+    strings. An explicit user/agent Conscience choice always stays in force.
     """
     entries = []
     for entry in available_models or []:
@@ -331,30 +288,19 @@ def resolve_faculty_model_pair(
         entries.append((model_id, provider))
 
     by_id = {model_id.casefold(): (model_id, provider) for model_id, provider in entries}
-    llm_models = [model_id for model_id, provider in entries if provider != "typesafe"]
+    llm_models = [model_id for model_id, provider in entries]
     # Keep catalogue ordering stable while removing duplicate ids.
     llm_models = list(dict.fromkeys(llm_models))
-    if jev_available:
-        by_id[JEV_CONSCIENCE_MODEL.casefold()] = (JEV_CONSCIENCE_MODEL, "typesafe")
-        by_id["kev-4b"] = ("kev-4b", "typesafe")
-        by_id["jaredpalmer/kev-4b"] = ("jaredpalmer/kev-4b", "typesafe")
 
     intellect = intellect_model or ""
     conscience = conscience_model or ""
     configured_conscience = by_id.get(conscience.casefold()) if conscience else None
 
-    if jev_available and not conscience_explicit:
-        conscience = JEV_CONSCIENCE_MODEL
-    elif detect_provider(conscience) == "typesafe" and not jev_available:
-        # A stale Jev selection cannot be dispatched without its key.
-        conscience = llm_models[0] if llm_models else conscience
-    elif not conscience_explicit and configured_conscience is None and llm_models:
+    if not conscience_explicit and configured_conscience is None and llm_models:
         # Automatic defaults may name a model whose provider is not configured.
         conscience = llm_models[0]
 
-    if detect_provider(intellect) == "typesafe":
-        intellect = llm_models[0] if llm_models else intellect
-    elif not intellect_explicit and intellect.casefold() not in by_id and llm_models:
+    if not intellect_explicit and intellect.casefold() not in by_id and llm_models:
         intellect = llm_models[0]
 
     if intellect and conscience and intellect.casefold() == conscience.casefold():
@@ -387,20 +333,11 @@ def resolve_effective_faculty_models(
     ):
         return intellect_model, conscience_model
 
-    configured = effective_configured_providers(config, org_id)
-    jev_available = "typesafe" in configured and (
-        allowlist is None or "typesafe" in allowlist
-    )
     available = list_models_for_org(org_id)
-    if jev_available:
-        available.append({"id": JEV_CONSCIENCE_MODEL, "provider": "typesafe"})
-        available.append({"id": "kev-4b", "provider": "typesafe"})
-        available.append({"id": "jaredpalmer/kev-4b", "provider": "typesafe"})
     return resolve_faculty_model_pair(
         intellect_model,
         conscience_model,
         available,
-        jev_available=jev_available,
         conscience_explicit=conscience_explicit,
         intellect_explicit=intellect_explicit,
     )

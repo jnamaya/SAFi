@@ -969,7 +969,7 @@ class TestSafiModelSelection(unittest.TestCase):
         turn_1 = {
             "models_usage": {
                 "intellect": {"prompt_tokens": 10000, "completion_tokens": 200, "model": "gpt-6-luna"},
-                "conscience": {"prompt_tokens": 8000, "completion_tokens": 100, "model": "jev-1.13.0"},
+                "conscience": {"prompt_tokens": 8000, "completion_tokens": 100, "model": "safi-qwen3.6-35b-a3b"},
             }
         }
         ui._record_turn_telemetry(turn_1)
@@ -996,7 +996,7 @@ class TestSafiModelSelection(unittest.TestCase):
         turn_2 = {
             "models_usage": {
                 "intellect": {"prompt_tokens": 700, "completion_tokens": 150, "model": "gpt-6-luna"},
-                "conscience": {"prompt_tokens": 700, "completion_tokens": 50, "model": "jev-1.13.0"},
+                "conscience": {"prompt_tokens": 700, "completion_tokens": 50, "model": "safi-qwen3.6-35b-a3b"},
             }
         }
         ui._record_turn_telemetry(turn_2)

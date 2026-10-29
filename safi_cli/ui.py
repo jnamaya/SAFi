@@ -667,7 +667,7 @@ def build_telemetry_panel(
     effective_c_model = (
         conscience_model
         or _session_conscience.get("model")
-        or "systemone (Jev)"
+        or "safi-conscience"
     )
     c_cost = _estimate_cost(effective_c_model, c_in, c_out) if (c_in or c_out) else None
     c_cost_str = f" (${c_cost:.4f})" if c_cost and c_cost >= 0.0001 else (" (<$0.0001)" if c_cost and c_cost > 0 else "")
@@ -761,7 +761,7 @@ def build_session_usage_panel() -> Panel:
     rows = [
         ("Model", i.get("model") or "Unknown"),
         ("Model tokens", f"{i['in']:,} in / {i['out']:,} out"),
-        ("Auditor model", c.get("model") or "systemone (Jev)"),
+        ("Auditor model", c.get("model") or "safi-conscience"),
         ("Auditor tokens", f"{c['in']:,} in / {c['out']:,} out"),
     ]
     if comp.get("tokens_saved", 0) > 0:

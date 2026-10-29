@@ -136,15 +136,6 @@ class ConscienceAuditor:
         self.prompt_config = prompt_config or {}
         self.log = logging.getLogger(self.__class__.__name__)
 
-    def _uses_typed_conscience(self) -> bool:
-        """Ask the provider adapter whether this route needs typed questions.
-
-        The faculty stays model-agnostic: the adapter reports an API-shape
-        capability instead of Conscience branching on a model name.
-        """
-        supports = getattr(self.llm_provider, "uses_typed_conscience", None)
-        return bool(supports and supports())
-
     @staticmethod
     def _attach_scoring_guide(ledger: List[Dict[str, Any]], rubrics: List[Dict[str, Any]]):
         """Attach the policy's exact score-band text to every matching finding.
@@ -265,39 +256,6 @@ class ConscienceAuditor:
             + DATA_BOUNDARY_INSTRUCTION
         )
 
-        if self._uses_typed_conscience():
-            # Jev accepts a bounded Choice per value instead of generating a
-            # prose ledger. Preserve the audit policy and evidence boundary in
-            # instructions; the state fields remain evidence, never commands.
-            guidance_template = prompt_template.split(
-                "\n\nReturn a single JSON object with a key 'evaluations'", 1
-            )[0]
-            typed_instructions = guidance_template.format(
-                worldview_injection=worldview_injection,
-                rubrics_str="",
-            )
-            typed_instructions += (
-                (RECENT_HISTORY_INSTRUCTION if recent_history else "")
-                + EVIDENCE_DISCIPLINE_INSTRUCTION
-                + DATA_BOUNDARY_INSTRUCTION
-            )
-            state = {
-                "agent_worldview": worldview,
-                "recent_history": _fence("recent_history", recent_history) if recent_history else "",
-                "user_prompt": _fence("user_prompt", user_prompt),
-                "ai_reflection": _fence("ai_reflection", reflection),
-                "retrieved_context": _fence(
-                    "retrieved_context", retrieved_context if retrieved_context else "None"
-                ),
-                "final_output": _fence("final_output", final_output),
-            }
-            ledger = await self.llm_provider.run_conscience_structured(
-                state=state,
-                rubrics=rubrics,
-                instructions=typed_instructions,
-            )
-            return self._attach_scoring_guide(ledger, rubrics)
-
         body_parts = []
         if recent_history:
             # Chronological: history precedes the exchange under audit.
@@ -394,24 +352,6 @@ class ConscienceAuditor:
             "confidence (0.0 to 1.0), reason (string). Return ONLY the JSON object."
         ) + CONFIDENCE_CALIBRATION_INSTRUCTION + DATA_BOUNDARY_INSTRUCTION
 
-        if self._uses_typed_conscience():
-            typed_instructions = sys_prompt.split(
-                "Return a single JSON object with a key 'evaluations'", 1
-            )[0] + DATA_BOUNDARY_INSTRUCTION
-            state = {
-                "violation_type": violation_type,
-                "agent_identity": agent_name or "Standard Agent",
-                "agent_scope": scope_statement or "General assistance within organizational guidelines",
-                "user_prompt": _fence("user_prompt", user_prompt),
-                "redirect_message": _fence("redirect_message", redirect_output),
-            }
-            ledger = await self.llm_provider.run_conscience_structured(
-                state=state,
-                rubrics=redirect_rubrics,
-                instructions=typed_instructions,
-            )
-            return self._attach_scoring_guide(ledger, redirect_rubrics)
-
         body_parts = []
         if agent_name:
             body_parts.append(f"AGENT IDENTITY: {agent_name}")
@@ -500,24 +440,6 @@ class ConscienceAuditor:
 
         action_summary = f"Tool: {tool_name}\nParameters: {json.dumps(parameters or {}, indent=2, default=str)}"
 
-        if self._uses_typed_conscience():
-            typed_instructions = sys_prompt.split(
-                "Return a single JSON object with a key 'evaluations'", 1
-            )[0] + DATA_BOUNDARY_INSTRUCTION
-            state = {
-                "tool_name": tool_name,
-                "user_prompt": _fence("user_prompt", user_prompt),
-                "proposed_action": _fence("proposed_action", action_summary),
-            }
-            if agent_reflection:
-                state["agent_reflection"] = _fence("ai_reflection", agent_reflection)
-            ledger = await self.llm_provider.run_conscience_structured(
-                state=state,
-                rubrics=tool_rubrics,
-                instructions=typed_instructions,
-            )
-            return self._attach_scoring_guide(ledger, tool_rubrics)
-
         body_parts = [
             _fence("user_prompt", user_prompt),
         ]
@@ -588,24 +510,6 @@ class ConscienceAuditor:
         if recent_history:
             body_parts.append(_fence("recent_history", recent_history))
         body = "\n\n".join(body_parts)
-
-        if self._uses_typed_conscience():
-            typed_instructions = sys_prompt.split(
-                "Return a single JSON object with a key 'evaluations'", 1
-            )[0] + DATA_BOUNDARY_INSTRUCTION
-            state = {
-                "agent_title": agent_title,
-                "scope_statement": scope_statement,
-                "user_prompt": _fence("user_prompt", user_prompt),
-            }
-            if recent_history:
-                state["recent_history"] = _fence("recent_history", recent_history)
-            ledger = await self.llm_provider.run_conscience_structured(
-                state=state,
-                rubrics=scope_rubric,
-                instructions=typed_instructions,
-            )
-            return self._attach_scoring_guide(ledger, scope_rubric)
 
         ledger = await self.llm_provider.run_conscience(
             system_prompt=sys_prompt,

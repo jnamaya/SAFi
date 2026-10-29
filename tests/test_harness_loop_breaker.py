@@ -220,14 +220,14 @@ class ToolGateEnforcementTests(unittest.TestCase):
 
     def test_audit_failure_reason_surfaces_provider_status_safely(self):
         error_type = type("ProviderRequestError", (RuntimeError,), {})
-        error = error_type("typesafe HTTP 400 /systemone: invalid question shape")
+        error = error_type("local HTTP 400 /chat/completions: invalid request shape")
         error.status_code = 400
-        error.provider = "typesafe"
-        error.endpoint = "/systemone"
-        error.detail = "invalid question shape"
+        error.provider = "local"
+        error.endpoint = "/chat/completions"
+        error.detail = "invalid request shape"
         reason = SAFi._safe_audit_failure_reason(error)
-        self.assertIn("typesafe returned HTTP 400", reason)
-        self.assertIn("invalid question shape", reason)
+        self.assertIn("local returned HTTP 400", reason)
+        self.assertIn("invalid request shape", reason)
         self.assertNotIn("API key", reason)
 
     def test_conscience_audit_retains_last_failure_after_empty_retry(self):
@@ -238,7 +238,7 @@ class ToolGateEnforcementTests(unittest.TestCase):
             values=[{"value": "grounding"}],
             _ledger_covers_values=lambda _ledger: False,
             _safe_audit_failure_reason=lambda exc: (
-                f"typesafe returned HTTP 400 from /systemone: {exc}"
+                f"local returned HTTP 400 from /chat/completions: {exc}"
             ),
             log=SimpleNamespace(error=lambda *_args: None, warning=lambda *_args: None),
             store=SimpleNamespace(update_message_reasoning=lambda *_args: None),
@@ -247,7 +247,7 @@ class ToolGateEnforcementTests(unittest.TestCase):
             system, "draft", "prompt", "reflection", "context", "message-id"
         ))
         self.assertEqual(ledger, [])
-        self.assertIn("typesafe returned HTTP 400", system._last_conscience_failure)
+        self.assertIn("local returned HTTP 400", system._last_conscience_failure)
         self.assertIn("second failure", system._last_conscience_failure)
 
     def test_tool_and_final_paths_are_both_wired_to_enforcement(self):
