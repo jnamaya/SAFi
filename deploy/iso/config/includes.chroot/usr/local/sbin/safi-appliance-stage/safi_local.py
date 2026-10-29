@@ -118,7 +118,14 @@ def model_by_id(catalogue: dict, model_id: str) -> dict | None:
 
 
 def backend_by_id(catalogue: dict, backend_id: str) -> dict | None:
-    return catalogue.get("backends", {}).get(backend_id)
+    raw = catalogue.get("backends", {})
+    if isinstance(raw, dict):
+        return raw.get(backend_id)
+    if isinstance(raw, list):
+        for b in raw:
+            if isinstance(b, dict) and b.get("id") == backend_id:
+                return b
+    return None
 
 
 def jev_local(catalogue: dict) -> dict | None:
@@ -425,9 +432,16 @@ def select_backend(catalogue: dict, hardware: dict, prefer_cpu: bool = False) ->
         return "cpu"
     driver = gpu.get("driver_major") or 0
     vendor = gpu.get("vendor")
+    backends_raw = catalogue.get("backends", {})
+    if isinstance(backends_raw, list):
+        backends_dict = {b.get("id"): b for b in backends_raw if isinstance(b, dict) and b.get("id")}
+    elif isinstance(backends_raw, dict):
+        backends_dict = backends_raw
+    else:
+        backends_dict = {}
     eligible = [
         (int(spec.get("min_driver", 0)), backend_id)
-        for backend_id, spec in catalogue.get("backends", {}).items()
+        for backend_id, spec in backends_dict.items()
         if spec.get("gpu")
         and driver >= int(spec.get("min_driver", 0))
         and (not spec.get("vendors") or vendor in spec.get("vendors"))
