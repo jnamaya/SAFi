@@ -609,14 +609,15 @@ def main(argv: list[str] | None = None) -> int:
                 })
 
         total = plan_total_bytes(plan)
+        activated = should_activate()
 
         write_status(state="running", phase="starting", model=model["id"],
                      model_label=model["label"], backend=backend["id"],
                      backend_label=backend.get("label", backend["id"]),
                      alias=model["alias"], total_bytes=total, done_bytes=0,
                      percent=100 if installed is not None and not plan else 0,
-                     label="Model already downloaded" if installed is not None else "Preparing",
-                     error="", started=time.time())
+                     label="Loading model into memory..." if (installed is not None and activated) else ("Model already downloaded" if installed is not None else "Preparing"),
+                     error="", started=time.time(), activated=activated)
 
         def progress(step: dict, have: int, verifying: bool = False) -> None:
             # Bytes finished before this step, so the bar advances across the
@@ -650,9 +651,9 @@ def main(argv: list[str] | None = None) -> int:
 
         activated = should_activate()
         if activated:
-            write_status(phase="configuring", label="Configuring the model server")
+            write_status(phase="configuring", label="Configuring the model server", activated=True)
             install_unit(catalogue, model, backend, model_path)
-            write_status(phase="starting", label="Starting the model server", percent=99)
+            write_status(phase="starting", label="Loading model into memory (starting server)...", percent=99, activated=True)
             activate_unit()
             # Start and enable the dedicated conscience model server if its weights exist
             conscience_weights = model_root(catalogue or {}) / "qwen3-coder-30b" / "Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"
@@ -665,7 +666,7 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"note: could not start conscience server unit: {exc}", file=sys.stderr)
 
         write_status(state="done", phase="done", percent=100,
-                     label="Model ready" if activated else "Model downloaded",
+                     label="Model loaded and ready" if activated else "Model downloaded",
                      model_path=str(model_path), alias=model["alias"],
                      backend=backend["id"], activated=activated,
                      finished=time.time())

@@ -37,8 +37,8 @@ def main() -> int:
         status = json.loads(STATUS.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         status = {}
-    if status.get("state") in ("running", "downloading", "verifying", "installing"):
-        raise RuntimeError("a local model download is already running")
+    if status.get("state") in ("running", "downloading", "verifying", "installing", "configuring", "starting"):
+        raise RuntimeError("a local model operation is already in progress")
 
     backend_id = args.backend
     if not backend_id:

@@ -165,7 +165,8 @@ def download_local_model():
     except (OSError, subprocess.TimeoutExpired) as exc:
         return jsonify({'error': f'Local model management is unavailable: {exc}'}), 503
     if result.returncode:
-        return jsonify({'error': result.stderr.strip() or result.stdout.strip() or 'Unable to start local model download.'}), 409
+        fallback = 'Unable to load model.' if activate else 'Unable to start local model download.'
+        return jsonify({'error': result.stderr.strip() or result.stdout.strip() or fallback}), 409
     return jsonify({'ok': True})
 
 

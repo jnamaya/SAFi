@@ -184,8 +184,11 @@ def local_catalog_payload(catalogue_path: str | None = None) -> dict:
     downloading = status.get("model") if status.get("state") in (
         "running", "downloading", "verifying", "installing", "configuring", "starting"
     ) else None
+    is_activating = bool(status.get("activated", False))
     for model in inventory:
-        model["downloading"] = model["id"] == downloading
+        is_this_model = (model["id"] == downloading)
+        model["downloading"] = is_this_model
+        model["loading"] = is_this_model and (model.get("installed") or is_activating)
     if not inventory:
         return {
             "ok": True, "available": False, "models": [], "active": None,

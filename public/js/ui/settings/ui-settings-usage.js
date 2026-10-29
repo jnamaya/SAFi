@@ -346,13 +346,15 @@ async function renderLocalPane(host, res, orgId) {
     }
 
     const models = res.models || [];
-    const badge = (m) => m.downloading
-        ? '<span class="text-amber-600 dark:text-amber-400 font-medium">Downloading</span>'
+    const badge = (m) => (m.downloading || m.loading)
+        ? (m.installed || m.loading
+            ? '<span class="text-amber-600 dark:text-amber-400 font-medium animate-pulse">Loading into memory...</span>'
+            : '<span class="text-amber-600 dark:text-amber-400 font-medium animate-pulse">Downloading...</span>')
         : m.active
         ? '<span class="text-green-600 dark:text-green-400 font-medium">Serving</span>'
-            : m.installed
-                ? '<span class="text-gray-500">Downloaded, not active</span>'
-                : '<span class="text-gray-400">Not downloaded</span>';
+        : m.installed
+        ? '<span class="text-gray-500">Downloaded, not active</span>'
+        : '<span class="text-gray-400">Not downloaded</span>';
 
     host.innerHTML = `
         <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
@@ -375,7 +377,7 @@ async function renderLocalPane(host, res, orgId) {
                         </td>
                         <td class="py-2 pr-4 tabular-nums">${escapeHtml(m.size_human || fmtBytes(m.size))}</td>
                         <td class="py-2 pr-4 tabular-nums">${escapeHtml(fmtBytes(m.min_ram))}</td>
-                        <td class="py-2 pr-4">${badge(m)}${m.active || m.downloading ? '' : `
+                        <td class="py-2 pr-4">${badge(m)}${m.active || m.downloading || m.loading ? '' : `
                             <button type="button" class="local-model-action mt-1 block text-xs text-green-600 hover:underline" data-model-id="${escapeHtml(m.id)}" data-activate="${m.installed ? 'true' : 'false'}">
                                 ${m.installed ? 'Activate' : 'Download'}
                             </button>`}</td>
@@ -390,15 +392,15 @@ async function renderLocalPane(host, res, orgId) {
     host.querySelectorAll('.local-model-action').forEach(btn => {
         btn.addEventListener('click', async () => {
             btn.disabled = true;
-            btn.textContent = 'Starting...';
+            const activate = btn.dataset.activate === 'true';
+            btn.textContent = activate ? 'Loading...' : 'Starting download...';
             try {
-                const activate = btn.dataset.activate === 'true';
                 const result = await api.downloadLocalModel(btn.dataset.modelId, activate);
-                if (!result || !result.ok) throw new Error((result && result.error) || 'Unable to start download');
+                if (!result || !result.ok) throw new Error((result && result.error) || (activate ? 'Unable to load model' : 'Unable to start download'));
                 watchLocalFetch(host, orgId);
             } catch (e) {
                 btn.disabled = false;
-                btn.textContent = btn.dataset.activate === 'true' ? 'Activate' : 'Download';
+                btn.textContent = activate ? 'Activate' : 'Download';
                 ui.showToast(e.message, 'error');
             }
         });
@@ -414,19 +416,21 @@ function watchLocalFetch(host, orgId) {
             const status = (result && result.status) || {};
             if (status.state === 'done') {
                 statusEl.textContent = status.activated
-                    ? 'Model activated. Refreshing catalog...'
+                    ? 'Model loaded into memory and ready. Refreshing catalog...'
                     : 'Download verified. Refreshing catalog...';
                 setTimeout(() => renderModelCatalogSection(orgId), 1500);
                 return;
             }
             if (status.state === 'error') {
-                statusEl.textContent = status.error || 'Local model download failed.';
+                statusEl.textContent = status.error || (status.activated ? 'Local model loading failed.' : 'Local model download failed.');
                 return;
             }
             if (status.percent != null) {
-                statusEl.textContent = `${status.label || 'Downloading local model'}: ${status.percent}%`;
+                const fallbackLabel = status.activated ? 'Loading model into memory' : 'Downloading local model';
+                statusEl.textContent = `${status.label || fallbackLabel}: ${status.percent}%`;
             } else {
-                statusEl.textContent = status.label || 'Preparing local model download...';
+                const fallbackLabel = status.activated ? 'Loading model into memory...' : 'Preparing local model download...';
+                statusEl.textContent = status.label || fallbackLabel;
             }
             setTimeout(poll, 2000);
         } catch (_) {
