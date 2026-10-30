@@ -20,6 +20,25 @@ ALLOWED_GATE_REASONS: frozenset = frozenset(
     {"scope_violation", "grounding_violation", "ethical_violation"}
 )
 
+# Matches catastrophic root or bare top-level OS directory wipes (e.g. `rm -rf /`,
+# `rm -rf /*`, `rm -rf /var`, `rm -rf /etc/*`) while allowing targeted subdirectory
+# removals such as `rm -rf /var/www/self` or `rm -rf /tmp/build`.
+_FORBIDDEN_RM_RE = re.compile(
+    r"\brm\s+(?:-[a-zA-Z]*[rf][a-zA-Z]*\s+)+"
+    r"(?:"
+    r"/\*?(?=$|[\s;&|\"'\`\)])"
+    r"|/(?:etc|var|usr|bin|sbin|lib|lib64|boot|root|home|dev|proc|sys)/?\*?(?=$|[\s;&|\"'\`\)])"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _has_forbidden_destructive_payload(cmd_lower: str) -> bool:
+    """Return True if a shell command contains an uncontained disk/root wipe or fork bomb."""
+    if any(f in cmd_lower for f in ("--no-preserve-root", "mkfs", "dd if=", ":(){ :|:& };:")):
+        return True
+    return bool(_FORBIDDEN_RM_RE.search(cmd_lower))
+
 
 class WillGate:
     """
@@ -238,7 +257,7 @@ class WillGate:
             cmd_lower = cmd.lower()
 
             # Forbidden destructive payloads
-            if any(f in cmd_lower for f in ("rm -rf /", "mkfs", "dd if=", ":(){ :|:& };:")):
+            if _has_forbidden_destructive_payload(cmd_lower):
                 return "R4", "Forbidden destructive shell payload"
             if "chmod 777" in cmd_lower or "curl | bash" in cmd_lower or "wget | bash" in cmd_lower:
                 return "R4", "Privileged or forbidden system command/path"
@@ -301,7 +320,7 @@ class WillGate:
         # Default bash inspection
         if lowered in ("bash", "sh", "exec", "terminal", "command"):
             cmd = str(parameters.get("command") or parameters.get("cmd") or "").strip().lower()
-            if any(f in cmd for f in ("rm -rf /", "mkfs", "dd if=", ":(){ :|:& };:")):
+            if _has_forbidden_destructive_payload(cmd):
                 return "R4", "Forbidden destructive shell payload"
             if re.search(r"\b(rm|unlink|truncate)\b", cmd) or ">" in cmd:
                 return "R2", "Destructive shell command"

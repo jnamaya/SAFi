@@ -100,6 +100,28 @@ class TestAgenticLoopSpecification(unittest.TestCase):
         r4_class, _ = WillGate.classify_tool_risk("bash", {"command": "sudo rm -rf /etc/passwd"})
         self.assertEqual(r4_class, "R4")
 
+        # Root and bare top-level OS directory wipes must remain R4 even for sysadmin
+        sysadmin_profile = {"key": "sysadmin", "will_rules": {"allow_sudo": True}}
+        for forbidden_cmd in (
+            "rm -rf /",
+            "rm -rf /*",
+            "ssh root@45.79.134.144 \"rm -rf /\"",
+            "rm -rf /var",
+            "rm -rf /etc/*",
+            "rm -rf --no-preserve-root /",
+        ):
+            cls, _ = WillGate.classify_tool_risk("bash", {"command": forbidden_cmd}, sysadmin_profile)
+            self.assertEqual(cls, "R4", f"Expected R4 for {forbidden_cmd!r}")
+
+        # Targeted subdirectory removals must be R2 (not false-positive R4)
+        for allowed_cmd in (
+            "ssh -o BatchMode=yes root@45.79.134.144 \"rm -rf /var/www/self\"",
+            "rm -rf /tmp/chrome-pdf-1234",
+            "rm -rf /etc/letsencrypt/live/selfalignmentframework.org",
+        ):
+            cls, _ = WillGate.classify_tool_risk("bash", {"command": allowed_cmd}, sysadmin_profile)
+            self.assertEqual(cls, "R2", f"Expected R2 for {allowed_cmd!r}")
+
     def test_tool_intent_gate_typed_parameters_and_default_deny(self):
         """Validate typed parameters, allowed tools, and parameter constraints."""
         # Non-dict parameters rejected
