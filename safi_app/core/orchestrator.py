@@ -614,6 +614,7 @@ def _tool_audit_entry(
     changed_resources=None,
     error_summary=None,
     result=None,
+    profile=None,
 ):
     """One tool call structured receipt as it is recorded for BOTH the hash chain and capture.
 
@@ -627,7 +628,7 @@ def _tool_audit_entry(
       - duration
     """
     from .faculties.will import WillGate
-    risk_class, risk_reason = WillGate.classify_tool_risk(tool_name, parameters or {})
+    risk_class, risk_reason = WillGate.classify_tool_risk(tool_name, parameters or {}, profile)
 
     # Derive changed resources from common params
     resources = list(changed_resources or [])
@@ -1241,7 +1242,7 @@ class SAFi:
         # --- All approved: apply the side effects once. ---
         entries: List[Dict[str, Any]] = []
         for name, params, decision, reason in decisions:
-            _entry = _tool_audit_entry(name, params, decision, reason)
+            _entry = _tool_audit_entry(name, params, decision, reason, profile=profile_for_turn)
             tool_audit.append(_entry)
             self.store.update_message_reasoning(
                 message_id, _tool_status(name), phase="gather", extra=_entry,
@@ -2041,7 +2042,7 @@ class SAFi:
                             break
 
             # Journal only after both deterministic Will gate and circuit breaker checks have reached a verdict.
-            _entry = _tool_audit_entry(tool_name, parameters, tool_decision, tool_reason)
+            _entry = _tool_audit_entry(tool_name, parameters, tool_decision, tool_reason, profile=profile_for_turn)
             tool_audit.append(_entry)
             self.store.update_message_reasoning(
                 message_id,
@@ -2299,6 +2300,7 @@ class SAFi:
                             status="withheld",
                             duration_ms=_tool_duration_ms,
                             error_summary=_tool_error,
+                            profile=profile_for_turn,
                         ))
                         tool_result = (
                             "ERROR: the tool output was withheld by the security gate "
@@ -2374,7 +2376,8 @@ class SAFi:
                             )
                     _entry = _tool_audit_entry(current_tool_name, current_parameters,
                                                follow_decision, follow_reason,
-                                               agent_turn=agent_turn + 1)
+                                               agent_turn=agent_turn + 1,
+                                               profile=profile_for_turn)
                     tool_audit.append(_entry)
                     self.store.update_message_reasoning(
                         message_id,

@@ -66,6 +66,7 @@ SECURITY_ENGINEER_AGENT: Dict[str, Any] = {
     ),
     "values": [],
     "will_rules": {
+        "allow_sudo": True,
         "early_prompt_blacklist": [],
         "structural_requirements": {
             "require_disclaimer": False,

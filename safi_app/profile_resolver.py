@@ -260,6 +260,7 @@ def get_profile(name: str, policy_id: Optional[str] = None) -> Dict[str, Any]:
     directives = dict(runtime_defaults.DEFAULT_REPHRASE_DIRECTIVES)
     directives.update(final.get("internal_rephrase_directives") or {})
     final["internal_rephrase_directives"] = directives
+    final = runtime_defaults.inject_tool_risk_rules(final)
     final["phase_zero_rules"] = security_policy.PHASE_ZERO_RULES
     final["phase_zero_rules_version"] = security_policy.RULESET_VERSION
     final["pii_validator_catalog"] = security_policy.PII_CATALOGUE

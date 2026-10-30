@@ -164,6 +164,24 @@ POLICY: Dict[str, Any] = {
             "glob", "grep", "list", "lsp", "patch", "question", "read", "skill", "task", "todowrite",
             "web_search", "webfetch", "websearch", "write",
         ],
+        "allow_sudo": False,
+        "max_tool_risk_class": "R3",
+        "forbidden_paths": [
+            "/etc/shadow", "/etc/passwd", ".ssh/id_", "id_rsa", "id_ed25519",
+            "id_ecdsa", "id_dsa", ".gnupg", ".aws/credentials", "secrets.json",
+            ".ssh", ".config/safi",
+        ],
+        "forbidden_executables": [
+            "sudo", "su", "ssh", "scp", "sftp",
+        ],
+        "forbidden_shell_patterns": [
+            "--no-preserve-root", "mkfs", "dd if=", ":(){ :|:& };:",
+            "chmod 777", "curl | bash", "wget | bash",
+        ],
+        "protected_root_dirs": [
+            "/", "etc", "var", "usr", "bin", "sbin", "lib", "lib64",
+            "boot", "root", "home", "dev", "proc", "sys",
+        ],
         "preflight_prompt_scope": True,
         "early_prompt_blacklist": [],
         "structural_requirements": {

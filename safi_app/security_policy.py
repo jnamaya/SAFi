@@ -491,3 +491,117 @@ PII_CATALOGUE = {
     },
 }
 PII_VALIDATOR_KEYS = tuple(PII_CATALOGUE)
+
+
+# --- Policy-Driven Tool Risk & Execution Rules ------------------------------
+#
+# Supplied via policy `will_rules` so WillGate.classify_tool_risk remains a pure
+# deterministic interpreter with zero hardcoded paths, executables, shell
+# payloads, directory lists, or agent/policy name checks.
+DEFAULT_TOOL_RISK_RULES: dict[str, object] = {
+    "allow_sudo": False,
+    "max_tool_risk_class": "R3",
+    "forbidden_paths": [
+        "/etc/shadow",
+        "/etc/passwd",
+        ".ssh/id_",
+        "id_rsa",
+        "id_ed25519",
+        "id_ecdsa",
+        "id_dsa",
+        ".gnupg",
+        ".aws/credentials",
+        "secrets.json",
+        ".ssh",
+        ".config/safi",
+    ],
+    "forbidden_executables": [
+        "sudo",
+        "su",
+        "ssh",
+        "scp",
+        "sftp",
+    ],
+    "forbidden_shell_patterns": [
+        "--no-preserve-root",
+        "mkfs",
+        "dd if=",
+        ":(){ :|:& };:",
+        "chmod 777",
+        "curl | bash",
+        "wget | bash",
+    ],
+    "protected_root_dirs": [
+        "/",
+        "etc",
+        "var",
+        "usr",
+        "bin",
+        "sbin",
+        "lib",
+        "lib64",
+        "boot",
+        "root",
+        "home",
+        "dev",
+        "proc",
+        "sys",
+    ],
+    "file_path_tools": [
+        "write", "edit", "patch", "read", "view", "show", "cat",
+        "delete", "remove", "rm", "unlink",
+    ],
+    "shell_tools": [
+        "bash", "sh", "exec", "terminal", "command",
+    ],
+    "r0_tools": [
+        "read", "grep", "glob", "list", "search", "find",
+        "status", "view", "show", "cat",
+    ],
+    "r0_substrings": ["read", "search", "query"],
+    "r1_tools": [
+        "write", "edit", "patch", "create", "append", "update",
+        "task", "delegate_subagent",
+    ],
+    "r2_tools": [
+        "delete", "remove", "drop", "wipe", "rm", "unlink",
+    ],
+    "r2_substrings": ["drop_table", "truncate_table", "delete_file"],
+    "r3_tools": ["send_email", "post_webhook", "external_api"],
+    "r3_prefixes": ["send_", "post_", "publish_", "deploy_", "broadcast_"],
+    "r2_shell_commands": ["rm", "unlink", "truncate"],
+    "r0_shell_commands": [
+        "cat", "grep", "ls", "echo", "pwd",
+        "git status", "git log", "git diff", "find",
+    ],
+    "r1_shell_override_commands": [
+        "git commit", "git push", "git pull",
+        "npm", "pip", "cargo", "make",
+    ],
+}
+
+PRIVILEGED_TOOL_RISK_RULES: dict[str, object] = {
+    **DEFAULT_TOOL_RISK_RULES,
+    "allow_sudo": True,
+    "forbidden_paths": [
+        "/etc/shadow",
+        ".ssh/id_",
+        "id_rsa",
+        "id_ed25519",
+        "id_ecdsa",
+        "id_dsa",
+    ],
+    "forbidden_executables": [],
+}
+
+
+def resolve_tool_risk_rules(will_rules: dict | list | None = None) -> dict[str, object]:
+    """Return effective tool-risk rules by merging policy `will_rules` over the appropriate baseline."""
+    rules_dict = will_rules if isinstance(will_rules, dict) else {}
+    allow_sudo = bool(rules_dict.get("allow_sudo", False))
+    base = dict(PRIVILEGED_TOOL_RISK_RULES if allow_sudo else DEFAULT_TOOL_RISK_RULES)
+    for key in base:
+        if key in rules_dict and rules_dict[key] is not None:
+            base[key] = rules_dict[key]
+    return base
+

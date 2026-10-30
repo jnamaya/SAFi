@@ -109,3 +109,18 @@ def inject_scope_compliance(profile: Dict[str, Any]) -> Dict[str, Any]:
         "A tool is not 'out of scope'; only the user's requested topic can be."
     )
     return out
+
+
+def inject_tool_risk_rules(profile: Dict[str, Any]) -> Dict[str, Any]:
+    """Populate policy-level tool risk rules on `will_rules` using the policy baseline."""
+    from ... import security_policy
+
+    out = deepcopy(profile)
+    raw_rules = out.get("will_rules")
+    if isinstance(raw_rules, dict):
+        resolved = security_policy.resolve_tool_risk_rules(raw_rules)
+        merged = dict(resolved)
+        merged.update({k: v for k, v in raw_rules.items() if v is not None})
+        out["will_rules"] = merged
+    return out
+

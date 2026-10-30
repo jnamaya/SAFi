@@ -124,7 +124,10 @@ class TcbBoundaryTests(unittest.TestCase):
     def test_neutral_faculty_files_have_no_agent_specific_examples(self):
         sources = {
             "safi_app/core/faculties/conscience.py": ("Bible", "Scripture", "Tesla", "fiduciary"),
-            "safi_app/core/faculties/will.py": ("get_stock_price", "not a doctor", "Yahoo Finance"),
+            "safi_app/core/faculties/will.py": (
+                "get_stock_price", "not a doctor", "Yahoo Finance",
+                "systems_admin", "sysadmin", "/etc/shadow", "chmod 777", "--no-preserve-root",
+            ),
             "safi_app/core/orchestrator.py": ("get_stock_price", "Tesla", "SharePoint", "Slack"),
             "safi_app/core/system_prompts.json": ("49ers", "Comcast", "Yahoo Finance", "Papias"),
         }

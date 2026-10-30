@@ -86,6 +86,19 @@ POLICY: Dict[str, Any] = {
             "web_search", "webfetch", "websearch", "write",
         ],
         "allow_sudo": True,
+        "max_tool_risk_class": "R3",
+        "forbidden_paths": [
+            "/etc/shadow", ".ssh/id_", "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa",
+        ],
+        "forbidden_executables": [],
+        "forbidden_shell_patterns": [
+            "--no-preserve-root", "mkfs", "dd if=", ":(){ :|:& };:",
+            "chmod 777", "curl | bash", "wget | bash",
+        ],
+        "protected_root_dirs": [
+            "/", "etc", "var", "usr", "bin", "sbin", "lib", "lib64",
+            "boot", "root", "home", "dev", "proc", "sys",
+        ],
         "audit_tool_intents": False,
         "preflight_prompt_scope": True,
         "early_prompt_blacklist": [],

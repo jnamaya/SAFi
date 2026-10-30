@@ -6,6 +6,7 @@ from typing import List, Dict, Any, Tuple, Optional
 import logging
 from .utils import _norm_label
 from .. import pii_validators
+from ... import security_policy
 
 # The violation reason a failing hard gate reports is DATA on the value itself
 # (gate_reason, stamped into the compiled profile by synderesis), never derived
@@ -20,24 +21,56 @@ ALLOWED_GATE_REASONS: frozenset = frozenset(
     {"scope_violation", "grounding_violation", "ethical_violation"}
 )
 
-# Matches catastrophic root or bare top-level OS directory wipes (e.g. `rm -rf /`,
-# `rm -rf /*`, `rm -rf /var`, `rm -rf /etc/*`) while allowing targeted subdirectory
-# removals such as `rm -rf /var/www/self` or `rm -rf /tmp/build`.
-_FORBIDDEN_RM_RE = re.compile(
-    r"\brm\s+(?:-[a-zA-Z]*[rf][a-zA-Z]*\s+)+"
-    r"(?:"
-    r"/\*?(?=$|[\s;&|\"'\`\)])"
-    r"|/(?:etc|var|usr|bin|sbin|lib|lib64|boot|root|home|dev|proc|sys)/?\*?(?=$|[\s;&|\"'\`\)])"
-    r")",
-    re.IGNORECASE,
-)
+
+def _build_protected_rm_regex(protected_root_dirs: List[str]) -> Optional[re.Pattern]:
+    """Compile a regex matching recursive/forced `rm` against policy-protected root directories."""
+    if not protected_root_dirs:
+        return None
+    allow_root = False
+    named_dirs: List[str] = []
+    for d in protected_root_dirs:
+        raw = str(d or "").strip()
+        stripped = raw.strip("/")
+        if raw == "/" and not stripped:
+            allow_root = True
+        elif stripped:
+            named_dirs.append(re.escape(stripped))
+    branches: List[str] = []
+    if allow_root:
+        branches.append(r"/\*?(?=$|[\s;&|\"'\`\)])")
+    if named_dirs:
+        joined = "|".join(named_dirs)
+        branches.append(rf"/(?:{joined})/?\*?(?=$|[\s;&|\"'\`\)])")
+    if not branches:
+        return None
+    return re.compile(
+        rf"\brm\s+(?:-[a-zA-Z]*[rf][a-zA-Z]*\s+)+(?:{'|'.join(branches)})",
+        re.IGNORECASE,
+    )
 
 
-def _has_forbidden_destructive_payload(cmd_lower: str) -> bool:
-    """Return True if a shell command contains an uncontained disk/root wipe or fork bomb."""
-    if any(f in cmd_lower for f in ("--no-preserve-root", "mkfs", "dd if=", ":(){ :|:& };:")):
+def _build_word_boundary_regex(commands: List[str]) -> Optional[re.Pattern]:
+    """Compile a word-boundary regex from a policy list of shell command phrases."""
+    escaped = [
+        r"\s+".join(re.escape(part) for part in str(c).strip().split())
+        for c in (commands or [])
+        if str(c or "").strip()
+    ]
+    if not escaped:
+        return None
+    return re.compile(rf"\b({'|'.join(escaped)})\b", re.IGNORECASE)
+
+
+def _has_forbidden_destructive_payload(
+    cmd_lower: str,
+    forbidden_shell_patterns: List[str],
+    protected_root_dirs: List[str],
+) -> bool:
+    """Return True if a shell command matches a policy-forbidden shell pattern or protected directory wipe."""
+    if any(str(f).lower() in cmd_lower for f in (forbidden_shell_patterns or []) if f):
         return True
-    return bool(_FORBIDDEN_RM_RE.search(cmd_lower))
+    rm_re = _build_protected_rm_regex(protected_root_dirs)
+    return bool(rm_re and rm_re.search(cmd_lower))
 
 
 class WillGate:
@@ -211,58 +244,55 @@ class WillGate:
     @staticmethod
     def classify_tool_risk(tool_name: str, parameters: dict, profile: Optional[dict] = None) -> Tuple[str, str]:
         """
-        Classify tool intent into deterministic risk classes:
-          R0: read-only query (read, grep, glob, list, etc.)
-          R1: reversible local workspace modification (edit, write, patch)
-          R2: destructive or high-impact local change (delete, remove, wipe, drop)
-          R3: external side effect (network send, external mutations)
-          R4: privileged or forbidden operation (credentials access, sudo, chmod, uncontained disk wipe)
+        Classify tool intent into deterministic risk classes driven by policy `will_rules`:
+          R0: read-only query
+          R1: reversible local workspace modification
+          R2: destructive or high-impact local change
+          R3: external side effect
+          R4: privileged or forbidden operation
         """
         import shlex
 
         lowered = (tool_name or "").lower().strip()
         params = parameters if isinstance(parameters, dict) else {}
 
-        # Check if this profile authorizes sysadmin commands (e.g. remote sudo, system inspection)
-        allow_sysadmin = False
-        if profile and isinstance(profile, dict):
-            will_rules = profile.get("will_rules") or {}
-            if isinstance(will_rules, dict) and will_rules.get("allow_sudo"):
-                allow_sysadmin = True
-            pol_id = str(profile.get("policy_id") or "").lower()
-            key = str(profile.get("key") or profile.get("agent_key") or "").lower()
-            if "systems_admin" in pol_id or "sysadmin" in key:
-                allow_sysadmin = True
+        will_rules = (profile or {}).get("will_rules") if isinstance(profile, dict) else None
+        rules = security_policy.resolve_tool_risk_rules(will_rules)
 
-        # Sensitive paths that should never be targeted
-        strictly_forbidden_paths = [
-            "/etc/shadow", ".ssh/id_", "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa"
-        ]
-        if not allow_sysadmin:
-            strictly_forbidden_paths.extend([
-                "/etc/passwd", ".gnupg", ".aws/credentials", "secrets.json"
-            ])
+        forbidden_paths = [str(p).lower() for p in (rules.get("forbidden_paths") or []) if p]
+        forbidden_executables = {str(e).lower() for e in (rules.get("forbidden_executables") or []) if e}
+        forbidden_shell_patterns = [str(p).lower() for p in (rules.get("forbidden_shell_patterns") or []) if p]
+        protected_root_dirs = [str(d) for d in (rules.get("protected_root_dirs") or []) if d]
 
-        # 1. File path tools (write, edit, patch, read, view, delete, etc.)
-        if lowered in ("write", "edit", "patch", "read", "view", "show", "cat", "delete", "remove", "rm", "unlink"):
+        file_path_tools = {str(t).lower() for t in (rules.get("file_path_tools") or []) if t}
+        shell_tools = {str(t).lower() for t in (rules.get("shell_tools") or []) if t}
+
+        r0_tools = {str(t).lower() for t in (rules.get("r0_tools") or []) if t}
+        r0_substrings = [str(s).lower() for s in (rules.get("r0_substrings") or []) if s]
+        r1_tools = {str(t).lower() for t in (rules.get("r1_tools") or []) if t}
+        r2_tools = {str(t).lower() for t in (rules.get("r2_tools") or []) if t}
+        r2_substrings = [str(s).lower() for s in (rules.get("r2_substrings") or []) if s]
+        r3_tools = {str(t).lower() for t in (rules.get("r3_tools") or []) if t}
+        r3_prefixes = [str(p).lower() for p in (rules.get("r3_prefixes") or []) if p]
+
+        r2_shell_re = _build_word_boundary_regex(list(rules.get("r2_shell_commands") or []))
+        r0_shell_re = _build_word_boundary_regex(list(rules.get("r0_shell_commands") or []))
+        r1_shell_override_re = _build_word_boundary_regex(list(rules.get("r1_shell_override_commands") or []))
+
+        # 1. File path tools
+        if lowered in file_path_tools:
             target_path = str(params.get("path") or params.get("file_path") or params.get("target_path") or "").lower()
-            if any(p in target_path for p in strictly_forbidden_paths):
-                return "R4", "Privileged or forbidden system command/path"
-            if not allow_sysadmin and any(p in target_path for p in (".ssh", ".config/safi")):
+            if any(p in target_path for p in forbidden_paths):
                 return "R4", "Privileged or forbidden system command/path"
 
-        # 2. Shell execution tools (bash, sh, exec, terminal, command)
-        elif lowered in ("bash", "sh", "exec", "terminal", "command"):
+        # 2. Shell execution tools
+        elif lowered in shell_tools:
             cmd = str(params.get("command") or params.get("cmd") or "").strip()
             cmd_lower = cmd.lower()
 
-            # Forbidden destructive payloads
-            if _has_forbidden_destructive_payload(cmd_lower):
+            if _has_forbidden_destructive_payload(cmd_lower, forbidden_shell_patterns, protected_root_dirs):
                 return "R4", "Forbidden destructive shell payload"
-            if "chmod 777" in cmd_lower or "curl | bash" in cmd_lower or "wget | bash" in cmd_lower:
-                return "R4", "Privileged or forbidden system command/path"
 
-            # Parse pipeline segments to identify actual executed commands
             segments = re.split(r'(?:\s*(?:&&|\|\||[;\n|])\s*)', cmd)
             for seg in segments:
                 seg_clean = seg.strip()
@@ -279,52 +309,46 @@ class WillGate:
 
                 first_token = tokens[0].lower().split("/")[-1]
 
-                # Check privileged executables
-                if not allow_sysadmin:
-                    if first_token in ("sudo", "su", "ssh", "scp", "sftp"):
-                        return "R4", "Privileged or forbidden system command/path"
+                if first_token in forbidden_executables:
+                    return "R4", "Privileged or forbidden system command/path"
 
-                # If invoking git commit/tag/notes, the string arguments (-m) are commit messages, not paths
+                # If invoking git commit/tag/notes, string arguments (-m) are commit messages, not paths
                 if first_token == "git" and len(tokens) > 1 and tokens[1].lower() in ("commit", "tag", "notes"):
                     continue
 
-                # Inspect command arguments for forbidden path targets
                 for tok in tokens[1:]:
                     tok_lower = tok.lower()
-                    if any(p in tok_lower for p in strictly_forbidden_paths):
-                        return "R4", "Privileged or forbidden system command/path"
-                    if not allow_sysadmin and any(p in tok_lower for p in ("/etc/shadow", "/etc/passwd")):
+                    if any(p in tok_lower for p in forbidden_paths):
                         return "R4", "Privileged or forbidden system command/path"
 
         # 3. Fallback check for any other tool parameters
         else:
             params_str = json.dumps(params, default=str).lower()
-            if any(p in params_str for p in strictly_forbidden_paths):
+            if any(p in params_str for p in forbidden_paths):
                 return "R4", "Privileged or forbidden system command/path"
 
-        if lowered in ("delete", "remove", "drop", "wipe", "rm", "unlink") or \
-           any(action in lowered for action in ("drop_table", "truncate_table", "delete_file")):
+        if lowered in r2_tools or any(action in lowered for action in r2_substrings):
             return "R2", "Destructive or high-impact local action"
 
-        if any(ext in lowered for ext in ("send_", "post_", "publish_", "deploy_", "broadcast_")) or \
-           lowered in ("send_email", "post_webhook", "external_api"):
+        if any(ext in lowered for ext in r3_prefixes) or lowered in r3_tools:
             return "R3", "External action with external side effects"
 
-        if lowered in ("write", "edit", "patch", "create", "append", "update", "task", "delegate_subagent"):
+        if lowered in r1_tools:
             return "R1", "Reversible local modification"
 
-        if lowered in ("read", "grep", "glob", "list", "search", "find", "status", "view", "show", "cat") or \
-           "read" in lowered or "search" in lowered or "query" in lowered:
+        if lowered in r0_tools or any(sub in lowered for sub in r0_substrings):
             return "R0", "Read-only query"
 
-        # Default bash inspection
-        if lowered in ("bash", "sh", "exec", "terminal", "command"):
-            cmd = str(parameters.get("command") or parameters.get("cmd") or "").strip().lower()
-            if _has_forbidden_destructive_payload(cmd):
+        # Shell command classification
+        if lowered in shell_tools:
+            cmd = str(params.get("command") or params.get("cmd") or "").strip().lower()
+            if _has_forbidden_destructive_payload(cmd, forbidden_shell_patterns, protected_root_dirs):
                 return "R4", "Forbidden destructive shell payload"
-            if re.search(r"\b(rm|unlink|truncate)\b", cmd) or ">" in cmd:
+            if (r2_shell_re and r2_shell_re.search(cmd)) or ">" in cmd:
                 return "R2", "Destructive shell command"
-            if re.search(r"\b(cat|grep|ls|echo|pwd|git\s+status|git\s+log|git\s+diff|find)\b", cmd) and not re.search(r"\b(git\s+commit|git\s+push|git\s+pull|npm|pip|cargo|make)\b", cmd):
+            if (r0_shell_re and r0_shell_re.search(cmd)) and not (
+                r1_shell_override_re and r1_shell_override_re.search(cmd)
+            ):
                 return "R0", "Read-only shell command"
             return "R1", "Shell execution"
 

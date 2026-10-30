@@ -106,9 +106,22 @@ def assemble_agent(
                 structural[key] = value
         if structural:
             merged["structural_requirements"] = structural
+        policy_tool_keys = {
+            "allowed_tools",
+            "allow_sudo",
+            "max_tool_risk_class",
+            "forbidden_paths",
+            "forbidden_executables",
+            "forbidden_shell_patterns",
+            "protected_root_dirs",
+            "tool_parameter_constraints",
+            "audit_tool_intents",
+            "preflight_prompt_scope",
+        }
         for key, value in policy_dict.items():
-            if key != "structural_requirements" and key not in merged:
-                merged[key] = value
+            if key != "structural_requirements" and value is not None:
+                if key not in merged or key in policy_tool_keys:
+                    merged[key] = copy.deepcopy(value)
         prose = list(policy_prose)
         prose.extend(rule for rule in agent_prose if rule not in prose)
         if prose:
