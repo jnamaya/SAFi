@@ -81,6 +81,7 @@ POLICY: Dict[str, Any] = {
     "values": _lift_values(SECURITY_ENGINEER_VALUES),
     "will_rules": {
         "allowed_tools": [
+            "security_engineer_tools",
             "bash", "delete", "edit", "glob", "grep", "list",
             "patch", "question", "read", "task", "todowrite",
             "web_search", "webfetch", "websearch", "write",

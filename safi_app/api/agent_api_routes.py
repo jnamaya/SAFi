@@ -949,14 +949,16 @@ def list_available_tools():
         mcp = MCPManager(current_app.config)
         user = session.get('user') or {}
         from ..core.services.mcp_manager import is_guest
+        policy_id = request.args.get('policy_id')
         tools = mcp.list_all_tools(
             org_id=user.get('org_id'),
             guest=is_guest(user.get('id') or '', user.get('email') or ''),
+            policy_id=policy_id,
         )
 
         # Mark what the given policy authorizes, so the picker shows the same
         # answer the save path enforces rather than deriving its own.
-        ceiling = policy_tool_ceiling(request.args.get('policy_id'))
+        ceiling = policy_tool_ceiling(policy_id)
         if ceiling is not None:
             from ..core.tool_connectors import expand_connectors
             for category in tools:

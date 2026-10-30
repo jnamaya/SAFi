@@ -1741,7 +1741,11 @@ class SAFi:
             or (self.profile or {}).get("tools")
             or []
         )
-        mutating_tools = {"bash", "write", "edit", "patch", "delete", "agentic_coding", "coding_harness"}
+        mutating_tools = {
+            "bash", "write", "edit", "patch", "delete",
+            "agentic_coding", "coding_harness",
+            "software_engineer_tools", "sysadmin_tools", "security_engineer_tools",
+        }
         has_execution_tools = bool(agent_tools & mutating_tools) or client_owned or bool((self.profile or {}).get("track_work_context"))
 
         policy_preflight = _will_rules.get("preflight_prompt_scope") if isinstance(_will_rules, dict) else None

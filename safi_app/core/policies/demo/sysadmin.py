@@ -149,9 +149,11 @@ POLICY: Dict[str, Any] = {
     "values": _lift_values(SYSADMIN_VALUES),
     "will_rules": {
         "allowed_tools": [
+            "sysadmin_tools",
             "bash", "delete", "edit", "glob", "grep", "list",
             "question", "read", "todowrite",
             "web_search", "webfetch", "websearch", "write",
+            "m365_admin", "azure_admin", "cloud_status",
         ],
         "allow_sudo": True,
         "max_tool_risk_class": "R3",

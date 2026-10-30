@@ -160,6 +160,7 @@ POLICY: Dict[str, Any] = {
     "values": _lift_values(AGENTIC_CODING_VALUES),
     "will_rules": {
         "allowed_tools": [
+            "software_engineer_tools",
             "bash", "agentic_coding", "coding_harness", "delete", "edit", "git_diff", "git_status",
             "glob", "grep", "list", "lsp", "patch", "question", "read", "skill", "task", "todowrite",
             "web_search", "webfetch", "websearch", "write",

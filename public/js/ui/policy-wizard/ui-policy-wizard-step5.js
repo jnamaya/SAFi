@@ -216,7 +216,7 @@ export function renderWillStep(container, policyData) {
     `;
 
     // --- AUTHORIZED TOOLS (checklist from backend registry) ---
-    loadToolCategories().then(categories => {
+    loadToolCategories(policyData.id || null).then(categories => {
         const loading = document.getElementById('pw-tools-loading');
         const grid = document.getElementById('pw-tools-grid');
         if (!grid) return; // step navigated away

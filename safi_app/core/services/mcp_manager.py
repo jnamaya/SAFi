@@ -646,13 +646,26 @@ class MCPManager:
 
         return tools
 
-    def list_all_tools(self, org_id: Optional[str] = None, guest: bool = False) -> List[Dict[str, Any]]:
+    def list_all_tools(
+        self,
+        org_id: Optional[str] = None,
+        guest: bool = False,
+        policy_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """
         The catalogue a tool picker renders, grouped by category.
 
         `org_id` scopes GUI-installed servers to the organization that installed
         them. Omit it only where there is no organization to scope to.
         """
+        pid_lower = str(policy_id or "").lower()
+        if "sysadmin" in pid_lower or "systems_admin" in pid_lower:
+            harness_category = "Sysadmin Tools"
+        elif "security_engineer" in pid_lower:
+            harness_category = "Security Engineering Tools"
+        else:
+            harness_category = "Agentic Coding"
+
         return [
             {
                 "category": "Finance & Market Data",
@@ -712,7 +725,7 @@ class MCPManager:
                 # agent may use — the same rule discovered MCP servers follow.
                 # Saving stores the connector name, which expand_connectors
                 # turns back into these four.
-                "category": "Agentic Coding",
+                "category": harness_category,
                 "tools": [
                     {
                         "name": "read",
@@ -763,6 +776,12 @@ class MCPManager:
                         "icon": "git-pull-request"
                     },
                     {
+                        "name": "delete",
+                        "label": "Delete File",
+                        "description": "Delete a file or directory (executed by the agent client).",
+                        "icon": "trash"
+                    },
+                    {
                         "name": "webfetch",
                         "label": "Fetch URL",
                         "description": "Fetch a URL (executed by the agent client).",
@@ -803,6 +822,24 @@ class MCPManager:
                         "label": "Ask User",
                         "description": "Ask the user a question (executed by the agent client).",
                         "icon": "help-circle"
+                    },
+                    {
+                        "name": "m365_admin",
+                        "label": "Microsoft 365 & Entra ID Admin",
+                        "description": "Govern and manage Microsoft 365 users, licenses, and sign-in logs.",
+                        "icon": "cloud"
+                    },
+                    {
+                        "name": "azure_admin",
+                        "label": "Azure Cloud Admin",
+                        "description": "Govern and operate Azure resource groups, VMs, and cloud inventory.",
+                        "icon": "server"
+                    },
+                    {
+                        "name": "cloud_status",
+                        "label": "Cloud Tenancy Status",
+                        "description": "Inspect configured Microsoft 365 and Azure cloud connectivity.",
+                        "icon": "activity"
                     }
                 ]
             }
