@@ -372,6 +372,84 @@ SYSADMIN_TOOL_SCHEMAS: List[Dict[str, Any]] = [
                 "required": ["question"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "m365_admin",
+            "description": "Govern and manage Microsoft 365 and Entra ID (Azure AD): list/get users, reset user passwords, audit licenses, assign/revoke license SKUs, list security groups, and view sign-in audit logs.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "description": "The administrative action to perform.",
+                        "enum": [
+                            "list_users",
+                            "get_user",
+                            "reset_password",
+                            "list_licenses",
+                            "assign_license",
+                            "revoke_license",
+                            "list_groups",
+                            "get_sign_ins"
+                        ]
+                    },
+                    "params": {
+                        "type": "object",
+                        "description": "Action-specific parameters: 'user_id' (UPN/email), 'temp_password', 'force_change' (bool), 'sku_id', 'query' (search filter), 'limit' (int)."
+                    },
+                    "tenant": {
+                        "type": "string",
+                        "description": "Optional tenant alias from cloud config. Defaults to primary tenant."
+                    }
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "azure_admin",
+            "description": "Govern and operate Azure cloud resources: list resource groups, list virtual machines, check VM status/instanceView, perform VM actions (start, stop, restart, deallocate), and discover cloud resources.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "description": "The Azure administrative action to perform.",
+                        "enum": [
+                            "list_resource_groups",
+                            "list_vms",
+                            "get_vm",
+                            "vm_action",
+                            "list_resources"
+                        ]
+                    },
+                    "params": {
+                        "type": "object",
+                        "description": "Action-specific parameters: 'resource_group', 'vm_name', 'action' (start/stop/restart/deallocate), 'resource_type'."
+                    },
+                    "subscription": {
+                        "type": "string",
+                        "description": "Optional subscription alias from cloud config. Defaults to primary subscription."
+                    }
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "cloud_status",
+            "description": "Inspect the status, connectivity, and configured tenants/subscriptions for Microsoft 365 and Azure environments.",
+            "parameters": {
+                "type": "object",
+                "properties": {}
+            }
+        }
     }
 ]
 
@@ -384,6 +462,8 @@ def get_tools_for_agent(agent: Optional[str]) -> List[Dict[str, Any]]:
     if not agent:
         return []
     low = agent.lower()
+    if low in ("fiduciary", "the_fiduciary", "health_navigator", "socratic_tutor", "bible_scholar", "safi_steward"):
+        return []
     if "sysadmin" in low:
         return list(SYSADMIN_TOOL_SCHEMAS)
     if (
@@ -1001,6 +1081,32 @@ def execute_tool(
             if len(out) > 20000:
                 out = out[:20000] + f"\n... [diff truncated, {len(out)} chars total]"
             return out
+
+        elif name == "m365_admin":
+            from . import cloud
+            action = str(args.get("action") or "").strip()
+            params = args.get("params") or {}
+            # Flatten top-level parameters if provided directly
+            for k in ("user_id", "upn", "email", "temp_password", "force_change", "sku_id", "query", "search", "limit"):
+                if k in args and k not in params:
+                    params[k] = args[k]
+            tenant = args.get("tenant")
+            return cloud.execute_m365_admin(action=action, params=params, tenant_alias=tenant)
+
+        elif name == "azure_admin":
+            from . import cloud
+            action = str(args.get("action") or "").strip()
+            params = args.get("params") or {}
+            # Flatten top-level parameters if provided directly
+            for k in ("resource_group", "vm_name", "name", "action", "resource_type"):
+                if k in args and k not in params:
+                    params[k] = args[k]
+            subscription = args.get("subscription")
+            return cloud.execute_azure_admin(action=action, params=params, subscription_alias=subscription)
+
+        elif name == "cloud_status":
+            from . import cloud
+            return cloud.execute_cloud_status()
 
         else:
             return f"Unknown tool: '{name}'"

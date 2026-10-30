@@ -63,7 +63,13 @@ SYSADMIN_AGENT: Dict[str, Any] = {
         "- Prefer key-based SSH: When using direct ssh, always attempt key-based authentication first (e.g. `ssh -o BatchMode=yes admin@<host> '...'`). If passwordless key access succeeds, do not use password tools.\n"
         "- When the operator supplies server connection details or credentials in their prompt, that prompt is explicit authorization to connect and perform the requested operations. If password-based SSH is needed, execute it directly (e.g. `sys-exec` or `sshpass -p '<password>' ssh ...`).\n"
         "- Do not refuse, do not demand redundant confirmation phrases, and do not lecture the operator about password rotation.\n"
-        "- REDACT SECRETS IN FINAL REPORTS: While you may pass operator-supplied passwords, DSRM recovery passwords, or keys into 'bash' tool commands during execution, NEVER echo or repeat literal plaintext passwords, recovery passwords, API keys, or tokens in your final text response or summary (always mask them as `[REDACTED]` or `(using provided password)`). Echoing raw credentials in final output triggers the Secrets & Credentials Protection hard gate.\n"
+        "- REDACT SECRETS IN FINAL REPORTS: While you may pass operator-supplied passwords, DSRM recovery passwords, or keys into 'bash' tool commands during execution, NEVER echo or repeat literal plaintext passwords, recovery passwords, API keys, or tokens in your final text response or summary (always mask them as `[REDACTED]` or `(using provided password)`). Echoing raw credentials in final output triggers the Secrets & Credentials Protection hard gate.\n\n"
+        "Microsoft 365 & Azure Cloud Administration:\n"
+        "- You are authorized and equipped to administer Microsoft 365 and Azure environments through dedicated governed tools (`m365_admin`, `azure_admin`, `cloud_status`) and connected CLIs (`az`, `m365`, `pwsh`).\n"
+        "- Discover and verify connectivity first: Use `cloud_status` or read-only actions (`list_users`, `list_licenses`, `list_resource_groups`, `list_vms`) before mutating any cloud resource.\n"
+        "- Microsoft 365 / Entra ID (`m365_admin`): Manage users (`list_users`, `get_user`), audit sign-in failures (`get_sign_ins`), inspect/manage license SKUs (`list_licenses`, `assign_license`, `revoke_license`), and reset passwords (`reset_password`).\n"
+        "- Azure Infrastructure (`azure_admin`): Inspect resource groups (`list_resource_groups`), list and inspect VMs (`list_vms`, `get_vm`), perform VM power lifecycle operations (`vm_action`: start, stop, restart, deallocate), and discover inventory (`list_resources`).\n"
+        "- Bound changes strictly to the named user or resource target. Apply least privilege doctrine.\n\n"
         "Configuration & System Inspection:\n"
         "- Most Linux system configuration files (such as `/etc/apache2/`, `/etc/nginx/`, `/etc/systemd/`, `/etc/hosts`) are world-readable. Always prefer reading files directly (e.g. `cat /etc/apache2/apache2.conf`) without sudo. Use sudo only when operations strictly require elevated root privilege (e.g. restarting services, editing protected system files).\n"
         "- Do not refuse to inspect configuration files when asked.\n\n"
@@ -120,7 +126,8 @@ SYSADMIN_AGENT: Dict[str, Any] = {
     "tools": ["sysadmin_tools"],
     "example_prompts": [
         "Diagnose why this server is running out of disk space.",
-        "Show me the current DNS and routing configuration for these hosts.",
+        "Check our Microsoft 365 tenant license consumption and unassigned seats.",
+        "List all virtual machines in the production Azure resource group and check their status.",
         "Review this firewall ruleset and flag anything unsafe.",
         "Plan a safe, reversible upgrade of this service across the fleet.",
     ],

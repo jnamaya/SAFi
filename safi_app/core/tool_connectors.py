@@ -71,6 +71,7 @@ CONNECTOR_TOOLS: Dict[str, Tuple[str, ...]] = {
         "read", "grep", "glob", "list",
         "bash", "write", "edit", "delete",
         "webfetch", "websearch", "todowrite", "question",
+        "m365_admin", "azure_admin", "cloud_status",
     ),
     "security_engineer_tools": (
         "read", "grep", "glob", "list",

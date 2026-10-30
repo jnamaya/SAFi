@@ -379,12 +379,11 @@ class MCPManager:
         _emit_coding = bool(_coding_declared)
         _coding_names = None
         if _emit_coding:
-            # Sysadmin is the only connector narrower than the full vocabulary:
-            # it omits "patch" and "lsp" (code-harness-only functions).
-            if _coding_declared == ["sysadmin_tools"]:
-                _coding_names = frozenset(CONNECTOR_TOOLS["sysadmin_tools"])
-            else:
-                _coding_names = None  # full vocabulary
+            active_funcs = set()
+            for c in _coding_declared:
+                if c in CONNECTOR_TOOLS:
+                    active_funcs.update(CONNECTOR_TOOLS[c])
+            _coding_names = frozenset(active_funcs) if active_funcs else None
         def _want(name: str) -> bool:
             return _coding_names is None or name in _coding_names
 
@@ -509,6 +508,12 @@ class MCPManager:
                 ("question", "Ask the user a question. Executed by the "
                              "coding-agent client, not by SAFi.",
                  {"question": {"type": "string"}}, ["question"]),
+                ("m365_admin", "Govern and manage Microsoft 365 and Entra ID (Azure AD). Executed by the client.",
+                 {"action": {"type": "string"}, "params": {"type": "object"}, "tenant": {"type": "string"}}, ["action"]),
+                ("azure_admin", "Govern and operate Azure cloud resources. Executed by the client.",
+                 {"action": {"type": "string"}, "params": {"type": "object"}, "subscription": {"type": "string"}}, ["action"]),
+                ("cloud_status", "Inspect configured cloud environments for M365 and Azure. Executed by the client.",
+                 {}, []),
             ]
             for name, desc, props, required in declared_only:
                 if not _want(name):

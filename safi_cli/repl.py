@@ -128,6 +128,8 @@ def print_help():
         ("/reset", "Reset session and flush agent working memory"),
         ("/config", "View backend URL, active model, and Policy API key status"),
         ("/setup-key [target]", "Deploy SSH key to Linux or Windows server from inventory"),
+        ("/setup-cloud", "Configure Microsoft 365 or Azure credentials & test connectivity"),
+        ("/cloud-status", "View connected M365 tenants and Azure subscriptions"),
         ("/keygen", "Generate the local Ed25519 key pair (no deployment)"),
         ("/help", "Show this help menu"),
         ("exit, quit, :q", "Exit SAFi CLI"),
@@ -451,6 +453,16 @@ def prompt_command_menu(
         ssh_keys.interactive_setup_key()
         return current_agent, current_conv, current_model, current_user_name, False
 
+    elif choice_clean in ("setup-cloud", "cloud", "cloud-setup"):
+        from . import cloud
+        cloud.interactive_setup_cloud()
+        return current_agent, current_conv, current_model, current_user_name, False
+
+    elif choice_clean in ("cloud-status",):
+        from . import cloud
+        ui.console.print(cloud.execute_cloud_status())
+        return current_agent, current_conv, current_model, current_user_name, False
+
     elif choice_clean in ("keygen", "gen-key"):
         from . import ssh_keys
         ssh_keys.keygen_local()
@@ -492,6 +504,9 @@ SLASH_COMMANDS = [
     "/sessions",
     "/setup-key",
     "/ssh-key",
+    "/setup-cloud",
+    "/cloud",
+    "/cloud-status",
     "/help",
     "/exit",
     "/quit",
@@ -797,6 +812,21 @@ def interactive_repl(
                 sub_target = parts[1].strip() if len(parts) > 1 else ""
                 from . import ssh_keys
                 ssh_keys.interactive_setup_key(target_arg=sub_target or None)
+                continue
+
+            if line.lower().startswith(("/setup-cloud", "/cloud")):
+                parts = line.split(maxsplit=1)
+                sub_cmd = parts[1].strip().lower() if len(parts) > 1 else ""
+                from . import cloud
+                if sub_cmd in ("status", "info", "list"):
+                    ui.console.print(cloud.execute_cloud_status())
+                else:
+                    cloud.interactive_setup_cloud()
+                continue
+
+            if line.lower() == "/cloud-status":
+                from . import cloud
+                ui.console.print(cloud.execute_cloud_status())
                 continue
 
             if line.lower() in ("/audit", "/ledger"):

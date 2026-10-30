@@ -58,6 +58,12 @@ def main():
         code = ssh_keys.run_setup_key(sys.argv[2:]) if len(sys.argv) > 2 else (ssh_keys.interactive_setup_key() or 0)
         sys.exit(code if isinstance(code, int) else 0)
 
+    # Cloud setup shortcut: safi setup-cloud, safi cloud
+    if len(sys.argv) > 1 and sys.argv[1] in ("setup-cloud", "cloud", "cloud-setup"):
+        from . import cloud
+        cloud.interactive_setup_cloud()
+        sys.exit(0)
+
     # Standalone keygen shortcut: safi keygen (local Ed25519 key, no deployment)
     if len(sys.argv) > 1 and sys.argv[1] in ("keygen", "gen-key"):
         sys.exit(ssh_keys.keygen_local())
@@ -115,6 +121,13 @@ def main():
         nargs="*",
         help="Deploy local SSH public key to Linux or Windows inventory host or user@host.",
     )
+    parser.add_argument(
+        "--setup-cloud",
+        "--cloud",
+        dest="setup_cloud",
+        action="store_true",
+        help="Configure Microsoft 365 or Azure Cloud credentials and test connectivity.",
+    )
 
     args = parser.parse_args()
 
@@ -125,6 +138,11 @@ def main():
             ssh_keys.interactive_setup_key()
             code = 0
         sys.exit(code if isinstance(code, int) else 0)
+
+    if getattr(args, "setup_cloud", False):
+        from . import cloud
+        cloud.interactive_setup_cloud()
+        sys.exit(0)
 
     if args.set_user:
         config.save_user_name(args.set_user.strip())

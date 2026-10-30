@@ -201,6 +201,14 @@ def build_tool_status_line(
         label = f"Subagent task: {desc}" if desc else "Executing subagent task"
     elif tool_name in ("git_status", "git_diff"):
         label = "Running git status" if tool_name == "git_status" else "Inspecting git diff"
+    elif tool_name == "m365_admin":
+        action = args.get("action") or ""
+        label = f"M365 Admin: {action.replace('_', ' ')}" if action else "Executing M365 action"
+    elif tool_name == "azure_admin":
+        action = args.get("action") or ""
+        label = f"Azure Admin: {action.replace('_', ' ')}" if action else "Executing Azure action"
+    elif tool_name == "cloud_status":
+        label = "Checking cloud environment status"
     else:
         label = f"Executing {tool_name}"
 

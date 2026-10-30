@@ -228,14 +228,9 @@ def _infer_provider(model_id: str) -> str:
 
 
 def discover_models(client: SafiClient, force_refresh: bool = False) -> List[Dict[str, Any]]:
-    """Discover available AI models from the SAFi backend policy.
-
-    The backend is the single source of truth. If it returns nothing (no
-    configured providers, or the request is unauthorized), the list is empty —
-    we never fall back to a bundled/static catalog.
-    """
+    """Discover available AI models from the SAFi backend policy, merged with defaults."""
     global AVAILABLE_MODELS
-    remote = client.get_available_models()
+    remote = client.get_available_models() if client else []
     seen = set()
     merged = []
     for m in remote or []:
@@ -249,6 +244,11 @@ def discover_models(client: SafiClient, force_refresh: bool = False) -> List[Dic
                 "active": bool(m.get("active")),
                 "local": bool(m.get("local")),
             })
+    for m in DEFAULT_MODELS:
+        m_id = m["id"]
+        if m_id not in seen:
+            seen.add(m_id)
+            merged.append(dict(m))
     AVAILABLE_MODELS = merged
     return AVAILABLE_MODELS
 
