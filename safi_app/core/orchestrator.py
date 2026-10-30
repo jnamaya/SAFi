@@ -28,7 +28,9 @@ client for execution. Its next request re-enters this method with the tool
 result; final drafts still use the same `_finalize_draft` path as web chat.
 """
 from __future__ import annotations
+import hashlib
 import os
+import re
 import json
 import uuid
 import asyncio
@@ -252,27 +254,117 @@ record_harness_progress = record_agentic_progress
 
 
 DEFAULT_TOOL_ARG_MAX_CHARS = int(os.environ.get("SAFI_TOOL_ARG_MAX_CHARS", "3000"))
+DEFAULT_DELIVERABLE_MIN_CHARS = int(os.environ.get("SAFI_DELIVERABLE_WRITE_MIN_CHARS", "10000"))
+_WROTE_CHARS_RE = re.compile(r"Successfully wrote\s+(\d+)\s+characters", re.I)
 
 
 def _bound_tool_arguments(args: Any, max_chars: int = DEFAULT_TOOL_ARG_MAX_CHARS) -> Any:
-    """Bound oversized string values in tool arguments (e.g. a 43KB HTML `write` payload)
-    using a 75/25 head+tail window so historical tool headers and audit evidence do not
-    bloat the prompt token budget on every subsequent step."""
+    """Replace oversized string values in tool arguments (e.g. a 40KB HTML `write` payload)
+    with a clean intact-write receipt so historical tool headers do not bloat the context
+    and mid-string head+tail splices never trick the model into thinking its written file
+    was corrupted on disk."""
     if not isinstance(args, dict) or max_chars <= 0:
         return args
     bounded: Dict[str, Any] = {}
     for k, v in args.items():
         if isinstance(v, str) and len(v) > max_chars:
-            head = int(max_chars * 0.75)
-            tail = max_chars - head
+            digest = hashlib.sha256(v.encode("utf-8", errors="ignore")).hexdigest()[:12]
             bounded[k] = (
-                v[:head]
-                + f"\n... [argument compacted; showing first {head} and last {tail} of {len(v)} chars]\n"
-                + v[len(v) - tail:]
+                f"<omitted from tool-call history: full {len(v)} chars (sha256:{digest}) "
+                "written intact to disk — do NOT re-read or rewrite>"
             )
         else:
             bounded[k] = v
     return bounded
+
+
+def _completed_deliverable_paths(
+    tool_results: Any, min_chars: int = DEFAULT_DELIVERABLE_MIN_CHARS
+) -> set:
+    """Return normalized paths and basenames of large deliverable files (>= min_chars)
+    already written via `write` in the current turn."""
+    completed: set = set()
+    if not isinstance(tool_results, list):
+        return completed
+    for item in tool_results:
+        if not isinstance(item, dict):
+            continue
+        t_name = str(item.get("tool_name") or item.get("tool") or "").strip().lower()
+        if t_name != "write":
+            continue
+        args = item.get("arguments") or item.get("parameters") or {}
+        if not isinstance(args, dict):
+            continue
+        raw_path = str(args.get("path") or args.get("filePath") or args.get("file_path") or "").strip()
+        if not raw_path:
+            continue
+        norm_path = raw_path.replace("\\", "/").strip().lower()
+        if "scratchpad.md" in norm_path or "/.safi/" in norm_path or norm_path.startswith(".safi/"):
+            continue
+        res_text = str(item.get("result") or "")
+        if res_text.lstrip().lower().startswith("error"):
+            continue
+        chars_written = 0
+        m = _WROTE_CHARS_RE.search(res_text)
+        if m:
+            try:
+                chars_written = int(m.group(1))
+            except ValueError:
+                chars_written = 0
+        if not chars_written:
+            content_val = str(args.get("content") or "")
+            chars_written = len(content_val)
+        if chars_written >= min_chars:
+            completed.add(norm_path)
+            base = os.path.basename(norm_path)
+            if base:
+                completed.add(base)
+    return completed
+
+
+def _is_redundant_post_deliverable_call(
+    tool_name: str,
+    parameters: Any,
+    tool_results: Any,
+    proposed_calls: Optional[List[Dict[str, Any]]] = None,
+) -> bool:
+    """Return True if a large standalone deliverable (>= 10,000 chars) was already
+    written in this turn and the model is now proposing to re-read, grep, validate,
+    or overwrite that same deliverable instead of returning its final response."""
+    completed = _completed_deliverable_paths(tool_results)
+    if not completed:
+        return False
+
+    calls_to_check = (
+        proposed_calls
+        if isinstance(proposed_calls, list) and proposed_calls
+        else [{"tool_name": tool_name, "parameters": parameters}]
+    )
+    for call in calls_to_check:
+        if not isinstance(call, dict):
+            continue
+        c_name = str(call.get("tool_name") or call.get("tool") or "").strip().lower()
+        c_params = call.get("parameters") or call.get("arguments") or {}
+        if not isinstance(c_params, dict):
+            c_params = {}
+        if c_name in ("read", "write", "edit", "patch", "grep"):
+            p = str(
+                c_params.get("path")
+                or c_params.get("filePath")
+                or c_params.get("file_path")
+                or ""
+            ).replace("\\", "/").strip().lower()
+            if p and (p in completed or os.path.basename(p) in completed):
+                return True
+        elif c_name in ("bash", "sh", "exec", "command"):
+            cmd = str(c_params.get("command") or c_params.get("cmd") or "").strip().lower()
+            if any(target in cmd for target in completed):
+                return True
+            if cmd.startswith("echo ") and any(
+                phrase in cmd for phrase in ("report ready", "final check", "assessment complete")
+            ):
+                return True
+    return False
 
 
 def count_current_turn_tool_repeats(tool_results, tool_name, parameters,
@@ -1770,6 +1862,53 @@ class SAFi:
         a_t: str = ""
         D_t: str = "approve"
         E_t: str = ""
+
+        # If a large standalone deliverable (>= 10,000 chars) was already written in this
+        # turn and the model proposes to re-read, grep, bash-check, or rewrite that same
+        # deliverable file instead of finishing, suppress the redundant tool loop and
+        # generate the final executive summary immediately with tools disabled.
+        if (
+            client_owned
+            and isinstance(intent, dict)
+            and intent.get("type") == "tool_call"
+            and _is_redundant_post_deliverable_call(
+                intent.get("tool_name", ""),
+                intent.get("parameters"),
+                client_tool_results,
+                proposed_calls=intent.get("tool_calls"),
+            )
+        ):
+            self.log.info(
+                "Orchestrator: Suppressing redundant post-deliverable tool call '%s'; "
+                "generating final summary response with tools disabled.",
+                intent.get("tool_name"),
+            )
+            finish_prompt = (
+                f"{prompt_with_date}\n\n"
+                "SYSTEM DIRECTIVE: The deliverable report file has already been written intact "
+                "to disk in full. Do NOT call any tools and do NOT re-read or validate the "
+                "generated file. Output your final executive summary and the saved file path "
+                "to the user now."
+            )
+            intent, r_t, _ = await self.intellect_engine.generate(
+                user_prompt=finish_prompt,
+                memory_summary=memory_summary,
+                recent_turns=recent_turns_text,
+                spirit_feedback=spirit_feedback,
+                plugin_context=plugin_context_data,
+                user_profile_json=current_profile_json,
+                agent_context_json=agent_context_for_prompt,
+                user_name=user_name,
+                user_id=user_id,
+                message_id=message_id,
+                precomputed_retrieved_context=retrieved_context,
+                tools_override=[],
+                tool_results_supplied=len(client_tool_results),
+            )
+            if intent is None:
+                msg = f"Intellect failed: {self.intellect_engine.last_error or 'Unknown error'}"
+                self.store.update_message_content(message_id, msg, audit_status="complete")
+                return { "finalOutput": msg, "newTitle": new_title, "willDecision": "violation", "willReason": "Intellect failed.", "messageId": message_id }
 
         if intent["type"] == "text":
             a_t = intent.get("content") or ""

@@ -60,7 +60,7 @@ class TestTruncation(unittest.TestCase):
         self.assertTrue(out.startswith("A"))
         self.assertTrue(out.endswith("C"))
 
-    def test_large_write_arguments_bounded_with_head_tail(self):
+    def test_large_write_arguments_replaced_with_intact_receipt(self):
         big_html = "<!DOCTYPE html>" + ("X" * 40000) + "</html>"
         res = [
             {
@@ -72,10 +72,9 @@ class TestTruncation(unittest.TestCase):
         out = truncate_tool_results(res)
         self.assertEqual(out[0]["arguments"]["path"], "report.html")
         compacted_content = out[0]["arguments"]["content"]
-        self.assertLess(len(compacted_content), 3500)
-        self.assertTrue(compacted_content.startswith("<!DOCTYPE html>"))
-        self.assertTrue(compacted_content.endswith("</html>"))
-        self.assertIn("argument compacted", compacted_content)
+        self.assertLess(len(compacted_content), 200)
+        self.assertIn("written intact to disk", compacted_content)
+        self.assertIn("40022 chars", compacted_content)
 
 
 class TestSchema(unittest.TestCase):

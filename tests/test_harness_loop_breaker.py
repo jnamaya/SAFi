@@ -583,13 +583,37 @@ class TaskStateBlockTests(unittest.TestCase):
         self.assertEqual(build_task_state_block("hello", None), "")
 
     def test_deliverable_write_allows_immediate_completion(self):
+        from safi_app.core.orchestrator import _is_redundant_post_deliverable_call
+
         results = [
             {"tool_name": "write", "arguments": {"path": ".safi/scratchpad.md", "content": "- [ ] Report"}, "result": "ok"},
-            {"tool_name": "write", "arguments": {"path": "ceres.org_security_report.html", "content": "<html>...</html>"}, "result": "ok"},
+            {
+                "tool_name": "write",
+                "arguments": {"path": "ceres.org_security_report.html", "content": "<omitted>"},
+                "result": "Successfully wrote 37637 characters to ceres.org_security_report.html.",
+            },
         ]
         block = build_task_state_block("Generate security report", results)
         self.assertIn("If all requested deliverables have been written, output your final response now", block)
         self.assertIn("Do NOT ask the user", block)
+
+        # Redundant post-deliverable read/write/bash on the generated report must be caught
+        self.assertTrue(_is_redundant_post_deliverable_call(
+            "read", {"path": "ceres.org_security_report.html", "offset": 236, "limit": 320}, results
+        ))
+        self.assertTrue(_is_redundant_post_deliverable_call(
+            "write", {"path": "ceres.org_security_report.html", "content": "<html>..."}, results
+        ))
+        self.assertTrue(_is_redundant_post_deliverable_call(
+            "bash", {"command": "node --check <(sed -n '/<script>/,/<\\/script>/p' ceres.org_security_report.html)"}, results
+        ))
+        self.assertTrue(_is_redundant_post_deliverable_call(
+            "bash", {"command": "echo \"final check done\""}, results
+        ))
+        # Unrelated file operations remain permitted
+        self.assertFalse(_is_redundant_post_deliverable_call(
+            "read", {"path": "other_file.py"}, results
+        ))
 
 
 if __name__ == "__main__":
