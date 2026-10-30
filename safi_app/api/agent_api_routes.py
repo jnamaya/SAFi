@@ -464,10 +464,18 @@ async def generate_rubric():
         # Wizard drafting runs on the configured backend model.
         model = Config.BACKEND_MODEL
         detected_provider = _detect_provider(model)
+        route_cfg = { "provider": detected_provider, "model": model }
+        if detected_provider == "local" and (
+            model == getattr(Config, "CONSCIENCE_MODEL", None)
+            or "conscience" in (model or "").lower()
+        ):
+            conscience_url = (getattr(Config, "CONSCIENCE_BASE_URL", "") or "").strip()
+            if conscience_url:
+                route_cfg["base_url"] = conscience_url
         
         llm_config = {
             "providers": _build_providers_config(Config),
-            "routes": { "intellect": { "provider": detected_provider, "model": model } }
+            "routes": { "intellect": route_cfg }
         }
         activate_org(get_current_org_id())  # provider allow-list applies to wizard calls too
         provider = LLMProvider(llm_config)
@@ -523,10 +531,18 @@ async def generate_values():
         # Wizard drafting runs on the configured backend model.
         model = Config.BACKEND_MODEL
         detected_provider = _detect_provider(model)
+        route_cfg = { "provider": detected_provider, "model": model }
+        if detected_provider == "local" and (
+            model == getattr(Config, "CONSCIENCE_MODEL", None)
+            or "conscience" in (model or "").lower()
+        ):
+            conscience_url = (getattr(Config, "CONSCIENCE_BASE_URL", "") or "").strip()
+            if conscience_url:
+                route_cfg["base_url"] = conscience_url
         
         llm_config = {
             "providers": _build_providers_config(Config),
-            "routes": { "intellect": { "provider": detected_provider, "model": model } }
+            "routes": { "intellect": route_cfg }
         }
         activate_org(get_current_org_id())  # provider allow-list applies to wizard calls too
         provider = LLMProvider(llm_config)
@@ -590,10 +606,18 @@ async def generate_scope():
 
         model = Config.BACKEND_MODEL
         detected_provider = _detect_provider(model)
+        route_cfg = { "provider": detected_provider, "model": model }
+        if detected_provider == "local" and (
+            model == getattr(Config, "CONSCIENCE_MODEL", None)
+            or "conscience" in (model or "").lower()
+        ):
+            conscience_url = (getattr(Config, "CONSCIENCE_BASE_URL", "") or "").strip()
+            if conscience_url:
+                route_cfg["base_url"] = conscience_url
 
         llm_config = {
             "providers": _build_providers_config(Config),
-            "routes": { "intellect": { "provider": detected_provider, "model": model } }
+            "routes": { "intellect": route_cfg }
         }
         activate_org(get_current_org_id())  # provider allow-list applies to wizard calls too
         provider = LLMProvider(llm_config)

@@ -825,7 +825,11 @@ async def generate_policy_content_endpoint():
         detected_provider = _detect_provider(model)
 
         route_cfg = { "provider": detected_provider, "model": model }
-        if gen_type in _DOCUMENT_TASKS and detected_provider == "local":
+        if detected_provider == "local" and (
+            gen_type in _DOCUMENT_TASKS
+            or model == getattr(Config, "CONSCIENCE_MODEL", None)
+            or "conscience" in (model or "").lower()
+        ):
             conscience_url = (getattr(Config, "CONSCIENCE_BASE_URL", "") or "").strip()
             if conscience_url:
                 route_cfg["base_url"] = conscience_url

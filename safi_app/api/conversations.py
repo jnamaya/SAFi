@@ -2037,24 +2037,38 @@ async def agentic_compress_endpoint():
         f"{full_transcript}\n\nProduce the structured technical summary:"
     )
 
+    # Prefer the dedicated background/summarizer model when a second local
+    # server (SAFI_CONSCIENCE_BASE_URL) is configured so manual compression
+    # runs on the fast MoE server without evicting the Intellect KV cache.
+    primary_compress_model = (
+        Config.BACKEND_MODEL
+        if getattr(Config, "CONSCIENCE_BASE_URL", "") and Config.BACKEND_MODEL
+        else selected_intellect
+    )
+    fallback_compress_model = (
+        selected_intellect
+        if primary_compress_model != selected_intellect
+        else Config.BACKEND_MODEL
+    )
+
     summary = None
     try:
         summary = saf_system._backend_completion(
             system_prompt,
             prompt_content,
-            model=selected_intellect,
+            model=primary_compress_model,
             temperature=None,
             json_mode=False,
         )
     except Exception as exc:
-        current_app.logger.warning(f"Compression completion with {selected_intellect} failed: {exc}")
+        current_app.logger.warning(f"Compression completion with {primary_compress_model} failed: {exc}")
 
-    if (not summary or not summary.strip()) and selected_intellect != Config.BACKEND_MODEL:
+    if (not summary or not summary.strip()) and fallback_compress_model and fallback_compress_model != primary_compress_model:
         try:
             summary = saf_system._backend_completion(
                 system_prompt,
                 prompt_content,
-                model=Config.BACKEND_MODEL,
+                model=fallback_compress_model,
                 temperature=None,
                 json_mode=False,
             )

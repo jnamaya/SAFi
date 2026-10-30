@@ -297,15 +297,17 @@ class BackgroundTasksMixin:
         except Exception as e:
             self.log.warning(f"User profile update thread failed: {e}")
 
-    def _get_backend_sync_client(self, provider: str):
+    def _get_backend_sync_client(self, provider: str, model: str | None = None):
         """
         Lazily builds and caches a synchronous client for the given provider, from
         the same provider config the LLMProvider uses (build_providers_config), so
         background threads can reach every provider the faculties can. The active
         org's own key (backlog 64) wins over the deployment key, same layering as
         the faculty path, so background work bills to the org's key too. Returns
-        None when neither key exists. Cache is keyed (provider, key) so a rotated
-        key gets a fresh client. Gemini is excluded — its google-genai client is
+        None when neither key exists. Cache is keyed (provider, key, base_url) so a
+        rotated key or a dedicated local Conscience/light server endpoint
+        (SAFI_CONSCIENCE_BASE_URL) gets its own client without colliding with the
+        main Intellect server. Gemini is excluded — its google-genai client is
         already sync-capable; the gemini branch below handles its override.
         """
         cache = getattr(self, "_backend_sync_clients", None)
@@ -314,11 +316,20 @@ class BackgroundTasksMixin:
 
         from ..services.model_routing import build_providers_config
         from ..services.deployment_keys import resolve_provider_key
-        details = build_providers_config(self.config).get(provider)
+        details = dict(build_providers_config(self.config).get(provider) or {})
+        if provider == "local":
+            conscience_url = (getattr(self.config, "CONSCIENCE_BASE_URL", "") or "").strip()
+            conscience_model = (getattr(self.config, "CONSCIENCE_MODEL", "") or "").strip()
+            if conscience_url and (
+                (model and conscience_model and model == conscience_model)
+                or "conscience" in (model or "").lower()
+            ):
+                details["base_url"] = conscience_url
         # Same precedence as the faculty path (org key > deployment key > .env),
         # so background work is billed to the same key the turn was.
-        api_key = resolve_provider_key(provider, (details or {}).get("api_key"))
-        cache_key = (provider, api_key)
+        api_key = resolve_provider_key(provider, details.get("api_key"))
+        base_url = details.get("base_url")
+        cache_key = (provider, api_key, base_url)
         if cache_key in cache:
             return cache[cache_key]
 
@@ -327,7 +338,7 @@ class BackgroundTasksMixin:
             try:
                 if details["type"] == "openai":
                     from openai import OpenAI
-                    client = OpenAI(api_key=api_key, base_url=details.get("base_url"))
+                    client = OpenAI(api_key=api_key, base_url=base_url)
                 elif details["type"] == "anthropic":
                     from anthropic import Anthropic
                     client = Anthropic(api_key=api_key)
@@ -430,8 +441,8 @@ class BackgroundTasksMixin:
                         text = text[start:end + 1]
                 return text
 
-            # OpenAI-compatible providers (Groq, OpenAI, DeepSeek, Mistral, Zhipu, Cerebras)
-            client = self._get_backend_sync_client(provider)
+            # OpenAI-compatible providers (Groq, OpenAI, DeepSeek, Mistral, Zhipu, Cerebras, Local)
+            client = self._get_backend_sync_client(provider, model=model)
             if client is None:
                 self.log.warning(f"[Backend] {provider} client unavailable; skipping.")
                 return None

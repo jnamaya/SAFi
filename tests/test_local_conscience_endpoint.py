@@ -232,3 +232,36 @@ def test_no_override_client_when_base_url_matches_the_provider(monkeypatch):
     provider = _bare_provider(_provider_config(base_url="http://127.0.0.1:8081/v1"))
     provider._initialize_clients()
     assert provider._route_override_clients == {}
+
+
+def test_background_sync_client_routes_conscience_model_to_conscience_base_url(monkeypatch):
+    import openai
+    from safi_app.core.orchestrator_mixins.tasks import BackgroundTasksMixin
+    from safi_app.core.services import deployment_keys
+
+    created = []
+
+    class _FakeOpenAI:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+            created.append(kwargs)
+
+    monkeypatch.setattr(openai, "OpenAI", _FakeOpenAI)
+    monkeypatch.setattr(deployment_keys, "resolve_provider_key", lambda _p, k: k)
+
+    class _Host(BackgroundTasksMixin):
+        def __init__(self):
+            self.config = _config(
+                INTELLECT_MODEL="safi-intellect",
+                CONSCIENCE_MODEL="safi-conscience",
+                CONSCIENCE_BASE_URL="http://127.0.0.1:8082/v1",
+                LOCAL_MODEL_API_KEY="local",
+            )
+            self.log = logging.getLogger("test")
+
+    host = _Host()
+    conscience_client = host._get_backend_sync_client("local", model="safi-conscience")
+    intellect_client = host._get_backend_sync_client("local", model="safi-intellect")
+
+    assert conscience_client.kwargs["base_url"] == "http://127.0.0.1:8082/v1"
+    assert intellect_client.kwargs["base_url"] == "http://127.0.0.1:8081/v1"

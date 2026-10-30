@@ -523,12 +523,21 @@ class Config:
     # Falls back to the global defaults above if not set.
     PUBLIC_INTELLECT_MODEL = _faculty_env("SAFI_PUBLIC_INTELLECT_MODEL", INTELLECT_MODEL)
     PUBLIC_CONSCIENCE_MODEL = _faculty_env("SAFI_PUBLIC_CONSCIENCE_MODEL", CONSCIENCE_MODEL)
-    SUMMARIZER_MODEL = _faculty_env("SAFI_SUMMARIZER_MODEL", _faculty_defaults["light"])
+    # When a dedicated local Conscience server (SAFI_CONSCIENCE_BASE_URL) is
+    # configured, default the background "light" tier (summarizer, backend,
+    # note-taker) to CONSCIENCE_MODEL so post-turn background tasks do not
+    # contend with or evict the main Intellect server's KV cache.
+    _light_default = (
+        CONSCIENCE_MODEL
+        if CONSCIENCE_BASE_URL and CONSCIENCE_MODEL.lower().startswith("safi-")
+        else _faculty_defaults["light"]
+    )
+    SUMMARIZER_MODEL = _faculty_env("SAFI_SUMMARIZER_MODEL", _light_default)
     # General-purpose background model (suggestions, etc.).
-    BACKEND_MODEL = _faculty_env("SAFI_BACKEND_MODEL", _faculty_defaults["light"])
+    BACKEND_MODEL = _faculty_env("SAFI_BACKEND_MODEL", _light_default)
     # Dedicated note-taker (agent work-context) model — separate from BACKEND_MODEL so
     # note-taking can run on a different provider than suggestions/summaries.
-    NOTETAKER_MODEL = _faculty_env("SAFI_NOTETAKER_MODEL", _faculty_defaults["light"])
+    NOTETAKER_MODEL = _faculty_env("SAFI_NOTETAKER_MODEL", _light_default)
 
     # --- Agent work-context ("note-taker") memory tuning ---
     # Sampling temperature for the background extraction call (deterministic by default).
