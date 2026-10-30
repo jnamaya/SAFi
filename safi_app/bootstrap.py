@@ -54,7 +54,22 @@ def _seed_demo_policies() -> None:
         if policy_id not in active_ids:
             continue
         try:
-            if db.get_policy(policy_id):
+            existing = db.get_policy(policy_id)
+            if existing:
+                if existing.get("is_demo") and existing.get("org_id") is None:
+                    new_rules = policy.get("will_rules", [])
+                    if existing.get("will_rules") != new_rules:
+                        conn = db.get_db_connection()
+                        cursor = conn.cursor()
+                        try:
+                            cursor.execute(
+                                "UPDATE policies SET will_rules=%s WHERE id=%s",
+                                (json.dumps(new_rules), policy_id),
+                            )
+                            conn.commit()
+                        finally:
+                            cursor.close()
+                            conn.close()
                 continue
             db.create_policy(
                 name=policy["name"],

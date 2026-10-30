@@ -25,6 +25,7 @@ from .core.faculties.utils import _norm_label
 from .core.faculties.will import ALLOWED_GATE_REASONS
 from .core.services.retriever import resolve_rag_format_string
 from .core.policies import runtime_defaults
+from .core.policies.demo.policies import DEMO_AGENT_POLICIES
 from .role_config import ROLE_CONFIG, ROLE_CONFIG_VERSION
 
 log = logging.getLogger(__name__)
@@ -190,9 +191,21 @@ def get_profile(name: str, policy_id: Optional[str] = None) -> Dict[str, Any]:
             policy_name = policy.get("name")
             policy_values = json.loads(json.dumps(policy.get("values_weights", []) or [], default=str))
             _stamp_legacy_gate_reasons(policy_values)
+            policy_will_rules = policy.get("will_rules", [])
+            demo_def = DEMO_AGENT_POLICIES.get(effective_policy_id)
+            if (
+                demo_def
+                and isinstance(demo_def.get("will_rules"), dict)
+                and isinstance(policy_will_rules, dict)
+                and policy.get("is_demo")
+                and not policy.get("org_id")
+            ):
+                merged_demo_rules = dict(policy_will_rules)
+                merged_demo_rules.update(demo_def["will_rules"])
+                policy_will_rules = merged_demo_rules
             governance = {
                 "global_worldview": policy.get("worldview", ""),
-                "global_will_rules": policy.get("will_rules", []),
+                "global_will_rules": policy_will_rules,
                 "global_values": policy_values,
                 "scope_statement": policy_config.get("scope_statement") or None,
             }
