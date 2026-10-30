@@ -60,6 +60,23 @@ class TestTruncation(unittest.TestCase):
         self.assertTrue(out.startswith("A"))
         self.assertTrue(out.endswith("C"))
 
+    def test_large_write_arguments_bounded_with_head_tail(self):
+        big_html = "<!DOCTYPE html>" + ("X" * 40000) + "</html>"
+        res = [
+            {
+                "tool_name": "write",
+                "arguments": {"path": "report.html", "content": big_html},
+                "result": "Successfully wrote 40022 chars to report.html",
+            }
+        ]
+        out = truncate_tool_results(res)
+        self.assertEqual(out[0]["arguments"]["path"], "report.html")
+        compacted_content = out[0]["arguments"]["content"]
+        self.assertLess(len(compacted_content), 3500)
+        self.assertTrue(compacted_content.startswith("<!DOCTYPE html>"))
+        self.assertTrue(compacted_content.endswith("</html>"))
+        self.assertIn("argument compacted", compacted_content)
+
 
 class TestSchema(unittest.TestCase):
     def test_tool_call_batch_normalized(self):

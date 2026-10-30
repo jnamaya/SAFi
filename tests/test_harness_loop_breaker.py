@@ -582,6 +582,15 @@ class TaskStateBlockTests(unittest.TestCase):
         self.assertEqual(build_task_state_block("hello", []), "")
         self.assertEqual(build_task_state_block("hello", None), "")
 
+    def test_deliverable_write_allows_immediate_completion(self):
+        results = [
+            {"tool_name": "write", "arguments": {"path": ".safi/scratchpad.md", "content": "- [ ] Report"}, "result": "ok"},
+            {"tool_name": "write", "arguments": {"path": "ceres.org_security_report.html", "content": "<html>...</html>"}, "result": "ok"},
+        ]
+        block = build_task_state_block("Generate security report", results)
+        self.assertIn("If all requested deliverables have been written, output your final response now", block)
+        self.assertIn("Do NOT ask the user", block)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

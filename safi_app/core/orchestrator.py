@@ -176,18 +176,22 @@ def _render_history(messages, max_chars: int) -> str:
 
 
 def _strip_harness_envelope(text: str) -> str:
-    """Strip workspace metadata, scratchpad headers, and cumulative TOOL RESULT tails
+    """Strip workspace metadata, scratchpad headers/tails, and cumulative TOOL RESULT tails
     from a stored client-owned user message so conversation history only replays the
     actual user request."""
     s = text or ""
+    if "\n\nTOOL RESULT — " in s:
+        s = s.split("\n\nTOOL RESULT — ", 1)[0].rstrip()
+    if "\n\nTOOL RESULT [" in s:
+        s = s.split("\n\nTOOL RESULT [", 1)[0].rstrip()
+    if "\n\n[ACTIVE WORKSPACE SCRATCHPAD" in s:
+        s = s.split("\n\n[ACTIVE WORKSPACE SCRATCHPAD", 1)[0].rstrip()
+    if "\n\n[TASK STATE — " in s:
+        s = s.split("\n\n[TASK STATE — ", 1)[0].rstrip()
     if "[/ACTIVE WORKSPACE SCRATCHPAD]" in s:
         s = s.split("[/ACTIVE WORKSPACE SCRATCHPAD]", 1)[1].lstrip()
     if "[/Client workspace metadata]" in s:
         s = s.split("[/Client workspace metadata]", 1)[1].lstrip()
-    if "\n\nTOOL RESULT — " in s:
-        s = s.split("\n\nTOOL RESULT — ", 1)[0].rstrip()
-    if "\n\n[TASK STATE — " in s:
-        s = s.split("\n\n[TASK STATE — ", 1)[0].rstrip()
     return s.strip()
 
 
@@ -247,22 +251,48 @@ def record_agentic_progress(store, message_id: str, code: str) -> None:
 record_harness_progress = record_agentic_progress
 
 
+DEFAULT_TOOL_ARG_MAX_CHARS = int(os.environ.get("SAFI_TOOL_ARG_MAX_CHARS", "3000"))
+
+
+def _bound_tool_arguments(args: Any, max_chars: int = DEFAULT_TOOL_ARG_MAX_CHARS) -> Any:
+    """Bound oversized string values in tool arguments (e.g. a 43KB HTML `write` payload)
+    using a 75/25 head+tail window so historical tool headers and audit evidence do not
+    bloat the prompt token budget on every subsequent step."""
+    if not isinstance(args, dict) or max_chars <= 0:
+        return args
+    bounded: Dict[str, Any] = {}
+    for k, v in args.items():
+        if isinstance(v, str) and len(v) > max_chars:
+            head = int(max_chars * 0.75)
+            tail = max_chars - head
+            bounded[k] = (
+                v[:head]
+                + f"\n... [argument compacted; showing first {head} and last {tail} of {len(v)} chars]\n"
+                + v[len(v) - tail:]
+            )
+        else:
+            bounded[k] = v
+    return bounded
+
+
 def count_current_turn_tool_repeats(tool_results, tool_name, parameters,
                                     limit=HARNESS_TOOL_REPEAT_LIMIT):
     """Count exact prior results in the current client-owned tool loop only."""
     if not isinstance(tool_results, list):
         return 0
+    norm_params = _bound_tool_arguments(parameters or {})
     summary = (
         f"[tool_call] {tool_name}"
-        f"({json.dumps(parameters or {}, sort_keys=True, default=str)})"
+        f"({json.dumps(norm_params, sort_keys=True, default=str)})"
     )
     seen = 0
     for result in tool_results:
         if not isinstance(result, dict):
             continue
+        norm_args = _bound_tool_arguments(result.get('arguments') or {})
         result_summary = (
             f"[tool_call] {result.get('tool_name', 'unknown')}"
-            f"({json.dumps(result.get('arguments') or {}, sort_keys=True, default=str)})"
+            f"({json.dumps(norm_args, sort_keys=True, default=str)})"
         )
         if result_summary == summary:
             seen += 1
@@ -403,6 +433,7 @@ def build_task_state_block(user_prompt: str, tool_results: Any) -> str:
     touched_scratchpad = False
     consecutive_inspections = 0
     edits_since_scratchpad = 0
+    deliverable_writes = 0
     for item in tool_results:
         if not isinstance(item, dict):
             continue
@@ -422,6 +453,7 @@ def build_task_state_block(user_prompt: str, tool_results: Any) -> str:
                 edits_since_scratchpad = 0
             else:
                 edits_since_scratchpad += 1
+                deliverable_writes += 1
             consecutive_inspections = 0
         else:
             consecutive_inspections += 1
@@ -446,7 +478,7 @@ def build_task_state_block(user_prompt: str, tool_results: Any) -> str:
             status = str(todo.get("status") or "pending").lower()
             mark = "x" if status in ("completed", "done") else (">" if status in ("in_progress", "running") else " ")
             lines.append(f"  [{mark}] {' '.join(task.split())[:120]}")
-    if not touched_scratchpad and consecutive_inspections >= 2:
+    if not touched_scratchpad and consecutive_inspections >= 2 and deliverable_writes == 0:
         lines.append(
             "IMPORTANT: If this is a multi-step task, create or update `.safi/scratchpad.md` NOW "
             "with your `- [ ]` checklist before reading more files, then implement 1-2 items at a time."
@@ -454,19 +486,28 @@ def build_task_state_block(user_prompt: str, tool_results: Any) -> str:
     if touched_scratchpad and edits_since_scratchpad >= 2:
         lines.append(
             f"REMINDER: You have applied {edits_since_scratchpad} code modifications since last updating "
-            "`.safi/scratchpad.md`. Update `.safi/scratchpad.md` via `edit` to mark completed items `[x]` "
-            "and set the next active item `[>]` so the live Plan & Tasks progress stays synchronized."
+            "`.safi/scratchpad.md`. If further implementation steps remain, update `.safi/scratchpad.md` via `edit` "
+            "to mark completed items `[x]` and set the next active item `[>]`; if all required deliverables are "
+            "already written, skip the scratchpad update and provide your final response immediately."
         )
-    if consecutive_inspections >= 4:
+    if consecutive_inspections >= 4 and deliverable_writes == 0:
         lines.append(
             f"WARNING: You have executed {consecutive_inspections} consecutive read/inspection calls "
             "without writing or editing any file. Stop reading ahead across the codebase — write `.safi/scratchpad.md` "
             "or apply `edit`/`write` for your current checklist item immediately."
         )
-    lines.append(
-        "Continue executing the remaining work with tools now. Do NOT ask the user "
-        "for permission to proceed, and do NOT re-read or re-run anything listed above."
-    )
+    if deliverable_writes > 0:
+        lines.append(
+            "If all requested deliverables have been written, output your final response now "
+            "without calling further tools or re-reading generated files. Otherwise, continue "
+            "executing the remaining work with tools now. Do NOT ask the user for permission "
+            "to proceed, and do NOT re-read or re-run anything listed above."
+        )
+    else:
+        lines.append(
+            "Continue executing the remaining work with tools now. Do NOT ask the user "
+            "for permission to proceed, and do NOT re-read or re-run anything listed above."
+        )
     return "\n".join(lines)
 
 
@@ -1221,8 +1262,15 @@ class SAFi:
         self.activate_agent(self.active_profile_name)
 
         now_utc = datetime.now(timezone.utc)
-        current_date_string = _current_date_line(now_utc, user_timezone)
         client_owned = client_owned_tools is not None
+        # Keep the date header byte-stable across tool-loop hops in a client-owned
+        # turn so per-second clock ticks at line 1 of USER QUERY do not invalidate
+        # llama-server's prefix KV cache on every step.
+        date_for_prompt = (
+            now_utc.replace(minute=0, second=0, microsecond=0)
+            if client_owned else now_utc
+        )
+        current_date_string = _current_date_line(date_for_prompt, user_timezone)
         profile_for_turn = dict(self.profile or {})
         original_intellect_profile = getattr(self.intellect_engine, "profile", None)
         original_will_profile = getattr(self.will_gate, "profile", None)
@@ -1305,6 +1353,11 @@ class SAFi:
                 )
 
             # Workspace Scratchpad (.safi/scratchpad.md)
+            # Appended at the tail of prompt_for_intellect (after user_prompt and
+            # tool_history, right alongside task_state_block) so edits to the
+            # scratchpad do not invalidate llama-server's LCP KV cache for the
+            # static user prompt and accumulated tool results.
+            scratchpad_block = ""
             scratchpad_content = context.get("scratchpad")
             if not scratchpad_content:
                 ws_root = context.get("workspace_root")
@@ -1320,11 +1373,10 @@ class SAFi:
                 sp_text = scratchpad_content.strip()
                 if len(sp_text) > max_sp_chars:
                     sp_text = sp_text[:max_sp_chars] + f"\n... [scratchpad truncated to {max_sp_chars} characters]"
-                prompt_for_intellect = (
+                scratchpad_block = (
                     "[ACTIVE WORKSPACE SCRATCHPAD (.safi/scratchpad.md)]\n"
                     + sp_text
-                    + "\n[/ACTIVE WORKSPACE SCRATCHPAD]\n\n"
-                    + prompt_for_intellect
+                    + "\n[/ACTIVE WORKSPACE SCRATCHPAD]"
                 )
 
             def _bound_result(val: Any, max_chars: int = 18_000, is_older: bool = False) -> str:
@@ -1371,7 +1423,7 @@ class SAFi:
                     if any(k in t_path for k in (".md", ".txt", ".rst", "docs/", "proposal", "spec")) or len(pinned_spec_blocks) == 0:
                         header = (
                             f"TOOL RESULT [PINNED INITIAL SPEC READ] — {t_name} called with "
-                            f"{t_args}\n"
+                            f"{_bound_tool_arguments(t_args)}\n"
                         )
                         body = _bound_result(item.get("result", ""), max_chars=10_000, is_older=False)
                         pinned_spec_blocks.append(header + body)
@@ -1381,9 +1433,10 @@ class SAFi:
             for idx, item in enumerate(recent_tool_results):
                 is_older_item = idx < (num_results - full_window)
                 cap = 4_500 if is_older_item else 18_000
+                arg_cap = 1_500 if is_older_item else DEFAULT_TOOL_ARG_MAX_CHARS
                 header = (
                     f"TOOL RESULT — {item.get('tool_name', 'unknown')} called with "
-                    f"{item.get('arguments', {})}\n"
+                    f"{_bound_tool_arguments(item.get('arguments', {}), max_chars=arg_cap)}\n"
                 )
                 body = _bound_result(item.get("result", ""), max_chars=cap, is_older=is_older_item)
                 rendered_tool_blocks.append(header + body)
@@ -1395,9 +1448,10 @@ class SAFi:
                     if total_chars <= total_tool_budget:
                         break
                     item = recent_tool_results[idx]
+                    compact_arg_cap = 800 if idx < (num_results - 4) else 2_000
                     header = (
                         f"TOOL RESULT — {item.get('tool_name', 'unknown')} called with "
-                        f"{item.get('arguments', {})}\n"
+                        f"{_bound_tool_arguments(item.get('arguments', {}), max_chars=compact_arg_cap)}\n"
                     )
                     compact_cap = 1_200 if idx < (num_results - 4) else 8_000
                     new_block = header + _bound_result(item.get("result", ""), max_chars=compact_cap, is_older=True)
@@ -1409,6 +1463,8 @@ class SAFi:
             tool_history = "\n\n".join(rendered_tool_blocks)
             if tool_history:
                 prompt_for_intellect = f"{prompt_for_intellect}\n\n{tool_history}"
+            if scratchpad_block:
+                prompt_for_intellect = f"{prompt_for_intellect}\n\n{scratchpad_block}"
             task_state_block = build_task_state_block(user_prompt, client_tool_results)
             if task_state_block:
                 prompt_for_intellect = f"{prompt_for_intellect}\n\n{task_state_block}"
@@ -1694,7 +1750,7 @@ class SAFi:
         # signature gate is a filter, not a guarantee.
         tool_evidence: List[str] = [
             f"[TOOL RESULT — {item.get('tool_name', 'unknown')} called with "
-            f"{json.dumps(item.get('arguments') or {}, sort_keys=True, default=str)}]\n"
+            f"{json.dumps(_bound_tool_arguments(item.get('arguments') or {}), sort_keys=True, default=str)}]\n"
             f"{item.get('result', '')}"
             for item in client_tool_results
             if str(item.get("tool_name") or item.get("tool") or "") not in HARNESS_META_TOOLS

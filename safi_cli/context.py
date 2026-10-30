@@ -13,10 +13,12 @@ from typing import Any, Dict, List
 logger = logging.getLogger("safi.context")
 
 DEFAULT_MAX_CHARS = int(os.environ.get("SAFI_CLI_RESULT_MAX_CHARS", "8000"))
+DEFAULT_MAX_ARG_CHARS = int(os.environ.get("SAFI_CLI_ARG_MAX_CHARS", "3000"))
 DEFAULT_NEW_KEPT = int(os.environ.get("SAFI_CLI_RESULT_NEW_KEPT", "3"))
 DEFAULT_TOTAL_CAP = int(os.environ.get("SAFI_CLI_RESULT_TOTAL_CAP", "60"))
 
 TRUNC_MARKER = "\n... [result truncated; showing first {head} and last {tail} of {total} chars]"
+ARG_TRUNC_MARKER = "\n... [argument compacted; showing first {head} and last {tail} of {total} chars]\n"
 
 
 def _bound_result(body: str, max_chars: int) -> str:
@@ -27,6 +29,22 @@ def _bound_result(body: str, max_chars: int) -> str:
     tail = max_chars - head
     marker = TRUNC_MARKER.format(head=head, tail=tail, total=len(body))
     return body[:head] + marker + "\n" + body[len(body) - tail:]
+
+
+def _bound_arguments(args: Any, max_chars: int = DEFAULT_MAX_ARG_CHARS) -> Any:
+    """Return a copy of tool arguments with oversized string payloads (e.g. write content) bounded."""
+    if not isinstance(args, dict) or max_chars <= 0:
+        return args
+    bounded_args: Dict[str, Any] = {}
+    for k, v in args.items():
+        if isinstance(v, str) and len(v) > max_chars:
+            head = int(max_chars * 0.75)
+            tail = max_chars - head
+            marker = ARG_TRUNC_MARKER.format(head=head, tail=tail, total=len(v))
+            bounded_args[k] = v[:head] + marker + v[len(v) - tail:]
+        else:
+            bounded_args[k] = v
+    return bounded_args
 
 
 def truncate_tool_results(
@@ -60,6 +78,8 @@ def truncate_tool_results(
         entry = dict(tr)
         if "result_id" not in entry:
             entry["result_id"] = f"tr-{idx}"
+        if "arguments" in entry and isinstance(entry["arguments"], dict):
+            entry["arguments"] = _bound_arguments(entry["arguments"])
         result = entry.get("result")
         if isinstance(result, str):
             if idx >= len(tool_results) - new_kept:

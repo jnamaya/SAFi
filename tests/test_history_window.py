@@ -215,6 +215,17 @@ class ClientOwnedHistoryCleaning(unittest.TestCase):
         ]
         self.assertEqual(_clean_client_owned_history(raw), [])
 
+    def test_strips_tail_appended_scratchpad_and_task_state(self):
+        from safi_app.core.orchestrator import _strip_harness_envelope
+
+        msg = (
+            "[Client workspace metadata]\nClient working directory: /repo\n[/Client workspace metadata]\n\n"
+            "Generate security report\n\n"
+            "[ACTIVE WORKSPACE SCRATCHPAD (.safi/scratchpad.md)]\n- [x] Done\n[/ACTIVE WORKSPACE SCRATCHPAD]\n\n"
+            "[TASK STATE — mid-task progress reminder, not a new user message]\nOriginal request: Generate security report"
+        )
+        self.assertEqual(_strip_harness_envelope(msg), "Generate security report")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
