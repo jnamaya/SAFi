@@ -67,25 +67,152 @@ class MarginedConsole(Console):
 
 console = MarginedConsole()
 
+def _query_terminal_bg(timeout: float = 0.15) -> Optional[str]:
+    """Ask the terminal for its background color via OSC 11. Returns 'rgb:RR/GG/BB' or None."""
+    import select
+    import sys
+    import termios
+
+    try:
+        fd = sys.stdin.fileno()
+    except (OSError, ValueError, AttributeError):
+        return None
+    if not os.isatty(fd):
+        return None
+    try:
+        old_attrs = termios.tcgetattr(fd)
+    except termios.error:
+        return None
+    try:
+        # Put tty in raw mode so the terminal's reply isn't echoed as keystrokes.
+        termios.tcsetattr(fd, termios.TCSANOW, old_attrs[:3] + [termios.CC])  # defensive; replaced below
+    except Exception:
+        return None
+    try:
+        import tty as _tty
+        _tty.setraw(fd)
+        sys.stdout.write("\033]11;?\033\\")
+        sys.stdout.flush()
+        reply = ""
+        while len(reply) < 32:
+            ready, _, _ = select.select([fd], [], [], timeout)
+            if not ready:
+                break
+            ch = os.read(fd, 1).decode("utf-8", "ignore")
+            reply += ch
+            if ch == "\\":
+                break
+        match = re.search(r"rgb:([0-9a-fA-F]+)/([0-9a-fA-F]+)/([0-9a-fA-F]+)", reply)
+        return match.group(0) if match else None
+    except Exception:
+        return None
+    finally:
+        try:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_attrs)
+        except termios.error:
+            pass
+
+
+def _detect_light_background() -> bool:
+    """Decide whether the terminal background is light.
+
+    Priority: SAFI_CLI_THEME env override > OSC 11 query (luminance) > COLORFGBG heuristics.
+    """
+    theme = (os.environ.get("SAFI_CLI_THEME") or "").strip().lower()
+    if theme in ("light", "dark"):
+        return theme == "light"
+
+    bg = _query_terminal_bg()
+    if bg:
+        r, g, b = (int(part, 16) for part in re.findall(r"([0-9a-fA-F]+)", bg.split(":", 1)[1]))
+        # Perceived luminance; > 0.5 is light. Scale 2-digit hex components.
+        scale = 255.0 if max(r, g, b) <= 15 else 65535.0
+        luminance = (0.2126 * r / scale) + (0.7152 * g / scale) + (0.0722 * b / scale)
+        return luminance > 0.5
+
+    colorfgbg = (os.environ.get("COLORFGBG") or "").split(";")
+    if colorfgbg and colorfgbg[-1].isdigit():
+        bg_code = int(colorfgbg[-1])
+        if bg_code in (7, 15) or (bg_code >= 231 and bg_code <= 255 and bg_code not in (234, 235, 236, 237, 238, 239)):
+            # 7/15 = white; 231-255 range maps to very light xterm colors (rough heuristic).
+            return True
+        return False
+    return False  # default: dark, matching the original palette
+
+
+IS_LIGHT_THEME = _detect_light_background()
+
+if IS_LIGHT_THEME:
+    # Light-theme palette: darker, saturated tokens that stay legible on white/paper backgrounds.
+    _PALETTE = {
+        "COLOR_BRAND_600": "#15803d",
+        "COLOR_BRAND_500": "#16a34a",
+        "COLOR_BRAND_400": "#16a34a",
+        "COLOR_BRAND_700": "#14532d",
+        "COLOR_PASS": "#15803d",
+        "COLOR_WARN": "#a16207",
+        "COLOR_FAIL": "#dc2626",
+        "COLOR_PENDING": "#525252",
+        "COLOR_MUTED": "#525252",
+        "COLOR_BORDER": "#a1a1aa",
+        "COLOR_USER_ACCENT": "#0369a1",
+        "COLOR_USER_BORDER": "#1d4ed8",
+        "COLOR_USER_BADGE_BG": "#dbeafe",
+        "COLOR_PROMPT_DIVIDER": "#64748b",
+        "COLOR_PROMPT_BRAND": "#15803d",
+        "COLOR_PROMPT_AGENT": "#475569",
+        "COLOR_PROMPT_CHEVRON": "#0284c7",
+        "COLOR_PROMPT_TEXT": "#1e293b",
+    }
+    _DEFAULT_USER_BG = "#eff6ff"
+else:
+    _PALETTE = {
+        "COLOR_BRAND_600": "#16a34a",
+        "COLOR_BRAND_500": "#22c55e",
+        "COLOR_BRAND_400": "#4ade80",
+        "COLOR_BRAND_700": "#15803d",
+        "COLOR_PASS": "#22c55e",
+        "COLOR_WARN": "#eab308",
+        "COLOR_FAIL": "#ef4444",
+        "COLOR_PENDING": "#a3a3a3",
+        "COLOR_MUTED": "#737373",
+        "COLOR_BORDER": "#27272a",
+        "COLOR_USER_ACCENT": "#38bdf8",
+        "COLOR_USER_BORDER": "#2563eb",
+        "COLOR_USER_BADGE_BG": "#1e3a5f",
+        "COLOR_PROMPT_DIVIDER": "#334155",
+        "COLOR_PROMPT_BRAND": "#4ade80",
+        "COLOR_PROMPT_AGENT": "#94a3b8",
+        "COLOR_PROMPT_CHEVRON": "#38bdf8",
+        "COLOR_PROMPT_TEXT": "#f8fafc",
+    }
+
 # SAFi Brand Tokens
-COLOR_BRAND_600 = "#16a34a"
-COLOR_BRAND_500 = "#22c55e"
-COLOR_BRAND_400 = "#4ade80"
-COLOR_BRAND_700 = "#15803d"
+COLOR_BRAND_600 = _PALETTE["COLOR_BRAND_600"]
+COLOR_BRAND_500 = _PALETTE["COLOR_BRAND_500"]
+COLOR_BRAND_400 = _PALETTE["COLOR_BRAND_400"]
+COLOR_BRAND_700 = _PALETTE["COLOR_BRAND_700"]
 
 # Semantic Verdicts & Scores
-COLOR_PASS = "#22c55e"
-COLOR_WARN = "#eab308"
-COLOR_FAIL = "#ef4444"
-COLOR_PENDING = "#a3a3a3"
-COLOR_MUTED = "#737373"
-COLOR_BORDER = "#27272a"
+COLOR_PASS = _PALETTE["COLOR_PASS"]
+COLOR_WARN = _PALETTE["COLOR_WARN"]
+COLOR_FAIL = _PALETTE["COLOR_FAIL"]
+COLOR_PENDING = _PALETTE["COLOR_PENDING"]
+COLOR_MUTED = _PALETTE["COLOR_MUTED"]
+COLOR_BORDER = _PALETTE["COLOR_BORDER"]
+
+# Prompt tokens (theme-aware)
+COLOR_PROMPT_DIVIDER = _PALETTE["COLOR_PROMPT_DIVIDER"]
+COLOR_PROMPT_BRAND = _PALETTE["COLOR_PROMPT_BRAND"]
+COLOR_PROMPT_AGENT = _PALETTE["COLOR_PROMPT_AGENT"]
+COLOR_PROMPT_CHEVRON = _PALETTE["COLOR_PROMPT_CHEVRON"]
+COLOR_PROMPT_TEXT = _PALETTE["COLOR_PROMPT_TEXT"]
 
 # User Prompt Theme Tokens
-COLOR_USER_ACCENT = "#38bdf8"
-COLOR_USER_BORDER = "#2563eb"
-COLOR_USER_BG = os.environ.get("SAFI_CLI_USER_BG", "#1e293b")
-COLOR_USER_BADGE_BG = "#1e3a5f"
+COLOR_USER_ACCENT = _PALETTE["COLOR_USER_ACCENT"]
+COLOR_USER_BORDER = _PALETTE["COLOR_USER_BORDER"]
+COLOR_USER_BG = os.environ.get("SAFI_CLI_USER_BG") or _PALETTE.get("COLOR_USER_BG", "#1e293b")
+COLOR_USER_BADGE_BG = _PALETTE["COLOR_USER_BADGE_BG"]
 
 SHOW_AUDIT_PANEL = _env_flag("SAFI_CLI_SHOW_AUDIT", True)
 
@@ -273,14 +400,18 @@ def print_banner(
     intellect_model: Optional[str] = None,
 ):
     """Render the official SAFi governed workspace header banner."""
+    # Separate Text objects per line: embedded "\n" inside one Text makes Rich's
+    # Panel width measurement under-count, cropping the right border on middle rows.
     header_text = Text()
     header_text.append("SAFi", style=f"bold {COLOR_BRAND_400}")
-    header_text.append(" (The Self-alignment Framework Interface)\n", style="bold white")
+    header_text.append(" (The Self-alignment Framework Interface)", style="bold")
+    header_text.append("\n")
     header_text.append("The governance engine for AI agents", style="dim")
 
+    # Explicit theme-aware text color; "white" renders light-yellow on light themes.
     info_table = Table.grid(padding=(0, 2))
     info_table.add_column("label", style="dim", justify="right")
-    info_table.add_column("val", style="bold white")
+    info_table.add_column("val", style="bold")
 
     agent_title = agent.replace("_", " ").title()
     info_table.add_row("Agent Name:", f"{agent_title} ({agent})")
@@ -356,11 +487,15 @@ def get_input_prompt(agent: Optional[str] = None, user_name: Optional[str] = Non
     margin = " " * CLI_MARGIN if CLI_MARGIN > 0 else ""
     cols = shutil.get_terminal_size((80, 24)).columns
     divider = "─" * max(20, cols)
+    def _rgb(hex_color: str) -> str:
+        h = hex_color.lstrip("#")
+        return f"{int(h[0:2], 16)};{int(h[2:4], 16)};{int(h[4:6], 16)}"
+
     return (
-        f"\n\001\033[38;2;51;65;85m\002{divider}\001\033[0m\n"
-        f"{margin}\001\033[38;2;74;222;128m\033[1m\002SAFi \001\033[0m"
-        f"\033[38;2;148;163;184m\002[{agent_label}] \001\033[0m"
-        f"\033[38;2;56;189;248m\033[1m\002› \001\033[0m\033[38;2;248;250;252m\002"
+        f"\n\001\033[38;2;{_rgb(COLOR_PROMPT_DIVIDER)}m\002{divider}\001\033[0m\n"
+        f"{margin}\001\033[38;2;{_rgb(COLOR_PROMPT_BRAND)}m\033[1m\002SAFi \001\033[0m"
+        f"\033[38;2;{_rgb(COLOR_PROMPT_AGENT)}m\002[{agent_label}] \001\033[0m"
+        f"\033[38;2;{_rgb(COLOR_PROMPT_CHEVRON)}m\033[1m\002› \001\033[0m\033[38;2;{_rgb(COLOR_PROMPT_TEXT)}m\002"
     )
 
 

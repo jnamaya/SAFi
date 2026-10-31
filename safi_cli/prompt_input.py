@@ -116,19 +116,39 @@ def _prompt_style():
     global _STYLE
     if _STYLE is None:
         _STYLE = Style.from_dict({
-            "safi-divider": "#334155",
-            "safi-badge": "#4ade80 bold",
-            "safi-agent": "#94a3b8",
-            "safi-arrow": "#38bdf8 bold",
-            "": "#f8fafc",
-            "auto-suggest": "#64748b italic",
-            "bottom-toolbar": "noinherit #334155",
-            "completion-menu": "bg:#1e293b #f8fafc",
-            "completion-menu.completion": "bg:#1e293b #cbd5e1",
-            "completion-menu.completion.current": "bg:#334155 #38bdf8 bold",
-            "completion-menu.meta": "bg:#0f172a #94a3b8",
-            "scrollbar.background": "bg:#1e293b",
-            "scrollbar.button": "bg:#475569",
+            "safi-divider": ui.COLOR_PROMPT_DIVIDER,
+            "safi-badge": f"{ui.COLOR_PROMPT_BRAND} bold",
+            "safi-agent": ui.COLOR_PROMPT_AGENT,
+            "safi-arrow": f"{ui.COLOR_PROMPT_CHEVRON} bold",
+            # Typed text deliberately has NO explicit color: it inherits the
+            # terminal's default foreground, which always contrasts with the
+            # terminal's own background. Guessing (near-white on a light
+            # terminal) made typed text invisible; this is detection-proof.
+            "": "",
+            "auto-suggest": f"{ui.COLOR_PROMPT_AGENT} italic",
+            "bottom-toolbar": f"noinherit {ui.COLOR_PROMPT_DIVIDER}",
+            "completion-menu": (
+                "bg:#e2e8f0 #1e293b" if ui.IS_LIGHT_THEME
+                else "bg:#1e293b #f8fafc"
+            ),
+            "completion-menu.completion": (
+                "bg:#e2e8f0 #334155" if ui.IS_LIGHT_THEME
+                else "bg:#1e293b #cbd5e1"
+            ),
+            "completion-menu.completion.current": (
+                "bg:#cbd5e1 #0f172a bold" if ui.IS_LIGHT_THEME
+                else "bg:#334155 #38bdf8 bold"
+            ),
+            "completion-menu.meta": (
+                "bg:#f1f5f9 #475569" if ui.IS_LIGHT_THEME
+                else "bg:#0f172a #94a3b8"
+            ),
+            "scrollbar.background": (
+                "bg:#cbd5e1" if ui.IS_LIGHT_THEME else "bg:#1e293b"
+            ),
+            "scrollbar.button": (
+                "bg:#94a3b8" if ui.IS_LIGHT_THEME else "bg:#475569"
+            ),
         })
     return _STYLE
 
