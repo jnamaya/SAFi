@@ -8,8 +8,10 @@ purge that could otherwise delete the orphans it rebuilds history from.
 """
 import logging
 import os
+import re
+import secrets
 from pathlib import Path
-from flask import Flask, send_file, send_from_directory, jsonify
+from flask import Flask, send_file, send_from_directory, jsonify, g, Response
 from werkzeug.middleware.proxy_fix import ProxyFix
 from .config import Config
 from .persistence import database as db
@@ -22,6 +24,25 @@ for _plugin_names, _plugin_handler in _builtin_plugins.PLUGIN_REGISTRATIONS:
     _register_plugin(_plugin_names, _plugin_handler)
 
 APPLIANCE_CERT_PATH = Path("/etc/ssl/runsafi/appliance.crt")
+
+
+# Plain <script> (no attributes) opens every inline script block in
+# index.html; nonce them at serve time so CSP can drop unsafe-inline.
+_INLINE_SCRIPT_RE = re.compile(r'<script>(?=<!\[CDATA|\s)')
+
+
+def _serve_index_with_nonce(app):
+    # P6: rewrite index.html's inline <script> tags to carry this request's
+    # CSP nonce. Non-static assets (fonts, css, js) skip this path entirely.
+    nonce = getattr(g, 'csp_nonce', None)
+    html = Path(app.static_folder, 'index.html').read_text(encoding='utf-8')
+    if nonce:
+        html = _INLINE_SCRIPT_RE.sub(f'<script nonce="{nonce}">', html)
+    response = Response(html, mimetype='text/html')
+    # The nonce is per-request; a cached copy would carry a stale nonce and
+    # its inline scripts would be blocked, so never let intermediaries store.
+    response.headers['Cache-Control'] = 'no-store'
+    return response
 
 
 def _appliance_certificate_response():
@@ -260,6 +281,14 @@ def create_app():
     app.before_request(resolve_session)
     app.after_request(strip_session_shim)
 
+    @app.before_request
+    def assign_csp_nonce():
+        # P6: per-request CSP nonce. The nonce is injected into index.html's
+        # inline <script>/<style> tags at serve time (see serve() below) and
+        # echoed in the Content-Security-Policy header, so inline script
+        # execution is pinned to markup the server itself produced.
+        g.csp_nonce = secrets.token_urlsafe(16)
+
     @app.after_request
     def add_security_headers(response):
         # HSTS: enforce HTTPS for 1 year; only active when served over TLS
@@ -268,12 +297,22 @@ def create_app():
         response.headers['X-Frame-Options'] = 'DENY'
         response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
         response.headers['Permissions-Policy'] = 'geolocation=(), microphone=(), camera=()'
-        # CSP: unsafe-inline is required by the existing inline scripts/styles in index.html;
-        # remove it once those are refactored to use nonces.
+        # P6: no unsafe-inline. Inline scripts/styles in index.html are
+        # rewritten at serve time to carry the per-request nonce (see
+        # _inject_nonces / serve below), so only server-produced markup
+        # can execute inline.
+        nonce = getattr(g, 'csp_nonce', None)
+        # script-src is the XSS-execution vector, so it gets the strict
+        # treatment: 'self' + per-request nonce, no unsafe-inline. style-src
+        # keeps 'unsafe-inline' deliberately — inline style="" attributes
+        # (static markup + JS-set styles) cannot carry a nonce or hash, and
+        # CSS injection alone cannot execute script under this policy.
+        script_src = f"'self' 'nonce-{nonce}'" if nonce else "'self'"
+        style_src = "'self' 'unsafe-inline' https://fonts.googleapis.com"
         response.headers['Content-Security-Policy'] = (
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline'; "
-            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            f"script-src {script_src}; "
+            f"style-src {style_src}; "
             "font-src 'self' https://fonts.gstatic.com; "
             "img-src 'self' data: https:; "
             "connect-src 'self' https:; "
@@ -300,6 +339,6 @@ def create_app():
         if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
             return send_from_directory(app.static_folder, path)
         else:
-            return send_from_directory(app.static_folder, 'index.html')
+            return _serve_index_with_nonce(app)
 
     return app

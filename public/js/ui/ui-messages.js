@@ -736,7 +736,7 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
                         <span class="text-[9px] font-bold leading-none mt-0.5 text-white/90">${cfg.label}</span>
                     </div>
                     <div class="flex flex-col min-w-0 flex-1">
-                        <span class="text-sm font-medium text-white truncate leading-snug">${fname}</span>
+                        <span class="text-sm font-medium text-white truncate leading-snug">${escapeHtml(fname)}</span>
                         ${sizeStr ? `<span class="text-xs text-white/65 mt-0.5">${sizeStr}</span>` : ''}
                     </div>
                 </div>`;
