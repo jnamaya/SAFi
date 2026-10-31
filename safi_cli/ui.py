@@ -71,7 +71,11 @@ def _query_terminal_bg(timeout: float = 0.15) -> Optional[str]:
     """Ask the terminal for its background color via OSC 11. Returns 'rgb:RR/GG/BB' or None."""
     import select
     import sys
-    import termios
+
+    try:
+        import termios
+    except ImportError:  # Windows: no POSIX tty layer; OSC 11 detection unsupported.
+        return None
 
     try:
         fd = sys.stdin.fileno()
@@ -219,6 +223,13 @@ def _syntax(code: str, lexer: str, **kwargs) -> "Syntax":
     kwargs.setdefault("theme", SYNTAX_THEME)
     if IS_LIGHT_THEME:
         kwargs.setdefault("background_color", "default")
+    # Ensure at least one blank line above/below the code so blocks get
+    # vertical breathing room, whatever horizontal padding callers choose.
+    pad = kwargs.get("padding", (0, 1))
+    try:
+        kwargs["padding"] = (1, pad[1] if len(pad) > 1 else pad[0])
+    except TypeError:
+        kwargs["padding"] = (1, 1)
     return Syntax(code, lexer, **kwargs)
 
 # User Prompt Theme Tokens
@@ -267,7 +278,7 @@ def print_governance_step(step_text: str, elapsed: float) -> None:
         return
     step_line = Text("  ")
     step_line.append("✔ ", style=f"bold {COLOR_PASS}")
-    step_line.append(clean_step, style="dim white")
+    step_line.append(clean_step, style="dim")
     step_line.append(f" ({elapsed:.1f}s)", style="dim")
     console.print(step_line)
 
@@ -803,7 +814,7 @@ def build_telemetry_panel(
     sess_cost = _session_intellect["cost"]
     sess_cost_str = f" (${sess_cost:.4f})" if sess_cost >= 0.0001 else (" (<$0.0001)" if sess_cost > 0 else "")
 
-    t_intellect = Text("Model: ", style="bold white")
+    t_intellect = Text("Model: ", style="bold")
     t_intellect.append(str(effective_i_model), style="dim")
     stats_content.append(t_intellect)
 
@@ -831,7 +842,7 @@ def build_telemetry_panel(
     c_sess_cost = _session_conscience["cost"]
     c_sess_cost_str = f" (${c_sess_cost:.4f})" if c_sess_cost >= 0.0001 else (" (<$0.0001)" if c_sess_cost > 0 else "")
 
-    t_conscience = Text("Auditor: ", style="bold white")
+    t_conscience = Text("Auditor: ", style="bold")
     t_conscience.append(str(effective_c_model), style="dim")
     stats_content.append(t_conscience)
     if c_in or c_out or _session_conscience["in"]:
@@ -890,7 +901,7 @@ def build_audit_footer(result: Dict[str, Any]) -> Optional[Text]:
     line.append(f"{tier_icon} ", style=f"bold {tier_color}")
     line.append("Audit ", style="dim")
     if score_str:
-        line.append(score_str, style="bold white")
+        line.append(score_str, style="bold")
         if tier_label:
             line.append(f" · {tier_label}", style=f"bold {tier_color}")
     tally = []
@@ -930,7 +941,7 @@ def build_session_usage_panel() -> Panel:
 
     body = Table.grid(padding=(0, 2))
     body.add_column("label", style="dim", justify="right")
-    body.add_column("val", style="bold white")
+    body.add_column("val", style="bold")
     for label, val in rows:
         body.add_row(label + ":", val)
     body.add_row(
@@ -1082,7 +1093,7 @@ def print_tool_proposal(name: str, args: Dict[str, Any], res: Dict[str, Any]):
     title_line = Text()
     title_line.append("● SAFi ", style=f"bold {COLOR_BRAND_400}")
     title_line.append("-> ", style="dim")
-    title_line.append(f"{name}", style="bold white")
+    title_line.append(f"{name}", style="bold")
     if is_approved:
         if will_reason:
             clean_reason = will_reason.rstrip(" .")
@@ -1115,7 +1126,7 @@ def print_tool_proposal(name: str, args: Dict[str, Any], res: Dict[str, Any]):
     elif name in ("edit", "write"):
         path = args.get("path", "")
         file_line = Text("  File: ", style="dim")
-        file_line.append(path, style="bold white")
+        file_line.append(path, style="bold")
         items.append(file_line)
         if name == "edit":
             target = args.get("target", "")
@@ -1197,7 +1208,7 @@ def prompt_user_permission(name: str, args: Dict[str, Any], auto_approve: bool =
 
 def prompt_question(question: str, options: Optional[List[str]] = None) -> str:
     """Render an interactive question card for developer clarification and capture input."""
-    card_items = [Text(f"❓ {question}", style="bold white")]
+    card_items = [Text(f"❓ {question}", style="bold")]
 
     if options and isinstance(options, list):
         card_items.append(Text("\nOptions:", style="dim cyan"))
@@ -1249,7 +1260,7 @@ def build_plan_panel(todos: Optional[List[Dict[str, Any]]] = None) -> Optional[P
     prog_text = Text()
     prog_text.append("Progress: ", style="dim")
     prog_text.append(f"[{bar_str}] ", style=f"bold {COLOR_BRAND_400}")
-    prog_text.append(f"{pct}% ", style="bold white")
+    prog_text.append(f"{pct}% ", style="bold")
     prog_text.append(f"({completed}/{total} completed)\n", style="dim")
     items.append(prog_text)
 
@@ -1263,7 +1274,7 @@ def build_plan_panel(todos: Optional[List[Dict[str, Any]]] = None) -> Optional[P
         status = (item.get("status") or "pending").lower()
         if status in ("completed", "done"):
             badge = Text("  ✔", style=f"bold {COLOR_PASS}")
-            text = Text(task_text, style="dim white")
+            text = Text(task_text, style="dim")
         elif status in ("in_progress", "running"):
             badge = Text("▶ ⏳", style=f"bold {COLOR_WARN}")
             text = Text(task_text, style="bold #38bdf8")
@@ -1272,7 +1283,7 @@ def build_plan_panel(todos: Optional[List[Dict[str, Any]]] = None) -> Optional[P
             text = Text(task_text, style="bold red")
         else:
             badge = Text("  ○", style="dim")
-            text = Text(task_text, style="white")
+            text = Text(task_text, style="")
 
         grid.add_row(badge, text)
 
@@ -1309,7 +1320,7 @@ def print_workspace_step(
     else:
         title_line.append("[⛔ BLOCKED] ", style=f"bold {COLOR_FAIL}")
     title_line.append("-> ", style="dim")
-    title_line.append(f"{tool_name}", style="bold white")
+    title_line.append(f"{tool_name}", style="bold")
     will_reason = proposal_res.get("willReason")
     if will_reason:
         title_line.append(f"  # {will_reason}", style="dim")
@@ -1328,7 +1339,7 @@ def print_workspace_step(
     elif tool_name in ("edit", "write"):
         path = args.get("path", "")
         file_line = Text("  File: ", style="dim")
-        file_line.append(path, style="bold white")
+        file_line.append(path, style="bold")
         ws_items.append(file_line)
     elif tool_name not in ("todowrite", "todo_write"):
         args_str = _summarize_args(tool_name, args)
@@ -1350,7 +1361,7 @@ def print_workspace_step(
     res_line = Text("  ")
     res_line.append(f"↳ {icon} ", style=f"bold {icon_style}")
     res_line.append(f"{action_text} ", style="dim")
-    res_line.append(f"{tool_name}", style="bold white")
+    res_line.append(f"{tool_name}", style="bold")
     res_line.append(f": {first_line} ({line_count} line{'s' if line_count != 1 else ''})", style="dim")
     ws_items.append(res_line)
 
@@ -1407,7 +1418,7 @@ def print_full_tool_result(name: Optional[str] = None) -> None:
             console.print(f"[{COLOR_WARN}]No recent tool results to show.[/]")
         return
     header = Text()
-    header.append(f"Full {entry['tool']} result ", style="bold white")
+    header.append(f"Full {entry['tool']} result ", style="bold")
     header.append(f"({len(entry['result'].splitlines())} lines)", style="dim")
     body_text = Text(entry["result"])
     if getattr(console, "is_terminal", False):
@@ -1437,7 +1448,7 @@ def print_tool_result_summary(name: str, result: str, show_error_detail: bool = 
     line = Text("  ")
     line.append(f"↳ {icon} ", style=f"bold {icon_style}")
     line.append(f"{action_text} ", style="dim")
-    line.append(f"{name}", style="bold white")
+    line.append(f"{name}", style="bold")
     line.append(f": {first_line} ({line_count} line{'s' if line_count != 1 else ''})", style="dim")
 
     if _active_todos and name not in ("todowrite", "todo_write"):
@@ -1483,7 +1494,7 @@ def print_subagent_step(role: str, tool_name: str, args: Dict[str, Any], result:
 
     line = Text("    ↳ ", style="dim #38bdf8")
     line.append(f"({role}) ", style="dim")
-    line.append(f"{tool_name}", style="bold white")
+    line.append(f"{tool_name}", style="bold")
     line.append(f"({args_summary}) -> ", style="dim")
     line.append(first_line, style="dim")
     console.print(line)
@@ -1547,7 +1558,7 @@ def print_audit_details(result: Dict[str, Any]):
 
     policy_title = result.get("policyName") or result.get("policyId") or "Domain Policy"
     table = Table(title=f"Detailed Governance Audit: {policy_title}", box=box.ROUNDED, border_style=COLOR_BRAND_600)
-    table.add_column("Rubric / Value", style="bold white")
+    table.add_column("Rubric / Value", style="bold")
     table.add_column("Score", justify="right")
     table.add_column("Status", justify="center")
     table.add_column("Rationale", style="dim")
