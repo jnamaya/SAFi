@@ -16,9 +16,11 @@ from urllib.parse import urlencode
 
 import pytest
 
-from test_appliance_setup_wizard import FakeSetup, _hw, safi_local, wizard  # noqa: F401
-
 REPO = Path(__file__).resolve().parents[1]
+if not (REPO / "deploy/iso/config/includes.chroot/usr/local/sbin").is_dir():
+    pytest.skip("appliance ISO build tree (deploy/iso) is not present", allow_module_level=True)
+
+from test_appliance_setup_wizard import FakeSetup, _hw, safi_local, wizard  # noqa: F401
 CLOUD_KEYS = ("GROQ_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
               "GEMINI_API_KEY", "MISTRAL_API_KEY", "DEEPSEEK_API_KEY",
               "CEREBRAS_API_KEY", "ZHIPU_API_KEY")

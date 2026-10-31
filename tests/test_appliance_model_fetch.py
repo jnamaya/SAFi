@@ -19,6 +19,8 @@ STAGE_DIR = (
     Path(__file__).resolve().parents[1]
     / "deploy/iso/config/includes.chroot/usr/local/sbin"
 )
+if not STAGE_DIR.is_dir():
+    pytest.skip("appliance ISO build tree (deploy/iso) is not present", allow_module_level=True)
 SBIN_DIR = Path(__file__).resolve().parents[1] / "deploy/iso/config/includes.chroot/usr/local/sbin"
 FETCH_PATH = STAGE_DIR / "safi-model-fetch"
 CATALOGUE = STAGE_DIR / "safi-appliance-stage/local-models.json"

@@ -1,2 +1,0 @@
-KERNEL=="renderD*", GROUP="render", MODE="0660"
-KERNEL=="card*", GROUP="video", MODE="0660"

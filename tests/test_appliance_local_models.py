@@ -14,6 +14,8 @@ STAGE_DIR = (
     Path(__file__).resolve().parents[1]
     / "deploy/iso/config/includes.chroot/usr/local/sbin/safi-appliance-stage"
 )
+if not STAGE_DIR.is_dir():
+    pytest.skip("appliance ISO build tree (deploy/iso) is not present", allow_module_level=True)
 
 
 def _load(name: str, filename: str):

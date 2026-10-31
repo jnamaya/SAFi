@@ -16,6 +16,8 @@ from flask import Flask
 
 ROOT = Path(__file__).resolve().parents[1]
 SBIN = ROOT / "deploy/iso/config/includes.chroot/usr/local/sbin"
+if not SBIN.is_dir():
+    pytest.skip("appliance ISO build tree (deploy/iso) is not present", allow_module_level=True)
 WIZARD_PATH = SBIN / "safi-browser-setup.py"
 LOCAL_MODULE = SBIN / "safi-appliance-stage/safi_local.py"
 os.environ["SAFI_LOCAL_MODULE"] = str(LOCAL_MODULE)
