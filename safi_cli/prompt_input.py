@@ -108,8 +108,41 @@ _STYLE = None
 
 def _get_divider(cols: Optional[int] = None) -> str:
     if cols is None:
-        cols = shutil.get_terminal_size((80, 24)).columns
+        cols = _terminal_columns()
     return "─" * max(20, cols)
+
+
+def _terminal_columns() -> int:
+    """Best-available terminal width, preferring prompt_toolkit's live app.
+
+    Width sources in priority order:
+    1. The running prompt_toolkit Application's output size. This is the
+       *exact* width prompt_toolkit lays the prompt out with, so dividers
+       built from it can never disagree with the render (the ioctl on
+       sys.__stdout__ can, e.g. when pt renders through a wrapped/alternate
+       output, or the width was captured before a pane resize).
+    2. ioctl on the real stdout TTY (ignores stale COLUMNS).
+    3. ioctl on the controlling terminal.
+    4. shutil fallback (COLUMNS env, then 80).
+    """
+    try:
+        from prompt_toolkit.application import get_app
+
+        app = get_app()
+        if app is not None and app.is_running:
+            out_cols = app.output.get_size().columns
+            if out_cols and out_cols > 0:
+                return out_cols
+    except Exception:
+        pass
+    try:
+        return os.get_terminal_size(sys.__stdout__.fileno()).columns
+    except (OSError, ValueError, AttributeError):
+        pass
+    try:
+        return os.get_terminal_size().columns
+    except (OSError, ValueError):
+        return shutil.get_terminal_size((80, 24)).columns
 
 
 def _prompt_style():
@@ -355,9 +388,11 @@ def _read_prompt_toolkit(
         session.completer = _CallbackCompleter(completions_fn) if completions_fn else None
         _SESSION_COMPLETER_FN = completions_fn
     try:
-        return session.prompt(
-            _prompt_text(agent_label),
-        )
+        # Pass a callable so the prompt (and its divider) is built at RENDER
+        # time, when prompt_toolkit's Application is running. _terminal_columns()
+        # then reads app.output.get_size() — the exact width pt lays out with —
+        # instead of a pre-render ioctl that can disagree with the render.
+        return session.prompt(lambda: _prompt_text(agent_label))
     except EOFError:
         return None
 
