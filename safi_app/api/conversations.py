@@ -489,23 +489,29 @@ async def public_process_prompt_endpoint():
 
     incoming_convo_id = data['conversation_id']
 
-    # Optional agent selector for the embedded chatbot. The caller is an
-    # anonymous visitor, so the value is checked against a whitelist before it
-    # ever reaches get_profile — an unknown or unrequested agent is a 400, not
-    # a 500, and a fetch of an arbitrary agent (e.g. one pointed at a customer's
-    # knowledge base) is impossible.
-    agent_key = (data.get('agent') or DEFAULT_PUBLIC_CHATBOT_AGENT).strip().lower()
-    if agent_key not in PUBLIC_CHATBOT_AGENTS:
-        return jsonify({
-            "error": f"Unknown chatbot agent '{agent_key}'. Available: "
-                     f"{', '.join(PUBLIC_CHATBOT_AGENTS)}.",
-            "code": "UNKNOWN_AGENT",
-        }), 400
-    if agent_key not in AGENTS:
-        return jsonify({
-            "error": f"Chatbot agent '{agent_key}' is not enabled on this deployment.",
-            "code": "AGENT_DISABLED",
-        }), 400
+    # Internal-key gate (P3): the WordPress widget's browser never holds a key;
+    # the Apache proxy on each public origin injects X-Internal-Key. Warn mode
+    # (default) logs and serves so proxies can deploy first; enforcement is a
+    # single env flip (SAFI_ENFORCE_INTERNAL_KEY=1).
+    from .keys import require_internal_key, per_minute_allowed
+    if not require_internal_key():
+        return jsonify({"error": "Unauthorized."}), 401
+
+    # Per-minute throttle keyed on IP + key-present (P3), ahead of any LLM work.
+    throttle_bucket = "pub:{}:{}".format(
+        request.remote_addr or "-",
+        "k" if request.headers.get("X-Internal-Key") else "n")
+    if not per_minute_allowed(throttle_bucket):
+        return jsonify({"error": "Rate limit exceeded. Try again shortly."}), 429
+
+    # Message-size cap (P3): 8 KB keeps a single chat turn bounded; anything
+    # larger is rejected before model routing, not mid-stream.
+    message = data['message']
+    if not isinstance(message, str) or not message.strip():
+        return jsonify({"error": "'message' must be a non-empty string."}), 400
+    if len(message.encode('utf-8')) > 8192:
+        return jsonify({"error": "'message' exceeds the 8 KB limit.",
+                        "code": "MESSAGE_TOO_LARGE"}), 413
 
     # Reject an id the schema cannot store, rather than letting it reach
     # `INSERT INTO conversations` and come back as an HTTP 500. Every
@@ -519,6 +525,30 @@ async def public_process_prompt_endpoint():
             "error": f"'conversation_id' must be at most "
                      f"{db.CONVERSATION_ID_MAX_LEN} characters.",
             "code": "CONVERSATION_ID_TOO_LONG",
+        }), 400
+    # Format check (P3): every conversation id in this system is a UUID; a
+    # non-UUID string is a malformed or hostile payload, not a conversation.
+    try:
+        uuid.UUID(incoming_convo_id)
+    except (ValueError, AttributeError):
+        return jsonify({"error": "'conversation_id' must be a UUID.",
+                        "code": "CONVERSATION_ID_INVALID"}), 400
+
+    # Optional agent selector for the embedded chatbot. The caller is an
+    # anonymous visitor, so the value is checked against a whitelist before it
+    # ever reaches get_profile — an unknown or unrequested agent is a 400, not
+    # a 500, and a fetch of an arbitrary agent is impossible.
+    agent_key = (data.get('agent') or DEFAULT_PUBLIC_CHATBOT_AGENT).strip().lower()
+    if agent_key not in PUBLIC_CHATBOT_AGENTS:
+        return jsonify({
+            "error": f"Unknown chatbot agent '{agent_key}'. Available: "
+                     f"{', '.join(PUBLIC_CHATBOT_AGENTS)}.",
+            "code": "UNKNOWN_AGENT",
+        }), 400
+    if agent_key not in AGENTS:
+        return jsonify({
+            "error": f"Chatbot agent '{agent_key}' is not enabled on this deployment.",
+            "code": "AGENT_DISABLED",
         }), 400
 
     # Stable, namespaced user identity so public users don't collide with real accounts

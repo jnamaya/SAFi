@@ -387,6 +387,18 @@ class Config:
 
     DAILY_PROMPT_LIMIT = int(os.environ.get("SAFI_DAILY_PROMPT_LIMIT", "0"))
 
+    # --- Internal-key auth for public-facing endpoints (P3 remediation) ----
+    # Comma-separated shared secrets, injected server-side by the Apache
+    # proxies (runsafi.com, safi.selfalignmentframework.com) and by safi-cli /
+    # the Teams & Telegram bots. Never shipped to browser JS, never in code.
+    SAFI_INTERNAL_KEYS = [k.strip() for k in
+                          os.environ.get("SAFI_INTERNAL_KEYS", "").split(",")
+                          if k.strip()]
+    # 0/unset = warn mode (missing key logged, request served) so proxies can
+    # be deployed first; 1 = reject missing/invalid key with 401.
+    SAFI_ENFORCE_INTERNAL_KEY = os.environ.get(
+        "SAFI_ENFORCE_INTERNAL_KEY", "0").strip() in ("1", "true", "yes")
+
     # --- Tenancy mode --------------------------------------------------------
     #
     # single (default) — this deployment serves exactly one organization.

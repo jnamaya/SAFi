@@ -74,6 +74,10 @@ class SafiTeamsBot:
                 "X-API-KEY": SAFI_BOT_SECRET,
                 "Content-Type": "application/json"
             }
+            # Internal key for keyed endpoints (P3): env-only, never committed.
+            _ik = os.environ.get("SAFI_INTERNAL_KEY", "").strip()
+            if _ik:
+                headers["X-Internal-Key"] = _ik
 
             # 4. Show typing indicator
             await turn_context.send_activity(Activity(type=ActivityTypes.typing))

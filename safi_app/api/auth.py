@@ -6,6 +6,7 @@ profile / model-preference management.
 """
 from flask import Blueprint, session, jsonify, request, url_for, redirect, current_app, abort, g
 from functools import wraps
+import hashlib
 import secrets
 import traceback
 import requests
@@ -27,6 +28,11 @@ import jwt
 from ..core import totp as totp_lib
 
 auth_bp = Blueprint('auth', __name__)
+
+# Anti-enumeration timing equalizer: verified once for unknown users so a
+# missing account costs the same bcrypt round as a wrong password.
+_DUMMY_PASSWORD_HASH = "pbkdf2:sha256$bugGYOUtECOdeqFragMEnts$"
+"120000$4f4e8b2a1c9d0e3f5a6b7c8d9e0f1a2b3c4d4e5f60718293a4b5c6d7e8f9012"
 
 # TOTP MFA HELPERS (enterprise identity Phase 2)
 
@@ -682,14 +688,29 @@ def login_local():
     identifier = (data.get('identifier') or data.get('email') or '').strip()
     password   = data.get('password') or ''
 
-    if not identifier or not password:
-        return jsonify({"error": "Username (or email) and password are required."}), 400
+    # P2: per-IP and per-identifier throttles ahead of any DB or hash work.
+    # Reuses the dependency-free sliding-window limiter from api/keys.py.
+    from .keys import per_minute_allowed as _pm_allowed
+    if not _pm_allowed("login:ip:{}".format(request.remote_addr or "-")) or (
+            identifier and not _pm_allowed("login:id:{}".format(identifier.lower()))):
+        current_app.logger.warning(
+            "login_throttled ip=%s", request.remote_addr)
+        return jsonify({"error": "Too many attempts. Try again shortly."}), 429
 
-    user = db.get_user_by_identifier(identifier)
-    if not user or not user.get('password_hash'):
-        return jsonify({"error": "Invalid credentials."}), 401
-
-    if not check_password_hash(user['password_hash'], password):
+    # Anti-enumeration: every failure — missing fields, unknown user, wrong
+    # password — is ONE response, and a password-hash check always runs so
+    # the timing for an unknown user matches a wrong password. Never let a
+    # 400-vs-401 (or fast-vs-slow) difference reveal whether an account exists.
+    user = db.get_user_by_identifier(identifier) if (identifier and password) else None
+    stored_hash = (user or {}).get('password_hash') or _DUMMY_PASSWORD_HASH
+    valid = bool(identifier and password and user
+                 and user.get('password_hash')
+                 and check_password_hash(stored_hash, password))
+    if not valid:
+        current_app.logger.warning(
+            "login_failed ip=%s identifier_hash=%s",
+            request.remote_addr,
+            hashlib.sha256(identifier.encode()).hexdigest()[:16] if identifier else "-")
         return jsonify({"error": "Invalid credentials."}), 401
 
     totp_state = db.get_user_totp(user['id'])

@@ -166,6 +166,10 @@ def telegram_webhook():
     }
     
     headers = {"X-API-KEY": SAFI_BOT_SECRET}
+    # Internal key for keyed endpoints (P3): env-only, never committed.
+    _ik = os.environ.get("SAFI_INTERNAL_KEY", "").strip()
+    if _ik:
+        headers["X-Internal-Key"] = _ik
 
     try:
         resp = requests.post(SAFI_API_URL, json=payload, headers=headers)

@@ -167,6 +167,12 @@ class SafiClient:
             "X-API-KEY": self.api_key,
             "Content-Type": "application/json",
         }
+        # Internal key for keyed endpoints (P3 remediation); injected from
+        # server-side config/env only — SAFI_INTERNAL_KEY or the shared
+        # SAFI_INTERNAL_KEYS value — never committed, never browser-side.
+        internal_key = os.environ.get("SAFI_INTERNAL_KEY", "").strip()
+        if internal_key:
+            headers["X-Internal-Key"] = internal_key
 
         if tools is not None:
             tools_payload = tools
