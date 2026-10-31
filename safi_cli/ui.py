@@ -208,6 +208,19 @@ COLOR_PROMPT_AGENT = _PALETTE["COLOR_PROMPT_AGENT"]
 COLOR_PROMPT_CHEVRON = _PALETTE["COLOR_PROMPT_CHEVRON"]
 COLOR_PROMPT_TEXT = _PALETTE["COLOR_PROMPT_TEXT"]
 
+# Pygments theme for Syntax code blocks: dark editor theme on dark terminals,
+# terminal-default (no painted background) on light terminals.
+SYNTAX_THEME = "default" if IS_LIGHT_THEME else "monokai"
+
+
+def _syntax(code: str, lexer: str, **kwargs) -> "Syntax":
+    """Build a theme-aware Syntax block. On light themes the background is left
+    as the terminal default instead of monokai's dark canvas."""
+    kwargs.setdefault("theme", SYNTAX_THEME)
+    if IS_LIGHT_THEME:
+        kwargs.setdefault("background_color", "default")
+    return Syntax(code, lexer, **kwargs)
+
 # User Prompt Theme Tokens
 COLOR_USER_ACCENT = _PALETTE["COLOR_USER_ACCENT"]
 COLOR_USER_BORDER = _PALETTE["COLOR_USER_BORDER"]
@@ -283,8 +296,9 @@ def build_progress_line(
     if len(label) > text_width:
         label = label[: text_width - 1].rstrip() + "…"
 
+    # No explicit text color: inherit terminal foreground (readable on any theme).
     return (
-        f"[bold {COLOR_BRAND_400}]SAFi[/] [dim]·[/] [white]{escape(label)}[/] "
+        f"[bold {COLOR_BRAND_400}]SAFi[/] [dim]·[/] {escape(label)} "
         f"[dim]·[/] [dim]{elapsed:.1f}s[/]"
     )
 
@@ -363,7 +377,7 @@ def build_tool_status_line(
                 clean_out = clean_out[: remaining_for_out - 1].rstrip() + "…"
 
         return (
-            f"[bold {COLOR_BRAND_400}]SAFi[/] [dim]·[/] [white]{escape(label)}[/] "
+            f"[bold {COLOR_BRAND_400}]SAFi[/] [dim]·[/] {escape(label)} "
             f"[dim]·[/] [dim]{escape(clean_out)}[/] [dim]·[/] [dim]{elapsed:.1f}s[/]"
         )
 
@@ -371,7 +385,7 @@ def build_tool_status_line(
         label = label[: available_budget - 1].rstrip() + "…"
 
     return (
-        f"[bold {COLOR_BRAND_400}]SAFi[/] [dim]·[/] [white]{escape(label)}[/] "
+        f"[bold {COLOR_BRAND_400}]SAFi[/] [dim]·[/] {escape(label)} "
         f"[dim]·[/] [dim]{elapsed:.1f}s[/]"
     )
 
@@ -1097,15 +1111,7 @@ def print_tool_proposal(name: str, args: Dict[str, Any], res: Dict[str, Any]):
         cmd = _cap_lines(args.get("command", ""), limit=MAX_PREVIEW_LINES)
         if len(cmd.splitlines()) > MAX_PREVIEW_LINES:
             cmd += "\n… [command preview capped]"
-        syntax = Syntax(
-            cmd,
-            "bash",
-            theme="monokai",
-            line_numbers=False,
-            word_wrap=True,
-            padding=(0, 1),
-        )
-        items.append(syntax)
+        items.append(_syntax(cmd, "bash", line_numbers=False, word_wrap=True, padding=(0, 1)))
     elif name in ("edit", "write"):
         path = args.get("path", "")
         file_line = Text("  File: ", style="dim")
@@ -1128,26 +1134,12 @@ def print_tool_proposal(name: str, args: Dict[str, Any], res: Dict[str, Any]):
             adds = sum(1 for l in "".join(diff_lines).splitlines() if l.startswith("+") and not l.startswith("+++"))
             dels = sum(1 for l in "".join(diff_lines).splitlines() if l.startswith("-") and not l.startswith("---"))
             _add_diff_stats_line(items, adds, dels)
-            syntax = Syntax(
-                diff_text if diff_text else replacement,
-                "diff",
-                theme="monokai",
-                word_wrap=True,
-                padding=(0, 1),
-            )
-            items.append(syntax)
+            items.append(_syntax(diff_text if diff_text else replacement, "diff", word_wrap=True, padding=(0, 1)))
         else:
             code = args.get("content", "")
             preview = code[:600] + ("\n... [truncated]" if len(code) > 600 else "")
             lexer = _detect_lexer(path)
-            syntax = Syntax(
-                preview,
-                lexer,
-                theme="monokai",
-                word_wrap=True,
-                padding=(0, 1),
-            )
-            items.append(syntax)
+            items.append(_syntax(preview, lexer, word_wrap=True, padding=(0, 1)))
     else:
         args_str = _summarize_args(name, args)
         if len(args_str) > 120:
@@ -1332,8 +1324,7 @@ def print_workspace_step(
 
     if tool_name == "bash":
         cmd = _cap_lines(args.get("command", ""), limit=MAX_PREVIEW_LINES)
-        syntax = Syntax(cmd, "bash", theme="monokai", line_numbers=False, word_wrap=True, padding=(0, 1))
-        ws_items.append(syntax)
+        ws_items.append(_syntax(cmd, "bash", line_numbers=False, word_wrap=True, padding=(0, 1)))
     elif tool_name in ("edit", "write"):
         path = args.get("path", "")
         file_line = Text("  File: ", style="dim")
