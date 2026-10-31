@@ -1421,8 +1421,25 @@ def get_me():
                     db.update_user_org_and_role(user_id, user_details['org_id'], 'admin')
                     user_details['role'] = 'admin' # Update local dict
 
-        return jsonify({"ok": True, "user": user_details})
-        
+        # --- P5: slim the payload to an explicit whitelist. ---
+        # get_user_details is SELECT * and the profile resolver attaches the
+        # FULL compiled role config (worldview, values, will_rules, Phase-0
+        # injection signatures, tool allow-list) — reconnaissance material
+        # for prompt-injection targeting. No client consumes
+        # active_profile_details (the UI loads profiles via
+        # fetchAvailableProfiles), and everything else the frontend/tests
+        # read is enumerated below. Anything not listed never leaves the
+        # server.
+        _ME_FIELDS = (
+            'id', 'username', 'name', 'email', 'picture', 'avatar',
+            'role', 'org_id', 'org_name', 'is_org_owner',
+            'active_profile', 'intellect_model', 'conscience_model',
+            'offline_enabled', 'mfa_setup_required',
+        )
+        slim = {k: user_details[k] for k in _ME_FIELDS if k in user_details}
+
+        return jsonify({"ok": True, "user": slim})
+
     except Exception as e:
         current_app.logger.error(f"/api/me error: {str(e)}", exc_info=True)
         return jsonify({'ok': False, 'error': 'Server error'}), 500
