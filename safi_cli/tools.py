@@ -560,7 +560,8 @@ def _build_bwrap_command(
         )
         return None
 
-    ws = str(workspace_root.resolve())
+    ws_resolved = workspace_root.resolve()
+    ws = str(ws_resolved)
     bwrap_cmd = [
         bwrap_path,
         "--ro-bind", "/", "/",
@@ -570,14 +571,20 @@ def _build_bwrap_command(
         "--unshare-pid",
         "--new-session",
         "--die-with-parent",
-        "--bind", ws, ws,
-        "--chdir", ws,
     ]
 
     home = Path.home().resolve()
     is_sysadmin = agent is not None and "sysadmin" in agent.lower()
 
     if not is_sysadmin:
+        # Mask administrative and root files
+        bwrap_cmd.extend(["--tmpfs", "/root"])
+
+        # Mask user home spaces so sibling repositories, private documents, and downloads
+        # cannot be accessed or laterally staged into the workspace.
+        if ws_resolved != Path("/home") and ws_resolved != Path("/"):
+            bwrap_cmd.extend(["--tmpfs", "/home"])
+
         sensitive_dirs = [
             home / ".ssh",
             home / ".config" / "safi",
@@ -605,6 +612,12 @@ def _build_bwrap_command(
             if sfile.exists():
                 bwrap_cmd.extend(["--ro-bind-try", "/dev/null", str(sfile)])
 
+        # Safely bind developer configs and non-secret tooling
+        if (home / ".gitconfig").is_file():
+            bwrap_cmd.extend(["--ro-bind-try", str(home / ".gitconfig"), str(home / ".gitconfig")])
+        if (home / ".local" / "bin").is_dir():
+            bwrap_cmd.extend(["--ro-bind-try", str(home / ".local" / "bin"), str(home / ".local" / "bin")])
+
         # Allow read-only access to known_hosts and ssh config so git/ssh can verify
         # remote host identities (e.g. github.com) and use ssh configs without exposing any private key files.
         ssh_dir = home / ".ssh"
@@ -614,6 +627,13 @@ def _build_bwrap_command(
                 "--ro-bind-try", str(ssh_dir / "known_hosts.old"), str(ssh_dir / "known_hosts.old"),
                 "--ro-bind-try", str(ssh_dir / "config"), str(ssh_dir / "config"),
             ])
+
+    # Mount the workspace read-write and change into it.
+    # Mounting this after any tmpfs ensures the workspace remains accessible while surrounding paths are isolated.
+    bwrap_cmd.extend([
+        "--bind", ws, ws,
+        "--chdir", ws,
+    ])
 
     bwrap_cmd.extend(["bash", "-c", cmd])
     return bwrap_cmd

@@ -148,5 +148,26 @@ class TestToolAuthorizationCompile(unittest.TestCase):
         )
 
 
+    def test_shell_command_with_piped_regex_does_not_trigger_forbidden_exec(self):
+        profile = {"allowed_tools": ["bash"]}
+        cmd = "grep -n -i -E 'tool|bash|powershell|ssh|linux' /path/to/file.py | head -20"
+        decision, _ = evaluate("bash", {"command": cmd}, profile)
+        self.assertEqual(decision, "approve")
+
+    def test_shell_command_with_forbidden_executable_blocked(self):
+        profile = {"allowed_tools": ["bash"]}
+        cmd = "ssh user@host 'ls'"
+        decision, reason = evaluate("bash", {"command": cmd}, profile)
+        self.assertEqual(decision, "violation")
+        self.assertIn("Privileged or forbidden", reason)
+
+    def test_shell_command_with_forbidden_path_blocked(self):
+        profile = {"allowed_tools": ["bash"]}
+        cmd = "cat /etc/shadow"
+        decision, reason = evaluate("bash", {"command": cmd}, profile)
+        self.assertEqual(decision, "violation")
+        self.assertIn("Privileged or forbidden", reason)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

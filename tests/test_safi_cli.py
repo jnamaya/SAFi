@@ -130,6 +130,12 @@ class TestSafiCliTools(unittest.TestCase):
         # For software_engineer
         cmd_se = _build_bwrap_command("ls", self.root, agent="software_engineer")
         self.assertIsNotNone(cmd_se)
+        self.assertIn("/root", cmd_se)
+        root_idx = cmd_se.index("/root")
+        self.assertEqual(cmd_se[root_idx - 1], "--tmpfs")
+        self.assertIn("/home", cmd_se)
+        home_idx = cmd_se.index("/home")
+        self.assertEqual(cmd_se[home_idx - 1], "--tmpfs")
         if (home / ".ssh").is_dir():
             self.assertIn(str(home / ".ssh"), cmd_se)
             idx = cmd_se.index(str(home / ".ssh"))
@@ -143,6 +149,8 @@ class TestSafiCliTools(unittest.TestCase):
         # For sysadmin
         cmd_sys = _build_bwrap_command("ls", self.root, agent="sysadmin")
         self.assertIsNotNone(cmd_sys)
+        self.assertNotIn("/home", cmd_sys)
+        self.assertNotIn("/root", cmd_sys)
         if (home / ".ssh").is_dir():
             self.assertNotIn(str(home / ".ssh"), cmd_sys)
 
@@ -795,7 +803,7 @@ class TestSafiModelSelection(unittest.TestCase):
             self.assertEqual(len(models), 1)
             self.assertEqual(models[0]["id"], "gpt-4o")
 
-    def test_discover_models_merging(self):
+    def test_discover_models_backend_sole_source_of_truth(self):
         from safi_cli.main import discover_models
         from safi_cli.client import SafiClient
         client = SafiClient("http://mock-backend:5000", "test-key")
@@ -803,9 +811,9 @@ class TestSafiModelSelection(unittest.TestCase):
             mock_remote.return_value = [{"id": "custom-model-1", "label": "Custom LLM"}]
             discovered = discover_models(client)
             ids = [m["id"] for m in discovered]
-            self.assertIn("custom-model-1", ids)
-            self.assertIn("claude-3-5-sonnet", ids)
-            self.assertIn("claude-haiku-5-5", ids)
+            self.assertEqual(ids, ["custom-model-1"])
+            self.assertNotIn("claude-3-5-sonnet", ids)
+            self.assertNotIn("claude-haiku-5-5", ids)
 
     def test_serving_alias_resolves_to_local_model(self):
         from safi_cli.main import resolve_model_preference, is_serving_alias
@@ -864,10 +872,12 @@ class TestSafiModelSelection(unittest.TestCase):
         from safi_cli.main import prompt_switch_model
         from safi_cli.client import SafiClient
         client = SafiClient("http://mock-backend:5000", "test-key")
-        with unittest.mock.patch.object(client, "get_available_models", return_value=[]):
+        mock_models = [{"id": "gpt-4o", "label": "GPT-4o", "provider": "OpenAI"}]
+        with unittest.mock.patch.object(client, "get_available_models", return_value=mock_models):
             with unittest.mock.patch("builtins.input", return_value="1"):
                 chosen = prompt_switch_model(None, client, current_agent="software_engineer")
                 self.assertIsNotNone(chosen)
+                self.assertEqual(chosen, "gpt-4o")
                 self.assertEqual(config.resolve_intellect_model("software_engineer"), chosen)
 
     def test_prompt_command_menu_model(self):
@@ -1288,6 +1298,11 @@ class TestSafiSubagentDelegation(unittest.TestCase):
         self.assertIn("fiduciary", all_agents)
 
         # 3. Model auto-completion (e.g. /model claud)
+        import safi_cli.agent_registry as agent_registry
+        agent_registry.AVAILABLE_MODELS = [
+            {"id": "claude-haiku-5-5", "label": "Claude 5.5 Haiku", "provider": "Anthropic"},
+            {"id": "gpt-4o", "label": "GPT-4o", "provider": "OpenAI"},
+        ]
         model_matches = _compute_completions("/model claud", "claud")
         self.assertTrue(any("claude" in m for m in model_matches))
         self.assertIn("claude-haiku-5-5", model_matches)

@@ -170,7 +170,9 @@ POLICY: Dict[str, Any] = {
         "forbidden_paths": [
             "/etc/shadow", "/etc/passwd", ".ssh/id_", "id_rsa", "id_ed25519",
             "id_ecdsa", "id_dsa", ".gnupg", ".aws/credentials", "secrets.json",
-            ".ssh", ".config/safi",
+            ".ssh", ".config/safi", ".config/gh", ".azure", ".kube", ".docker",
+            ".bash_history", ".zsh_history", ".netrc", ".git-credentials",
+            ".npmrc", ".pypirc",
         ],
         "forbidden_executables": [
             "sudo", "su", "ssh", "scp", "sftp",

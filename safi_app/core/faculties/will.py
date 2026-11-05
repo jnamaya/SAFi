@@ -293,17 +293,33 @@ class WillGate:
             if _has_forbidden_destructive_payload(cmd_lower, forbidden_shell_patterns, protected_root_dirs):
                 return "R4", "Forbidden destructive shell payload"
 
-            segments = re.split(r'(?:\s*(?:&&|\|\||[;\n|])\s*)', cmd)
-            for seg in segments:
-                seg_clean = seg.strip()
-                if not seg_clean:
-                    continue
+            commands: list[list[str]] = []
+            try:
+                lexer = shlex.shlex(cmd, posix=True, punctuation_chars=True)
+                tokens = list(lexer)
+                current: list[str] = []
+                for t in tokens:
+                    if t in ("|", "&&", "||", ";", "&", "\n"):
+                        if current:
+                            commands.append(current)
+                            current = []
+                    else:
+                        current.append(t)
+                if current:
+                    commands.append(current)
+            except Exception:
+                for seg in re.split(r'(?:\s*(?:&&|\|\||[;\n])\s*)', cmd):
+                    seg_clean = seg.strip()
+                    if not seg_clean:
+                        continue
+                    try:
+                        cmd_tokens = shlex.split(seg_clean)
+                    except Exception:
+                        cmd_tokens = seg_clean.split()
+                    if cmd_tokens:
+                        commands.append(cmd_tokens)
 
-                try:
-                    tokens = shlex.split(seg_clean)
-                except Exception:
-                    tokens = seg_clean.split()
-
+            for tokens in commands:
                 if not tokens:
                     continue
 
