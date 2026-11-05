@@ -523,6 +523,15 @@ EOF
     echo "Created sample inventory at ${CONFIG_DIR}/inventory.json"
 fi
 
+# Auto-configure default appliance URL if running on a SAFi appliance
+if [ -f "/etc/systemd/system/safi.service" ] || [ -d "/var/lib/safi-firstboot" ]; then
+    if [ ! -f "${CONFIG_DIR}/config.json" ] || ! grep -q '"api_url"' "${CONFIG_DIR}/config.json" 2>/dev/null; then
+        echo '{"api_url": "https://localhost"}' > "${CONFIG_DIR}/config.json"
+        chmod 0600 "${CONFIG_DIR}/config.json"
+        echo "Detected local appliance environment — configured default URL: https://localhost"
+    fi
+fi
+
 echo ""
 echo "=========================================================="
 echo "✓ SAFi CLI installed successfully!"

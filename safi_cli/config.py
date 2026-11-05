@@ -177,17 +177,25 @@ def resolve_api_key(explicit_key: Optional[str] = None, agent: str = "software_e
     return resolve_agent_api_key(agent, explicit_key=explicit_key)
 
 
-def resolve_api_url(explicit_url: Optional[str] = None) -> str:
-    """Resolve the backend URL from the explicit flag or config.json ONLY.
+def is_appliance() -> bool:
+    """Return True if running locally on a SAFi appliance."""
+    return Path("/var/lib/safi-firstboot").exists() or Path("/etc/systemd/system/safi.service").exists()
 
-    Environment variables and implicit localhost defaults are deliberately
-    ignored so the CLI never silently targets a shadowing local instance.
+
+def resolve_api_url(explicit_url: Optional[str] = None) -> str:
+    """Resolve the backend URL from explicit flag, config.json, or appliance localhost.
+
+    Environment variables are deliberately ignored so the CLI never silently
+    targets a shadowing local instance. When running locally on an appliance,
+    it automatically defaults to https://localhost.
     """
     if explicit_url:
         return explicit_url.rstrip("/")
     cfg = load_config()
     url = str(cfg.get("api_url") or "").strip().rstrip("/")
     if not url:
+        if is_appliance():
+            return "https://localhost"
         raise SystemExit(
             "No SAFi backend URL configured.\n"
             "Run:  safi-cli --set-url http://<host>:5000\n"
@@ -197,8 +205,8 @@ def resolve_api_url(explicit_url: Optional[str] = None) -> str:
 
 
 def has_configured_api_url() -> bool:
-    """Return True if an API URL has been explicitly configured in config.json."""
-    return bool(str(load_config().get("api_url") or "").strip())
+    """Return True if an API URL has been configured in config.json or on appliance."""
+    return bool(str(load_config().get("api_url") or "").strip()) or is_appliance()
 
 
 def get_default_agent() -> Optional[str]:
