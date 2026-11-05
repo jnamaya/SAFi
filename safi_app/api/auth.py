@@ -1572,6 +1572,34 @@ def revoke_my_other_sessions():
 
 # TOTP MFA SELF-SERVICE (enterprise identity Phase 2)
 
+def _sync_appliance_os_password(new_password: str) -> bool:
+    """Sync admin password to Linux OS account if running on an appliance."""
+    import subprocess
+    from pathlib import Path
+    helper = Path("/usr/local/sbin/safi-admin-passwd")
+    if not helper.exists():
+        return False
+    try:
+        res = subprocess.run(
+            ["sudo", str(helper)],
+            input=new_password.encode("utf-8"),
+            capture_output=True,
+            check=False,
+            timeout=5
+        )
+        if res.returncode == 0:
+            current_app.logger.info("Synchronized Linux OS password for admin")
+            return True
+        current_app.logger.warning(
+            "Could not sync OS admin password (exit %d): %s",
+            res.returncode, res.stderr.decode("utf-8", "replace").strip()
+        )
+        return False
+    except Exception:
+        current_app.logger.exception("Error calling safi-admin-passwd helper")
+        return False
+
+
 @auth_bp.route('/me/password', methods=['POST'])
 def change_my_password():
     """[POST /api/me/password] Self-service password change for local
@@ -1594,13 +1622,17 @@ def change_my_password():
                                  "provider and has no password to change."}), 400
     if not check_password_hash(user['password_hash'], current_password):
         return jsonify({"error": "Current password is incorrect."}), 403
-    if len(new_password) < 10:
-        return jsonify({"error": "New password must be at least 10 characters."}), 400
+    if len(new_password) < 8:
+        return jsonify({"error": "New password must be at least 8 characters."}), 400
     if new_password == current_password:
         return jsonify({"error": "New password must differ from the current one."}), 400
 
     db.set_local_password(user_id, new_password)
     current_app.logger.info("Self-service password change for user %s", user_id)
+
+    if user_id == "local_admin" or user.get("username") == "admin":
+        _sync_appliance_os_password(new_password)
+
     return jsonify({"ok": True, "status": "password_changed"})
 
 
