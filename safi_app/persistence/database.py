@@ -2788,10 +2788,16 @@ def delete_agent_context_memory(user_id: str, agent_id: str) -> bool:
     only: governance records keep the copies injected on past turns."""
     conn = get_db_connection()
     cursor = conn.cursor()
+    aliases = [agent_id]
+    if agent_id == "sysadmin":
+        aliases.append("systems_administrator")
+    elif agent_id == "systems_administrator":
+        aliases.append("sysadmin")
+    placeholders = ",".join(["%s"] * len(aliases))
     try:
         cursor.execute(
-            "DELETE FROM agent_context_memory WHERE user_id=%s AND agent_id=%s",
-            (user_id, agent_id)
+            f"DELETE FROM agent_context_memory WHERE user_id=%s AND agent_id IN ({placeholders})",
+            (user_id, *aliases)
         )
         conn.commit()
         return cursor.rowcount > 0
@@ -2810,6 +2816,13 @@ def fetch_agent_context_memory(user_id: str, agent_id: str) -> str:
             (user_id, agent_id)
         )
         row = cursor.fetchone()
+        if not row and agent_id in ("sysadmin", "systems_administrator"):
+            alt = "systems_administrator" if agent_id == "sysadmin" else "sysadmin"
+            cursor.execute(
+                "SELECT context_json FROM agent_context_memory WHERE user_id=%s AND agent_id=%s",
+                (user_id, alt)
+            )
+            row = cursor.fetchone()
         return crypto.decrypt_value(row['context_json']) if row and row['context_json'] else "{}"
     finally:
         cursor.close()

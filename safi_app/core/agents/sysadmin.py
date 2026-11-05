@@ -3,6 +3,7 @@ from typing import Any, Dict
 
 
 SYSADMIN_AGENT: Dict[str, Any] = {
+    "key": "sysadmin",
     "name": "Systems Administrator",
     "description": (
         "A governed general systems-administration agent that operates and troubleshoots "

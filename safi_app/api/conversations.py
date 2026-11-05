@@ -1970,10 +1970,21 @@ async def agentic_compress_endpoint():
 
     if action in ("get", "show", "view", "status"):
         summary = db.fetch_conversation_summary(conversation_id) or ""
+        agent_key = data.get("agent")
+        user_id = data.get("user_id")
+        context_data = None
+        if user_id and agent_key:
+            raw_context = db.fetch_agent_context_memory(user_id, agent_key)
+            if raw_context and raw_context not in ("{}", "null", ""):
+                try:
+                    context_data = json.loads(raw_context)
+                except Exception:
+                    context_data = None
         return jsonify({
             "ok": True,
             "summary": summary,
             "tokens": max(0, len(summary) // 4) if summary else 0,
+            "agent_context": context_data,
         })
 
     if action in ("clear", "reset"):
@@ -1987,7 +1998,7 @@ async def agentic_compress_endpoint():
                 pass
         return jsonify({
             "ok": True,
-            "message": "Memory summary cleared.",
+            "message": "Memory summary and agent context cleared.",
             "summary": "",
             "tokens": 0,
         })

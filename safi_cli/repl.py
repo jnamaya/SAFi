@@ -389,10 +389,10 @@ def prompt_command_menu(
             with ui.console.status(f"[bold {ui.COLOR_BRAND_400}]● SAFi[/] [dim]Fetching active memory summary...[/]", spinner="dots"):
                 comp_res = client.compress_conversation(current_conv, user_id=user_id, agent=current_agent, model=current_model, action="get")
             ui.clear_live_status_tail()
-            if comp_res.get("summary"):
-                ui.print_compression_result({"ok": True, "compressed": False, "summary": comp_res["summary"], "message": "Showing active working memory summary."})
+            if comp_res.get("summary") or comp_res.get("agent_context"):
+                ui.print_compression_result(comp_res)
             else:
-                ui.console.print("[dim]No active memory summary exists for this session yet. Run /memory compress to distill one, or continue chatting.[/dim]")
+                ui.console.print("[dim]No active memory summary or project context exists for this agent yet. Run /memory compress to distill one, or continue chatting.[/dim]")
         return current_agent, current_conv, current_model, current_user_name, False
 
     elif choice_clean in ("skills", "skill"):
@@ -853,10 +853,10 @@ def interactive_repl(
                     with ui.console.status(f"[bold {ui.COLOR_BRAND_400}]● SAFi[/] [dim]Fetching active memory summary...[/]", spinner="dots"):
                         comp_res = client.compress_conversation(current_conv, user_id=user_id, agent=current_agent, model=current_model, action="get")
                     ui.clear_live_status_tail()
-                    if comp_res.get("summary"):
-                        ui.print_compression_result({"ok": True, "compressed": False, "summary": comp_res["summary"], "message": "Showing active memory summary."})
+                    if comp_res.get("summary") or comp_res.get("agent_context"):
+                        ui.print_compression_result(comp_res)
                     else:
-                        ui.console.print("[dim]No active memory summary exists for this session yet. Run /memory compress to distill one, or continue chatting.[/dim]")
+                        ui.console.print("[dim]No active memory summary or project context exists for this agent yet. Run /memory compress to distill one, or continue chatting.[/dim]")
                 elif sub_arg in ("clear", "reset"):
                     with ui.console.status(f"[bold {ui.COLOR_BRAND_400}]● SAFi[/] [dim]Clearing memory summary & agent context...[/]", spinner="dots"):
                         comp_res = client.compress_conversation(current_conv, user_id=user_id, agent=current_agent, model=current_model, action="clear", clear_agent_memory=True)

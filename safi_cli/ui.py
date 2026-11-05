@@ -1589,6 +1589,90 @@ def print_error(message: str):
     console.print(Panel(f"[bold {COLOR_FAIL}]Error:[/] {escape(message)}", border_style=COLOR_FAIL, box=box.ROUNDED))
 
 
+def _format_agent_context_panel(context: Dict[str, Any]) -> Optional[Panel]:
+    """Format the persistent agent project context into a rich display panel."""
+    if not isinstance(context, dict):
+        return None
+
+    projects = context.get("projects") or []
+    tasks = context.get("tasks") or []
+    notes = context.get("notes") or []
+    decisions = context.get("decisions") or []
+
+    if not any([projects, tasks, notes, decisions]):
+        return None
+
+    elements = []
+
+    if projects:
+        p_table = Table(box=box.SIMPLE, show_header=True, header_style=f"bold {COLOR_BRAND_400}", expand=True)
+        p_table.add_column("Project", style="bold white", ratio=2)
+        p_table.add_column("Objective", style="dim", ratio=4)
+        p_table.add_column("Status", justify="center", ratio=1)
+        for p in projects:
+            p_name = escape(str(p.get("name") or "Unnamed"))
+            p_obj = escape(str(p.get("objective") or p.get("notes") or ""))
+            p_stat = str(p.get("status") or "active").lower()
+            if p_stat in ("done", "completed"):
+                stat_style = f"bold {COLOR_PASS}"
+                stat_label = "✓ Done"
+            elif p_stat in ("blocked", "error"):
+                stat_style = f"bold {COLOR_FAIL}"
+                stat_label = "✖ Blocked"
+            else:
+                stat_style = f"bold {COLOR_WARN}"
+                stat_label = "● " + p_stat.replace("_", " ").title()
+            p_table.add_row(p_name, p_obj[:90] + ("..." if len(p_obj) > 90 else ""), f"[{stat_style}]{stat_label}[/]")
+        elements.append(Panel(p_table, title="[bold white]Projects[/]", border_style=COLOR_BRAND_700, box=box.ROUNDED))
+
+    if tasks:
+        t_table = Table(box=box.SIMPLE, show_header=True, header_style=f"bold {COLOR_BRAND_400}", expand=True)
+        t_table.add_column("Task", style="bold white", ratio=4)
+        t_table.add_column("Project", style="dim", ratio=2)
+        t_table.add_column("Status", justify="center", ratio=1)
+        for t in tasks:
+            t_name = escape(str(t.get("task") or "Unnamed task"))
+            t_proj = escape(str(t.get("project") or "General"))
+            t_stat = str(t.get("status") or "todo").lower()
+            if t_stat in ("done", "completed"):
+                stat_style = f"bold {COLOR_PASS}"
+                stat_label = "✓ Done"
+            elif t_stat in ("blocked", "failed"):
+                stat_style = f"bold {COLOR_FAIL}"
+                stat_label = "✖ Blocked"
+            else:
+                stat_style = f"bold {COLOR_WARN}"
+                stat_label = "● " + t_stat.replace("_", " ").title()
+            t_table.add_row(t_name[:80] + ("..." if len(t_name) > 80 else ""), t_proj, f"[{stat_style}]{stat_label}[/]")
+        elements.append(Panel(t_table, title="[bold white]Active Tasks[/]", border_style=COLOR_BRAND_700, box=box.ROUNDED))
+
+    if notes:
+        n_lines = []
+        for n in notes:
+            n_text = escape(str(n))
+            n_lines.append(f"  [bold {COLOR_BRAND_400}]•[/] {n_text}")
+        elements.append(Panel("\n".join(n_lines), title="[bold white]Infrastructure & Technical Notes[/]", border_style=COLOR_BRAND_700, box=box.ROUNDED))
+
+    if decisions:
+        d_lines = []
+        for d in decisions:
+            if isinstance(d, dict):
+                q = d.get("question") or d.get("decision") or d.get("text") or str(d)
+                proj = f" [dim]({escape(str(d.get('project')))})[/dim]" if d.get('project') else ""
+                d_lines.append(f"  [bold {COLOR_PASS}]✔[/] {escape(str(q))}{proj}")
+            else:
+                d_lines.append(f"  [bold {COLOR_PASS}]✔[/] {escape(str(d))}")
+        elements.append(Panel("\n".join(d_lines), title="[bold white]Decisions & Standards[/]", border_style=COLOR_BRAND_700, box=box.ROUNDED))
+
+    return Panel(
+        Group(*elements),
+        title=f"[bold {COLOR_BRAND_400}]Persistent Agent Project Context[/]",
+        subtitle="[dim]Long-term state remembered across sessions[/dim]",
+        border_style=COLOR_BRAND_600,
+        box=box.ROUNDED,
+    )
+
+
 def print_compression_result(data: Dict[str, Any]):
     """Render a clean summary panel for context compression and token savings."""
     if not data.get("ok"):
@@ -1596,16 +1680,27 @@ def print_compression_result(data: Dict[str, Any]):
         console.print(Panel(f"[bold {COLOR_FAIL}]Compression Error:[/] {escape(str(error_msg))}", border_style=COLOR_FAIL, box=box.ROUNDED))
         return
 
+    agent_context = data.get("agent_context")
+    summary = data.get("summary")
+
     if not data.get("compressed"):
         msg = data.get("message", "Conversation is already minimal (no compression needed).")
-        console.print(f"[dim]{escape(str(msg))}[/dim]")
-        if data.get("summary"):
+        if not summary and not agent_context:
+            console.print(f"[dim]{escape(str(msg))}[/dim]")
+            return
+
+        if summary:
             console.print(Panel(
-                Markdown(data["summary"]),
-                title=f"[bold {COLOR_BRAND_400}]Active Compacted Memory[/]",
+                Markdown(summary),
+                title=f"[bold {COLOR_BRAND_400}]Active Session Memory Summary[/]",
+                subtitle="[dim]Distilled from conversation turns[/dim]",
                 border_style=COLOR_BRAND_600,
                 box=box.ROUNDED,
             ))
+        if agent_context:
+            ctx_panel = _format_agent_context_panel(agent_context)
+            if ctx_panel:
+                console.print(ctx_panel)
         return
 
     turns = data.get("turns_count", 0)

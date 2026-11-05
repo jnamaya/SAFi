@@ -1763,6 +1763,25 @@ class TestSafiCliMemoryClearCommands(unittest.TestCase):
         self.assertEqual(payload.get("action"), "clear")
         self.assertTrue(payload.get("clear_agent_memory"))
 
+    def test_print_compression_result_renders_agent_context(self):
+        from safi_cli.ui import _format_agent_context_panel, print_compression_result
+        mock_ctx = {
+            "projects": [{"name": "Auth Migration", "objective": "Move to OAuth", "status": "done"}],
+            "tasks": [{"task": "Audit tokens", "project": "Auth Migration", "status": "todo"}],
+            "notes": ["Server IP is 10.0.0.1"],
+            "decisions": ["Use JWT with RS256"],
+        }
+        panel = _format_agent_context_panel(mock_ctx)
+        self.assertIsNotNone(panel)
+        # Verify it doesn't crash on print_compression_result with agent_context
+        data = {
+            "ok": True,
+            "compressed": False,
+            "summary": "Sample summary text",
+            "agent_context": mock_ctx,
+        }
+        print_compression_result(data)
+
     def test_command_menu_clear_starts_new_session_and_clears_memory(self):
         from safi_cli.main import prompt_command_menu
         client = MagicMock()

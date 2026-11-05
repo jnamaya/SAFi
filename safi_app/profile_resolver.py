@@ -45,6 +45,7 @@ def _load_catalog() -> tuple[Dict[str, Dict[str, Any]], Dict[str, Dict[str, Any]
         if key in all_agents:
             log.error("Profile module '%s' duplicates key '%s' and was skipped.", info.name, key)
             continue
+        agent["key"] = key
         all_agents[key] = agent
         if getattr(module, "FALLBACK", False):
             fallback_keys.append(key)
