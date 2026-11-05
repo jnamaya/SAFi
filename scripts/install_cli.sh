@@ -100,13 +100,19 @@ if [ "${USE_VENV}" -eq 0 ]; then
 fi
 
 # 5. Create launcher script
-echo "Writing launcher to ${BIN_DIR}/safi..."
-cat << EOF > "${BIN_DIR}/safi"
+echo "Writing launcher to ${BIN_DIR}/safi-cli..."
+cat << EOF > "${BIN_DIR}/safi-cli"
 #!/usr/bin/env bash
 export PYTHONPATH="${INSTALL_DIR}:\${PYTHONPATH}"
 exec "${TARGET_PYTHON}" -m safi_cli.main "\$@"
 EOF
-chmod +x "${BIN_DIR}/safi"
+chmod +x "${BIN_DIR}/safi-cli"
+ln -sf "${BIN_DIR}/safi-cli" "${BIN_DIR}/saficli"
+
+# Remove legacy 'safi' CLI wrapper from user bin if it shadows appliance tools
+if [ -f "${BIN_DIR}/safi" ] && grep -q "safi_cli.main" "${BIN_DIR}/safi" 2>/dev/null; then
+    rm -f "${BIN_DIR}/safi"
+fi
 
 # 6. Create sys-exec infrastructure runner
 echo "Writing sys-exec runner to ${BIN_DIR}/sys-exec..."
@@ -394,15 +400,27 @@ EOF
     chmod +x "${BIN_DIR}/safi-setup-key"
 fi
 
-# 7. Make safi, sys-exec, and safi-setup-key universally available in system PATH
+# 7. Make safi-cli, saficli, sys-exec, and safi-setup-key universally available in system PATH
 if [ -w "/usr/local/bin" ]; then
-    ln -sf "${BIN_DIR}/safi" /usr/local/bin/safi 2>/dev/null || true
+    ln -sf "${BIN_DIR}/safi-cli" /usr/local/bin/safi-cli 2>/dev/null || true
+    ln -sf "${BIN_DIR}/safi-cli" /usr/local/bin/saficli 2>/dev/null || true
     ln -sf "${BIN_DIR}/sys-exec" /usr/local/bin/sys-exec 2>/dev/null || true
     ln -sf "${BIN_DIR}/safi-setup-key" /usr/local/bin/safi-setup-key 2>/dev/null || true
+    # Restore appliance tool if legacy symlink existed
+    if [ -L "/usr/local/bin/safi" ] && [ "$(readlink /usr/local/bin/safi 2>/dev/null)" = "${BIN_DIR}/safi" ]; then
+        rm -f /usr/local/bin/safi
+        [ -x "/usr/local/sbin/safi" ] && ln -sf /usr/local/sbin/safi /usr/local/bin/safi 2>/dev/null || true
+    fi
 elif command -v sudo &>/dev/null; then
-    sudo -n ln -sf "${BIN_DIR}/safi" /usr/local/bin/safi 2>/dev/null || true
+    sudo -n ln -sf "${BIN_DIR}/safi-cli" /usr/local/bin/safi-cli 2>/dev/null || true
+    sudo -n ln -sf "${BIN_DIR}/safi-cli" /usr/local/bin/saficli 2>/dev/null || true
     sudo -n ln -sf "${BIN_DIR}/sys-exec" /usr/local/bin/sys-exec 2>/dev/null || true
     sudo -n ln -sf "${BIN_DIR}/safi-setup-key" /usr/local/bin/safi-setup-key 2>/dev/null || true
+    # Restore appliance tool if legacy symlink existed
+    if [ -L "/usr/local/bin/safi" ] && [ "$(readlink /usr/local/bin/safi 2>/dev/null)" = "${BIN_DIR}/safi" ]; then
+        sudo -n rm -f /usr/local/bin/safi 2>/dev/null || true
+        [ -x "/usr/local/sbin/safi" ] && sudo -n ln -sf /usr/local/sbin/safi /usr/local/bin/safi 2>/dev/null || true
+    fi
 fi
 
 # Fallback: persist ~/.local/bin in user shell profiles
@@ -416,16 +434,21 @@ if [[ ":$PATH:" != *":${BIN_DIR}:"* ]]; then
 fi
 
 # 8. WSL Windows Host Integration
-# If running inside WSL, bridge safi to Windows so users can run 'safi' directly from Windows PowerShell / CMD
+# If running inside WSL, bridge safi-cli to Windows
 if grep -qi "microsoft" /proc/version 2>/dev/null && command -v cmd.exe &>/dev/null; then
     echo "Detected WSL environment — configuring Windows PowerShell & CMD integration..."
     WIN_APPS_RAW=$(cmd.exe /c "echo %LOCALAPPDATA%\Microsoft\WindowsApps" 2>/dev/null | tr -d '\r')
     if [ -n "$WIN_APPS_RAW" ] && command -v wslpath &>/dev/null; then
         WIN_APPS_DIR=$(wslpath "$WIN_APPS_RAW" 2>/dev/null || true)
         if [ -n "$WIN_APPS_DIR" ] && [ -d "$WIN_APPS_DIR" ]; then
-            cat << 'EOF' > "${WIN_APPS_DIR}/safi.cmd"
+            cat << 'EOF' > "${WIN_APPS_DIR}/safi-cli.cmd"
 @echo off
-wsl.exe -e safi %*
+wsl.exe -e safi-cli %*
+exit /b %ERRORLEVEL%
+EOF
+            cat << 'EOF' > "${WIN_APPS_DIR}/saficli.cmd"
+@echo off
+wsl.exe -e saficli %*
 exit /b %ERRORLEVEL%
 EOF
             cat << 'EOF' > "${WIN_APPS_DIR}/sys-exec.cmd"
@@ -438,8 +461,8 @@ EOF
 wsl.exe -e safi-setup-key %*
 exit /b %ERRORLEVEL%
 EOF
-            chmod +x "${WIN_APPS_DIR}/safi.cmd" "${WIN_APPS_DIR}/sys-exec.cmd" "${WIN_APPS_DIR}/safi-setup-key.cmd" 2>/dev/null || true
-            echo "✓ Created Windows bridge in ${WIN_APPS_RAW} (safi.cmd, sys-exec.cmd, safi-setup-key.cmd)"
+            chmod +x "${WIN_APPS_DIR}/safi-cli.cmd" "${WIN_APPS_DIR}/saficli.cmd" "${WIN_APPS_DIR}/sys-exec.cmd" "${WIN_APPS_DIR}/safi-setup-key.cmd" 2>/dev/null || true
+            echo "✓ Created Windows bridge in ${WIN_APPS_RAW} (safi-cli.cmd, saficli.cmd, sys-exec.cmd, safi-setup-key.cmd)"
         fi
     fi
 
@@ -448,9 +471,14 @@ EOF
         WIN_PROFILE_DIR=$(wslpath "$WIN_PROFILE_RAW" 2>/dev/null || true)
         if [ -n "$WIN_PROFILE_DIR" ] && [ -d "$WIN_PROFILE_DIR" ]; then
             mkdir -p "${WIN_PROFILE_DIR}/.local/bin"
-            cat << 'EOF' > "${WIN_PROFILE_DIR}/.local/bin/safi.cmd"
+            cat << 'EOF' > "${WIN_PROFILE_DIR}/.local/bin/safi-cli.cmd"
 @echo off
-wsl.exe -e safi %*
+wsl.exe -e safi-cli %*
+exit /b %ERRORLEVEL%
+EOF
+            cat << 'EOF' > "${WIN_PROFILE_DIR}/.local/bin/saficli.cmd"
+@echo off
+wsl.exe -e saficli %*
 exit /b %ERRORLEVEL%
 EOF
             cat << 'EOF' > "${WIN_PROFILE_DIR}/.local/bin/sys-exec.cmd"
@@ -501,5 +529,6 @@ echo "✓ SAFi CLI installed successfully!"
 echo "=========================================================="
 echo ""
 echo "To get started, simply run:"
-echo "   safi"
+echo "   safi-cli"
+echo "   (or: saficli)"
 echo ""
