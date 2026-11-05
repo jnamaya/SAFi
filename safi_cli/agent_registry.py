@@ -332,33 +332,56 @@ def prompt_switch_model(
         table.add_column("Model ID", style=f"bold {ui.COLOR_BRAND_400}")
         table.add_column("Label / Name", style="bold white")
         table.add_column("Provider", style="dim")
+        table.add_column("Appliance State", justify="center")
         table.add_column("Status", justify="center")
 
         pref = config.resolve_intellect_model(current_agent)
+        is_following_serving = is_serving_alias(current_model) or (not current_model and is_serving_alias(pref))
         if not current_model and is_serving_alias(pref):
             pref = serving_model_id(models)
         resolved_active = current_model or pref or "(policy default)"
 
+        # Option 0: Auto-follow whatever the appliance is actively serving
+        table.add_row(
+            "0",
+            "local",
+            "Follow Appliance Serving Model",
+            "Appliance (dynamic)",
+            f"[bold {ui.COLOR_PASS}]Auto-sync[/]",
+            f"[bold {ui.COLOR_PASS}]✓ Active[/]" if is_following_serving else "",
+        )
+
         for idx, m in enumerate(models, 1):
-            is_active = (current_model and m["id"].lower() == current_model.lower()) or (
-                not current_model and idx == 1
+            is_active = not is_following_serving and (
+                (current_model and m["id"].lower() == current_model.lower())
+                or (not current_model and idx == 1)
             )
+            is_local = bool(m.get("local")) or str(m.get("provider", "")).lower() == "local"
+            if is_local:
+                if m.get("active"):
+                    appliance_state = f"[bold {ui.COLOR_PASS}]● Serving in VRAM[/]"
+                else:
+                    appliance_state = f"[bold {ui.COLOR_WARN}]○ Standby (Disk)[/]"
+            else:
+                appliance_state = "[dim]Cloud API[/]"
+
             status_text = f"[bold {ui.COLOR_PASS}]✓ Active[/]" if is_active else ""
             table.add_row(
                 str(idx),
                 m["id"],
                 m["label"],
                 m.get("provider", "LLM"),
+                appliance_state,
                 status_text,
             )
 
         ui.console.print(table)
         ui.console.print(f"[dim]Current model:[/] [bold white]{resolved_active}[/]")
-        ui.console.print("[dim]Enter number, model ID, or type [bold cyan]local[/] to follow the served model.[/dim]")
+        ui.console.print("[dim]Enter number, model ID, or [bold cyan]0[/] / [bold cyan]local[/] to follow the served model.[/dim]")
 
         old_completer = readline.get_completer() if readline else None
         if readline:
-            model_ids = [m["id"] for m in models if "id" in m] + ["local"]
+            model_ids = ["0", "local"] + [m["id"] for m in models if "id" in m]
             def model_sub_completer(text: str, state: int) -> Optional[str]:
                 matches = [m for m in model_ids if m.startswith(text)] + [m for m in model_ids if text.lower() in m.lower() and not m.startswith(text)]
                 if state < len(matches):
@@ -382,7 +405,9 @@ def prompt_switch_model(
             ui.console.print("[dim]Model selection cancelled.[/dim]")
             return current_model
 
-        if choice.isdigit():
+        if choice == "0":
+            target_model = "local"
+        elif choice.isdigit():
             idx = int(choice) - 1
             if 0 <= idx < len(models):
                 target_model = models[idx]["id"]
@@ -405,15 +430,36 @@ def prompt_switch_model(
     if is_serving_alias(target_model):
         serving = serving_model_id(models)
         ui.console.print(
-            f"[bold {ui.COLOR_PASS}]✓ AI now follows the local served model:[/] "
+            f"[bold {ui.COLOR_PASS}]✓ AI now automatically tracks the appliance served model:[/] "
             f"[bold {ui.COLOR_BRAND_400}]{serving or 'backend policy default'}[/]"
             + (f" [dim](for agent '{current_agent}')[/dim]" if current_agent else "")
         )
+        ui.console.print(
+            "[dim]Any model activated from the SAFi Web Control Panel will immediately power the agent.[/dim]"
+        )
         return serving
+
+    # Check if target_model is a standby local model
+    target_match = next((m for m in models if m.get("id") == target_model or m.get("label") == target_model), None)
+    is_standby = bool(
+        target_match
+        and (target_match.get("local") or str(target_match.get("provider", "")).lower() == "local")
+        and not target_match.get("active")
+    )
+
     ui.console.print(
         f"[bold {ui.COLOR_PASS}]✓ Switched model to:[/] [bold {ui.COLOR_BRAND_400}]{target_model}[/]"
         + (f" [dim](for agent '{current_agent}')[/dim]" if current_agent else "")
     )
+    if is_standby:
+        ui.console.print(
+            f"\n[bold yellow]ℹ Appliance Model Notice:[/] '[bold white]{target_model}[/]' is currently in [yellow]Standby[/] (not in VRAM)."
+        )
+        ui.console.print(
+            "  • The next prompt will swap it into VRAM (model loading takes ~15–20s).\n"
+            "  • To activate it permanently without delay, visit [bold cyan]Settings > Appliance Models[/] in the SAFi Web Control Panel.\n"
+            "  • Tip: Use '[bold cyan]0[/]' or '[bold cyan]local[/]' if you want the CLI to always track whichever model is active.\n"
+        )
     return target_model
 
 

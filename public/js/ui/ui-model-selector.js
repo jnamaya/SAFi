@@ -28,6 +28,24 @@ export function getActiveModelLabel() {
     return active ? _label(active) : null;
 }
 
+export function getActiveModel() {
+    return _models.find(m => m.id === _activeModelId) || null;
+}
+
+export function markModelActive(modelId) {
+    let changed = false;
+    for (const m of _models) {
+        if (m.provider === 'local' || m.local) {
+            const shouldBeActive = (m.id === modelId || m.alias === modelId);
+            if (m.active !== shouldBeActive) {
+                m.active = shouldBeActive;
+                changed = true;
+            }
+        }
+    }
+    if (changed) _renderDropdown();
+}
+
 export function setActiveModel(modelId) {
     _activeModelId = modelId;
     _renderDropdown();
@@ -65,12 +83,24 @@ function _renderDropdown() {
             : '';
         const rows = g.models.map(m => {
             const isActive = m.id === _activeModelId;
+            const isLocal = m.provider === 'local' || m.local;
+            let statusBadge = '';
+            if (isLocal) {
+                if (m.active) {
+                    statusBadge = `<span class="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">Serving in VRAM</span>`;
+                } else {
+                    statusBadge = `<span class="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400 border border-amber-200 dark:border-amber-800">Standby (Disk)</span>`;
+                }
+            }
             return `<button type="button" role="menuitemradio" aria-checked="${isActive}" data-model-id="${escapeHtml(m.id)}"
                 class="model-option w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm text-left transition-colors
                     ${isActive
                         ? 'bg-neutral-50 dark:bg-neutral-800 font-medium text-green-600 dark:text-green-500'
                         : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800'}">
-                <span class="truncate">${escapeHtml(_label(m))}</span>
+                <div class="flex items-center gap-1.5 min-w-0">
+                    <span class="truncate">${escapeHtml(_label(m))}</span>
+                    ${statusBadge}
+                </div>
                 ${isActive ? `<svg class="w-4 h-4 shrink-0 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
                 </svg>` : ''}

@@ -107,6 +107,15 @@ def build_safi(
     """Wire user-land adapters into the generic governance pipeline."""
     intellect_model = intellect_model or getattr(config, "INTELLECT_MODEL")
     conscience_model = conscience_model or getattr(config, "CONSCIENCE_MODEL")
+
+    if intellect_model in ("local", "@local", "serving", "@serving"):
+        from .config import active_local_model
+        live = active_local_model()
+        intellect_model = live or getattr(config, "INTELLECT_MODEL")
+    if conscience_model in ("local", "@local", "serving", "@serving"):
+        from .config import active_local_model
+        live = active_local_model()
+        conscience_model = live or getattr(config, "CONSCIENCE_MODEL")
     llm_config = {
         "providers": build_providers_config(config),
         "routes": {

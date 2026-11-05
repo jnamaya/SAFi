@@ -110,3 +110,29 @@ def test_org_provider_block_does_not_silently_reroute(monkeypatch):
     assert pair == ("openai/gpt-oss-20b", "openai/gpt-oss-120b")
 
 
+def test_detect_provider_recognizes_local_sentinels():
+    from safi_app.core.services.model_routing import detect_provider
+    assert detect_provider("local") == "local"
+    assert detect_provider("@local") == "local"
+    assert detect_provider("serving") == "local"
+    assert detect_provider("@serving") == "local"
+    assert detect_provider("safi-qwen3-8b") == "local"
+
+
+def test_resolve_effective_faculty_models_resolves_local_sentinel(monkeypatch):
+    import safi_app.config as app_config
+    monkeypatch.setattr(app_config, "active_local_model", lambda: "safi-qwen3-8b")
+    monkeypatch.setattr(provider_governance, "get_org_allowlist", lambda _org: None)
+    monkeypatch.setattr(provider_governance, "list_models_for_org", lambda _org: [
+        {"id": "safi-qwen3-8b", "provider": "local"},
+        {"id": "openai/gpt-oss-20b", "provider": "groq"},
+    ])
+
+    intellect, conscience = resolve_effective_faculty_models(
+        object(), "local", "openai/gpt-oss-20b"
+    )
+    assert intellect == "safi-qwen3-8b"
+    assert conscience == "openai/gpt-oss-20b"
+
+
+

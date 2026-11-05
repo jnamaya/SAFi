@@ -872,13 +872,29 @@ class TestSafiModelSelection(unittest.TestCase):
         from safi_cli.main import prompt_switch_model
         from safi_cli.client import SafiClient
         client = SafiClient("http://mock-backend:5000", "test-key")
-        mock_models = [{"id": "gpt-4o", "label": "GPT-4o", "provider": "OpenAI"}]
+        mock_models = [
+            {"id": "safi-active-7b", "label": "Active Model", "provider": "local", "active": True, "local": True},
+            {"id": "safi-standby-14b", "label": "Standby Model", "provider": "local", "active": False, "local": True},
+            {"id": "gpt-4o", "label": "GPT-4o", "provider": "OpenAI"},
+        ]
         with unittest.mock.patch.object(client, "get_available_models", return_value=mock_models):
-            with unittest.mock.patch("builtins.input", return_value="1"):
+            # Select 0: follow appliance serving model
+            with unittest.mock.patch("builtins.input", return_value="0"):
                 chosen = prompt_switch_model(None, client, current_agent="software_engineer")
-                self.assertIsNotNone(chosen)
+                self.assertEqual(chosen, "safi-active-7b")
+                self.assertEqual(config.resolve_intellect_model("software_engineer"), "local")
+
+            # Select 2: standby model (notice printed, model saved)
+            with unittest.mock.patch("builtins.input", return_value="2"):
+                chosen = prompt_switch_model(None, client, current_agent="software_engineer")
+                self.assertEqual(chosen, "safi-standby-14b")
+                self.assertEqual(config.resolve_intellect_model("software_engineer"), "safi-standby-14b")
+
+            # Select 3: GPT-4o
+            with unittest.mock.patch("builtins.input", return_value="3"):
+                chosen = prompt_switch_model(None, client, current_agent="software_engineer")
                 self.assertEqual(chosen, "gpt-4o")
-                self.assertEqual(config.resolve_intellect_model("software_engineer"), chosen)
+                self.assertEqual(config.resolve_intellect_model("software_engineer"), "gpt-4o")
 
     def test_prompt_command_menu_model(self):
         from safi_cli.main import prompt_command_menu

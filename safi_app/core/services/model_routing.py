@@ -169,8 +169,8 @@ def detect_provider(model_name: str) -> str:
         return "zhipu"
     # Appliance-selected local models all carry a "safi-" alias (safi-qwen3-8b,
     # safi-qwen3-32b, ...), so match the reserved prefix rather than one literal
-    # name.
-    if m.startswith("safi-"):
+    # name. Also recognize sentinel "local" and "@serving" aliases.
+    if m.startswith("safi-") or m in ("local", "@local", "serving", "@serving"):
         return "local"
     # Fail closed: an id matching no rule is unrecognised. Silently routing it
     # to Groq would publish a false HIPAA/ZDR badge, so surface it as an error
@@ -322,6 +322,16 @@ def resolve_effective_faculty_models(
     intellect_explicit: bool = False,
 ) -> tuple[str, str]:
     from .provider_governance import get_org_allowlist, list_models_for_org
+    from ...config import active_local_model
+
+    if intellect_model in ("local", "@local", "serving", "@serving"):
+        live = active_local_model()
+        if live:
+            intellect_model = live
+    if conscience_model in ("local", "@local", "serving", "@serving"):
+        live = active_local_model()
+        if live:
+            conscience_model = live
 
     allowlist = get_org_allowlist(org_id)
     # Do not silently route around a deliberately blocked provider. The chat

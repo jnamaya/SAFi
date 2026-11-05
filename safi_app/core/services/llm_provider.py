@@ -435,7 +435,10 @@ class LLMProvider:
 
             # On-demand model activation: if an installed local model is requested for Intellect,
             # make sure llama-server on port 8081 is serving it.
-            if route == "intellect" and model_name.startswith("safi-"):
+            if route == "intellect" and (model_name.startswith("safi-") or model_name in ("local", "@local", "serving", "@serving")):
+                if model_name in ("local", "@local", "serving", "@serving"):
+                    from ...config import active_local_model
+                    model_name = active_local_model() or model_name
                 try:
                     from .provider_governance import ensure_local_model
                     ready = await ensure_local_model(model_name)
@@ -445,7 +448,7 @@ class LLMProvider:
                             model_name,
                         )
                 except Exception as exc:
-                    self.log.error("Failed during on-demand model activation for %s: %exc", model_name, exc)
+                    self.log.error("Failed during on-demand model activation for %s: %s", model_name, exc)
         # Cleared per call: the agent loop makes several, and only the one that
         # produced the text the user sees should be able to flag it.
         _TRUNCATED.set(False)

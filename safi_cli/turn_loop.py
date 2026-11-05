@@ -169,7 +169,24 @@ def run_agent_turn(
                 ui.console.print("\n[yellow]Turn cancelled by user.[/yellow]")
                 break
             turn_msg_id = str(uuid.uuid4())
-            last_status_markup = ui.build_progress_line(None, None, 0.0, model=model)
+            # If the requested model is a standby local model, notify about the VRAM swap
+            is_standby_local = False
+            if model:
+                try:
+                    from .agent_registry import AVAILABLE_MODELS
+                    for m in (AVAILABLE_MODELS or []):
+                        if (
+                            (m.get("id") == model or m.get("label") == model)
+                            and (m.get("local") or str(m.get("provider", "")).lower() == "local")
+                            and not m.get("active")
+                        ):
+                            is_standby_local = True
+                            break
+                except Exception:
+                    pass
+
+            initial_step = f"Swapping {model} into VRAM (~15-20s)" if is_standby_local else "Governing turn"
+            last_status_markup = ui.build_progress_line(None, initial_step if is_standby_local else None, 0.0, model=model)
             try:
                 with ui.console.status(
                     last_status_markup,
@@ -179,7 +196,7 @@ def run_agent_turn(
                     start_time = time.time()
                     def _poll_progress():
                         nonlocal last_status_markup
-                        current_step_text = "Governing turn"
+                        current_step_text = initial_step
                         progress_codes: List[str] = []
                         while not stop_poller.wait(0.25):
                             try:
@@ -253,6 +270,15 @@ def run_agent_turn(
                 return None
 
             ui.clear_live_status_tail(last_status_markup)
+
+            if is_standby_local and res and not res.get("error"):
+                try:
+                    from .agent_registry import AVAILABLE_MODELS
+                    for m in (AVAILABLE_MODELS or []):
+                        if m.get("local") or str(m.get("provider", "")).lower() == "local":
+                            m["active"] = bool(m.get("id") == model or m.get("label") == model)
+                except Exception:
+                    pass
 
             if res.get("type") == "tool_call":
                 batch = res.get("tool_calls")
