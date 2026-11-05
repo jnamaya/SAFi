@@ -1166,11 +1166,11 @@ def run_setup_wizard() -> tuple[str, str, Optional[str]]:
     )
 
     # 1. Ask for SAFi Appliance URL
-    existing_url = str(config.load_config().get("api_url") or "").strip() or "http://192.168.1.223:5001"
+    existing_url = str(config.load_config().get("api_url") or "").strip() or "https://localhost"
     ui.console.print("\n[bold white]1. SAFi Appliance Endpoint[/]")
     ui.console.print(
         "[dim]Enter the base URL of your SAFi server or Mini-PC appliance.\n"
-        "Examples: [cyan]http://localhost:5000[/], [cyan]http://192.168.1.223:5001[/], [cyan]https://safi.local:5001[/][/dim]"
+        "Examples: [cyan]https://localhost[/], [cyan]https://192.168.1.223[/][/dim]"
     )
 
     while True:
@@ -1182,7 +1182,7 @@ def run_setup_wizard() -> tuple[str, str, Optional[str]]:
 
         chosen_url = val.rstrip("/") if val else existing_url
         if not chosen_url.startswith(("http://", "https://")):
-            chosen_url = f"http://{chosen_url}"
+            chosen_url = f"https://{chosen_url}"
 
         ui.console.print(f"[dim]⠋ Testing connection to {chosen_url}...[/dim]")
         test_client = SafiClient(chosen_url)

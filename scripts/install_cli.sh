@@ -103,7 +103,13 @@ fi
 echo "Writing launcher to ${BIN_DIR}/safi-cli..."
 cat << EOF > "${BIN_DIR}/safi-cli"
 #!/usr/bin/env bash
-export PYTHONPATH="${INSTALL_DIR}:\${PYTHONPATH}"
+if [ -d "${REPO_DIR}/safi_cli" ]; then
+    export PYTHONPATH="${REPO_DIR}:\${PYTHONPATH}"
+elif [ -d "/var/www/safi/safi_cli" ]; then
+    export PYTHONPATH="/var/www/safi:\${PYTHONPATH}"
+else
+    export PYTHONPATH="${INSTALL_DIR}:\${PYTHONPATH}"
+fi
 exec "${TARGET_PYTHON}" -m safi_cli.main "\$@"
 EOF
 chmod +x "${BIN_DIR}/safi-cli"
@@ -394,7 +400,13 @@ elif [ -f "${REPO_DIR}/scripts/setup_ssh_key.sh" ]; then
 else
     cat << EOF > "${BIN_DIR}/safi-setup-key"
 #!/usr/bin/env bash
-export PYTHONPATH="${INSTALL_DIR}:\${PYTHONPATH}"
+if [ -d "${REPO_DIR}/safi_cli" ]; then
+    export PYTHONPATH="${REPO_DIR}:\${PYTHONPATH}"
+elif [ -d "/var/www/safi/safi_cli" ]; then
+    export PYTHONPATH="/var/www/safi:\${PYTHONPATH}"
+else
+    export PYTHONPATH="${INSTALL_DIR}:\${PYTHONPATH}"
+fi
 exec "${TARGET_PYTHON}" -m safi_cli.ssh_keys "\$@"
 EOF
     chmod +x "${BIN_DIR}/safi-setup-key"
