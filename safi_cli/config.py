@@ -190,7 +190,7 @@ def resolve_api_url(explicit_url: Optional[str] = None) -> str:
     if not url:
         raise SystemExit(
             "No SAFi backend URL configured.\n"
-            "Run:  safi --set-url http://<host>:5000\n"
+            "Run:  safi-cli --set-url http://<host>:5000\n"
             "(or pass -u/--api-url explicitly for a one-off override)"
         )
     return url

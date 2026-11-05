@@ -27,11 +27,13 @@ keyring = [
 ]
 
 [project.scripts]
-safi = "safi_cli.main:main"
+safi-cli = "safi_cli.main:main"
+saficli = "safi_cli.main:main"
 safi-setup-key = "safi_cli.ssh_keys:main"
 
 [tool.setuptools.packages.find]
 include = ["safi_cli*"]
+exclude = ["deploy*", "tests*", "docs*", "Benchmarks*", "cache*", "vector_store*"]
 
 [tool.setuptools.package-data]
 safi_cli = ["*.sh"]

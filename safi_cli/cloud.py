@@ -180,7 +180,7 @@ def execute_m365_admin(
     if not tenant:
         return (
             "Error: No Microsoft 365 / Entra ID tenant configured.\n"
-            "Run '/setup-cloud' or 'safi setup-cloud' in the terminal to configure your tenant credentials."
+            "Run '/setup-cloud' or 'safi-cli setup-cloud' in the terminal to configure your tenant credentials."
         )
 
     try:
@@ -377,7 +377,7 @@ def execute_azure_admin(
     if not sub_cfg:
         return (
             "Error: No Azure subscription configured.\n"
-            "Run '/setup-cloud' or 'safi setup-cloud' in the terminal to configure Azure credentials."
+            "Run '/setup-cloud' or 'safi-cli setup-cloud' in the terminal to configure Azure credentials."
         )
 
     sub_id = sub_cfg.get("subscription_id")

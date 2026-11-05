@@ -305,7 +305,7 @@ def keygen_local() -> int:
     if fingerprint:
         ui.console.print(f"  [dim]Fingerprint:[/] [cyan]{fingerprint}[/]")
     ui.console.print(f"  [dim]Public key content:[/] [cyan]{key_content}[/]")
-    ui.console.print("\n[dim]Ready to deploy with:[/] [cyan]safi setup-key <target>[/]")
+    ui.console.print("\n[dim]Ready to deploy with:[/] [cyan]safi-cli setup-key <target>[/]")
     return 0
 
 

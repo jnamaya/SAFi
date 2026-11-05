@@ -69,13 +69,13 @@ def main():
         sys.exit(ssh_keys.keygen_local())
 
     parser = argparse.ArgumentParser(
-        prog="safi",
+        prog="safi-cli",
         description="SAFi (The Self-alignment Framework Interface) — The governance engine for AI agents.",
     )
     parser.add_argument("--setup", "--init", dest="setup_wizard", action="store_true", help="Launch the interactive first-run setup wizard.")
     parser.add_argument("prompt", nargs="?", help="Task prompt. If omitted, starts interactive REPL mode.")
     parser.add_argument("-k", "--api-key", help="SAFi Policy API Key (defaults to SAFI_API_KEY env or config).")
-    parser.add_argument("-u", "--api-url", help="SAFi backend URL (one-off override; default is the URL saved via `safi --set-url`).")
+    parser.add_argument("-u", "--api-url", help="SAFi backend URL (one-off override; default is the URL saved via `safi-cli --set-url`).")
     parser.add_argument("-a", "--agent", default=None, help="Agent (default: last used in workspace, or software_engineer).")
     parser.add_argument(
         "-m",
@@ -209,7 +209,7 @@ def main():
                 f"No SAFi Policy API key provided for '{target_agent}'.\n\n"
                 "You can also set it via:\n"
                 f"  • export SAFI_API_KEY_{target_agent.upper()}=sk-safi-...\n"
-                f"  • safi --set-key sk-safi-... -a {target_agent}"
+                f"  • safi-cli --set-key sk-safi-... -a {target_agent}"
             )
             sys.exit(1)
         config.save_agent_api_key(target_agent, api_key)
