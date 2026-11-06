@@ -60,11 +60,8 @@ DEFAULT_AGENTS = {
 AVAILABLE_AGENTS = dict(DEFAULT_AGENTS)
 
 
-def discover_agents(client: Optional[SafiClient] = None) -> Dict[str, Dict[str, Any]]:
-    """Discover available agents dynamically from the server URL, falling back to local defaults."""
-    if not client:
-        return AVAILABLE_AGENTS
-
+def fetch_remote_agents(client: SafiClient) -> Optional[Dict[str, Dict[str, Any]]]:
+    """Fetch agents directly from the backend, returning None if the server is unreachable or not live."""
     try:
         if hasattr(client, "get_available_agents") and callable(client.get_available_agents):
             remote_list = client.get_available_agents()
@@ -82,10 +79,21 @@ def discover_agents(client: Optional[SafiClient] = None) -> Dict[str, Dict[str, 
                         "is_custom": item.get("is_custom", False),
                     }
                 if discovered:
-                    AVAILABLE_AGENTS.clear()
-                    AVAILABLE_AGENTS.update(discovered)
+                    return discovered
     except Exception as exc:
-        logger.warning("Agent discovery from backend failed: %s", exc)
+        logger.warning("Remote agent fetch failed: %s", exc)
+    return None
+
+
+def discover_agents(client: Optional[SafiClient] = None) -> Dict[str, Dict[str, Any]]:
+    """Discover available agents dynamically from the server URL, falling back to local defaults."""
+    if not client:
+        return AVAILABLE_AGENTS
+
+    remote = fetch_remote_agents(client)
+    if remote:
+        AVAILABLE_AGENTS.clear()
+        AVAILABLE_AGENTS.update(remote)
 
     return AVAILABLE_AGENTS
 

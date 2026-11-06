@@ -132,6 +132,76 @@ class SafiClient:
                 return None
         return None
 
+    def verify_connection(self, timeout: int = 5) -> tuple[bool, str, Dict[str, Any]]:
+        """Strongly verify that the target endpoint is an active, responsive SAFi server.
+
+        Probes /api/agents/all and /api/health to ensure the endpoint is live and authentic.
+
+        Returns:
+            (is_valid, message, metadata_dict)
+        """
+        if not self.api_url:
+            return False, "API URL is empty", {}
+        if not self.api_url.startswith(("http://", "https://")):
+            return False, "Invalid URL scheme: must begin with http:// or https://", {}
+
+        parsed = urlparse(self.api_url)
+        if not parsed.hostname:
+            return False, f"Invalid URL: missing host in '{self.api_url}'", {}
+
+        headers = {}
+        if self.api_key:
+            headers["X-API-KEY"] = self.api_key
+
+        url = f"{self.api_url}/api/agents/all"
+        last_error = ""
+
+        for attempt in (1, 2):
+            try:
+                resp = self.session.get(url, headers=headers, timeout=timeout)
+                if resp.status_code == 200:
+                    data = _json_or_none(resp)
+                    if isinstance(data, dict) and data.get("ok"):
+                        agents = data.get("available") or []
+                        return True, "Connected to SAFi API", {"agents": agents}
+                    return False, f"Endpoint responded HTTP 200 but is not a SAFi server ({str(resp.text)[:120]})", {}
+                elif resp.status_code in (401, 403):
+                    return True, f"SAFi server responded (HTTP {resp.status_code} - Authentication Required)", {}
+                elif resp.status_code == 404:
+                    try:
+                        h_resp = self.session.get(f"{self.api_url}/api/health", headers=headers, timeout=timeout)
+                        if h_resp.status_code == 200:
+                            h_data = _json_or_none(h_resp)
+                            if isinstance(h_data, dict) and h_data.get("status") == "ok":
+                                return True, "Connected to SAFi health check", {}
+                    except Exception:
+                        pass
+                    return False, f"Server answered HTTP 404 at {url} (Not a SAFi API endpoint)", {}
+                elif resp.status_code in (502, 503, 504):
+                    return False, f"Gateway error HTTP {resp.status_code} (Appliance server is offline or proxying failed)", {}
+                else:
+                    return False, f"Server returned unexpected HTTP status {resp.status_code}", {}
+            except requests.exceptions.SSLError as ssl_err:
+                if attempt == 1 and self._allow_cert_refresh():
+                    self._ensure_appliance_cert(force_refresh=True)
+                    continue
+                return False, f"SSL Certificate verification failed: {ssl_err}", {}
+            except requests.exceptions.ConnectionError as conn_err:
+                err_str = str(conn_err)
+                if "Connection refused" in err_str:
+                    return False, f"Connection refused at {self.api_url} (no service listening on this port)", {}
+                if "Name or service not known" in err_str or "Failed to resolve" in err_str:
+                    return False, f"DNS resolution failed: hostname '{parsed.hostname}' not found", {}
+                if "No route to host" in err_str:
+                    return False, f"No route to host {parsed.hostname} (host is unreachable)", {}
+                return False, f"Could not establish network connection: {conn_err}", {}
+            except requests.exceptions.Timeout:
+                return False, f"Connection timed out after {timeout} seconds", {}
+            except Exception as exc:
+                return False, f"Connection error: {exc}", {}
+
+        return False, last_error or "Connection verification failed", {}
+
     def get_available_agents(self) -> List[Dict[str, Any]]:
         """Fetch available agents from the connected SAFi backend URL."""
         data = self._get_json("/api/agents/all")

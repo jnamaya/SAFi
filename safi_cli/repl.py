@@ -1184,28 +1184,33 @@ def run_setup_wizard() -> tuple[str, str, Optional[str]]:
         if not chosen_url.startswith(("http://", "https://")):
             chosen_url = f"https://{chosen_url}"
 
-        ui.console.print(f"[dim]⠋ Testing connection to {chosen_url}...[/dim]")
+        ui.console.print(f"[dim]⠋ Verifying connection to {chosen_url}...[/dim]")
         test_client = SafiClient(chosen_url)
-        discovered = discover_agents(test_client)
-        if discovered:
+        is_live, err_msg, meta = test_client.verify_connection()
+
+        if is_live:
+            agents = meta.get("agents") or []
+            agent_names = [a.get("key") or a.get("name") for a in agents if isinstance(a, dict)]
             ui.console.print(
-                f"[bold green]✓ Connected successfully![/] "
-                f"[dim](Discovered {len(discovered)} agent(s): {', '.join(discovered.keys())})[/dim]"
+                f"[bold green]✓ Connected successfully to live SAFi endpoint![/] "
+                + (f"[dim](Discovered {len(agents)} agent(s): {', '.join(agent_names)})[/dim]" if agent_names else "")
             )
             config.save_config({"api_url": chosen_url})
+            discover_agents(test_client)
             break
         else:
-            ui.console.print(
-                f"[bold yellow]⚠️ Could not verify connection to {chosen_url}.[/]\n"
-                f"[dim]The server may be starting up, behind a firewall, or unreachable.[/dim]"
-            )
+            ui.console.print(f"[bold red]✗ Connection verification failed:[/] {err_msg}")
+            ui.console.print(f"[dim]The server at [bold]{chosen_url}[/] is not responding as a live SAFi instance.[/dim]")
             try:
-                confirm = input("Save and use this endpoint anyway? [y/N]: ").strip().lower()
+                confirm = input("Save this unverified endpoint anyway? [y/N]: ").strip().lower()
             except (KeyboardInterrupt, EOFError):
                 sys.exit(0)
             if confirm in ("y", "yes"):
                 config.save_config({"api_url": chosen_url})
+                ui.console.print(f"[yellow]⚠️ Warning: Saved unverified URL '{chosen_url}'. CLI commands will fail until this endpoint is live.[/]")
                 break
+            else:
+                ui.console.print("[dim]Please re-enter the correct endpoint URL.[/dim]")
 
     # 2. Select Default Agent
     ui.console.print("\n[bold white]2. Primary Agent[/]")

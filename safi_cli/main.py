@@ -166,12 +166,22 @@ def main():
 
     if args.set_url:
         new_url = args.set_url.strip().rstrip("/")
-        config.save_config({"api_url": new_url})
-        ui.console.print(f"[bold green]✓ Saved API URL to {config.CONFIG_FILE}[/]")
+        if not new_url.startswith(("http://", "https://")):
+            new_url = f"https://{new_url}"
+        ui.console.print(f"[dim]⠋ Verifying connection to {new_url}...[/dim]")
         test_client = SafiClient(new_url)
-        discovered = discover_agents(test_client)
-        ui.console.print(f"[dim]Backend {new_url}: discovered {len(discovered)} available agent(s).[/dim]")
-        sys.exit(0)
+        is_live, err_msg, meta = test_client.verify_connection()
+        if is_live:
+            config.save_config({"api_url": new_url})
+            ui.console.print(f"[bold green]✓ Verified and saved API URL to {config.CONFIG_FILE}[/]")
+            agents = meta.get("agents") or []
+            if agents:
+                ui.console.print(f"[dim]Discovered {len(agents)} available agent(s) on {new_url}.[/dim]")
+            sys.exit(0)
+        else:
+            ui.console.print(f"[bold red]✗ Connection verification failed:[/] {err_msg}")
+            ui.console.print(f"[yellow]URL '{new_url}' was not saved. Please verify the endpoint is reachable or run 'safi-cli --setup'.[/]")
+            sys.exit(1)
 
     # Run setup wizard if requested via --setup or on first run in an interactive terminal
     is_first_run = (not config.has_configured_api_url() and not args.api_url)

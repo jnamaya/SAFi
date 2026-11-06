@@ -1990,9 +1990,10 @@ class TestSafiSetupWizard(unittest.TestCase):
         config.set_default_agent("sysadmin")
         self.assertEqual(config.get_default_agent(), "sysadmin")
 
+    @unittest.mock.patch("safi_cli.client.SafiClient.verify_connection", return_value=(True, "Connected", {"agents": [{"key": "sysadmin"}]}))
     @unittest.mock.patch("builtins.input")
     @unittest.mock.patch("safi_cli.main.discover_agents", return_value={"sysadmin": {"title": "Sysadmin Agent"}, "software_engineer": {"title": "SWE"}})
-    def test_run_setup_wizard(self, mock_discover, mock_input):
+    def test_run_setup_wizard(self, mock_discover, mock_input, mock_verify):
         from safi_cli.main import run_setup_wizard
 
         # Inputs: 1) URL, 2) Persona choice "1" (sysadmin), 3) API Key "sk-safi-12345"
@@ -2007,6 +2008,36 @@ class TestSafiSetupWizard(unittest.TestCase):
         self.assertEqual(config.load_config().get("api_url"), "http://192.168.1.223:5001")
         self.assertEqual(config.get_default_agent(), "sysadmin")
         self.assertEqual(config.resolve_agent_api_key("sysadmin"), "sk-safi-12345")
+
+    @unittest.mock.patch("builtins.input")
+    def test_run_setup_wizard_rejects_unverified_url_and_loops(self, mock_input):
+        from safi_cli.main import run_setup_wizard
+
+        # 1st attempt: bad URL, prompt "Save anyway?": "n" (rejects)
+        # 2nd attempt: valid URL, accepts, choice "1", key "sk-test"
+        with unittest.mock.patch(
+            "safi_cli.client.SafiClient.verify_connection",
+            side_effect=[
+                (False, "Connection refused", {}),
+                (True, "Connected", {"agents": [{"key": "sysadmin"}]}),
+            ],
+        ):
+            mock_input.side_effect = [
+                "https://bad-endpoint:9999",
+                "n",
+                "https://good-endpoint:5001",
+                "1",
+                "sk-test",
+            ]
+            url, agent, key = run_setup_wizard()
+            self.assertEqual(url, "https://good-endpoint:5001")
+            self.assertEqual(config.load_config().get("api_url"), "https://good-endpoint:5001")
+
+    def test_verify_connection_methods(self):
+        client = SafiClient("http://127.0.0.1:59999")
+        ok, msg, meta = client.verify_connection(timeout=1)
+        self.assertFalse(ok)
+        self.assertTrue("refused" in msg.lower() or "connection" in msg.lower())
 
 
 
