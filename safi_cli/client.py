@@ -83,17 +83,16 @@ class SafiClient:
         return None
 
     def _allow_cert_refresh(self) -> bool:
-        """Only allow overwriting an existing pinned appliance cert if explicitly opted in."""
-        val = os.environ.get("SAFI_TRUST_ON_REINSTALL", "")
-        return val.strip().lower() in ("1", "true", "yes", "on")
+        """Allow refreshing an existing pinned appliance cert on reinstall (default: True)."""
+        val = os.environ.get("SAFI_TRUST_ON_REINSTALL", "1")
+        return val.strip().lower() not in ("0", "false", "no", "off")
 
     def _ensure_appliance_cert(self, force_refresh: bool = False) -> None:
         if not self.api_url.startswith("https://"):
             return
-        if self.default_ca.exists():
-            if not (force_refresh and self._allow_cert_refresh()):
-                self.session.verify = str(self.default_ca)
-                return
+        if self.default_ca.exists() and not force_refresh:
+            self.session.verify = str(self.default_ca)
+            return
 
         pem = self._fetch_peer_cert()
         if pem:
@@ -182,7 +181,7 @@ class SafiClient:
                 else:
                     return False, f"Server returned unexpected HTTP status {resp.status_code}", {}
             except requests.exceptions.SSLError as ssl_err:
-                if attempt == 1 and self._allow_cert_refresh():
+                if attempt == 1:
                     self._ensure_appliance_cert(force_refresh=True)
                     continue
                 return False, f"SSL Certificate verification failed: {ssl_err}", {}
