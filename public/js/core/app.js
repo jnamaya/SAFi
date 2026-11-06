@@ -4,7 +4,7 @@ import * as uiAuthSidebar from '../ui/ui-auth-sidebar.js';
 import * as uiMessages from '../ui/ui-messages.js';
 import * as uiSettingsModals from '../ui/ui-settings-modals.js';
 import { initDataSources } from '../ui/ui-data-sources.js';
-import { initModelSelector, getActiveModelLabel } from '../ui/ui-model-selector.js';
+import { initModelSelector, getActiveModelLabel, getActiveModel } from '../ui/ui-model-selector.js';
 import { initComposerMenu, updateAgentLabel, updateModelLabel, updateAiDisclosure } from '../ui/ui-composer-menu.js';
 import { initVoiceInput } from '../ui/ui-voice-input.js';
 import { getAvatarForProfile } from '../ui/ui-auth-sidebar.js';
@@ -363,6 +363,10 @@ async function checkLoginStatus() {
         handleQuickModelSwitch(modelId);
         updateModelLabel(getActiveModelLabel());
       }, modelsResponse.public_demo_ui === true);
+      const activeModel = getActiveModel();
+      if (activeModel && user.intellect_model !== activeModel.id) {
+        user.intellect_model = activeModel.id;
+      }
 
       // Load the conversation list and the active chat
       await chat.loadConversations(

@@ -10,9 +10,21 @@ let _onModelChange = null;
 // messages. Inside a customer deployment both are noise.
 let _publicDemoUi = false;
 
+function _resolveModel(modelId) {
+    if (!Array.isArray(_models) || _models.length === 0) return null;
+    let found = _models.find(m => m.id === modelId);
+    if (found) return found;
+    found = _models.find(m => m.alias === modelId || (Array.isArray(m.aliases) && m.aliases.includes(modelId)));
+    if (found) return found;
+    found = _models.find(m => m.active);
+    if (found) return found;
+    return _models[0] || null;
+}
+
 export function initModelSelector(models, activeModelId, onModelChange, publicDemoUi = false) {
     _models = models || [];
-    _activeModelId = activeModelId || null;
+    const resolved = _resolveModel(activeModelId);
+    _activeModelId = resolved ? resolved.id : null;
     _onModelChange = onModelChange;
     _publicDemoUi = !!publicDemoUi;
     _renderDropdown();
@@ -24,12 +36,12 @@ export function isPublicDemoUi() {
 }
 
 export function getActiveModelLabel() {
-    const active = _models.find(m => m.id === _activeModelId);
+    const active = _resolveModel(_activeModelId);
     return active ? _label(active) : null;
 }
 
 export function getActiveModel() {
-    return _models.find(m => m.id === _activeModelId) || null;
+    return _resolveModel(_activeModelId);
 }
 
 export function markModelActive(modelId) {
@@ -47,7 +59,8 @@ export function markModelActive(modelId) {
 }
 
 export function setActiveModel(modelId) {
-    _activeModelId = modelId;
+    const resolved = _resolveModel(modelId);
+    _activeModelId = resolved ? resolved.id : null;
     _renderDropdown();
 }
 
