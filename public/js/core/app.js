@@ -745,20 +745,7 @@ async function handleQuickModelSwitch(modelId) {
     await api.updateUserModels({ intellect_model: modelId });
     user.intellect_model = modelId;
     const model = availableModels.find(m => m.id === modelId);
-    const label = model?.label || modelId;
-    const isLocal = model && (model.provider === 'local' || model.local);
-    if (isLocal) {
-      if (!model.active) {
-        ui.showToast(
-          `Switched to ${label}. Note: Model is in standby; next message will swap it into VRAM (~15–20s delay), or activate it in Settings > Appliance Models.`,
-          'info'
-        );
-      } else {
-        ui.showToast(`Switched to ${label} (Serving in VRAM)`, 'success');
-      }
-    } else {
-      ui.showToast(`Switched to ${label}`, 'success');
-    }
+    ui.showToast(`Switched to ${model?.label || modelId}`, 'success');
   } catch(e) {
     console.error('Model switch failed:', e);
     ui.showToast('Could not switch model.', 'error');
