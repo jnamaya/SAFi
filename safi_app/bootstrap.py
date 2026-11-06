@@ -122,13 +122,33 @@ def _seed_local_admin() -> None:
     conn = db.get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
-        cursor.execute("SELECT id FROM users WHERE id='local_admin'")
-        if cursor.fetchone():
-            cursor.execute(
-                "UPDATE users SET email=%s, username=%s, name=%s, password_hash=%s "
-                "WHERE id='local_admin'",
-                (email or None, username or None, display_name, password_hash),
-            )
+        cursor.execute("SELECT id, org_id FROM users WHERE id='local_admin'")
+        existing_user = cursor.fetchone()
+        if existing_user:
+            org_id = existing_user.get("org_id")
+            if not org_id:
+                cursor.execute(
+                    "SELECT id FROM organizations WHERE name=%s ORDER BY created_at LIMIT 1",
+                    ("Local Admin Organization",),
+                )
+                row = cursor.fetchone()
+                org_id = row["id"] if row else str(uuid.uuid4())
+                if not row:
+                    cursor.execute(
+                        "INSERT INTO organizations (id, name) VALUES (%s, %s)",
+                        (org_id, "Local Admin Organization"),
+                    )
+                cursor.execute(
+                    "UPDATE users SET email=%s, username=%s, name=%s, password_hash=%s, org_id=%s "
+                    "WHERE id='local_admin'",
+                    (email or None, username or None, display_name, password_hash, org_id),
+                )
+            else:
+                cursor.execute(
+                    "UPDATE users SET email=%s, username=%s, name=%s, password_hash=%s "
+                    "WHERE id='local_admin'",
+                    (email or None, username or None, display_name, password_hash),
+                )
         else:
             cursor.execute(
                 "SELECT id FROM organizations WHERE name=%s ORDER BY created_at LIMIT 1",
@@ -151,6 +171,41 @@ def _seed_local_admin() -> None:
                 (email or None, username or None, display_name, authority_role, org_id,
                  password_hash, Config.DEFAULT_PROFILE),
             )
+
+        if org_id:
+            # On an appliance / local-login deployment, adopt the active agent
+            # policies into the administrator's organization so they become
+            # fully editable, support direct API key generation, and maintain
+            # unified governance between Web UI agents and CLI tooling.
+            active_ids = [
+                policy_id for agent_key, policy_id in DEMO_AGENT_POLICY_MAP.items()
+                if Config.builtin_agent_enabled(agent_key)
+            ]
+            if active_ids:
+                placeholders = ",".join(["%s"] * len(active_ids))
+                cursor.execute(
+                    f"UPDATE policies "
+                    f"SET org_id=%s, is_demo=FALSE, created_by='local_admin' "
+                    f"WHERE (org_id IS NULL OR is_demo=TRUE) AND id IN ({placeholders})",
+                    (org_id, *active_ids),
+                )
+                for pid in active_ids:
+                    cursor.execute("SELECT policy_config FROM policies WHERE id=%s", (pid,))
+                    prow = cursor.fetchone()
+                    if prow and prow.get("policy_config"):
+                        pcfg = (
+                            json.loads(prow["policy_config"])
+                            if isinstance(prow["policy_config"], str)
+                            else (prow["policy_config"] or {})
+                        )
+                        bu = pcfg.get("business_unit", "")
+                        if " (Demo)" in bu:
+                            pcfg["business_unit"] = bu.replace(" (Demo)", "").strip()
+                            cursor.execute(
+                                "UPDATE policies SET policy_config=%s WHERE id=%s",
+                                (json.dumps(pcfg), pid),
+                            )
+
         conn.commit()
     except Exception:
         log.exception("Could not synchronize the configured local administrator.")
