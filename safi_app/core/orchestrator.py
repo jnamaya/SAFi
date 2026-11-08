@@ -227,7 +227,7 @@ def _clean_client_owned_history(messages: List[Dict[str, Any]]) -> List[Dict[str
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 AUDIT_PARAM_MAXLEN = 120
-AGENTIC_TOOL_REPEAT_LIMIT = 5
+AGENTIC_TOOL_REPEAT_LIMIT = 2
 HARNESS_TOOL_REPEAT_LIMIT = AGENTIC_TOOL_REPEAT_LIMIT
 AGENTIC_PROGRESS_LABELS = {
     "checking_request": "Checking request safeguards…",
@@ -585,7 +585,7 @@ def build_task_state_block(user_prompt: str, tool_results: Any) -> str:
     if consecutive_inspections >= 4 and deliverable_writes == 0:
         lines.append(
             f"WARNING: You have executed {consecutive_inspections} consecutive read/inspection calls "
-            "without writing or editing any file. Stop reading ahead across the codebase — write `.safi/scratchpad.md` "
+            "without writing or editing any file. Stop reading ahead across the codebase: write `.safi/scratchpad.md` "
             "or apply `edit`/`write` for your current checklist item immediately."
         )
     if deliverable_writes > 0:
@@ -597,8 +597,11 @@ def build_task_state_block(user_prompt: str, tool_results: Any) -> str:
         )
     else:
         lines.append(
-            "Continue executing the remaining work with tools now. Do NOT ask the user "
-            "for permission to proceed, and do NOT re-read or re-run anything listed above."
+            "If your goal is to inspect code, check capabilities, or answer an informational question, and you have "
+            "gathered sufficient information from the inspection tools above, provide your final response "
+            "in plain text now without executing further tools. If this is an engineering implementation "
+            "task requiring code modifications, proceed to apply 'edit' or 'write' now. Do NOT re-run "
+            "commands or re-read files listed above."
         )
     return "\n".join(lines)
 

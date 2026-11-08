@@ -1,5 +1,6 @@
 """Main agentic turn loop: tool proposals, resume budget, step ceiling."""
 
+import json
 import logging
 import os
 import threading
@@ -53,6 +54,38 @@ def _handle_tool_proposal(
             "tool_name": tool_name,
             "arguments": args,
             "result": f"Security Gate rejected '{tool_name}' ({will_reason}).",
+        })
+        return subagents_run_count
+
+    # Circuit breaker: prevent duplicate tool execution in the same turn
+    def _args_equal(a: Any, b: Any) -> bool:
+        if a == b:
+            return True
+        try:
+            return json.dumps(a, sort_keys=True, default=str) == json.dumps(b, sort_keys=True, default=str)
+        except Exception:
+            return False
+
+    duplicate_count = sum(
+        1 for tr in tool_results
+        if tr.get("tool_name") == tool_name and _args_equal(tr.get("arguments"), args)
+    )
+    is_immediate_repeat = bool(
+        tool_results
+        and tool_results[-1].get("tool_name") == tool_name
+        and _args_equal(tool_results[-1].get("arguments"), args)
+    )
+    if is_immediate_repeat or duplicate_count >= 2:
+        breaker_msg = (
+            f"[Circuit Breaker] Duplicate tool call '{tool_name}' with identical parameters was "
+            "already executed in this turn. Do not repeat commands. Summarize your findings and "
+            "answer the user directly in plain text now."
+        )
+        ui.print_tool_result_summary(tool_name, "[Circuit breaker tripped: duplicate tool call prevented]")
+        tool_results.append({
+            "tool_name": tool_name,
+            "arguments": args,
+            "result": breaker_msg,
         })
         return subagents_run_count
 
@@ -311,10 +344,16 @@ def run_agent_turn(
                         subagents_run_count=subagents_run_count,
                     )
                 last_tr = tool_results[-1] if tool_results else {}
+                last_tname = last_tr.get("tool_name") or ""
                 last_tpath = str((last_tr.get("arguments") or {}).get("path") or "")
                 last_tres = str(last_tr.get("result") or "")
-                if not last_tres.startswith("Error:") and not last_tpath.endswith("scratchpad.md"):
-                    resume_budget = 2
+                # Only replenish resume budget if actual deliverable code was written, not on read/bash/scratchpad
+                if (
+                    not last_tres.startswith("Error:")
+                    and last_tname in ("edit", "write")
+                    and not last_tpath.endswith("scratchpad.md")
+                ):
+                    resume_budget = min(resume_budget + 1, 2)
                 continue
 
             final_text = res.get("finalOutput") or ""
@@ -325,11 +364,39 @@ def run_agent_turn(
                 t for t in ui.get_active_todos()
                 if (t.get("status") or "pending").lower() not in ("completed", "done")
             ]
-            if not is_intercepted and unfinished_todos and resume_budget > 0 and step < max_steps - 1:
+
+            def _is_actionable(task_text: str) -> bool:
+                tl = task_text.lower()
+                passive_markers = ("await", "wait", "ask", "confirm", "user input", "operator", "clarif", "pending user")
+                return not any(m in tl for m in passive_markers)
+
+            actionable_todos = [
+                t for t in unfinished_todos
+                if _is_actionable(str(t.get("task") or t.get("content") or t.get("description") or ""))
+            ]
+
+            clean_prompt = prompt.strip().lower()
+            is_question = (
+                clean_prompt.endswith("?")
+                or any(clean_prompt.startswith(prefix) for prefix in (
+                    "can you", "could you", "what", "how", "why", "where", "which", "who", "is ", "are ", "do you", "does "
+                ))
+            )
+
+            is_asking_user = "?" in final_text and any(w in final_text.lower() for w in ("you", "please", "confirm", "specify"))
+
+            if (
+                not is_intercepted
+                and actionable_todos
+                and not is_question
+                and not is_asking_user
+                and resume_budget > 0
+                and step < max_steps - 1
+            ):
                 resume_budget -= 1
                 remaining = "; ".join(
                     str(t.get("task") or t.get("content") or t.get("description") or "step")
-                    for t in unfinished_todos
+                    for t in actionable_todos
                 )[:500]
                 pause_note = " ".join((final_text or "").split())[:500]
                 tool_results.append({
@@ -345,7 +412,7 @@ def run_agent_turn(
                         f"(Your note: {pause_note})"
                     ),
                 })
-                ui.console.print("[dim yellow]↳ Plan incomplete — continuing autonomously…[/dim yellow]")
+                ui.console.print("[dim yellow]↳ Plan incomplete: continuing autonomously...[/dim yellow]")
                 continue
 
             executed_tools = res.get("toolCalls") or res.get("tool_calls") or []
