@@ -343,9 +343,27 @@ def list_all_agents():
                         user_role = ROLE_CONFIG["default_role"]
             except Exception as e:
                 current_app.logger.warning(f"Error resolving policy from API key in list_all_agents: {e}")
-    
+
+    # Explicit client-supplied user identity override (e.g. from safi-cli)
+    x_user_id = request.headers.get("X-User-ID") or request.args.get("user_id")
+    if x_user_id:
+        u_det = db.get_user_details(x_user_id)
+        if u_det:
+            user_id = u_det["id"]
+            user_role = u_det.get("role") or user_role
+            org_id = u_det.get("org_id") or org_id
+
+    if user_id and (not user_role or user_role == ROLE_CONFIG["default_role"]):
+        u_det = db.get_user_details(user_id)
+        if u_det and u_det.get("role"):
+            user_role = u_det.get("role")
+
+    from ..persistence import sharing_store
     sys_agents = []
     for k, v in AGENTS.items():
+        # Filter built-in agents by user role and group permissions
+        if user_id and not sharing_store.can_use_built_in_or_custom_agent(user_id, user_role, org_id, k, ROLE_CONFIG):
+            continue
         # Compile through get_profile() so built-ins carry the same governed
         # view (scope, hard gates, policy/org names) the UI shows for DB agents.
         try:

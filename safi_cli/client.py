@@ -112,6 +112,13 @@ class SafiClient:
         headers = {}
         if self.api_key:
             headers["X-API-KEY"] = self.api_key
+        try:
+            from . import config
+            cli_user = config.resolve_user_id()
+            if cli_user:
+                headers["X-User-ID"] = cli_user
+        except Exception:
+            pass
         url = f"{self.api_url}{path}"
         for attempt in (1, 2):
             try:
