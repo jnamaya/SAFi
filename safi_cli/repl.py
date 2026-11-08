@@ -1156,11 +1156,11 @@ def _wizard_login_or_key(api_url: str, agent: str) -> str:
 
     while True:
         try:
-            mode = input("Sign in with username and password? [Y/n]: ").strip().lower()
+            identifier = input("SAFi username (or DOMAIN\\user, or press Enter for API key): ").strip()
         except (KeyboardInterrupt, EOFError):
             sys.exit(0)
 
-        if mode in ("n", "no"):
+        if not identifier:
             try:
                 key_val = input("Enter Policy API Key (sk-safi-...) [press Enter to skip for now]: ").strip()
             except (KeyboardInterrupt, EOFError):
@@ -1174,7 +1174,6 @@ def _wizard_login_or_key(api_url: str, agent: str) -> str:
 
         # Web-credential login: exchange username/password for a provisioned key.
         try:
-            identifier = input("SAFi username (or DOMAIN\\user): ").strip()
             password = getpass.getpass("Password: ")
             totp_code = input("TOTP code (blank if MFA not enabled): ").strip()
         except (KeyboardInterrupt, EOFError):

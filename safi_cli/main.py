@@ -280,12 +280,12 @@ def main():
             f"[dim]Each agent is governed by its own domain policy and requires its own Policy API Key.[/dim]"
         )
         try:
-            use_login = input("Sign in with your SAFi username and password? [Y/n]: ").strip().lower()
+            identifier = input("SAFi username (or DOMAIN\\user, or press Enter for API key): ").strip()
         except (KeyboardInterrupt, EOFError):
             sys.exit(1)
-        if use_login not in ("n", "no"):
+
+        if identifier:
             try:
-                identifier = input("SAFi username (or DOMAIN\\user): ").strip()
                 password = getpass.getpass("Password: ")
                 totp_code = input("TOTP code (blank if MFA not enabled): ").strip()
                 ldap_hint = "\\" in identifier
@@ -299,7 +299,7 @@ def main():
                         ui.print_error(
                             f"Login failed: {exc2}\n\n"
                             "You can also set a key via:\n"
-                            f"  • safi-cli --login -a {target_agent}\n"
+                            f"  • safi-cli --login\n"
                             f"  • safi-cli --set-key sk-safi-... -a {target_agent}"
                         )
                         sys.exit(1)
@@ -310,13 +310,23 @@ def main():
             if not api_key:
                 ui.print_error("Server did not return an API key.")
                 sys.exit(1)
+            user_info = payload.get("user") or {}
+            save_updates = {}
+            if user_info.get("id"):
+                save_updates["user_id"] = user_info["id"]
+            if user_info.get("name") or identifier:
+                save_updates["user_name"] = user_info.get("name") or identifier
+            if save_updates:
+                config.save_config(save_updates)
+            for name in AVAILABLE_AGENTS.keys():
+                config.save_agent_api_key(name, api_key)
             ui.console.print(
                 f"[bold green]✓ Logged in as {payload.get('user', {}).get('name', identifier)}[/] "
                 f"[dim]Policy: {payload.get('policy_id', '?')}[/]"
             )
         else:
             try:
-                api_key = input(f"Enter Policy API Key for {target_agent} (from SAFi Governance Portal): ").strip()
+                api_key = input(f"Enter Policy API Key (sk-safi-...): ").strip()
             except (KeyboardInterrupt, EOFError):
                 sys.exit(1)
             if not api_key:
