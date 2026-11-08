@@ -206,6 +206,21 @@ def _seed_local_admin() -> None:
                                 (json.dumps(pcfg), pid),
                             )
 
+            # Auto-seed standard default enterprise groups for role & agent governance
+            from .persistence import sharing_store
+            default_groups = [
+                ("Developers", "Software engineering and code development staff"),
+                ("IT-Infrastructure", "Systems administration, servers, and network operations"),
+                ("SecOps", "Security engineering, vulnerability assessment, and audit"),
+            ]
+            for gname, _desc in default_groups:
+                try:
+                    if not sharing_store.group_name_taken(org_id, gname):
+                        sharing_store.create_group(org_id, gname, "local_admin")
+                        log.info("Bootstrapped default group '%s' for org %s", gname, org_id)
+                except Exception as ge:
+                    log.warning("Could not auto-seed group '%s': %s", gname, ge)
+
         conn.commit()
     except Exception:
         log.exception("Could not synchronize the configured local administrator.")
