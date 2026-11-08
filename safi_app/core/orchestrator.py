@@ -1753,7 +1753,8 @@ class SAFi:
 
         policy_preflight = _will_rules.get("preflight_prompt_scope") if isinstance(_will_rules, dict) else None
         if policy_preflight is None:
-            _p_dict = getattr(self.policy, "policy_data", None) or getattr(self.policy, "definition", None) or (self.policy if isinstance(self.policy, dict) else {})
+            _pol = getattr(self, "policy", None)
+            _p_dict = getattr(_pol, "policy_data", None) or getattr(_pol, "definition", None) or (_pol if isinstance(_pol, dict) else {})
             _p_will = _p_dict.get("will_rules") if isinstance(_p_dict, dict) else {}
             if isinstance(_p_will, dict) and "preflight_prompt_scope" in _p_will:
                 policy_preflight = _p_will.get("preflight_prompt_scope")
