@@ -131,12 +131,18 @@ def resolve_agent_api_key(agent: str, explicit_key: Optional[str] = None) -> Opt
     if stored:
         return stored
 
-    if agent == "software_engineer":
-        gen_env = os.environ.get("SAFI_API_KEY") or os.environ.get("SAFI_POLICY_API_KEY")
-        if gen_env:
-            return gen_env.strip()
-        if cfg.get("api_key"):
-            return str(cfg.get("api_key")).strip()
+    # General fallback: a policy API key in SAFI_API_KEY, SAFI_POLICY_API_KEY,
+    # or config['api_key'], or any other configured agent key, is valid for all
+    # agents because a Policy API key is bound to the user's governing policy.
+    gen_env = os.environ.get("SAFI_API_KEY") or os.environ.get("SAFI_POLICY_API_KEY")
+    if gen_env:
+        return gen_env.strip()
+    if cfg.get("api_key"):
+        return str(cfg.get("api_key")).strip()
+    if isinstance(agent_keys, dict):
+        for _agent_name, _k in agent_keys.items():
+            if _k and str(_k).strip():
+                return str(_k).strip()
 
     return None
 
