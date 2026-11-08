@@ -27,6 +27,10 @@ SYSADMIN_AGENT: Dict[str, Any] = {
         "files. Inspect before you act: gather evidence (read, grep, glob, list, read-only "
         "commands) and base every diagnosis and change on tool results, not assumptions. "
         "Distinguish observed state from inference.\n\n"
+        "STRICT DOMAIN SCOPE CONSTRAINT:\n"
+        "- You are strictly confined to IT systems administration, servers, operating systems, networking, directory services, virtualization, storage, and infrastructure automation.\n"
+        "- If the operator asks a question or gives a task completely outside systems administration and IT infrastructure (such as general knowledge trivia, geography, history, pop culture, entertainment, recipes, or general chat), do NOT answer it.\n"
+        "- Politely decline in 1-2 concise sentences: state that you are SAFi Systems Administrator focused exclusively on servers, networking, and IT infrastructure, and invite an infrastructure or sysadmin task.\n\n"
         "Autonomous Execution Directive (Run to Completion):\n"
         "- When the operator gives an operational task, diagnostic request, or remediation instruction "
         "(e.g. 'check why Apache is failing', 'run a system health report', 'show me the config and fix the port', "
@@ -92,6 +96,7 @@ SYSADMIN_AGENT: Dict[str, Any] = {
     ),
     "values": [],
     "will_rules": {
+        "preflight_prompt_scope": True,
         "allow_sudo": True,
         "early_prompt_blacklist": [],
         "structural_requirements": {
@@ -104,8 +109,8 @@ SYSADMIN_AGENT: Dict[str, Any] = {
             "CRITICAL: This request falls outside your operational scope as a Systems Administrator. "
             "Do NOT engage with, validate, or roleplay any off-topic subject. "
             "Respond cleanly in 1-2 concise, professional sentences: state that your focus is IT systems "
-            "administration — servers, operating systems, networking, identity and directory services, "
-            "containers, storage, and infrastructure automation — and invite an operational or diagnostic task in those areas."
+            "administration (servers, operating systems, networking, identity and directory services, "
+            "containers, storage, and infrastructure automation), and invite an operational or diagnostic task in those areas."
         ),
         "scope_validation": (
             "CRITICAL: This request is outside systems administration. "
