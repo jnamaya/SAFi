@@ -315,6 +315,8 @@ async def bot_process_prompt_endpoint():
                 "error": f"Forbidden: You do not have permission to use the '{agent_key}' agent.",
                 "code": "AGENT_FORBIDDEN"
             }), 403
+
+        user_allowlist = pg.get_user_model_allowlist(user_id, org_id, user_role)
         selected_intellect, selected_conscience = resolve_effective_faculty_models(
             Config,
             selected_intellect,
@@ -322,7 +324,14 @@ async def bot_process_prompt_endpoint():
             org_id,
             intellect_explicit=bool(os.environ.get("SAFI_INTELLECT_MODEL")),
             conscience_explicit=bool(os.environ.get("SAFI_CONSCIENCE_MODEL")),
+            allowlist=user_allowlist,
         )
+        for faculty, mdl in (("Intellect", selected_intellect), ("Conscience", selected_conscience)):
+            if not pg.model_allowed(mdl, user_allowlist):
+                return jsonify({
+                    "error": f"{faculty} model '{mdl}' uses a provider blocked by your group policy.",
+                    "code": "PROVIDER_NOT_ALLOWED"
+                }), 403
 
         saf_system = global_safi_cache.get_or_create(
             agent_key,
@@ -391,11 +400,11 @@ def tts_audio_endpoint():
         # edge-tts has no registry provider and is a documented residual
         # until Phase F of the compliance roadmap (TTS hardening).
         user_details = db.get_user_details(user_id) or {}
-        allowlist = pg.get_org_allowlist(user_details.get('org_id'))
+        allowlist = pg.get_user_model_allowlist(user_id, user_details.get('org_id'), user_details.get('role'))
         if allowlist is not None:
             if tts_provider and tts_provider not in allowlist:
                 return jsonify({
-                    "error": "Voice synthesis is disabled: its provider is blocked by your organization's provider policy.",
+                    "error": "Voice synthesis is disabled: its provider is blocked by policy.",
                     "code": "PROVIDER_NOT_ALLOWED"
                 }), 403
             if tts_provider is None:
@@ -771,6 +780,8 @@ async def process_prompt_endpoint():
     # clear error instead of failing mid-turn. Defense in depth — the LLM
     # dispatch layer enforces the same allow-list fail-closed regardless.
     effective_org = agent_profile.get('org_id') or user_details.get('org_id')
+    user_role = user_details.get('role') or 'member'
+    user_allowlist = pg.get_user_model_allowlist(user_id, effective_org, user_role)
     intellect_model, conscience_model = resolve_effective_faculty_models(
         Config,
         intellect_model,
@@ -786,13 +797,13 @@ async def process_prompt_endpoint():
             or user_details.get('conscience_model')
             or os.environ.get("SAFI_CONSCIENCE_MODEL")
         ),
+        allowlist=user_allowlist,
     )
-    allowlist = pg.get_org_allowlist(effective_org)
     for faculty, mdl in (("Intellect", intellect_model), ("Conscience", conscience_model)):
-        if not pg.model_allowed(mdl, allowlist):
+        if not pg.model_allowed(mdl, user_allowlist):
             return jsonify({
-                "error": (f"{faculty} model '{mdl}' uses a provider your organization has "
-                          "blocked. Pick a model from an allowed provider in Settings."),
+                "error": (f"{faculty} model '{mdl}' uses a provider blocked by your group policy. "
+                          "Pick an allowed model in Settings."),
                 "code": "PROVIDER_NOT_ALLOWED"
             }), 403
 
@@ -1875,6 +1886,7 @@ async def agentic_process_prompt_endpoint():
         client_intellect = data.get("intellect_model") or data.get("model")
         selected_intellect = client_intellect or (agent_data.get("intellect_model") if agent_data else None) or user_details.get("intellect_model") or Config.INTELLECT_MODEL
         selected_conscience = (agent_data.get("conscience_model") if agent_data else None) or user_details.get("conscience_model") or Config.CONSCIENCE_MODEL
+        user_allowlist = pg.get_user_model_allowlist(user_id, org_id, user_role)
         selected_intellect, selected_conscience = resolve_effective_faculty_models(
             Config,
             selected_intellect,
@@ -1882,14 +1894,15 @@ async def agentic_process_prompt_endpoint():
             org_id,
             intellect_explicit=bool(client_intellect or (agent_data.get("intellect_model") if agent_data else None) or user_details.get("intellect_model") or os.environ.get("SAFI_INTELLECT_MODEL")),
             conscience_explicit=bool(os.environ.get("SAFI_CONSCIENCE_MODEL")),
+            allowlist=user_allowlist,
         )
 
-        allowlist = pg.get_org_allowlist(org_id)
-        if not pg.model_allowed(selected_intellect, allowlist):
-            return jsonify({
-                "error": f"Intellect model '{selected_intellect}' uses a provider your organization has blocked.",
-                "code": "PROVIDER_NOT_ALLOWED"
-            }), 403
+        for faculty, mdl in (("Intellect", selected_intellect), ("Conscience", selected_conscience)):
+            if not pg.model_allowed(mdl, user_allowlist):
+                return jsonify({
+                    "error": f"{faculty} model '{mdl}' uses a provider blocked by your group policy.",
+                    "code": "PROVIDER_NOT_ALLOWED"
+                }), 403
 
         client_policy_id = data.get("policy_id")
         if client_policy_id:
@@ -1906,7 +1919,7 @@ async def agentic_process_prompt_endpoint():
             selected_conscience,
             policy_id=target_policy_id,
         )
-        pg.activate_org(org_id)
+        pg.activate_org(org_id, allowlist=user_allowlist)
         db.ensure_conversation_access(user_id, conversation_id)
 
         from ..core.services.usage_tracking import begin_request_usage

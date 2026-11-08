@@ -69,8 +69,11 @@ def get_org_allowlist(org_id) -> Optional[FrozenSet[str]]:
         hit = _cache.get(org_id)
         if hit and now - hit[1] < _CACHE_TTL_SECONDS:
             return hit[0]
-    from ...persistence import database as db  # lazy: avoids import cycle at module load
-    raw = db.get_org_provider_config(org_id).get("allowlist")
+    try:
+        from ...persistence import database as db  # lazy: avoids import cycle at module load
+        raw = db.get_org_provider_config(org_id).get("allowlist")
+    except Exception:
+        raw = None
     allow = None if raw is None else frozenset(p for p in raw if p in PROVIDER_METADATA)
     with _cache_lock:
         _cache[org_id] = (allow, now)
@@ -82,9 +85,12 @@ def invalidate_org(org_id) -> None:
         _cache.pop(org_id, None)
 
 
-def activate_org(org_id) -> None:
+def activate_org(org_id, allowlist: Optional[FrozenSet[str]] = None) -> None:
     _ACTIVE_ORG.set(str(org_id) if org_id else None)
-    _ACTIVE_ALLOWLIST.set(get_org_allowlist(org_id))
+    if allowlist is not None:
+        _ACTIVE_ALLOWLIST.set(allowlist)
+    else:
+        _ACTIVE_ALLOWLIST.set(get_org_allowlist(org_id))
 
 
 def active_allowlist() -> Optional[FrozenSet[str]]:
@@ -103,7 +109,12 @@ def assert_provider_allowed(provider_name: str, context: str = "") -> None:
 
 
 def model_allowed(model_id: str, allowlist: Optional[FrozenSet[str]]) -> bool:
-    return allowlist is None or detect_provider(model_id) in allowlist
+    if not model_id:
+        return False
+    try:
+        return allowlist is None or detect_provider(model_id) in allowlist
+    except Exception:
+        return False
 
 
 def local_model_inventory(catalogue_path: str | None = None) -> List[dict]:
@@ -223,14 +234,69 @@ def installed_local_models(catalogue_path: str | None = None) -> List[dict]:
             for m in local_model_inventory(catalogue_path) if m.get("installed") or m.get("active")]
 
 
-def list_models_for_org(org_id) -> List[dict]:
+def get_user_model_allowlist(user_id: Optional[str], org_id: Optional[str], user_role: Optional[str] = None) -> Optional[FrozenSet[str]]:
+    """Resolve effective model provider allow-list for a specific user and their groups.
+
+    Rules:
+    - Admins: None (unrestricted, access to all configured local and cloud models).
+    - Developers / SecOps (or group with model_policy='cloud'): local + cloud models.
+    - IT-Infrastructure / contractors / general staff: frozenset(['local']) (Strict Zero Egress).
+    """
+    if not user_id:
+        return get_org_allowlist(org_id)
+
+    from ...role_config import ROLE_CONFIG
+    admin_roles = set(ROLE_CONFIG.get("organization_admin_roles") or ["admin"])
+    if user_role and user_role in admin_roles:
+        return None
+
+    u_det = None
+    if not user_role:
+        try:
+            from ...persistence import database as db
+            u_det = db.get_user_details(user_id)
+        except Exception:
+            u_det = None
+    if u_det and (u_det.get("role") in admin_roles):
+        return None
+
+    effective_org = org_id or (u_det.get("org_id") if u_det else None)
+    from ...persistence import sharing_store
+    user_groups = sharing_store.get_user_group_details(user_id, effective_org)
+
+    can_use_cloud = False
+    cloud_group_names = {"developers", "developer", "software_engineer", "engineering", "devs", "secops", "security"}
+
+    for g in user_groups:
+        gname = str(g.get("name") or "").lower().strip()
+        gpol = str(g.get("model_policy") or "default").lower().strip()
+        if gpol == "cloud":
+            can_use_cloud = True
+            break
+        elif gpol == "default" and gname in cloud_group_names:
+            can_use_cloud = True
+            break
+
+    org_allow = get_org_allowlist(effective_org)
+    if can_use_cloud:
+        all_providers = frozenset(PROVIDER_METADATA.keys())
+        if org_allow is not None:
+            return all_providers & org_allow
+        return None
+
+    # Strict Zero Egress: Local models only
+    return frozenset(["local"])
+
+
+def list_models_for_org(org_id, allow=None) -> List[dict]:
     """Config.AVAILABLE_MODELS plus local and operator-added rows, enriched with
-    provider metadata, filtered to configured providers and then by the org's
-    allow-list. Single source of truth for every model picker — a model that
-    can't actually be dispatched is never offered."""
+    provider metadata, filtered to configured providers and then by the allow-list.
+    Single source of truth for every model picker: a model that can't actually
+    be dispatched is never offered."""
     from ...config import Config
     from .model_routing import custom_models
-    allow = get_org_allowlist(org_id)
+    if allow is None:
+        allow = get_org_allowlist(org_id)
     # A provider is usable with a deployment .env key, a deployment key stored
     # from the UI, OR the org's own key (backlog 64) — any of them dispatches for
     # this org, so the catalog must offer its models. Reading this from the
@@ -265,6 +331,12 @@ def list_models_for_org(org_id) -> List[dict]:
             "eu_hostable": bool(meta.get("eu_hostable")),
         })
     return out
+
+
+def list_models_for_user(user_id: Optional[str], org_id: Optional[str], user_role: Optional[str] = None) -> List[dict]:
+    """Catalog filtered by user and group permissions."""
+    allow = get_user_model_allowlist(user_id, org_id, user_role)
+    return list_models_for_org(org_id, allow=allow)
 
 
 def get_model_id_for_alias(alias: str, catalogue_path: str | None = None) -> Optional[str]:

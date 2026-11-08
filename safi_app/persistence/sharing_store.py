@@ -121,6 +121,11 @@ def init_schema() -> None:
                             name, table_coll, coll)
                 cursor.execute(
                     f"ALTER TABLE {name} CONVERT TO CHARACTER SET {charset} COLLATE {coll}")
+
+        cursor.execute("SHOW COLUMNS FROM custom_groups LIKE 'model_policy'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE custom_groups ADD COLUMN model_policy VARCHAR(50) DEFAULT 'default'")
+
         conn.commit()
     finally:
         cursor.close()
@@ -176,6 +181,40 @@ def get_user_group_names(user_id, org_id) -> set:
     except Exception as e:
         log.warning("get_user_group_names failed for %s: %s", user_id, e)
         return set()
+    finally:
+        if cursor:
+            try:
+                cursor.close()
+            except Exception:
+                pass
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def get_user_group_details(user_id, org_id) -> list:
+    """Return full custom_groups rows this user belongs to in org_id."""
+    if not user_id or not org_id:
+        return []
+    conn = None
+    cursor = None
+    try:
+        conn = db.get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            """
+            SELECT c.* FROM custom_groups c
+            JOIN group_memberships m ON m.group_id = c.id
+            WHERE m.user_id = %s AND c.org_id = %s
+            """,
+            (user_id, org_id),
+        )
+        return cursor.fetchall() or []
+    except Exception as e:
+        log.warning("get_user_group_details failed for %s: %s", user_id, e)
+        return []
     finally:
         if cursor:
             try:
@@ -494,6 +533,23 @@ def get_group_by_name(org_id, name):
     try:
         cursor.execute("SELECT * FROM custom_groups WHERE org_id=%s AND LOWER(name)=LOWER(%s) LIMIT 1", (org_id, (name or "").strip()))
         return cursor.fetchone()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def update_group_model_policy(group_id, model_policy) -> bool:
+    if model_policy not in ('default', 'local', 'cloud'):
+        raise ValueError("Invalid model_policy: must be 'default', 'local', or 'cloud'")
+    conn = db.get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE custom_groups SET model_policy = %s WHERE id = %s",
+            (model_policy, group_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
     finally:
         cursor.close()
         conn.close()

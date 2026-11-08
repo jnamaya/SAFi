@@ -97,10 +97,13 @@ def list_models():
     picker is the surface that framing is about."""
     user = session.get('user')
     org_id = None
+    user_id = None
+    user_role = None
     if user:
         user_id = user.get('sub') or user.get('id')
         details = db.get_user_details(user_id) or {}
         org_id = details.get('org_id')
+        user_role = details.get('role') or user.get('role')
     else:
         raw_key = request.headers.get("X-API-KEY") or request.headers.get("Authorization", "")
         if raw_key.startswith("Bearer "):
@@ -116,9 +119,19 @@ def list_models():
         else:
             return jsonify({"error": "Unauthorized"}), 401
 
+    # Explicit client override (e.g. from safi-cli forwarding authenticated user_id)
+    x_user_id = request.headers.get("X-User-ID") or request.args.get("user_id")
+    if x_user_id:
+        u_det = db.get_user_details(x_user_id)
+        if u_det:
+            user_id = u_det["id"]
+            user_role = u_det.get("role") or user_role
+            org_id = u_det.get("org_id") or org_id
+
+    from ..core.services.provider_governance import list_models_for_user
     return jsonify({
         "ok": True,
-        "models": list_models_for_org(org_id),
+        "models": list_models_for_user(user_id, org_id, user_role),
         "public_demo_ui": Config.PUBLIC_DEMO_UI,
     })
 

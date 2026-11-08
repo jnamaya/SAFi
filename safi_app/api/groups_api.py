@@ -118,3 +118,20 @@ def remove_member(group_id, user_id):
                                  {"group_id": group_id, "group": group.get('name'),
                                   "member": user_id})
     return jsonify({"ok": True, "removed": removed})
+
+
+@groups_bp.route('/groups/<group_id>/model-policy', methods=['PUT'], strict_slashes=False)
+@require_role('admin')
+def set_group_model_policy(group_id):
+    group = _org_group_or_404(group_id)
+    if not group:
+        return jsonify({"error": "Not found"}), 404
+    data = request.get_json(silent=True) or {}
+    policy = (data.get('model_policy') or '').strip().lower()
+    if policy not in ('default', 'local', 'cloud'):
+        return jsonify({"error": "Invalid model_policy (allowed: 'default', 'local', 'cloud')"}), 400
+    sharing_store.update_group_model_policy(group_id, policy)
+    db.append_compliance_log(get_current_org_id(), 'group_model_policy_changed', f"user:{_actor()}", {
+        "group_id": group_id, "group": group.get('name'), "model_policy": policy
+    })
+    return jsonify({"ok": True, "model_policy": policy})

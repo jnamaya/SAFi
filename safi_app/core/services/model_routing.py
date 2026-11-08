@@ -320,8 +320,9 @@ def resolve_effective_faculty_models(
     *,
     conscience_explicit: bool = False,
     intellect_explicit: bool = False,
+    allowlist: Optional[FrozenSet[str]] = None,
 ) -> tuple[str, str]:
-    from .provider_governance import get_org_allowlist, list_models_for_org
+    from .provider_governance import get_org_allowlist, list_models_for_org, model_allowed
     from ...config import active_local_model
 
     if intellect_model in ("local", "@local", "serving", "@serving"):
@@ -333,17 +334,17 @@ def resolve_effective_faculty_models(
         if live:
             conscience_model = live
 
-    allowlist = get_org_allowlist(org_id)
+    effective_allowlist = allowlist if allowlist is not None else get_org_allowlist(org_id)
     # Do not silently route around a deliberately blocked provider. The chat
     # endpoint will return its normal provider-policy error for these choices.
-    if allowlist is not None and any(
-        detect_provider(model) not in allowlist
+    if effective_allowlist is not None and any(
+        not model_allowed(model, effective_allowlist)
         for model in (intellect_model, conscience_model)
         if model
     ):
         return intellect_model, conscience_model
 
-    available = list_models_for_org(org_id)
+    available = list_models_for_org(org_id, allow=effective_allowlist)
     return resolve_faculty_model_pair(
         intellect_model,
         conscience_model,
