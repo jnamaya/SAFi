@@ -1146,6 +1146,70 @@ def interactive_repl(
                 pass
 
 
+def _wizard_login_or_key(api_url: str, agent: str) -> str:
+    """Setup-wizard auth step: web username/password login (default) or manual key.
+
+    Returns the Policy API key (already saved to config), or an empty string
+    if the user skips.
+    """
+    import getpass
+
+    while True:
+        try:
+            mode = input("Sign in with username and password? [Y/n]: ").strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            sys.exit(0)
+
+        if mode in ("n", "no"):
+            try:
+                key_val = input("Enter Policy API Key (sk-safi-...) [press Enter to skip for now]: ").strip()
+            except (KeyboardInterrupt, EOFError):
+                sys.exit(0)
+            if key_val:
+                config.save_agent_api_key(agent, key_val)
+                ui.console.print(f"[bold green]✓ Saved Policy API Key for {agent} to {config.CONFIG_FILE}[/]")
+            else:
+                ui.console.print(f"[yellow]Skipped for now. You will be prompted when launching '{agent}'.[/]")
+            return key_val
+
+        # Web-credential login: exchange username/password for a provisioned key.
+        try:
+            identifier = input("SAFi username (or DOMAIN\\user): ").strip()
+            password = getpass.getpass("Password: ")
+            totp_code = input("TOTP code (blank if MFA not enabled): ").strip()
+        except (KeyboardInterrupt, EOFError):
+            sys.exit(0)
+
+        login_client = SafiClient(api_url)
+        ldap_hint = "\\" in identifier
+        try:
+            payload = login_client.login(identifier, password, totp_code=totp_code, ldap=ldap_hint)
+        except Exception as exc:
+            # Second chance: server demanded MFA we didn't supply.
+            if getattr(exc, "status_code", None) == 401 and not totp_code:
+                try:
+                    totp_code = input("Multi-factor code required. Enter TOTP code: ").strip()
+                    payload = login_client.login(identifier, password, totp_code=totp_code, ldap=ldap_hint)
+                except Exception as exc2:
+                    ui.print_error(f"Login failed: {exc2}")
+                    continue
+            else:
+                ui.print_error(f"Login failed: {exc}")
+                continue
+
+        new_key = payload.get("api_key") or ""
+        if not new_key:
+            ui.print_error("Server did not return an API key.")
+            continue
+        config.save_agent_api_key(agent, new_key)
+        ui.console.print(
+            f"[bold green]✓ Logged in as {payload.get('user', {}).get('name', identifier)} — "
+            f"Policy API key for '{agent}' saved to {config.CONFIG_FILE}[/]\n"
+            f"[dim]Policy: {payload.get('policy_id', '?')} — key labelled 'safi-cli' (re-login replaces it).[/]"
+        )
+        return new_key
+
+
 def run_setup_wizard() -> tuple[str, str, Optional[str]]:
     """Interactive onboarding wizard to configure SAFi CLI for the first time.
 
@@ -1253,26 +1317,18 @@ def run_setup_wizard() -> tuple[str, str, Optional[str]]:
     agent_title = AVAILABLE_AGENTS.get(chosen_agent, {}).get("title", chosen_agent)
     ui.console.print(f"[bold green]✓ Selected primary agent: {agent_title} ({chosen_agent})[/]")
 
-    # 3. Policy API Key for Chosen Agent
-    ui.console.print(f"\n[bold white]3. Policy API Key for '{agent_title}'[/]")
+    # 3. Authenticate: web login (default) or manual Policy API key
+    ui.console.print(f"\n[bold white]3. Authenticate for '{agent_title}'[/]")
     existing_key = config.resolve_agent_api_key(chosen_agent)
     if existing_key:
         ui.console.print(f"[bold green]✓ Found existing Policy API key for '{chosen_agent}' in config.[/]")
         key_val = existing_key
     else:
         ui.console.print(
-            "[dim]Each agent is governed by its own domain policy and requires its own Policy API Key.\n"
-            "You can generate one in the SAFi Governance Portal (Settings → API Keys).[/dim]"
+            "[dim]Sign in with your SAFi web username and password — a Policy API key\n"
+            "is provisioned automatically. Or paste an existing key (sk-safi-...).[/dim]"
         )
-        try:
-            key_val = input(f"Enter Policy API Key (sk-safi-...) [press Enter to skip for now]: ").strip()
-        except (KeyboardInterrupt, EOFError):
-            sys.exit(0)
-        if key_val:
-            config.save_agent_api_key(chosen_agent, key_val)
-            ui.console.print(f"[bold green]✓ Saved Policy API Key for {chosen_agent} to {config.CONFIG_FILE}[/]")
-        else:
-            ui.console.print(f"[yellow]Skipped for now. You will be prompted when launching '{chosen_agent}'.[/]")
+        key_val = _wizard_login_or_key(chosen_url, chosen_agent)
 
     ui.console.print()
     ui.console.print(

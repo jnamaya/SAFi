@@ -261,17 +261,53 @@ def main():
             f"[dim]Each agent is governed by its own domain policy and requires its own Policy API Key.[/dim]"
         )
         try:
-            api_key = input(f"Enter Policy API Key for {target_agent} (from SAFi Governance Portal): ").strip()
+            use_login = input("Sign in with your SAFi username and password? [Y/n]: ").strip().lower()
         except (KeyboardInterrupt, EOFError):
             sys.exit(1)
-        if not api_key:
-            ui.print_error(
-                f"No SAFi Policy API key provided for '{target_agent}'.\n\n"
-                "You can also set it via:\n"
-                f"  • export SAFI_API_KEY_{target_agent.upper()}=sk-safi-...\n"
-                f"  • safi-cli --set-key sk-safi-... -a {target_agent}"
+        if use_login not in ("n", "no"):
+            try:
+                identifier = input("SAFi username (or DOMAIN\\user): ").strip()
+                password = getpass.getpass("Password: ")
+                totp_code = input("TOTP code (blank if MFA not enabled): ").strip()
+                ldap_hint = "\\" in identifier
+                payload = client.login(identifier, password, totp_code=totp_code, ldap=ldap_hint)
+            except Exception as exc:
+                if getattr(exc, "status_code", None) == 401 and not totp_code:
+                    try:
+                        totp_code = input("Multi-factor code required. Enter TOTP code: ").strip()
+                        payload = client.login(identifier, password, totp_code=totp_code, ldap=ldap_hint)
+                    except Exception as exc2:
+                        ui.print_error(
+                            f"Login failed: {exc2}\n\n"
+                            "You can also set a key via:\n"
+                            f"  • safi-cli --login -a {target_agent}\n"
+                            f"  • safi-cli --set-key sk-safi-... -a {target_agent}"
+                        )
+                        sys.exit(1)
+                else:
+                    ui.print_error(f"Login failed: {exc}")
+                    sys.exit(1)
+            api_key = payload.get("api_key") or ""
+            if not api_key:
+                ui.print_error("Server did not return an API key.")
+                sys.exit(1)
+            ui.console.print(
+                f"[bold green]✓ Logged in as {payload.get('user', {}).get('name', identifier)}[/] "
+                f"[dim]Policy: {payload.get('policy_id', '?')}[/]"
             )
-            sys.exit(1)
+        else:
+            try:
+                api_key = input(f"Enter Policy API Key for {target_agent} (from SAFi Governance Portal): ").strip()
+            except (KeyboardInterrupt, EOFError):
+                sys.exit(1)
+            if not api_key:
+                ui.print_error(
+                    f"No SAFi Policy API key provided for '{target_agent}'.\n\n"
+                    "You can also set it via:\n"
+                    f"  • export SAFI_API_KEY_{target_agent.upper()}=sk-safi-...\n"
+                    f"  • safi-cli --set-key sk-safi-... -a {target_agent}"
+                )
+                sys.exit(1)
         config.save_agent_api_key(target_agent, api_key)
         client.api_key = api_key
         ui.console.print(f"[bold green]✓ Saved Policy API Key for {target_agent} to {config.CONFIG_FILE}[/]")
