@@ -224,12 +224,13 @@ def main():
             save_updates["api_url"] = login_url
         if save_updates:
             config.save_config(save_updates)
-        config.set_default_agent("software_engineer")
+        default_agent = "software_engineer" if "software_engineer" in agent_names else (agent_names[0] if agent_names else "software_engineer")
+        config.set_default_agent(default_agent)
         ui.console.print(
             f"[bold green]✓ Logged in as {payload.get('user', {}).get('name', identifier)} — "
             f"Policy API key saved for {len(agent_names)} agent(s) to {config.CONFIG_FILE}[/]\n"
             f"[dim]Policy: {payload.get('policy_id', '?')} — key labelled 'safi-cli' (re-login replaces it). "
-            f"Default agent: software_engineer.[/]"
+            f"Default agent: {default_agent}.[/]"
         )
         sys.exit(0)
 

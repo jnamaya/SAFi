@@ -159,9 +159,11 @@ def get_user_group_names(user_id, org_id) -> set:
     """Return lowercase names of all custom groups this user belongs to in org_id."""
     if not user_id or not org_id:
         return set()
-    conn = db.get_db_connection()
-    cursor = conn.cursor()
+    conn = None
+    cursor = None
     try:
+        conn = db.get_db_connection()
+        cursor = conn.cursor()
         cursor.execute(
             """
             SELECT LOWER(c.name) FROM custom_groups c
@@ -175,8 +177,16 @@ def get_user_group_names(user_id, org_id) -> set:
         log.warning("get_user_group_names failed for %s: %s", user_id, e)
         return set()
     finally:
-        cursor.close()
-        conn.close()
+        if cursor:
+            try:
+                cursor.close()
+            except Exception:
+                pass
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 def can_use_built_in_or_custom_agent(user_id, role, org_id, agent_key, role_config=None) -> bool:
@@ -223,10 +233,16 @@ def can_use_built_in_or_custom_agent(user_id, role, org_id, agent_key, role_conf
         allowed_group_names = {"secops", "security", "security_engineer", "security-operations", "infosec"}
         return bool(user_groups & allowed_group_names)
 
-    if key in ("software_engineer", "developer", "safi"):
-        if role in ('admin', 'editor', 'member'):
+    if key in ("software_engineer", "developer"):
+        if has_grant("software_engineer", user_id, org_id):
             return True
-        return has_grant("software_engineer", user_id, org_id)
+        user_groups = get_user_group_names(user_id, org_id)
+        allowed_group_names = {"developers", "developer", "software_engineer", "engineering", "devs"}
+        return bool(user_groups & allowed_group_names)
+
+    if key == "safi":
+        # General conversational assistant available to all authenticated org members
+        return True
 
     # Check custom DB agent
     raw_agent = db.get_agent(agent_key)
