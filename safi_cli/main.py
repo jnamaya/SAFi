@@ -112,7 +112,7 @@ def main():
         "--login",
         dest="login",
         action="store_true",
-        help="Log in with your SAFi web username/password (local or LDAP) to obtain and save a Policy API key automatically.",
+        help="Log in with your SAFi web username/password (local or LDAP) to obtain a Policy API key and save it for all available agents (default agent: software_engineer).",
     )
     parser.add_argument("--set-url", help="Save the given backend URL to ~/.config/safi/config.json and exit.")
     parser.add_argument(
@@ -204,13 +204,24 @@ def main():
         if not new_key:
             ui.print_error("Server did not return an API key.")
             sys.exit(1)
-        config.save_agent_api_key(target_login_agent, new_key)
+        # The provisioned key is bound to the user's governing policy, so one
+        # key is valid for every agent. Save it under all known agents so no
+        # agent ever lacks a key; the active/default agent is software_engineer.
+        login_client.api_key = new_key
+        agents = login_client.get_available_agents()
+        agent_names = [a.get("key") for a in agents if isinstance(a, dict) and a.get("key")]
+        if not agent_names:
+            agent_names = list(AVAILABLE_AGENTS.keys())
+        for name in dict.fromkeys(agent_names):
+            config.save_agent_api_key(name, new_key)
         if not config.has_configured_api_url():
             config.save_config({"api_url": login_url})
+        config.set_default_agent("software_engineer")
         ui.console.print(
             f"[bold green]✓ Logged in as {payload.get('user', {}).get('name', identifier)} — "
-            f"Policy API key for '{target_login_agent}' saved to {config.CONFIG_FILE}[/]\n"
-            f"[dim]Policy: {payload.get('policy_id', '?')} — key labelled 'safi-cli' (re-login replaces it).[/]"
+            f"Policy API key saved for {len(agent_names)} agent(s) to {config.CONFIG_FILE}[/]\n"
+            f"[dim]Policy: {payload.get('policy_id', '?')} — key labelled 'safi-cli' (re-login replaces it). "
+            f"Default agent: software_engineer.[/]"
         )
         sys.exit(0)
 

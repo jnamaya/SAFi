@@ -1201,10 +1201,20 @@ def _wizard_login_or_key(api_url: str, agent: str) -> str:
         if not new_key:
             ui.print_error("Server did not return an API key.")
             continue
-        config.save_agent_api_key(agent, new_key)
+        # One policy key is valid for every agent — save it under all known
+        # agents so none is left without a key (active agent stays 'agent').
+        login_client.api_key = new_key
+        agents = login_client.get_available_agents()
+        agent_names = [a.get("key") for a in agents if isinstance(a, dict) and a.get("key")]
+        if not agent_names:
+            agent_names = list(AVAILABLE_AGENTS.keys())
+        if agent not in agent_names:
+            agent_names = list(dict.fromkeys([agent] + agent_names))
+        for name in agent_names:
+            config.save_agent_api_key(name, new_key)
         ui.console.print(
             f"[bold green]✓ Logged in as {payload.get('user', {}).get('name', identifier)} — "
-            f"Policy API key for '{agent}' saved to {config.CONFIG_FILE}[/]\n"
+            f"Policy API key saved for {len(agent_names)} agent(s) to {config.CONFIG_FILE}[/]\n"
             f"[dim]Policy: {payload.get('policy_id', '?')} — key labelled 'safi-cli' (re-login replaces it).[/]"
         )
         return new_key
@@ -1279,54 +1289,27 @@ def run_setup_wizard() -> tuple[str, str, Optional[str]]:
             else:
                 ui.console.print("[dim]Please re-enter the correct endpoint URL.[/dim]")
 
-    # 2. Select Default Agent
-    ui.console.print("\n[bold white]2. Primary Agent[/]")
-    ui.console.print("[dim]Select the primary agent for your workflows:[/dim]")
-
-    agent_options = [
-        ("sysadmin", "Sysadmin Agent", "Infrastructure, server maintenance, Active Directory, network"),
-        ("software_engineer", "Software Engineer Agent", "Codebase engineering, refactoring, tests, git"),
-    ]
-    existing_keys = {opt[0] for opt in agent_options}
-    for k, v in AVAILABLE_AGENTS.items():
-        if k not in existing_keys:
-            agent_options.append((k, v.get("title", k), v.get("description", "")))
-
-    for idx, (k, title, desc) in enumerate(agent_options, 1):
-        ui.console.print(f"  [bold cyan][{idx}][/] [bold white]{title}[/] [dim]({k})[/]\n      [dim]{desc}[/dim]")
-
-    chosen_agent = "sysadmin"
-    while True:
-        try:
-            choice = input(f"Select Agent [1-{len(agent_options)}, default 1]: ").strip()
-        except (KeyboardInterrupt, EOFError):
-            sys.exit(0)
-        if not choice:
-            chosen_agent = agent_options[0][0]
-            break
-        if choice.isdigit() and 1 <= int(choice) <= len(agent_options):
-            chosen_agent = agent_options[int(choice) - 1][0]
-            break
-        matching = [opt[0] for opt in agent_options if choice.lower() in opt[0] or choice.lower() in opt[1].lower()]
-        if matching:
-            chosen_agent = matching[0]
-            break
-        ui.console.print("[yellow]Invalid choice, please select a valid number or agent name.[/]")
-
+    # 2. Default agent (no choice): software_engineer. The provisioned key is
+    #    saved for ALL available agents, so the default only sets the starting agent.
+    chosen_agent = "software_engineer"
+    if chosen_agent not in AVAILABLE_AGENTS:
+        chosen_agent = next(iter(AVAILABLE_AGENTS), "software_engineer")
     config.set_default_agent(chosen_agent)
     agent_title = AVAILABLE_AGENTS.get(chosen_agent, {}).get("title", chosen_agent)
-    ui.console.print(f"[bold green]✓ Selected primary agent: {agent_title} ({chosen_agent})[/]")
+    ui.console.print(f"\n[bold white]2. Default Agent[/]")
+    ui.console.print(f"[bold green]✓ Default agent: {agent_title} ({chosen_agent})[/] [dim]— the Policy API key is saved for every available agent.[/]")
 
     # 3. Authenticate: web login (default) or manual Policy API key
-    ui.console.print(f"\n[bold white]3. Authenticate for '{agent_title}'[/]")
+    ui.console.print(f"\n[bold white]3. Authenticate[/]")
     existing_key = config.resolve_agent_api_key(chosen_agent)
     if existing_key:
-        ui.console.print(f"[bold green]✓ Found existing Policy API key for '{chosen_agent}' in config.[/]")
+        ui.console.print(f"[bold green]✓ Found existing Policy API key in config.[/]")
         key_val = existing_key
     else:
         ui.console.print(
             "[dim]Sign in with your SAFi web username and password — a Policy API key\n"
-            "is provisioned automatically. Or paste an existing key (sk-safi-...).[/dim]"
+            "is provisioned automatically and saved for all available agents.\n"
+            "Or paste an existing key (sk-safi-...).[/dim]"
         )
         key_val = _wizard_login_or_key(chosen_url, chosen_agent)
 
