@@ -1089,7 +1089,10 @@ def interactive_repl(
 
             # Only erase lines manually when using readline fallback; prompt_toolkit uses erase_when_done=True
             if not rich_input and sys.stdout.isatty():
-                cols = shutil.get_terminal_size((80, 24)).columns
+                try:
+                    cols = os.get_terminal_size(sys.__stdout__.fileno()).columns
+                except (OSError, ValueError, AttributeError):
+                    cols = shutil.get_terminal_size((80, 24)).columns
                 margin_len = ui.CLI_MARGIN if ui.CLI_MARGIN > 0 else 0
                 prompt_vis_len = margin_len + len(f" SAFi [{current_agent}] › ")
                 input_lines = line.splitlines() or [""]

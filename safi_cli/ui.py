@@ -510,7 +510,10 @@ def get_input_prompt(agent: Optional[str] = None, user_name: Optional[str] = Non
     """Format the interactive prompt with SAFi brand label, margin spacing, and distinct style."""
     agent_label = agent or "software_engineer"
     margin = " " * CLI_MARGIN if CLI_MARGIN > 0 else ""
-    cols = shutil.get_terminal_size((80, 24)).columns
+    try:
+        cols = os.get_terminal_size(sys.__stdout__.fileno()).columns
+    except (OSError, ValueError, AttributeError):
+        cols = shutil.get_terminal_size((80, 24)).columns
     divider = "─" * max(20, cols)
     def _rgb(hex_color: str) -> str:
         h = hex_color.lstrip("#")
