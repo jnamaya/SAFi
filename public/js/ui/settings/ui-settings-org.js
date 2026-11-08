@@ -1527,18 +1527,38 @@ async function loadOrgGroups(orgId) {
         }
         el.innerHTML = groups.map(g => `
             <div class="border-b border-gray-100 dark:border-neutral-800 last:border-0">
-                <div class="flex items-center justify-between px-4 py-2.5">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between px-4 py-2.5 gap-2">
                     <div class="min-w-0">
                         <p class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">${escapeHtml(g.name)}</p>
                         <p class="text-xs text-gray-400">${g.member_count} member${g.member_count === 1 ? '' : 's'}</p>
                     </div>
-                    <div class="flex items-center gap-3 flex-shrink-0 ml-3">
+                    <div class="flex items-center gap-3 flex-shrink-0">
+                        <div class="flex items-center gap-1.5">
+                            <span class="text-[11px] text-gray-400 dark:text-neutral-500 font-medium">Models:</span>
+                            <select data-group-policy="${escapeHtml(g.id)}" class="grp-policy-select text-xs py-1 px-2 rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-700 dark:text-gray-300">
+                                <option value="default" ${(g.model_policy || 'default') === 'default' ? 'selected' : ''}>Default (Role-based)</option>
+                                <option value="local" ${g.model_policy === 'local' ? 'selected' : ''}>Local Only (Zero Egress)</option>
+                                <option value="cloud" ${g.model_policy === 'cloud' ? 'selected' : ''}>Local + Cloud</option>
+                            </select>
+                        </div>
                         <button data-group="${escapeHtml(g.id)}" class="grp-members-btn text-xs text-green-600 hover:underline">Members</button>
                         <button data-group-del="${escapeHtml(g.id)}" data-name="${escapeHtml(g.name)}" class="text-xs text-red-500 hover:underline">Delete</button>
                     </div>
                 </div>
                 <div id="grp-panel-${escapeHtml(g.id)}" class="hidden px-4 pb-3"></div>
             </div>`).join('');
+
+        el.querySelectorAll('.grp-policy-select').forEach(sel => sel.addEventListener('change', async () => {
+            const groupId = sel.getAttribute('data-group-policy');
+            const val = sel.value;
+            try {
+                await api.setGroupModelPolicy(groupId, val);
+                ui.showToast('Group model access policy updated.', 'success');
+            } catch (e) {
+                ui.showToast(e.message || 'Failed to update model policy', 'error');
+                loadOrgGroups(orgId);
+            }
+        }));
 
         el.querySelectorAll('.grp-members-btn').forEach(btn => btn.addEventListener('click', () => {
             toggleGroupPanel(orgId, btn.getAttribute('data-group'));

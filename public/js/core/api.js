@@ -413,6 +413,9 @@ export async function addGroupMember(groupId, userId) {
 export async function removeGroupMember(groupId, userId) {
     return httpJSON(`/api/groups/${groupId}/members/${encodeURIComponent(userId)}`, 'DELETE', {});
 }
+export async function setGroupModelPolicy(groupId, modelPolicy) {
+    return httpJSON(`/api/groups/${groupId}/model-policy`, 'PUT', { model_policy: modelPolicy });
+}
 
 export async function fetchAvailableTools(policyId = null) {
     // With a policy id the backend marks each tool with allowed_by_policy,
