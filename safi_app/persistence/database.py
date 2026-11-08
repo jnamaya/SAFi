@@ -177,6 +177,14 @@ def init_db():
                 "FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL"
             )
 
+        # Distinguish client source ('web', 'cli', 'bot') so rapid terminal turns
+        # do not clutter the primary web chat sidebar.
+        cursor.execute("SHOW COLUMNS FROM conversations LIKE 'source'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE conversations ADD COLUMN source VARCHAR(50) DEFAULT 'web'")
+            cursor.execute("UPDATE conversations SET source='cli' WHERE title='External Chat'")
+            logging.info("Conversations migration: added conversations.source")
+
         # --- Saved content (snapshots of individual AI responses) ---
         # Content and governance metadata are copied at save time so a saved
         # item survives deletion of its source conversation (chat_history
@@ -1386,21 +1394,29 @@ def reset_spirit_memory(agent_id: str, confirm_shared: bool = False):
 # USER & CHAT FUNCTIONS
 # -------------------------------------------------------------------------
 
-def ensure_conversation_access(user_id, cid):
+def ensure_conversation_access(user_id, cid, source="web"):
     """True when user_id owns the conversation. A conversation that
-    does not exist yet is CLAIMED for user_id — the external-bot entry
+    does not exist yet is CLAIMED for user_id - the external-bot/CLI entry
     point."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT user_id FROM conversations WHERE id=%s", (cid,))
+        cursor.execute("SELECT user_id, source FROM conversations WHERE id=%s", (cid,))
         row = cursor.fetchone()
         if not row:
-            # Auto-Create for External Bots
-            cursor.execute("INSERT INTO conversations (id, user_id, title) VALUES (%s, %s, 'External Chat')", (cid, user_id))
+            # Auto-Create for External Bots or CLI
+            default_title = "CLI Session" if source == "cli" else ("External Chat" if source == "bot" else "New Conversation")
+            cursor.execute(
+                "INSERT INTO conversations (id, user_id, title, source) VALUES (%s, %s, %s, %s)",
+                (cid, user_id, default_title, source or "web"),
+            )
             conn.commit()
             return True
-        
+
+        if source and source != "web" and len(row) > 1 and row[1] != source:
+            cursor.execute("UPDATE conversations SET source=%s WHERE id=%s", (source, cid))
+            conn.commit()
+
         return row[0] == user_id
     finally:
         cursor.close()
@@ -1613,22 +1629,31 @@ def _decode_suggested_prompts(value):
             return None
     return obj if isinstance(obj, list) else None
 
-def fetch_user_conversations(user_id):
+def fetch_user_conversations(user_id, source="web"):
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
         # profile_name: the agent of the conversation's most recent audited
-        # turn, so the sidebar can show WHICH agent each conversation was with —
-        # the one distinctly multi-agent fact a chat list can carry. A correlated
-        # subquery over chat_history is fine here: the list is per-user (tens of
-        # rows) and conversation_id is indexed by its foreign key.
-        cursor.execute(
-            "SELECT id, title, is_pinned, project_id, created_at, "
-            "  (SELECT ch.profile_name FROM chat_history ch "
-            "    WHERE ch.conversation_id = conversations.id "
-            "      AND ch.profile_name IS NOT NULL "
-            "    ORDER BY ch.id DESC LIMIT 1) AS profile_name "
-            "FROM conversations WHERE user_id=%s ORDER BY created_at DESC", (user_id,))
+        # turn, so the sidebar can show WHICH agent each conversation was with.
+        # When source is 'web', filter out non-web (CLI / bot) conversations so
+        # the web UI sidebar stays uncluttered.
+        if source:
+            cursor.execute(
+                "SELECT id, title, is_pinned, project_id, created_at, "
+                "  (SELECT ch.profile_name FROM chat_history ch "
+                "    WHERE ch.conversation_id = conversations.id "
+                "      AND ch.profile_name IS NOT NULL "
+                "    ORDER BY ch.id DESC LIMIT 1) AS profile_name "
+                "FROM conversations WHERE user_id=%s AND (source=%s OR (source IS NULL AND %s='web')) "
+                "ORDER BY created_at DESC", (user_id, source, source))
+        else:
+            cursor.execute(
+                "SELECT id, title, is_pinned, project_id, created_at, "
+                "  (SELECT ch.profile_name FROM chat_history ch "
+                "    WHERE ch.conversation_id = conversations.id "
+                "      AND ch.profile_name IS NOT NULL "
+                "    ORDER BY ch.id DESC LIMIT 1) AS profile_name "
+                "FROM conversations WHERE user_id=%s ORDER BY created_at DESC", (user_id,))
         rows = cursor.fetchall()
         for r in rows:
             r["title"] = crypto.decrypt_value(r["title"])
@@ -1637,7 +1662,7 @@ def fetch_user_conversations(user_id):
         cursor.close()
         conn.close()
 
-def create_conversation(user_id, project_id=None):
+def create_conversation(user_id, project_id=None, source="web"):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -1650,11 +1675,11 @@ def create_conversation(user_id, project_id=None):
             if cursor.fetchone():
                 valid_project_id = project_id
         cursor.execute(
-            "INSERT INTO conversations (id, user_id, title, project_id) VALUES (%s, %s, 'New Conversation', %s)",
-            (cid, user_id, valid_project_id),
+            "INSERT INTO conversations (id, user_id, title, project_id, source) VALUES (%s, %s, 'New Conversation', %s, %s)",
+            (cid, user_id, valid_project_id, source or "web"),
         )
         conn.commit()
-        return {"id": cid, "title": "New Conversation", "is_pinned": False, "project_id": valid_project_id}
+        return {"id": cid, "title": "New Conversation", "is_pinned": False, "project_id": valid_project_id, "source": source or "web"}
     finally:
         cursor.close()
         conn.close()

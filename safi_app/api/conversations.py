@@ -291,7 +291,7 @@ async def bot_process_prompt_endpoint():
         if hasattr(db, 'upsert_external_conversation'):
             db.upsert_external_conversation(conversation_id, user_id, title="Bot Chat")
         else:
-            db.ensure_conversation_access(user_id, conversation_id)
+            db.ensure_conversation_access(user_id, conversation_id, source="bot")
 
         selected_intellect = Config.INTELLECT_MODEL
         selected_conscience = Config.CONSCIENCE_MODEL
@@ -883,7 +883,10 @@ def get_conversations():
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
     
-    conversations = db.fetch_user_conversations(user_id)
+    source = request.args.get('source', 'web')
+    if source == 'all':
+        source = None
+    conversations = db.fetch_user_conversations(user_id, source=source)
     
     conversations_with_timestamps = []
     for convo in conversations:
@@ -910,8 +913,9 @@ def handle_create_conversation():
 
     data = request.get_json(silent=True) or {}
     project_id = data.get('project_id')
+    source = data.get('source', 'web')
 
-    new_convo = db.create_conversation(user_id, project_id=project_id)
+    new_convo = db.create_conversation(user_id, project_id=project_id, source=source)
 
     if 'created_at' in new_convo:
         new_convo['last_updated'] = new_convo['created_at']
@@ -1858,9 +1862,9 @@ async def agentic_process_prompt_endpoint():
                 user_details = db.get_user_details(user_id)
 
         if hasattr(db, "upsert_external_conversation"):
-            db.upsert_external_conversation(conversation_id, user_id, title="Harness Chat")
+            db.upsert_external_conversation(conversation_id, user_id, title="CLI Session")
         else:
-            db.ensure_conversation_access(user_id, conversation_id)
+            db.ensure_conversation_access(user_id, conversation_id, source="cli")
 
         org_id = (user_details.get("org_id") if user_details else None)
         if not org_id:
@@ -1920,7 +1924,7 @@ async def agentic_process_prompt_endpoint():
             policy_id=target_policy_id,
         )
         pg.activate_org(org_id, allowlist=user_allowlist)
-        db.ensure_conversation_access(user_id, conversation_id)
+        db.ensure_conversation_access(user_id, conversation_id, source="cli")
 
         from ..core.services.usage_tracking import begin_request_usage
         begin_request_usage()
