@@ -274,6 +274,13 @@ def main():
     client = SafiClient(api_url, api_key or "")
     discover_agents(client)
 
+    if AVAILABLE_AGENTS and target_agent not in AVAILABLE_AGENTS:
+        target_agent = next(iter(AVAILABLE_AGENTS))
+        api_key = config.resolve_agent_api_key(target_agent, args.api_key)
+        client.api_key = api_key or ""
+        config.set_default_agent(target_agent)
+        config.set_workspace_agent(str(workspace_root), target_agent)
+
     if not api_key:
         agent_title = AVAILABLE_AGENTS.get(target_agent, {}).get("title", target_agent)
         ui.console.print(
@@ -342,6 +349,12 @@ def main():
         client.api_key = api_key
         ui.console.print(f"[bold green]✓ Saved Policy API Key for {target_agent} to {config.CONFIG_FILE}[/]")
         discover_agents(client)
+        if AVAILABLE_AGENTS and target_agent not in AVAILABLE_AGENTS:
+            target_agent = next(iter(AVAILABLE_AGENTS))
+            api_key = config.resolve_agent_api_key(target_agent)
+            client.api_key = api_key or ""
+            config.set_default_agent(target_agent)
+            config.set_workspace_agent(str(workspace_root), target_agent)
 
     intellect_model = resolve_model_preference(client, target_agent, args.model)
 

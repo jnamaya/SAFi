@@ -663,6 +663,8 @@ def interactive_repl(
 ):
     """Start an interactive command-line session."""
     current_agent = agent
+    if AVAILABLE_AGENTS and current_agent not in AVAILABLE_AGENTS:
+        current_agent = next(iter(AVAILABLE_AGENTS))
     current_user_name = user_name
     current_model = resolve_model_preference(client, current_agent, model)
     current_effort = config.resolve_reasoning_effort()
