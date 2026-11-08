@@ -1763,7 +1763,7 @@ class SAFi:
                 record_harness_progress(self.store, message_id, "checking_request")
             self.store.update_message_reasoning(
                 message_id,
-                "Verifying request scope with Conscience...",
+                "Checking scope alignment...",
                 phase="gather" if client_owned else "analyzing",
             )
             try:
