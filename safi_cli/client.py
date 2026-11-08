@@ -131,6 +131,34 @@ class SafiClient:
                 return None
         return None
 
+    def login(self, identifier: str, password: str, totp_code: str = "",
+              ldap: bool = False, timeout: int = 15) -> Dict[str, Any]:
+        """Exchange web username/password (+ optional TOTP) for a fresh
+        safi-cli API key via POST /api/cli/login. Raises SafiError on
+        failure; returns the parsed payload on success."""
+        payload = {"identifier": identifier, "password": password}
+        if totp_code:
+            payload["totp_code"] = totp_code
+        if ldap:
+            payload["ldap"] = True
+        try:
+            resp = self.session.post(f"{self.api_url}/api/cli/login",
+                                     json=payload, timeout=timeout)
+        except requests.exceptions.SSLError:
+            if self._allow_cert_refresh():
+                self._ensure_appliance_cert(force_refresh=True)
+                resp = self.session.post(f"{self.api_url}/api/cli/login",
+                                         json=payload, timeout=timeout)
+            else:
+                raise
+        if resp.status_code == 429:
+            raise SafiError("Too many login attempts. Try again shortly.", 429)
+        data = _json_or_none(resp)
+        if resp.status_code != 200 or not data or not data.get("ok"):
+            msg = (data or {}).get("error") or f"Login failed (HTTP {resp.status_code})."
+            raise SafiError(msg, resp.status_code)
+        return data
+
     def verify_connection(self, timeout: int = 5) -> tuple[bool, str, Dict[str, Any]]:
         """Strongly verify that the target endpoint is an active, responsive SAFi server.
 

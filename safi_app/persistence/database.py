@@ -3715,6 +3715,46 @@ def create_api_key(pid, label):
         cursor.close()
         conn.close()
 
+def delete_policy_keys_by_label(pid, label):
+    """Revoke every key carrying `label` on a policy (used so repeated CLI
+    logins replace their key instead of accumulating duplicates)."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM api_keys WHERE policy_id=%s AND label=%s", (pid, label))
+        conn.commit()
+        return cursor.rowcount
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_or_create_policy_key_for_user(user, label="safi-cli"):
+    """Resolve the policy that governs this user and return a fresh raw API
+    key bound to it: {"api_key": raw, "policy_id": pid}, or None when the
+    user has no usable policy. Preference order: the organization's global
+    policy, else the most recent policy the user created."""
+    pid = None
+    if user.get('org_id'):
+        org = get_organization(user['org_id'])
+        pid = (org or {}).get('global_policy_id')
+    if not pid:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "SELECT id FROM policies WHERE created_by=%s ORDER BY created_at LIMIT 1",
+                (user['id'],))
+            row = cursor.fetchone()
+            pid = row[0] if row else None
+        finally:
+            cursor.close()
+            conn.close()
+    if not pid:
+        return None
+    delete_policy_keys_by_label(pid, label)
+    raw = create_api_key(pid, label)
+    return {"api_key": raw, "policy_id": pid}
+
 def get_policy_keys(pid):
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)

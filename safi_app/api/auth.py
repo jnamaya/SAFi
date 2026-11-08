@@ -737,6 +737,75 @@ def login_local():
     return jsonify({"ok": True})
 
 
+@auth_bp.route('/cli/login', methods=['POST'])
+def cli_login():
+    """
+    [POST /api/cli/login]
+    Password-to-key exchange for safi-cli: verifies the SAME credentials as
+    the web login (local account or LDAP/AD bind), then provisions a fresh
+    API key bound to the user's governing policy and returns the raw key
+    (plus the policy id and agent-relevant identity fields). The password is
+    never stored; only the standard hashed api_keys row is created, labelled
+    "safi-cli" (a repeat login revokes the previous cli key first).
+    """
+    from werkzeug.security import check_password_hash
+    from .keys import per_minute_allowed as _pm_allowed
+
+    if not _pm_allowed("cli-login:ip:{}".format(request.remote_addr or "-")):
+        return jsonify({"error": "Too many attempts. Try again shortly."}), 429
+
+    data       = request.get_json(silent=True) or {}
+    identifier = (data.get('identifier') or '').strip()
+    password   = data.get('password') or ''
+    totp_code  = (data.get('totp_code') or '').strip()
+    use_ldap   = bool(data.get('ldap') or '\\' in identifier or data.get('idp') == 'ldap')
+
+    user = None
+    if use_ldap and Config.ldap_configured():
+        from ..core import ldap_client
+        username, _dh = ldap_client.split_domain_identifier(identifier)
+        result = ldap_client.authenticate(username, password)
+        if not result.get('ok'):
+            db.log_auth_event('login_denied', f"ldap:{username}",
+                              detail={"idp": "ldap", "reason": result.get('code'), "via": "cli"})
+            return jsonify({"error": result.get('message') or "Invalid credentials.",
+                            "code": result.get('code')}), 401
+        user = db.get_user_by_email(result.get('email'))
+        if not user:
+            return jsonify({"error": "No SAFi account exists for this directory identity."}), 403
+    else:
+        if not Config.password_login_available():
+            return jsonify({"error": "Password login is not enabled on this instance."}), 404
+        user = db.get_user_by_identifier(identifier) if (identifier and password) else None
+        stored_hash = (user or {}).get('password_hash') or _DUMMY_PASSWORD_HASH
+        valid = bool(identifier and password and user and user.get('password_hash')
+                     and check_password_hash(stored_hash, password))
+        if not valid:
+            current_app.logger.warning("cli_login_failed ip=%s", request.remote_addr)
+            return jsonify({"error": "Invalid credentials."}), 401
+
+    totp_state = db.get_user_totp(user['id'])
+    if totp_state['enabled']:
+        if not totp_code:
+            return jsonify({"ok": False, "mfa_required": True}), 401
+        if not totp_lib.verify_code(totp_state['secret'], totp_code):
+            return jsonify({"error": "Invalid verification code."}), 401
+
+    provisioned = db.get_or_create_policy_key_for_user(user, label="safi-cli")
+    if not provisioned:
+        return jsonify({"error": "No governance policy is available for your account; "
+                                 "ask an administrator to assign one."}), 403
+
+    db.log_auth_event('login_success', f"user:{user['id']}", org_id=user.get('org_id'),
+                      user_id=user['id'], detail={"idp": "ldap" if use_ldap else "local",
+                                                  "via": "cli"})
+    return jsonify({"ok": True,
+                    "api_key": provisioned["api_key"],
+                    "policy_id": provisioned["policy_id"],
+                    "user": {"id": user["id"], "name": user.get("name") or user.get("email"),
+                             "org_id": user.get("org_id")}})
+
+
 @auth_bp.route('/login/local/mfa', methods=['POST'])
 def login_local_mfa():
     """

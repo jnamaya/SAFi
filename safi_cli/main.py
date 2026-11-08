@@ -1,6 +1,7 @@
 """safi-cli entrypoint (thin): argument parsing, client bootstrap, dispatch."""
 
 import argparse
+import getpass
 import glob
 import logging
 import os
@@ -107,6 +108,12 @@ def main():
         help=f"Maximum tool loop iterations per turn (default: {DEFAULT_MAX_STEPS}).",
     )
     parser.add_argument("--set-key", help="Save the given API key to ~/.config/safi/config.json and exit.")
+    parser.add_argument(
+        "--login",
+        dest="login",
+        action="store_true",
+        help="Log in with your SAFi web username/password (local or LDAP) to obtain and save a Policy API key automatically.",
+    )
     parser.add_argument("--set-url", help="Save the given backend URL to ~/.config/safi/config.json and exit.")
     parser.add_argument(
         "--set-model",
@@ -162,6 +169,49 @@ def main():
         target_key_agent = args.agent or "software_engineer"
         config.save_agent_api_key(target_key_agent, args.set_key.strip())
         ui.console.print(f"[bold green]✓ Saved Policy API key for '{target_key_agent}' to {config.CONFIG_FILE}[/]")
+        sys.exit(0)
+
+    if args.login:
+        target_login_agent = args.agent or "software_engineer"
+        login_url = config.resolve_api_url(args.api_url)
+        if not login_url:
+            ui.print_error("No SAFi backend URL configured. Run 'safi --set-url https://your-appliance' first.")
+            sys.exit(1)
+        try:
+            identifier = input("SAFi username (or DOMAIN\\user): ").strip()
+            password = getpass.getpass("Password: ")
+            totp_code = ""
+            ldap_hint = "\\" in identifier
+            totp_hint = input("TOTP code (blank if MFA not enabled): ").strip()
+        except (KeyboardInterrupt, EOFError):
+            sys.exit(1)
+        login_client = SafiClient(login_url)
+        try:
+            payload = login_client.login(identifier, password, totp_code=totp_hint, ldap=ldap_hint)
+        except Exception as exc:
+            # Second chance: server demanded MFA we didn't supply.
+            if getattr(exc, "status_code", None) == 401 and not totp_hint:
+                try:
+                    totp_code = input("Multi-factor code required. Enter TOTP code: ").strip()
+                    payload = login_client.login(identifier, password, totp_code=totp_code, ldap=ldap_hint)
+                except Exception as exc2:
+                    ui.print_error(f"Login failed: {exc2}")
+                    sys.exit(1)
+            else:
+                ui.print_error(f"Login failed: {exc}")
+                sys.exit(1)
+        new_key = payload.get("api_key") or ""
+        if not new_key:
+            ui.print_error("Server did not return an API key.")
+            sys.exit(1)
+        config.save_agent_api_key(target_login_agent, new_key)
+        if not config.has_configured_api_url():
+            config.save_config({"api_url": login_url})
+        ui.console.print(
+            f"[bold green]✓ Logged in as {payload.get('user', {}).get('name', identifier)} — "
+            f"Policy API key for '{target_login_agent}' saved to {config.CONFIG_FILE}[/]\n"
+            f"[dim]Policy: {payload.get('policy_id', '?')} — key labelled 'safi-cli' (re-login replaces it).[/]"
+        )
         sys.exit(0)
 
     if args.set_url:
