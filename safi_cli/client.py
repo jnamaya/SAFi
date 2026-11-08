@@ -134,7 +134,7 @@ class SafiClient:
     def login(self, identifier: str, password: str, totp_code: str = "",
               ldap: bool = False, timeout: int = 15) -> Dict[str, Any]:
         """Exchange web username/password (+ optional TOTP) for a fresh
-        safi-cli API key via POST /api/cli/login. Raises SafiError on
+        safi-cli API key via POST /api/cli/login. Raises SafiClientError on
         failure; returns the parsed payload on success."""
         payload = {"identifier": identifier, "password": password}
         if totp_code:
@@ -152,11 +152,11 @@ class SafiClient:
             else:
                 raise
         if resp.status_code == 429:
-            raise SafiError("Too many login attempts. Try again shortly.", 429)
+            raise SafiClientError("Too many login attempts. Try again shortly.", 429)
         data = _json_or_none(resp)
         if resp.status_code != 200 or not data or not data.get("ok"):
             msg = (data or {}).get("error") or f"Login failed (HTTP {resp.status_code})."
-            raise SafiError(msg, resp.status_code)
+            raise SafiClientError(msg, resp.status_code)
         return data
 
     def verify_connection(self, timeout: int = 5) -> tuple[bool, str, Dict[str, Any]]:
