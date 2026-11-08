@@ -214,8 +214,16 @@ def main():
             agent_names = list(AVAILABLE_AGENTS.keys())
         for name in dict.fromkeys(agent_names):
             config.save_agent_api_key(name, new_key)
+        user_info = payload.get("user") or {}
+        save_updates = {}
+        if user_info.get("id"):
+            save_updates["user_id"] = user_info["id"]
+        if user_info.get("name") or identifier:
+            save_updates["user_name"] = user_info.get("name") or identifier
         if not config.has_configured_api_url():
-            config.save_config({"api_url": login_url})
+            save_updates["api_url"] = login_url
+        if save_updates:
+            config.save_config(save_updates)
         config.set_default_agent("software_engineer")
         ui.console.print(
             f"[bold green]✓ Logged in as {payload.get('user', {}).get('name', identifier)} — "

@@ -646,8 +646,11 @@ export async function revokeInvitation(orgId, inviteId) {
 export async function revokeMemberSessions(orgId, userId) {
     return httpJSON(`/api/organizations/${orgId}/members/${userId}/sessions`, 'DELETE', {});
 }
-export async function createLocalAccount(orgId, username, name, role) {
-    return httpJSON(`/api/organizations/${orgId}/members/local`, 'POST', { username, name, role });
+export async function createLocalAccount(orgId, username, name, role, password, groups) {
+    const payload = { username, name, role };
+    if (password) payload.password = password;
+    if (groups && groups.length) payload.groups = groups;
+    return httpJSON(`/api/organizations/${orgId}/members/local`, 'POST', payload);
 }
 export async function resetMemberPassword(orgId, userId) {
     return httpJSON(`/api/organizations/${orgId}/members/${userId}/password`, 'POST', {});

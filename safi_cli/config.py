@@ -404,6 +404,9 @@ def resolve_user_id() -> str:
     env_id = os.environ.get("SAFI_USER_ID")
     if env_id and env_id.strip():
         return env_id.strip()
+    cfg_user_id = load_config().get("user_id")
+    if cfg_user_id and str(cfg_user_id).strip():
+        return str(cfg_user_id).strip()
     try:
         login = os.getlogin()
     except Exception:

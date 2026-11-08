@@ -574,17 +574,17 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
         <div class="settings-card">
             <section>
                  <h4 class="text-lg font-semibold mb-1">Create Local Account</h4>
-                 <p class="text-xs text-gray-400 mb-4">Provision an account with a username and a server-generated password — no email or external identity provider required. The password is shown once below; it is never stored or logged. Hand it to the user out of band (in person or by phone). The user signs in on the login screen with "Username or email".</p>
+                 <p class="text-xs text-gray-400 mb-4">Provision an account with a username and password (or auto-generate) — no email or external identity provider required. Hand the credentials to the user out of band (in person or by phone). The user signs in on the login screen or via <code class="font-mono text-neutral-800 dark:text-neutral-200">safi --login</code>.</p>
                  <div class="flex flex-wrap gap-2 items-end">
                      <label class="block">
                          <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Username</span>
                          <input type="text" id="inp-local-username" placeholder="jdoe" spellcheck="false" autocomplete="off"
-                             class="mt-1 w-44 rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm font-mono">
+                             class="mt-1 w-36 rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm font-mono">
                      </label>
                      <label class="block">
                          <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Display name</span>
                          <input type="text" id="inp-local-name" placeholder="John Doe" autocomplete="off"
-                             class="mt-1 w-48 rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm">
+                             class="mt-1 w-40 rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm">
                      </label>
                      <label class="block">
                          <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Role</span>
@@ -595,10 +595,21 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                              <option value="admin">Admin</option>
                          </select>
                      </label>
+                     <label class="block">
+                         <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Assign Group</span>
+                         <select id="sel-local-group" class="mt-1 rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm min-w-[120px]">
+                             <option value="">None</option>
+                         </select>
+                     </label>
+                     <label class="block">
+                         <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Password <span class="font-normal text-xs text-gray-400">(optional)</span></span>
+                         <input type="password" id="inp-local-password" placeholder="Auto-generated if blank" autocomplete="new-password"
+                             class="mt-1 w-44 rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm font-mono">
+                     </label>
                      <button id="btn-create-local" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-bold">Create account</button>
                  </div>
                  <div id="local-account-result" class="hidden mt-4 p-4 rounded-lg border border-amber-300 bg-amber-50 dark:border-amber-700/50 dark:bg-amber-900/20">
-                     <div class="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase mb-2">One-time password — copy it now, it will not be shown again</div>
+                     <div class="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase mb-2">Initial Account Password — copy it now</div>
                      <div class="flex items-center gap-3">
                          <code id="local-account-password" class="text-base font-mono font-bold text-neutral-900 dark:text-neutral-100 select-all"></code>
                          <button id="btn-copy-local-password" class="text-xs px-2 py-1 rounded border border-amber-400 text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40 font-bold">Copy</button>
@@ -1395,21 +1406,30 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
             const username = document.getElementById('inp-local-username').value.trim();
             const name = document.getElementById('inp-local-name').value.trim();
             const role = document.getElementById('sel-local-role').value;
+            const password = document.getElementById('inp-local-password')?.value.trim() || null;
+            const selectedGroup = document.getElementById('sel-local-group')?.value;
+            const groups = selectedGroup ? [selectedGroup] : [];
             const resultBox = document.getElementById('local-account-result');
             if (!username) { ui.showToast('Enter a username', 'error'); return; }
             if (!/^[a-z0-9._-]{3,64}$/.test(username)) {
                 ui.showToast('Username must be 3-64 chars: lowercase letters, digits, dot, underscore, hyphen', 'error');
                 return;
             }
+            if (password && password.length < 8) {
+                ui.showToast('Custom password must be at least 8 characters long', 'error');
+                return;
+            }
             btnCreateLocal.disabled = true;
             try {
-                const res = await api.createLocalAccount(org.id, username, name || null, role);
+                const res = await api.createLocalAccount(org.id, username, name || null, role, password, groups);
                 document.getElementById('local-account-password').textContent = res.initial_password || '';
+                const groupNote = (res.groups && res.groups.length) ? ` Added to group.` : '';
                 document.getElementById('local-account-meta').textContent =
-                    `Account "${res.username}" created with role "${role}". This password is shown only once.`;
+                    `Account "${res.username}" created with role "${role}".${groupNote} This password is shown only once.`;
                 resultBox.classList.remove('hidden');
                 document.getElementById('inp-local-username').value = '';
                 document.getElementById('inp-local-name').value = '';
+                if (document.getElementById('inp-local-password')) document.getElementById('inp-local-password').value = '';
                 ui.showToast('Local account created', 'success');
                 loadOrganizationMembers(org.id);
             } catch (e) {
@@ -1494,6 +1514,13 @@ async function loadOrgGroups(orgId) {
         const res = await api.listGroups();
         const groups = res.groups || [];
         if (badge) badge.textContent = `${groups.length} group${groups.length === 1 ? '' : 's'}`;
+        const selLocalGroup = document.getElementById('sel-local-group');
+        if (selLocalGroup) {
+            const curVal = selLocalGroup.value;
+            selLocalGroup.innerHTML = '<option value="">None</option>' +
+                groups.map(g => `<option value="${escapeHtml(g.id)}">${escapeHtml(g.name)}</option>`).join('');
+            selLocalGroup.value = curVal;
+        }
         if (!groups.length) {
             el.innerHTML = `<p class="p-4 text-sm text-gray-500">No groups yet. Create one below, then share agents with it from the Agents tab.</p>`;
             return;

@@ -1212,6 +1212,14 @@ def _wizard_login_or_key(api_url: str, agent: str) -> str:
             agent_names = list(dict.fromkeys([agent] + agent_names))
         for name in agent_names:
             config.save_agent_api_key(name, new_key)
+        user_info = payload.get("user") or {}
+        save_updates = {}
+        if user_info.get("id"):
+            save_updates["user_id"] = user_info["id"]
+        if user_info.get("name") or identifier:
+            save_updates["user_name"] = user_info.get("name") or identifier
+        if save_updates:
+            config.save_config(save_updates)
         ui.console.print(
             f"[bold green]✓ Logged in as {payload.get('user', {}).get('name', identifier)} — "
             f"Policy API key saved for {len(agent_names)} agent(s) to {config.CONFIG_FILE}[/]\n"

@@ -886,7 +886,7 @@ def _generate_local_password():
 @require_role('admin')
 def create_local_member(org_id):
     """[POST .../members/local] Admin creates an appliance account: username +
-    server-generated password, no email, no IdP. Same trust model as an
+    password (custom or server-generated), no email, no IdP. Same trust model as an
     invitation — the admin is the authority — minus the SMTP delivery."""
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
@@ -898,8 +898,13 @@ def create_local_member(org_id):
     if role not in ('admin', 'editor', 'auditor', 'member'):
         return jsonify({"error": "Invalid role"}), 400
 
+    raw_password = (data.get('password') or '').strip()
+    if raw_password and len(raw_password) < 8:
+        return jsonify({"error": "Password must be at least 8 characters long."}), 400
+
+    password = raw_password or _generate_local_password()
+
     try:
-        password = _generate_local_password()
         created = db.create_local_account(username, password, name=name,
                                           org_id=org_id, role=role)
     except ValueError as e:
@@ -909,18 +914,38 @@ def create_local_member(org_id):
         # 409 not 400: the request itself was valid, the identifier is taken.
         return jsonify({"error": "That username (or matching email) is already in use."}), 409
 
+    from ..persistence import sharing_store
+    groups = data.get('groups') or []
+    added_groups = []
+    if isinstance(groups, list):
+        for g in groups:
+            gid = str(g).strip()
+            if not gid:
+                continue
+            if not re.fullmatch(r"[0-9a-f-]{36}", gid):
+                named_group = sharing_store.get_group_by_name(org_id, gid)
+                if named_group:
+                    gid = named_group["id"]
+            try:
+                sharing_store.add_group_member(gid, created["user_id"], _actor())
+                added_groups.append(gid)
+            except Exception as ge:
+                current_app.logger.warning("Failed to add user %s to group %s: %s", created["user_id"], gid, ge)
+
     db.append_compliance_log(org_id, 'local_account_created', f"user:{_actor()}", {
         "member": created["user_id"],
         "username": username,
         "role": role,
         "admin_granted": role == 'admin',
+        "groups": added_groups,
     })
-    current_app.logger.info("Local account created: %s (by %s)", username, _actor())
+    current_app.logger.info("Local account created: %s (by %s) with %d group(s)", username, _actor(), len(added_groups))
     return jsonify({"status": "created", "user_id": created["user_id"],
                     "username": created["username"],
                     # Shown once in the admin UI; the admin hands it over out of
                     # band. Nothing plaintext is persisted anywhere.
-                    "initial_password": password}), 201
+                    "initial_password": password,
+                    "groups": added_groups}), 201
 
 
 @organizations_bp.route('/organizations/<org_id>/members/<user_id>/password', methods=['POST'])

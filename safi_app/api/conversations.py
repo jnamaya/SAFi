@@ -306,6 +306,15 @@ async def bot_process_prompt_endpoint():
                 org_id = founding_org.get("id")
         if org_id and (not user_details or not user_details.get("org_id")):
             db.update_user_org_and_role(user_id, org_id, "member")
+            user_details = db.get_user_details(user_id)
+
+        user_role = (user_details.get("role") if user_details else None) or "member"
+        from ..persistence import sharing_store
+        if not sharing_store.can_use_built_in_or_custom_agent(user_id, user_role, org_id, agent_key, ROLE_CONFIG):
+            return jsonify({
+                "error": f"Forbidden: You do not have permission to use the '{agent_key}' agent.",
+                "code": "AGENT_FORBIDDEN"
+            }), 403
         selected_intellect, selected_conscience = resolve_effective_faculty_models(
             Config,
             selected_intellect,
@@ -727,14 +736,12 @@ async def process_prompt_endpoint():
     except Exception:
         agent_profile = {}
 
-    # Use-path enforcement (backlog 55b): the visibility ladder used to gate
-    # the picker only, so a key learned out of band chatted with any private
-    # agent. Built-ins are not rows and stay platform-wide; a custom agent
-    # must clear the sharing resolver on EVERY turn, so a revoked share stops
-    # working immediately rather than at the next profile switch.
-    raw_agent = db.get_agent(user_profile_name)
-    if raw_agent and not sharing_store.can_use_agent(
-            user_id, user_details.get('role'), user_details.get('org_id'), raw_agent,
+    # Use-path enforcement: both custom DB agents and built-in agents (sysadmin,
+    # security_engineer, software_engineer) are verified against the user's role
+    # and group memberships on EVERY turn, so revoked permissions fail closed
+    # immediately rather than at the next profile switch.
+    if not sharing_store.can_use_built_in_or_custom_agent(
+            user_id, user_details.get('role'), user_details.get('org_id'), user_profile_name,
             ROLE_CONFIG):
         if is_owner:
             # Heal the stored selection so the next page load recovers.
@@ -743,14 +750,14 @@ async def process_prompt_endpoint():
             except Exception:
                 pass
             return jsonify({
-                "error": "You no longer have access to this agent. Your active "
+                "error": "You do not have permission to use this agent. Your active "
                          "agent has been reset to the default.",
                 "code": "AGENT_ACCESS_DENIED"
             }), 403
         # Non-owner: nothing of theirs to heal — it's the conversation's own
         # agent they've lost access to, not a setting on their account.
         return jsonify({
-            "error": "You no longer have access to the agent this conversation uses.",
+            "error": "You do not have permission to use the agent this conversation uses.",
             "code": "AGENT_ACCESS_DENIED"
         }), 403
 
@@ -1855,6 +1862,15 @@ async def agentic_process_prompt_endpoint():
                 org_id = founding_org.get("id")
         if org_id and (not user_details or not user_details.get("org_id")):
             db.update_user_org_and_role(user_id, org_id, "member")
+            user_details = db.get_user_details(user_id)
+
+        user_role = (user_details.get("role") if user_details else None) or "member"
+        from ..persistence import sharing_store
+        if not sharing_store.can_use_built_in_or_custom_agent(user_id, user_role, org_id, agent_key, ROLE_CONFIG):
+            return jsonify({
+                "error": f"Forbidden: You do not have permission to use the '{agent_key}' agent.",
+                "code": "AGENT_FORBIDDEN"
+            }), 403
 
         client_intellect = data.get("intellect_model") or data.get("model")
         selected_intellect = client_intellect or (agent_data.get("intellect_model") if agent_data else None) or user_details.get("intellect_model") or Config.INTELLECT_MODEL

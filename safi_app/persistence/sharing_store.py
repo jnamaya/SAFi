@@ -155,6 +155,88 @@ def can_use_agent(user_id, role, org_id, agent, role_config=None) -> bool:
     return has_grant(key, user_id, org_id)
 
 
+def get_user_group_names(user_id, org_id) -> set:
+    """Return lowercase names of all custom groups this user belongs to in org_id."""
+    if not user_id or not org_id:
+        return set()
+    conn = db.get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """
+            SELECT LOWER(c.name) FROM custom_groups c
+            JOIN group_memberships m ON m.group_id = c.id
+            WHERE m.user_id = %s AND c.org_id = %s
+            """,
+            (user_id, org_id),
+        )
+        return {row[0] for row in cursor.fetchall() if row[0]}
+    except Exception as e:
+        log.warning("get_user_group_names failed for %s: %s", user_id, e)
+        return set()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def can_use_built_in_or_custom_agent(user_id, role, org_id, agent_key, role_config=None) -> bool:
+    """Authorize access to either a built-in agent (sysadmin, security_engineer,
+    software_engineer) or a custom DB agent.
+
+    Admins always have full access across all agents.
+    
+    Built-in agents:
+    - sysadmin: requires role 'admin' OR membership in a group named/granted 'sysadmin',
+      'sysadmins', 'it-admins', 'it-infrastructure', 'infrastructure'.
+    - security_engineer: requires role 'admin' or 'auditor' OR membership in a group
+      named/granted 'secops', 'security', 'security_engineer', 'infosec'.
+    - software_engineer: open to role 'admin', 'editor', 'member', OR any group grant.
+
+    Custom DB agents:
+    - Resolved via can_use_agent().
+    """
+    if not user_id or not agent_key:
+        return False
+
+    role_config = role_config or {}
+    role = role or role_config.get('default_role') or 'member'
+    admin_roles = set(role_config.get('organization_admin_roles') or ['admin'])
+    if role in admin_roles:
+        return True
+
+    key = str(agent_key).lower().strip()
+
+    # Check built-in agents
+    if key == "sysadmin":
+        if has_grant("sysadmin", user_id, org_id):
+            return True
+        user_groups = get_user_group_names(user_id, org_id)
+        allowed_group_names = {"sysadmin", "sysadmins", "it-admins", "it-infrastructure", "infrastructure"}
+        return bool(user_groups & allowed_group_names)
+
+    if key == "security_engineer":
+        if role in ('admin', 'auditor'):
+            return True
+        if has_grant("security_engineer", user_id, org_id):
+            return True
+        user_groups = get_user_group_names(user_id, org_id)
+        allowed_group_names = {"secops", "security", "security_engineer", "security-operations", "infosec"}
+        return bool(user_groups & allowed_group_names)
+
+    if key in ("software_engineer", "developer", "safi"):
+        if role in ('admin', 'editor', 'member'):
+            return True
+        return has_grant("software_engineer", user_id, org_id)
+
+    # Check custom DB agent
+    raw_agent = db.get_agent(agent_key)
+    if raw_agent:
+        return can_use_agent(user_id, role, org_id, raw_agent, role_config)
+
+    # Unrecognized agent fails closed
+    return False
+
+
 def has_grant(agent_key, user_id, org_id) -> bool:
     """True when a can_use grant reaches this user directly or via a group
     they belong to, scoped to `org_id` on both the grant and the group.
@@ -384,6 +466,17 @@ def get_group(group_id):
     cursor = conn.cursor(dictionary=True)
     try:
         cursor.execute("SELECT * FROM custom_groups WHERE id=%s", (group_id,))
+        return cursor.fetchone()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_group_by_name(org_id, name):
+    conn = db.get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT * FROM custom_groups WHERE org_id=%s AND LOWER(name)=LOWER(%s) LIMIT 1", (org_id, (name or "").strip()))
         return cursor.fetchone()
     finally:
         cursor.close()
