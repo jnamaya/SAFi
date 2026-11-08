@@ -129,6 +129,16 @@ def main():
         help="Deploy local SSH public key to Linux or Windows inventory host or user@host.",
     )
     parser.add_argument(
+        "--logout",
+        action="store_true",
+        help="Log out of SAFi, removing stored credentials, user identity, and cached API keys.",
+    )
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="Reset SAFi CLI configuration and sessions to initial clean state.",
+    )
+    parser.add_argument(
         "--setup-cloud",
         "--cloud",
         dest="setup_cloud",
@@ -137,6 +147,16 @@ def main():
     )
 
     args = parser.parse_args()
+
+    if getattr(args, "logout", False):
+        config.clear_credentials()
+        ui.console.print("[bold green]✓ Successfully logged out.[/] Stored credentials and API keys have been removed.")
+        sys.exit(0)
+
+    if getattr(args, "reset", False):
+        config.clear_all_config()
+        ui.console.print("[bold green]✓ SAFi CLI configuration and sessions have been reset to factory state.[/]")
+        sys.exit(0)
 
     if args.setup_key is not None:
         if args.setup_key:
@@ -257,12 +277,9 @@ def main():
     is_first_run = (not config.has_configured_api_url() and not args.api_url)
     if args.setup_wizard or (is_first_run and sys.stdin.isatty()):
         wizard_url, wizard_agent, wizard_key = run_setup_wizard()
-        if not args.api_url:
-            args.api_url = wizard_url
-        if not args.agent:
-            args.agent = wizard_agent
-        if not args.api_key and wizard_key:
-            args.api_key = wizard_key
+        args.api_url = wizard_url
+        args.agent = wizard_agent
+        args.api_key = wizard_key
 
     workspace_root = Path(args.workspace).resolve()
     target_agent = args.agent or config.get_workspace_agent(str(workspace_root)) or config.get_default_agent() or "software_engineer"

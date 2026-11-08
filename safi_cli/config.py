@@ -183,6 +183,38 @@ def resolve_api_key(explicit_key: Optional[str] = None, agent: str = "software_e
     return resolve_agent_api_key(agent, explicit_key=explicit_key)
 
 
+def clear_credentials() -> None:
+    """Clear all stored API keys, authenticated user identity, keyring entries, and active sessions."""
+    cfg = load_config()
+    for agent in list((cfg.get("agent_keys") or {}).keys()) + [
+        "software_engineer", "sysadmin", "security_engineer", "default"
+    ]:
+        _keyring_delete(agent)
+    cfg.pop("api_key", None)
+    cfg.pop("agent_keys", None)
+    cfg.pop("user_id", None)
+    cfg.pop("user_name", None)
+    cfg.pop("user_email", None)
+    cfg.pop("default_agent", None)
+    if CONFIG_FILE.exists():
+        CONFIG_FILE.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+    if SESSIONS_FILE.exists():
+        try:
+            SESSIONS_FILE.unlink()
+        except OSError:
+            pass
+
+
+def clear_all_config() -> None:
+    """Completely wipe ~/.config/safi (credentials, sessions, and config)."""
+    clear_credentials()
+    if CONFIG_FILE.exists():
+        try:
+            CONFIG_FILE.unlink()
+        except OSError:
+            pass
+
+
 def is_appliance() -> bool:
     """Return True if running locally on a SAFi appliance."""
     return Path("/var/lib/safi-firstboot").exists() or Path("/etc/systemd/system/safi.service").exists()

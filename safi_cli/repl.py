@@ -1245,17 +1245,35 @@ def run_setup_wizard() -> tuple[str, str, Optional[str]]:
     ui.console.print(
         Panel(
             "[bold white]Welcome to the SAFi Governed Agent Interface![/]\n\n"
-            "[dim]This quick wizard will connect your workstation to your SAFi appliance\n"
-            "and configure your primary agent.[/dim]",
-            title=f"[bold {ui.COLOR_BRAND_400}]SAFi CLI — First-Run Setup[/]",
+            "[dim]This wizard connects your workstation to your SAFi appliance\n"
+            "and configures your primary agent.[/dim]",
+            title=f"[bold {ui.COLOR_BRAND_400}]SAFi CLI - Setup Wizard[/]",
             border_style=ui.COLOR_BRAND_500,
             box=box.ROUNDED,
             padding=(1, 2),
         )
     )
 
+    cfg = config.load_config()
+    prior_user = cfg.get("user_name") or cfg.get("user_id")
+    prior_url = cfg.get("api_url")
+    prior_key = config.resolve_agent_api_key("software_engineer") or config.resolve_agent_api_key("sysadmin") or cfg.get("api_key")
+    if prior_user or prior_key:
+        ui.console.print(
+            f"\n[dim]Existing profile detected: User=[bold]{prior_user or 'Configured User'}[/], "
+            f"Endpoint=[bold]{prior_url or 'Configured Endpoint'}[/][/dim]"
+        )
+        try:
+            reset_choice = input("Reset prior profile and credentials to reconfigure from scratch? [y/N]: ").strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            ui.console.print("\n[yellow]Setup cancelled.[/]")
+            sys.exit(0)
+        if reset_choice in ("y", "yes"):
+            config.clear_credentials()
+            ui.console.print("[bold green]✓ Prior profile and credentials cleared.[/]\n")
+
     # 1. Ask for SAFi Appliance URL
-    existing_url = str(config.load_config().get("api_url") or "").strip() or "https://localhost"
+    existing_url = str(config.load_config().get("api_url") or "").strip() or prior_url or "https://localhost"
     ui.console.print("\n[bold white]1. SAFi Appliance Endpoint[/]")
     ui.console.print(
         "[dim]Enter the base URL of your SAFi server or Mini-PC appliance.\n"
@@ -1309,17 +1327,33 @@ def run_setup_wizard() -> tuple[str, str, Optional[str]]:
     config.set_default_agent(chosen_agent)
     agent_title = AVAILABLE_AGENTS.get(chosen_agent, {}).get("title", chosen_agent)
     ui.console.print(f"\n[bold white]2. Default Agent[/]")
-    ui.console.print(f"[bold green]✓ Default agent: {agent_title} ({chosen_agent})[/] [dim]— the Policy API key is saved for every available agent.[/]")
+    ui.console.print(f"[bold green]✓ Default agent: {agent_title} ({chosen_agent})[/] [dim](the Policy API key is saved for all available agents)[/]")
 
     # 3. Authenticate: web login (default) or manual Policy API key
     ui.console.print(f"\n[bold white]3. Authenticate[/]")
     existing_key = config.resolve_agent_api_key(chosen_agent)
     if existing_key:
-        ui.console.print(f"[bold green]✓ Found existing Policy API key in config.[/]")
-        key_val = existing_key
+        cfg = config.load_config()
+        current_user = cfg.get("user_name") or cfg.get("user_id")
+        user_label = f" for '{current_user}'" if current_user else ""
+        ui.console.print(f"[bold green]✓ Found existing Policy API key{user_label} in config.[/]")
+        try:
+            reauth = input("Keep existing credentials? [Y/n]: ").strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            reauth = "y"
+        if reauth in ("n", "no"):
+            config.clear_credentials()
+            ui.console.print(
+                "[dim]Sign in with your new SAFi web username and password. A Policy API key\n"
+                "is provisioned automatically and saved for all available agents.\n"
+                "Or paste an existing key (sk-safi-...).[/dim]"
+            )
+            key_val = _wizard_login_or_key(chosen_url, chosen_agent)
+        else:
+            key_val = existing_key
     else:
         ui.console.print(
-            "[dim]Sign in with your SAFi web username and password — a Policy API key\n"
+            "[dim]Sign in with your SAFi web username and password. A Policy API key\n"
             "is provisioned automatically and saved for all available agents.\n"
             "Or paste an existing key (sk-safi-...).[/dim]"
         )
