@@ -54,10 +54,10 @@ export async function renderIdentityStep(container, agentData) {
                     <label class="block text-sm font-bold mb-2 text-gray-700 dark:text-gray-300">Visibility</label>
                     <div class="relative">
                         <select id="wiz-visibility" class="w-full p-3 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 appearance-none">
-                            <option value="private" ${agentData.visibility === 'private' ? 'selected' : ''}>Private (Testing / Group-Shared only)</option>
-                            <option value="member" ${agentData.visibility === 'member' ? 'selected' : ''}>Organization (Everyone)</option>
-                            <option value="auditor" ${agentData.visibility === 'auditor' ? 'selected' : ''}>Auditors & Admins Only</option>
-                            <option value="admin" ${agentData.visibility === 'admin' ? 'selected' : ''}>Admins Only</option>
+                            <option value="private" ${agentData.visibility === 'private' ? 'selected' : ''}>Myself only (Private)</option>
+                            <option value="member" ${agentData.visibility === 'member' ? 'selected' : ''}>All Members (Organization)</option>
+                            <option value="admin" ${agentData.visibility === 'admin' ? 'selected' : ''}>Admins only</option>
+                            <option value="auditor" ${agentData.visibility === 'auditor' ? 'selected' : ''}>Auditors & Admins</option>
                         </select>
                         <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700 dark:text-gray-300">
                             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
