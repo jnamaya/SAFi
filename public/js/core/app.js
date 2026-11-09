@@ -348,8 +348,12 @@ async function checkLoginStatus() {
       const currentProfileKey = user.active_profile || (availableProfiles[0] ? availableProfiles[0].key : null);
       activeProfileData = availableProfiles.find(p => p.key === currentProfileKey) || availableProfiles[0] || null;
 
+      const composerWrapper = document.querySelector('.composer-bg-wrapper');
       if (!activeProfileData || !activeProfileData.key) {
         activeProfileData = null;
+        if (composerWrapper) {
+          composerWrapper.classList.add('hidden');
+        }
         if (ui.elements.messageInput) {
           ui.elements.messageInput.disabled = true;
           ui.elements.messageInput.placeholder = 'No agents currently available';
@@ -358,6 +362,9 @@ async function checkLoginStatus() {
           ui.elements.sendButton.disabled = true;
         }
       } else {
+        if (composerWrapper) {
+          composerWrapper.classList.remove('hidden');
+        }
         if (ui.elements.messageInput) {
           ui.elements.messageInput.disabled = false;
         }
