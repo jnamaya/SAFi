@@ -19,7 +19,7 @@ export async function renderIdentityStep(container, agentData) {
                     <option value="standalone">Loading Policies...</option>
                 </select>
                 <p class="text-xs text-green-600 dark:text-green-300 mt-2">
-                    A policy gives this agent its business-unit standards and rules. With no policy, the agent is governed by your Organization's Charter alone — so you need <strong>at least a Charter or a Policy</strong> for the agent to be governed.
+                    A policy gives this agent its business-unit standards and rules. With no policy, the agent is governed by your Organization's Charter alone - so you need <strong>at least a Charter or a Policy</strong> for the agent to be governed.
                 </p>
                 <div id="wiz-policy-preview" class="hidden mt-3 text-xs p-3 bg-white dark:bg-neutral-900 rounded border border-green-100 dark:border-neutral-700 text-gray-600 dark:text-gray-400">
                     <!-- Preview populated by JS -->
@@ -48,7 +48,7 @@ export async function renderIdentityStep(container, agentData) {
             </div>
 
             <!-- ACCESS PERMISSIONS (WINDOWS / DRIVE ACL MODEL) -->
-            <div class="rounded-xl border border-gray-200 dark:border-neutral-700 bg-gray-50/50 dark:bg-neutral-800/40 p-4 space-y-4">
+            <div class="rounded-xl border border-gray-200 dark:border-neutral-800 bg-gray-50 dark:bg-neutral-900 p-4 space-y-4">
                 <div>
                     <label class="block text-sm font-bold text-gray-800 dark:text-neutral-200 mb-1">Access Control</label>
                     <p class="text-xs text-gray-500 dark:text-gray-400">Manage who can chat with this agent, like sharing a folder with specific people or groups.</p>
@@ -122,7 +122,7 @@ async function refreshCharterStatus(agentData) {
             agentData._hasCharter = false;
         }
     } catch (e) {
-        // Unknown — leave undefined so we neither warn nor block prematurely.
+        // Unknown - leave undefined so we neither warn nor block prematurely.
         agentData._hasCharter = undefined;
     }
     updateGovernanceWarning(agentData);
@@ -157,7 +157,7 @@ async function loadPolicies(agentData) {
         const select = document.getElementById('wiz-policy');
 
         if (select) {
-            select.innerHTML = `<option value="standalone">Charter only — no specific policy</option>`;
+            select.innerHTML = `<option value="standalone">Charter only - no specific policy</option>`;
             policies.forEach(p => {
                 const opt = document.createElement('option');
                 opt.value = p.id;
