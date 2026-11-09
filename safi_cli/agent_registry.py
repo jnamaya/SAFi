@@ -35,25 +35,9 @@ DEFAULT_AGENTS = {
         "title": "Systems Administrator",
         "description": "Governed, evidence-based operations across servers, network, identity & cloud",
     },
-    "fiduciary": {
-        "title": "The Fiduciary",
-        "description": "Market-aware financial analyst, portfolio educator & data-driven guide",
-    },
-    "health_navigator": {
-        "title": "Health Navigator",
-        "description": "Evidence-based health literature, clinical navigation & wellness guide",
-    },
-    "socratic_tutor": {
-        "title": "Socratic Tutor",
-        "description": "Pedagogical inquiry, conceptual reasoning & critical thinking coach",
-    },
-    "bible_scholar": {
-        "title": "Bible Scholar",
-        "description": "Scriptural hermeneutics, historical-grammatical exegesis & theology",
-    },
-    "safi_steward": {
-        "title": "SAFi Steward",
-        "description": "Platform administration, policy governance & compliance stewardship",
+    "security_engineer": {
+        "title": "Security Engineer",
+        "description": "Security compliance, threat analysis & vulnerability assessment",
     },
 }
 
@@ -65,7 +49,7 @@ def fetch_remote_agents(client: SafiClient) -> Optional[Dict[str, Dict[str, Any]
     try:
         if hasattr(client, "get_available_agents") and callable(client.get_available_agents):
             remote_list = client.get_available_agents()
-            if isinstance(remote_list, list) and remote_list:
+            if isinstance(remote_list, list):
                 discovered = {}
                 for item in remote_list:
                     if not isinstance(item, dict):
@@ -78,8 +62,7 @@ def fetch_remote_agents(client: SafiClient) -> Optional[Dict[str, Dict[str, Any]
                         "description": item.get("description") or "",
                         "is_custom": item.get("is_custom", False),
                     }
-                if discovered:
-                    return discovered
+                return discovered
     except Exception as exc:
         logger.warning("Remote agent fetch failed: %s", exc)
     return None
@@ -91,7 +74,7 @@ def discover_agents(client: Optional[SafiClient] = None) -> Dict[str, Dict[str, 
         return AVAILABLE_AGENTS
 
     remote = fetch_remote_agents(client)
-    if remote:
+    if remote is not None:
         AVAILABLE_AGENTS.clear()
         AVAILABLE_AGENTS.update(remote)
 
@@ -109,6 +92,12 @@ def prompt_switch_agent(
     from rich import box
 
     discover_agents(client)
+    if not AVAILABLE_AGENTS:
+        ui.console.print(
+            f"[bold {ui.COLOR_WARN}]No agents currently available. Contact your administrator to grant you access to an agent.[/]"
+        )
+        return current_agent, config.resolve_session_id(str(workspace_root))
+
     agent_keys = list(AVAILABLE_AGENTS.keys())
     target_agent = None
 

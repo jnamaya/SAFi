@@ -230,8 +230,6 @@ def main():
         login_client.api_key = new_key
         agents = login_client.get_available_agents()
         agent_names = [a.get("key") for a in agents if isinstance(a, dict) and a.get("key")]
-        if not agent_names:
-            agent_names = list(AVAILABLE_AGENTS.keys())
         for name in dict.fromkeys(agent_names):
             config.save_agent_api_key(name, new_key)
         user_info = payload.get("user") or {}
@@ -244,12 +242,21 @@ def main():
             save_updates["api_url"] = login_url
         if save_updates:
             config.save_config(save_updates)
-        default_agent = "software_engineer" if "software_engineer" in agent_names else (agent_names[0] if agent_names else "software_engineer")
+
+        if not agent_names:
+            config.set_default_agent("")
+            ui.console.print(
+                f"[bold green]✓ Logged in as {payload.get('user', {}).get('name', identifier)}[/]\n"
+                f"[bold yellow]Notice:[/] No agents currently available. Contact your administrator to grant you access to an agent."
+            )
+            sys.exit(0)
+
+        default_agent = "software_engineer" if "software_engineer" in agent_names else agent_names[0]
         config.set_default_agent(default_agent)
         ui.console.print(
-            f"[bold green]✓ Logged in as {payload.get('user', {}).get('name', identifier)} — "
+            f"[bold green]✓ Logged in as {payload.get('user', {}).get('name', identifier)} - "
             f"Policy API key saved for {len(agent_names)} agent(s) to {config.CONFIG_FILE}[/]\n"
-            f"[dim]Policy: {payload.get('policy_id', '?')} — key labelled 'safi-cli' (re-login replaces it). "
+            f"[dim]Policy: {payload.get('policy_id', '?')} - key labelled 'safi-cli' (re-login replaces it). "
             f"Default agent: {default_agent}.[/]"
         )
         sys.exit(0)
@@ -290,6 +297,12 @@ def main():
 
     client = SafiClient(api_url, api_key or "")
     discover_agents(client)
+
+    if not AVAILABLE_AGENTS:
+        ui.print_error(
+            "No agents currently available. Contact your administrator to grant you access to an agent."
+        )
+        sys.exit(1)
 
     if AVAILABLE_AGENTS and target_agent not in AVAILABLE_AGENTS:
         target_agent = next(iter(AVAILABLE_AGENTS))
