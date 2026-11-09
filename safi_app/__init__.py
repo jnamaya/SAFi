@@ -140,11 +140,6 @@ def create_app():
 
     with app.app_context():
         db.init_db()
-        from .bootstrap import initialize as initialize_userland_defaults
-        try:
-            initialize_userland_defaults()
-        except Exception as e:
-            app.logger.error("Application data bootstrap failed: %s", e)
         try:
             from .persistence import incident_store
             incident_store.init_schema()
@@ -191,6 +186,12 @@ def create_app():
             scim_store.init_schema()
         except Exception as e:
             app.logger.error("SCIM table init failed, directory sync disabled: %s", e)
+
+        from .bootstrap import initialize as initialize_userland_defaults
+        try:
+            initialize_userland_defaults()
+        except Exception as e:
+            app.logger.error("Application data bootstrap failed: %s", e)
 
     oauth.register(
         name='google',

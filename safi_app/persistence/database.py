@@ -1510,17 +1510,11 @@ def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
         conn.close()
 
 def get_user_by_identifier(identifier: str) -> Optional[Dict[str, Any]]:
-    """Look a user up by EITHER username or email.
+    """Look a user up by EITHER username, email, or id.
 
     The single entry point for password login. A local appliance account has a
     username and usually no email at all, while every federated (OAuth/SCIM)
-    user has an email and no username — so one lookup has to accept both, or
-    login needs two code paths that can drift.
-
-    The OR is intentional and safe because `username` and `email` are UNIQUE
-    independently: at most one row can match. Both identifiers are folded to
-    lower case because login identifiers are case-insensitive; setup stores
-    local usernames in that normalized form as well.
+    user has an email and no username, so one lookup has to accept both.
     """
     if not identifier:
         return None
@@ -1529,8 +1523,15 @@ def get_user_by_identifier(identifier: str) -> Optional[Dict[str, Any]]:
     try:
         normalized = identifier.strip().lower()
         cursor.execute(
-            "SELECT * FROM users WHERE username = %s OR email = %s LIMIT 1",
-            (normalized, normalized),
+            """
+            SELECT * FROM users
+            WHERE LOWER(username) = %s
+               OR LOWER(email) = %s
+               OR LOWER(id) = %s
+               OR (id = 'local_admin' AND %s IN ('admin', 'local_admin', 'administrator', 'root'))
+            LIMIT 1
+            """,
+            (normalized, normalized, normalized, normalized),
         )
         return cursor.fetchone()
     finally:

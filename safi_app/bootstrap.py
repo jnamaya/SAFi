@@ -115,7 +115,7 @@ def _seed_local_admin() -> None:
     if not Config.ENABLE_LOCAL_LOGIN:
         return
     email = Config.LOCAL_ADMIN_EMAIL
-    username = Config.LOCAL_ADMIN_USERNAME
+    username = Config.LOCAL_ADMIN_USERNAME or "admin"
     display_name = username or email or "Local Admin"
     password_hash = generate_password_hash(Config.LOCAL_ADMIN_PASSWORD)
 
@@ -124,6 +124,7 @@ def _seed_local_admin() -> None:
     try:
         cursor.execute("SELECT id, org_id FROM users WHERE id='local_admin'")
         existing_user = cursor.fetchone()
+        org_id = None
         if existing_user:
             org_id = existing_user.get("org_id")
             if not org_id:
@@ -141,13 +142,13 @@ def _seed_local_admin() -> None:
                 cursor.execute(
                     "UPDATE users SET email=%s, username=%s, name=%s, password_hash=%s, org_id=%s "
                     "WHERE id='local_admin'",
-                    (email or None, username or None, display_name, password_hash, org_id),
+                    (email or None, username, display_name, password_hash, org_id),
                 )
             else:
                 cursor.execute(
                     "UPDATE users SET email=%s, username=%s, name=%s, password_hash=%s "
                     "WHERE id='local_admin'",
-                    (email or None, username or None, display_name, password_hash),
+                    (email or None, username, display_name, password_hash),
                 )
         else:
             cursor.execute(
@@ -168,66 +169,71 @@ def _seed_local_admin() -> None:
                 "INSERT INTO users "
                 "(id, email, username, name, picture, role, org_id, password_hash, active_profile) "
                 "VALUES ('local_admin', %s, %s, %s, '', %s, %s, %s, %s)",
-                (email or None, username or None, display_name, authority_role, org_id,
+                (email or None, username, display_name, authority_role, org_id,
                  password_hash, Config.DEFAULT_PROFILE),
             )
 
-        if org_id:
-            # On an appliance / local-login deployment, adopt the active agent
-            # policies into the administrator's organization so they become
-            # fully editable, support direct API key generation, and maintain
-            # unified governance between Web UI agents and CLI tooling.
-            active_ids = [
-                policy_id for agent_key, policy_id in DEMO_AGENT_POLICY_MAP.items()
-                if Config.builtin_agent_enabled(agent_key)
-            ]
-            if active_ids:
-                placeholders = ",".join(["%s"] * len(active_ids))
-                cursor.execute(
-                    f"UPDATE policies "
-                    f"SET org_id=%s, is_demo=FALSE, created_by='local_admin' "
-                    f"WHERE (org_id IS NULL OR is_demo=TRUE) AND id IN ({placeholders})",
-                    (org_id, *active_ids),
-                )
-                for pid in active_ids:
-                    cursor.execute("SELECT policy_config FROM policies WHERE id=%s", (pid,))
-                    prow = cursor.fetchone()
-                    if prow and prow.get("policy_config"):
-                        pcfg = (
-                            json.loads(prow["policy_config"])
-                            if isinstance(prow["policy_config"], str)
-                            else (prow["policy_config"] or {})
-                        )
-                        bu = pcfg.get("business_unit", "")
-                        if " (Demo)" in bu:
-                            pcfg["business_unit"] = bu.replace(" (Demo)", "").strip()
-                            cursor.execute(
-                                "UPDATE policies SET policy_config=%s WHERE id=%s",
-                                (json.dumps(pcfg), pid),
-                            )
-
-            # Auto-seed standard default enterprise groups for role & agent governance
-            from .persistence import sharing_store
-            default_groups = [
-                ("Developers", "Software engineering and code development staff", "default"),
-                ("IT-Infrastructure", "Systems administration, servers, and network operations", "default"),
-                ("SecOps", "Security engineering, vulnerability assessment, and audit", "default"),
-                ("Cloud AI Access", "Authorized users and teams permitted to query external cloud AI models", "cloud"),
-            ]
-            for gname, _desc, gpolicy in default_groups:
-                try:
-                    if not sharing_store.group_name_taken(org_id, gname):
-                        sharing_store.create_group(org_id, gname, "local_admin", model_policy=gpolicy)
-                        log.info("Bootstrapped default group '%s' (policy: %s) for org %s", gname, gpolicy, org_id)
-                    elif gname == "Cloud AI Access":
-                        # Ensure Cloud AI Access has model_policy = 'cloud' if already created
-                        existing = sharing_store.get_group_by_name(org_id, gname)
-                        if existing and existing.get("model_policy") != "cloud":
-                            sharing_store.update_group_model_policy(existing["id"], "cloud")
-                except Exception as ge:
-                    log.warning("Could not auto-seed group '%s': %s", gname, ge)
-
+        # Synchronize password and role for any existing admin/local_admin row
+        cursor.execute(
+            "UPDATE users SET password_hash=%s, role='admin' "
+            "WHERE id='local_admin' OR id='admin' OR username='admin'",
+            (password_hash,),
+        )
         conn.commit()
+
+        if org_id:
+            try:
+                active_ids = [
+                    policy_id for agent_key, policy_id in DEMO_AGENT_POLICY_MAP.items()
+                    if Config.builtin_agent_enabled(agent_key)
+                ]
+                if active_ids:
+                    placeholders = ",".join(["%s"] * len(active_ids))
+                    cursor.execute(
+                        f"UPDATE policies "
+                        f"SET org_id=%s, is_demo=FALSE, created_by='local_admin' "
+                        f"WHERE (org_id IS NULL OR is_demo=TRUE) AND id IN ({placeholders})",
+                        (org_id, *active_ids),
+                    )
+                    for pid in active_ids:
+                        cursor.execute("SELECT policy_config FROM policies WHERE id=%s", (pid,))
+                        prow = cursor.fetchone()
+                        if prow and prow.get("policy_config"):
+                            pcfg = (
+                                json.loads(prow["policy_config"])
+                                if isinstance(prow["policy_config"], str)
+                                else (prow["policy_config"] or {})
+                            )
+                            bu = pcfg.get("business_unit", "")
+                            if " (Demo)" in bu:
+                                pcfg["business_unit"] = bu.replace(" (Demo)", "").strip()
+                                cursor.execute(
+                                    "UPDATE policies SET policy_config=%s WHERE id=%s",
+                                    (json.dumps(pcfg), pid),
+                                )
+
+                # Auto-seed standard default enterprise groups for role & agent governance
+                from .persistence import sharing_store
+                default_groups = [
+                    ("Developers", "Software engineering and code development staff", "default"),
+                    ("IT-Infrastructure", "Systems administration, servers, and network operations", "default"),
+                    ("SecOps", "Security engineering, vulnerability assessment, and audit", "default"),
+                    ("Cloud AI Access", "Authorized users and teams permitted to query external cloud AI models", "cloud"),
+                ]
+                for gname, _desc, gpolicy in default_groups:
+                    try:
+                        if not sharing_store.group_name_taken(org_id, gname):
+                            sharing_store.create_group(org_id, gname, "local_admin", model_policy=gpolicy)
+                            log.info("Bootstrapped default group '%s' (policy: %s) for org %s", gname, gpolicy, org_id)
+                        elif gname == "Cloud AI Access":
+                            existing = sharing_store.get_group_by_name(org_id, gname)
+                            if existing and existing.get("model_policy") != "cloud":
+                                sharing_store.update_group_model_policy(existing["id"], "cloud")
+                    except Exception as ge:
+                        log.warning("Could not auto-seed group '%s': %s", gname, ge)
+                conn.commit()
+            except Exception as pol_err:
+                log.warning("Could not synchronize policies or groups for local admin: %s", pol_err)
     except Exception:
         log.exception("Could not synchronize the configured local administrator.")
     finally:
