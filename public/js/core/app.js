@@ -809,7 +809,7 @@ async function applyDeepLink() {
   if (!q && !agentKey) return;
 
   if (agentKey
-      && agentKey !== activeProfileData.key
+      && agentKey !== activeProfileData?.key
       && availableProfiles.some(p => p.key === agentKey)) {
     await handleProfileChange(agentKey);
     return;  // reload is in flight; the prefill happens on the way back

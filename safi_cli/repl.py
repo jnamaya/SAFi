@@ -1202,15 +1202,21 @@ def _wizard_login_or_key(api_url: str, agent: str) -> str:
         if not new_key:
             ui.print_error("Server did not return an API key.")
             continue
-        # One policy key is valid for every agent — save it under all known
+        # One policy key is valid for every agent - save it under all known
         # agents so none is left without a key (active agent stays 'agent').
         login_client.api_key = new_key
         agents = login_client.get_available_agents()
         agent_names = [a.get("key") for a in agents if isinstance(a, dict) and a.get("key")]
         if not agent_names:
-            agent_names = list(AVAILABLE_AGENTS.keys())
+            config.set_default_agent("")
+            ui.console.print(
+                f"[bold green]✓ Logged in as {payload.get('user', {}).get('name', identifier)}[/]\n"
+                f"[bold yellow]Notice:[/] No agents currently available. Contact your administrator to grant you access to an agent."
+            )
+            return None
+
         if agent not in agent_names:
-            agent_names = list(dict.fromkeys([agent] + agent_names))
+            agent = agent_names[0]
         for name in agent_names:
             config.save_agent_api_key(name, new_key)
         user_info = payload.get("user") or {}
@@ -1221,12 +1227,12 @@ def _wizard_login_or_key(api_url: str, agent: str) -> str:
             save_updates["user_name"] = user_info.get("name") or identifier
         if save_updates:
             config.save_config(save_updates)
-        default_agent = "software_engineer" if "software_engineer" in agent_names else (agent_names[0] if agent_names else "software_engineer")
+        default_agent = "software_engineer" if "software_engineer" in agent_names else agent_names[0]
         config.set_default_agent(default_agent)
         ui.console.print(
-            f"[bold green]✓ Logged in as {payload.get('user', {}).get('name', identifier)} — "
+            f"[bold green]✓ Logged in as {payload.get('user', {}).get('name', identifier)} - "
             f"Policy API key saved for {len(agent_names)} agent(s) to {config.CONFIG_FILE}[/]\n"
-            f"[dim]Policy: {payload.get('policy_id', '?')} — key labelled 'safi-cli' (re-login replaces it). "
+            f"[dim]Policy: {payload.get('policy_id', '?')} - key labelled 'safi-cli' (re-login replaces it). "
             f"Default agent: {default_agent}.[/]"
         )
         return new_key
@@ -1358,6 +1364,19 @@ def run_setup_wizard() -> tuple[str, str, Optional[str]]:
             "Or paste an existing key (sk-safi-...).[/dim]"
         )
         key_val = _wizard_login_or_key(chosen_url, chosen_agent)
+
+    if not key_val:
+        ui.print_error("No agents currently available. Contact your administrator to grant you access to an agent.")
+        sys.exit(0)
+
+    test_client = SafiClient(chosen_url, key_val or "")
+    discover_agents(test_client)
+    if not AVAILABLE_AGENTS:
+        ui.print_error("No agents currently available. Contact your administrator to grant you access to an agent.")
+        sys.exit(0)
+
+    chosen_agent = config.get_default_agent() or next(iter(AVAILABLE_AGENTS), "software_engineer")
+    agent_title = AVAILABLE_AGENTS.get(chosen_agent, {}).get("title", chosen_agent)
 
     ui.console.print()
     ui.console.print(

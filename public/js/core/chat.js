@@ -715,7 +715,7 @@ export async function startNewConversation(isInitialLoad = false, activeProfileD
         uiMessages.resetChatView();
         uiAuthSidebar.updateChatTitle('New Chat');
 
-        uiAuthSidebar.updateActiveProfileChip(activeProfileData.name || 'Default');
+        uiAuthSidebar.updateActiveProfileChip(activeProfileData);
 
         const firstName = user && user.name ? user.name.split(' ')[0] : '';
         uiMessages.displayEmptyState(activeProfileData, promptClickHandler, firstName);
@@ -738,7 +738,7 @@ export async function switchConversation(id, activeProfileData, user, showModal,
     currentConversationId = id;
     uiAuthSidebar.setActiveConvoLink(id);
     uiMessages.resetChatView();
-    uiAuthSidebar.updateActiveProfileChip(activeProfileData.name || 'Default');
+    uiAuthSidebar.updateActiveProfileChip(activeProfileData);
 
     // Set title optimistically
     try {
@@ -1113,7 +1113,7 @@ export async function sendMessage(activeProfileData, user) {
     autoSize(); // resets disabled=true (empty input) — re-enable immediately for cancel
     ui.elements.sendButton.disabled = false;
 
-    const loadingIndicator = uiMessages.showLoadingIndicator(activeProfileData.name);
+    const loadingIndicator = uiMessages.showLoadingIndicator(activeProfileData?.name || 'Assistant');
 
     const aiMessageId = generateUUID();
     currentAiMessageId = aiMessageId;
