@@ -429,18 +429,10 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
         </div>
     `;
 
-    // --- Identity & Access tab: everything about who is in the org ---
-    if (identityContainer) identityContainer.innerHTML = `
-        <div class="settings-page-header">
-            <h1>Identity &amp; Access</h1>
-            <p>Members, roles, groups, approvers, domain verification, and directory sync (SCIM).</p>
-        </div>
-
-        ${verificationSection}
-
+    const identitySessionsCard = `
         <div class="settings-card">
              <h4 class="text-lg font-semibold mb-1">Identity &amp; Sessions</h4>
-             <p class="text-xs text-gray-500 mb-4">How members join and how long their sessions live. Changes are journaled to the auth events log. Sessions are revocable server-side — removing a member or changing a role ends their access on the next request.</p>
+             <p class="text-xs text-gray-500 mb-4">How members join and how long their sessions live. Changes are journaled to the auth events log. Sessions are revocable server-side: removing a member or changing a role ends their access on the next request.</p>
              <div class="grid md:grid-cols-3 gap-4">
                  <label class="block">
                      <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Join policy</span>
@@ -475,7 +467,7 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                      <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Microsoft tenant ID</span>
                      <input type="text" id="inp-ms-tenant" placeholder="not restricted" spellcheck="false"
                          class="mt-1 w-full rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm font-mono">
-                     <span class="block text-xs text-gray-400 mt-1">Entra directory (tenant) GUID. When set, only Microsoft sign-ins from this tenant are accepted — a wrong value locks out Microsoft logins.</span>
+                     <span class="block text-xs text-gray-400 mt-1">Entra directory (tenant) GUID. When set, only Microsoft sign-ins from this tenant are accepted: a wrong value locks out Microsoft logins.</span>
                  </label>
                  <label class="block">
                      <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Google Workspace domain</span>
@@ -497,12 +489,12 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                          <option value="false">Off (invite-only)</option>
                          <option value="true">Provision on first sign-in</option>
                      </select>
-                     <span class="block text-xs text-gray-400 mt-1">When on, a directory user whose email matches a pending invitation — or whose verified domain belongs to this org — gets a SAFi account on first successful bind (role: member, or the invitation's role). Requires LDAP sign-in enabled.</span>
+                     <span class="block text-xs text-gray-400 mt-1">When on, a directory user whose email matches a pending invitation (or whose verified domain belongs to this org) gets a SAFi account on first successful bind (role: member, or the invitation's role). Requires LDAP sign-in enabled.</span>
                  </label>
              </div>
              <div class="mt-4">
                  <h5 class="text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Directory group &rarr; role mappings</h5>
-                 <p class="text-xs text-gray-400 mb-2">Map AD group DNs to SAFi roles. Evaluated at every sign-in from the directory's memberOf attribute — promote or demote in AD and it applies on the next login. A user in no mapped group keeps their current role; the highest-ranked matching mapping wins.</p>
+                 <p class="text-xs text-gray-400 mb-2">Map AD group DNs to SAFi roles. Evaluated at every sign-in from the directory's memberOf attribute: promote or demote in AD and it applies on the next login. A user in no mapped group keeps their current role; the highest-ranked matching mapping wins.</p>
                  <div id="ldap-group-mappings" class="space-y-2 mb-3"></div>
                  <div class="flex flex-col sm:flex-row gap-2">
                      <input type="text" id="inp-ldap-group-dn" placeholder="CN=SAFi Admins,OU=Groups,DC=corp,DC=example,DC=com" spellcheck="false"
@@ -518,7 +510,7 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                  Verifying your domain above (DNS TXT record) fills these two fields in
                  automatically, when the domain's mail is actually hosted on Google
                  Workspace or Microsoft 365. If you already know your tenant ID or
-                 Workspace domain, you can just type it in here directly — domain
+                 Workspace domain, you can just type it in here directly: domain
                  verification is only worth doing in addition if you also want to
                  formally claim the domain (it decides who owns it if this deployment
                  ever hosts more than one organization).
@@ -527,6 +519,16 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                  <button id="btn-save-identity" class="px-5 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-bold shadow hover:shadow-md transition-all">Save Identity Settings</button>
              </div>
         </div>
+    `;
+
+    // --- Identity & Access tab: everything about who is in the org ---
+    if (identityContainer) identityContainer.innerHTML = `
+        <div class="settings-page-header">
+            <h1>Identity &amp; Access</h1>
+            <p>Members, roles, groups, approvers, domain verification, and directory sync (SCIM).</p>
+        </div>
+
+        ${verificationSection}
 
         <div class="settings-card">
             <section>
@@ -656,8 +658,10 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
             </section>
         </div>
 
+        ${identitySessionsCard}
+
         <div id="scim-section"></div>
-        ` : ''}
+        ` : identitySessionsCard}
     `;
 
     // Attach Listeners
