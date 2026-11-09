@@ -23,6 +23,7 @@ export function renderReviewStep(container, agentData) {
                      <div class="flex gap-2 mt-2 items-center flex-wrap">
                         <span class="text-xs px-2 py-1 bg-green-100 text-green-800 rounded-full font-mono">ID: ${escapeHtml(agentData.key)}</span>
                         <span class="text-xs px-2 py-1 bg-gray-100 text-gray-800 rounded-full">Visibility: ${escapeHtml(agentData.visibility)}</span>
+                        ${agentData.shared_groups && agentData.shared_groups.length ? `<span class="text-xs px-2 py-1 bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 rounded-full">${agentData.shared_groups.length} Group${agentData.shared_groups.length === 1 ? '' : 's'} Shared</span>` : ''}
                         <span class="text-xs px-2 py-1 bg-gray-100 text-gray-800 rounded-full">Policy: ${escapeHtml(agentData.policy_id)}</span>
                      </div>
                 </div>

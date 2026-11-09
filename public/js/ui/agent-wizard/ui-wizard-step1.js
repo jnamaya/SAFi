@@ -47,19 +47,37 @@ export async function renderIdentityStep(container, agentData) {
                 </div>
             </div>
 
-            <!-- VISIBILITY -->
-            <div>
-                <label class="block text-sm font-bold mb-2 text-gray-700 dark:text-gray-300">Visibility</label>
-                <div class="relative">
-                    <select id="wiz-visibility" class="w-full p-3 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 appearance-none">
-                        <option value="private" ${agentData.visibility === 'private' ? 'selected' : ''}>Private (Testing only)</option>
-                        <option value="member" ${agentData.visibility === 'member' ? 'selected' : ''}>Organization (Everyone)</option>
-                        <option value="auditor" ${agentData.visibility === 'auditor' ? 'selected' : ''}>Auditors & Admins Only</option>
-                        <option value="admin" ${agentData.visibility === 'admin' ? 'selected' : ''}>Admins Only</option>
-                    </select>
-                    <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700 dark:text-gray-300">
-                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+            <!-- ACCESS & VISIBILITY (ROLE TIER + GROUP SHARING) -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- VISIBILITY TIER -->
+                <div>
+                    <label class="block text-sm font-bold mb-2 text-gray-700 dark:text-gray-300">Visibility</label>
+                    <div class="relative">
+                        <select id="wiz-visibility" class="w-full p-3 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 appearance-none">
+                            <option value="private" ${agentData.visibility === 'private' ? 'selected' : ''}>Private (Testing / Group-Shared only)</option>
+                            <option value="member" ${agentData.visibility === 'member' ? 'selected' : ''}>Organization (Everyone)</option>
+                            <option value="auditor" ${agentData.visibility === 'auditor' ? 'selected' : ''}>Auditors & Admins Only</option>
+                            <option value="admin" ${agentData.visibility === 'admin' ? 'selected' : ''}>Admins Only</option>
+                        </select>
+                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700 dark:text-gray-300">
+                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                        </div>
                     </div>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Base role access tier across the organization.</p>
+                </div>
+
+                <!-- SHARE WITH GROUPS -->
+                <div>
+                    <div class="flex items-center justify-between mb-2">
+                        <label class="block text-sm font-bold text-gray-700 dark:text-gray-300">
+                            Share with Groups
+                        </label>
+                        <span id="wiz-group-count" class="text-xs text-gray-500 dark:text-gray-400"></span>
+                    </div>
+                    <div id="wiz-groups-list" class="rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 p-2 max-h-36 overflow-y-auto space-y-1">
+                        <div class="text-xs text-gray-400 p-1">Loading groups...</div>
+                    </div>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Select specific groups (e.g. Developers, SecOps) allowed to chat with this agent.</p>
                 </div>
             </div>
         </div>
@@ -68,8 +86,11 @@ export async function renderIdentityStep(container, agentData) {
     // Bind Auto-Save Events
     attachListeners(agentData);
 
-    // Load Policies
-    await loadPolicies(agentData);
+    // Load Policies & Groups
+    await Promise.all([
+        loadPolicies(agentData),
+        loadGroups(agentData)
+    ]);
 
     // Resolve charter status so we can warn early if the agent would be ungoverned
     await refreshCharterStatus(agentData);
@@ -185,6 +206,49 @@ async function loadPolicies(agentData) {
 
     } catch (e) {
         console.error("Failed to load policies", e);
+    }
+}
+
+async function loadGroups(agentData) {
+    const listEl = document.getElementById('wiz-groups-list');
+    if (!listEl) return;
+    try {
+        const res = await api.listGroups();
+        const groups = (res && res.groups) ? res.groups : [];
+        const countEl = document.getElementById('wiz-group-count');
+        if (countEl) {
+            countEl.textContent = `${groups.length} available`;
+        }
+        if (!groups.length) {
+            listEl.innerHTML = `<p class="text-xs text-gray-400 p-1">No custom groups created yet. You can create groups under Identity & Access.</p>`;
+            return;
+        }
+
+        const selected = new Set(agentData.shared_groups || []);
+        listEl.innerHTML = groups.map(g => {
+            const isChecked = selected.has(g.id);
+            return `
+                <label class="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-50 dark:hover:bg-neutral-700/50 rounded cursor-pointer text-xs text-gray-800 dark:text-neutral-200">
+                    <input type="checkbox" value="${escapeHtml(g.id)}" class="wiz-group-cb rounded border-gray-300 dark:border-neutral-600 text-green-600 focus:ring-green-500" ${isChecked ? 'checked' : ''}>
+                    <span class="font-medium">${escapeHtml(g.name)}</span>
+                    <span class="text-gray-400">(${g.member_count || 0} member${g.member_count === 1 ? '' : 's'})</span>
+                </label>
+            `;
+        }).join('');
+
+        listEl.querySelectorAll('.wiz-group-cb').forEach(cb => {
+            cb.addEventListener('change', () => {
+                const currentSelected = new Set(agentData.shared_groups || []);
+                if (cb.checked) {
+                    currentSelected.add(cb.value);
+                } else {
+                    currentSelected.delete(cb.value);
+                }
+                agentData.shared_groups = Array.from(currentSelected);
+            });
+        });
+    } catch (e) {
+        listEl.innerHTML = `<p class="text-xs text-gray-400 p-1">Groups available when logged into an organization.</p>`;
     }
 }
 

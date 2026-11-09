@@ -309,6 +309,32 @@ def save_agent():
             except Exception as e:
                 current_app.logger.error(f"tool-change evidence failed for {key}: {e}")
 
+        # Synchronize group sharing if shared_groups is supplied in payload
+        if user.get('org_id') and 'shared_groups' in data:
+            try:
+                desired_groups = set(data.get('shared_groups') or [])
+                existing_grants = sharing_store.list_grants(key)
+                current_group_grants = {
+                    g['grantee_id'] for g in existing_grants if g.get('grantee_type') == 'group'
+                }
+                for gid in current_group_grants - desired_groups:
+                    sharing_store.revoke_grant(key, 'group', gid)
+                    db.append_compliance_log(
+                        user['org_id'], 'agent_share_revoked', f"user:{user_id}",
+                        {"agent": key, "grantee_type": "group", "grantee": gid}
+                    )
+                for gid in desired_groups - current_group_grants:
+                    grp = sharing_store.get_group(gid)
+                    if grp and str(grp.get('org_id')) == str(user['org_id']):
+                        created = sharing_store.create_grant(key, 'group', gid, 'can_use', user_id=user_id)
+                        if created:
+                            db.append_compliance_log(
+                                user['org_id'], 'agent_share_granted', f"user:{user_id}",
+                                {"agent": key, "grantee_type": "group", "grantee": gid, "level": "can_use"}
+                            )
+            except Exception as e:
+                current_app.logger.error(f"Group share sync failed for agent {key}: {e}")
+
         global_safi_cache.invalidate_profile(key)
 
         return jsonify({"ok": True, "key": key,
@@ -443,6 +469,14 @@ def get_agent(key):
              agent['max_agent_turns'] = raw.get('max_agent_turns')
              agent['history_turns'] = raw.get('history_turns')
              agent['history_max_chars'] = raw.get('history_max_chars')
+             if raw_org:
+                 try:
+                     grants = sharing_store.list_grants(clean)
+                     agent['shared_groups'] = [
+                         g['grantee_id'] for g in grants if g.get('grantee_type') == 'group'
+                     ]
+                 except Exception:
+                     agent['shared_groups'] = []
 
         return jsonify({"ok": True, "agent": agent})
     except Exception as e:
