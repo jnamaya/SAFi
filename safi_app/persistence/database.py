@@ -5572,98 +5572,97 @@ def list_governance_events(org_id, profile=None, policy_id=None, flt=None,
 def search_governance_events(org_id, q, profile=None, policy_id=None, flt=None,
                              date_from=None, date_to=None, limit=50, offset=0,
                              user_id=None, scope=None):
-    """Two-path prompt search (proposal 2.10a/b).
+    """Universal governance event search.
 
-    scope='plaintext' decrypts only chat_history's user-turn content (a
-    small per-row payload, so it carries no window cap). The default
-    (prompt) path decrypts
-    the governance record's userPrompt for each row in the capped window,
-    identifies the FULL match set once, and pages it in memory so pagination
-    never re-decrypts. Returns (matches, total_matches, window).
+    The default (prompt) path decrypts records within the capped window,
+    identifies the full match set once, and pages it in memory so pagination
+    never re-decrypts. scope='plaintext' bypasses the decrypt cap.
+    Matches query case-insensitively across user prompt, AI response output,
+    profile key (agent), intellect model, user ID, user name, and decision.
+    Returns (matches, total_matches, window).
     """
-    # The plaintext path joins chat_history, so it needs aliased column refs.
+    if not q or not q.strip():
+        return list_governance_events(
+            org_id, profile=profile, policy_id=policy_id, flt=flt,
+            date_from=date_from, date_to=date_to, limit=limit, offset=offset,
+            user_id=user_id)
     where, params = _governance_where(org_id, profile, policy_id, date_from, date_to, user_id=user_id)
     clause = _gov_filter_clause(flt)
     if clause:
         where += f" AND {clause}"
-    gwhere = _governance_where(org_id, profile, policy_id, date_from, date_to, user_id=user_id, alias="g")[0]
-    if clause:
-        gclause = clause.replace("spirit_score", "g.spirit_score") \
-                        .replace("drift", "g.drift") \
-                        .replace("will_decision", "g.will_decision")
-        gwhere += f" AND {gclause}"
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
         cursor.execute(f"SELECT COUNT(*) AS n FROM governance_records WHERE {where}", tuple(params))
         window = cursor.fetchone()["n"]
         # The cap bounds per-row decryption, which only the prompt scope pays
-        # for. The plaintext scope is pure SQL LIKE + LIMIT/OFFSET, so it can
-        # search any window size safely.
+        # for. The plaintext scope bypasses the hard cap.
         if scope != "plaintext" and window > GOVERNANCE_SEARCH_CAP:
             raise ValueError(
-                f"search window matches {window} records (cap {GOVERNANCE_SEARCH_CAP}) — narrow the date range")
-        if scope == "plaintext":
-            # User-turn content in chat_history is ENCRYPTED at rest (the
-            # same ciphertext that goes to the trail entry), so SQL LIKE can
-            # never match. Instead: fetch the joined window once, decrypt
-            # each user turn in Python (cheap symmetric decrypt, no cap —
-            # that's the entire point of this scope), match
-            # case-insensitively, and page the match set in memory.
-            gcols = ", ".join("g." + c for c in _GOV_EVENT_COLUMNS.split(", "))
-            cursor.execute(
-                f"SELECT {gcols}, c.content AS _content "
-                "FROM governance_records g "
-                "JOIN chat_history c ON c.id = g.message_pk "
-                f"WHERE {gwhere} AND c.role='user' "
-                "ORDER BY g.created_at DESC, g.id DESC",
-                tuple(params))
-            rows = cursor.fetchall()
-            needle = q.lower()
-            matches = []
-            for row in rows:
-                try:
-                    # decrypt_value passes legacy plaintext rows through
-                    # untouched, so mixed-encryption history still matches.
-                    content = str(crypto.decrypt_value(row.pop("_content")) or "")
-                except (ValueError, TypeError):
-                    continue
-                if needle in content.lower():
-                    # Snippet the decrypted turn (2.10c) — content never
-                    # leaves this slice.
-                    row["prompt_preview"] = _match_snippet(content, q)
-                    matches.append(row)
-            total = len(matches)
-            matches = matches[offset:offset + limit]
-            return _attach_user_names(cursor, matches), total, window
+                f"search window matches {window} records (cap {GOVERNANCE_SEARCH_CAP}) - narrow the date range")
 
+        fetch_limit = 10000 if scope == "plaintext" else GOVERNANCE_SEARCH_CAP
         cursor.execute(
             f"SELECT {_GOV_EVENT_COLUMNS}, record_enc FROM governance_records "
-            f"WHERE {where} ORDER BY created_at DESC, id DESC", tuple(params))
+            f"WHERE {where} ORDER BY created_at DESC, id DESC LIMIT {fetch_limit}", tuple(params))
         rows = cursor.fetchall()
+
+        user_ids = {r["user_id"] for r in rows if r.get("user_id")}
+        names = {}
+        if user_ids:
+            format_strings = ','.join(['%s'] * len(user_ids))
+            cursor.execute(f"SELECT id, name FROM users WHERE id IN ({format_strings})", tuple(user_ids))
+            names = {u["id"]: u["name"] for u in cursor.fetchall()}
     finally:
         cursor.close()
         conn.close()
-    needle = q.lower()
+
+    needle = q.strip().lower()
     matches = []
     for row in rows:
+        uname = names.get(row.get("user_id")) or row.get("user_id") or ""
+        row["user_name"] = uname
+
         try:
             record = json.loads(crypto.decrypt_value(row.pop("record_enc")))
         except (ValueError, TypeError):
-            continue
+            record = {}
+
         prompt = str(record.get("userPrompt") or "")
+        output = str(record.get("finalOutput") or record.get("intellectDraft") or "")
+        agent = str(row.get("profile_key") or record.get("agentName") or "")
+        model = str(row.get("intellect_model") or record.get("intellectModel") or "")
+        uid = str(row.get("user_id") or record.get("userId") or "")
+        decision = str(row.get("will_decision") or record.get("willDecision") or "")
+        stage = str(row.get("will_stage") or "")
+
+        matched = False
+        preview = ""
+
         if needle in prompt.lower():
-            row["prompt_preview"] = _match_snippet(prompt, q)
+            matched = True
+            preview = _match_snippet(prompt, q)
+        elif needle in output.lower():
+            matched = True
+            preview = f"Output: {_match_snippet(output, q)}"
+        elif (needle in agent.lower() or needle in model.lower() or
+              needle in uname.lower() or needle in uid.lower() or
+              needle in decision.lower() or needle in stage.lower()):
+            matched = True
+            if prompt:
+                preview = prompt[:160] + ("…" if len(prompt) > 160 else "")
+            elif output:
+                preview = "Output: " + output[:160] + ("…" if len(output) > 160 else "")
+            else:
+                preview = ""
+
+        if matched:
+            row["prompt_preview"] = preview
             matches.append(row)
+
     total = len(matches)
     matches = matches[offset:offset + limit]
-    conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
-    try:
-        return _attach_user_names(cursor, matches), total, window
-    finally:
-        cursor.close()
-        conn.close()
+    return matches, total, window
 
 
 def _match_snippet(prompt, q, radius=60):

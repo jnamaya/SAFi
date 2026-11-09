@@ -762,64 +762,24 @@ function buildTrendChart(series) {
 // discarded so fast typing never paints an older result over a newer one.
 let explorerToken = 0;
 let lastExplorerItems = [];   // D3: last rendered explorer rows (CSV export source)
+let explorerSearchTimer = null;
 
-async function renderExplorer() {
-    const el = document.getElementById('ah-explorer');
-    if (!el) return;
-    const token = ++explorerToken;
-    el.innerHTML = `<div class="flex items-center justify-center h-32"><div class="thinking-spinner"></div></div>`;
-    let res;
-    try {
-        res = await api.listAuditEvents(orgId, {
-            ...entityParams(),
-            filter: state.filter || undefined,
-            q: state.q || undefined,
-            scope: state.scope || undefined,
-            limit: PAGE_SIZE,
-            offset: state.offset,
-        });
-    } catch (e) {
-        if (token !== explorerToken) return;   // superseded by a newer query
-        // Auto-fallback: the decrypt cap only applies to the prompt scope.
-        // Rather than dead-ending the user with a "narrow the date range"
-        // error, transparently retry the identical query as a plaintext
-        // scan (decrypts only the small user-turn payload, so there is no
-        // window cap) and say so once.
-        if (state.q && state.scope !== 'plaintext' && /cap \d+\)/.test(String(e.message || e))) {
-            state.scope = 'plaintext';
-            const sel = document.getElementById('ah-scope');
-            if (sel) sel.value = 'plaintext';
-            const notice = document.getElementById('ah-cap-notice');
-            if (notice) { notice.textContent =
-                `Window exceeded the 5,000-record decrypt cap — automatically re-run as a plaintext scan (decrypts only the user-turn text, so there is no cap). Switch the scope back manually to re-enable prompt search on a narrower range.`;
-                notice.classList.remove('hidden'); }
-            return renderExplorer();
+function ensureExplorerFrame(el) {
+    if (el.querySelector('#ah-explorer-content')) {
+        const searchInput = el.querySelector('#ah-search');
+        if (searchInput && document.activeElement !== searchInput && searchInput.value !== (state.q || '')) {
+            searchInput.value = state.q || '';
         }
-        const hint = /cap \d+\)/.test(String(e.message || e))
-            ? '<p class="text-xs text-gray-500 mt-1">Tip: switch the scope dropdown to “In user message (plaintext)” — it decrypts only the user-turn text (no window cap), so it works on any range.</p>'
-            : '';
-        el.innerHTML = `<p class="text-sm text-red-500">Failed to load events: ${esc(e.message || e)}</p>${hint}`;
+        const scopeSel = el.querySelector('#ah-scope');
+        if (scopeSel && scopeSel.value !== (state.scope || 'prompt')) {
+            scopeSel.value = state.scope || 'prompt';
+        }
+        const filterSel = el.querySelector('#ah-filter');
+        if (filterSel && filterSel.value !== (state.filter || '')) {
+            filterSel.value = state.filter || '';
+        }
         return;
     }
-    if (token !== explorerToken) return;       // stale response, drop it
-    const items = res.items || [];
-    const total = res.total || 0;
-    lastExplorerItems = items;   // D3: CSV export downloads the visible rows
-
-    const rows = items.map(i => `
-        <tr class="border-b border-gray-100 dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800 cursor-pointer" data-audit-event="${i.message_pk}">
-            <td class="px-4 py-3 text-sm whitespace-nowrap">${fmtDate(i.created_at)}</td>
-            <td class="px-4 py-3 text-sm">${esc((i.profile_key || '—').replace(/_/g, ' '))}
-                ${i.prompt_preview ? `<div class="text-xs text-gray-400 truncate max-w-[26rem]">${esc(i.prompt_preview)}</div>` : ''}</td>
-            <td class="px-4 py-3 text-sm whitespace-nowrap">
-                <span class="font-medium text-gray-900 dark:text-neutral-100">${esc(i.user_name || i.user_id || '—')}</span>
-                ${i.user_name && i.user_id && i.user_name !== i.user_id ? `<div class="text-xs text-gray-400 font-mono">${esc(i.user_id)}</div>` : ''}
-            </td>
-            <td class="px-4 py-3 text-xs font-mono whitespace-nowrap">${esc(i.intellect_model || '—')}</td>
-            <td class="px-4 py-3 text-sm whitespace-nowrap" title="${esc(ALIGNMENT_HELP)}">${alignmentLabel(i.spirit_score)}</td>
-            <td class="px-4 py-3 text-sm whitespace-nowrap" title="${esc(CONSISTENCY_HELP)}">${consistencyLabel(i.drift)}</td>
-            <td class="px-4 py-3">${decisionBadge(i.will_decision)} ${flaggedBadge(i)}</td>
-        </tr>`).join('');
 
     el.innerHTML = `
         <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
@@ -828,7 +788,7 @@ async function renderExplorer() {
                 <p class="text-xs text-gray-500 mt-0.5">Every governed turn in the period. Click a row for the full per-turn evidence.</p>
             </div>
             <div class="flex flex-wrap items-center gap-2">
-                <input type="search" id="ah-search" value="${esc(state.q)}" placeholder="Search prompts…"
+                <input type="search" id="ah-search" value="${esc(state.q)}" placeholder="Search prompts, models, agents…"
                     class="rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-1.5 text-xs w-52">
                 <select id="ah-scope" class="rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-2 py-1.5 text-xs" title="Where to search">
                     <option value="prompt" ${state.scope === 'prompt' ? 'selected' : ''}>In prompt (decrypt)</option>
@@ -844,6 +804,116 @@ async function renderExplorer() {
                 </select>
             </div>
         </div>
+        <div id="ah-explorer-content"></div>`;
+
+    const searchInput = el.querySelector('#ah-search');
+    if (searchInput) {
+        searchInput.addEventListener('input', e => {
+            clearTimeout(explorerSearchTimer);
+            explorerSearchTimer = setTimeout(() => {
+                state.q = e.target.value.trim();
+                state.offset = 0;
+                fetchExplorerRows();
+            }, 350);
+        });
+        searchInput.addEventListener('keydown', e => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                clearTimeout(explorerSearchTimer);
+                state.q = e.target.value.trim();
+                state.offset = 0;
+                fetchExplorerRows();
+            }
+        });
+        searchInput.addEventListener('search', e => {
+            clearTimeout(explorerSearchTimer);
+            state.q = e.target.value.trim();
+            state.offset = 0;
+            fetchExplorerRows();
+        });
+    }
+
+    el.querySelector('#ah-scope')?.addEventListener('change', e => {
+        state.scope = e.target.value;
+        state.offset = 0;
+        fetchExplorerRows();
+    });
+
+    el.querySelector('#ah-filter')?.addEventListener('change', e => {
+        state.filter = e.target.value;
+        state.offset = 0;
+        fetchExplorerRows();
+    });
+}
+
+async function renderExplorer() {
+    const el = document.getElementById('ah-explorer');
+    if (!el) return;
+    ensureExplorerFrame(el);
+    await fetchExplorerRows();
+}
+
+async function fetchExplorerRows() {
+    const el = document.getElementById('ah-explorer');
+    if (!el) return;
+    const contentEl = el.querySelector('#ah-explorer-content');
+    if (!contentEl) return;
+
+    const token = ++explorerToken;
+    contentEl.innerHTML = `<div class="flex items-center justify-center h-32"><div class="thinking-spinner"></div></div>`;
+
+    let res;
+    try {
+        res = await api.listAuditEvents(orgId, {
+            ...entityParams(),
+            filter: state.filter || undefined,
+            q: state.q || undefined,
+            scope: state.scope || undefined,
+            limit: PAGE_SIZE,
+            offset: state.offset,
+        });
+    } catch (e) {
+        if (token !== explorerToken) return;   // superseded by a newer query
+        // Auto-fallback: the decrypt cap only applies to the prompt scope.
+        // Transparently retry the query as a plaintext scan (no cap).
+        if (state.q && state.scope !== 'plaintext' && /cap \d+\)/.test(String(e.message || e))) {
+            state.scope = 'plaintext';
+            const sel = document.getElementById('ah-scope');
+            if (sel) sel.value = 'plaintext';
+            const notice = document.getElementById('ah-cap-notice');
+            if (notice) {
+                notice.textContent = 'Window exceeded the 5,000-record decrypt cap - automatically re-run as a plaintext scan (no cap). Switch scope back manually to re-enable prompt search on a narrower range.';
+                notice.classList.remove('hidden');
+            }
+            return fetchExplorerRows();
+        }
+        const hint = /cap \d+\)/.test(String(e.message || e))
+            ? '<p class="text-xs text-gray-500 mt-1">Tip: switch the scope dropdown to "In user message (plaintext)" (no window cap) to search over any date range.</p>'
+            : '';
+        contentEl.innerHTML = `<p class="text-sm text-red-500">Failed to load events: ${esc(e.message || e)}</p>${hint}`;
+        return;
+    }
+    if (token !== explorerToken) return;       // stale response, drop it
+    const items = res.items || [];
+    const total = res.total || 0;
+    lastExplorerItems = items;   // D3: CSV export downloads the visible rows
+
+    const rows = items.map(i => `
+        <tr class="border-b border-gray-100 dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800 cursor-pointer" data-audit-event="${i.message_pk}">
+            <td class="px-4 py-3 text-sm whitespace-nowrap">${fmtDate(i.created_at)}</td>
+            <td class="px-4 py-3 text-sm">${esc((i.profile_key || '-').replace(/_/g, ' '))}
+                ${i.prompt_preview ? `<div class="text-xs text-gray-400 truncate max-w-[26rem]">${esc(i.prompt_preview)}</div>` : ''}</td>
+            <td class="px-4 py-3 text-sm whitespace-nowrap">
+                <span class="font-medium text-gray-900 dark:text-neutral-100">${esc(i.user_name || i.user_id || '-')}</span>
+                ${i.user_name && i.user_id && i.user_name !== i.user_id ? `<div class="text-xs text-gray-400 font-mono">${esc(i.user_id)}</div>` : ''}
+            </td>
+            <td class="px-4 py-3 text-xs font-mono whitespace-nowrap">${esc(i.intellect_model || '-')}</td>
+            <td class="px-4 py-3 text-sm whitespace-nowrap" title="${esc(ALIGNMENT_HELP)}">${alignmentLabel(i.spirit_score)}</td>
+            <td class="px-4 py-3 text-sm whitespace-nowrap" title="${esc(CONSISTENCY_HELP)}">${consistencyLabel(i.drift)}</td>
+            <td class="px-4 py-3">${decisionBadge(i.will_decision)} ${flaggedBadge(i)}</td>
+        </tr>`).join('');
+
+    contentEl.innerHTML = `
         ${items.length === 0
             ? `<p class="text-sm text-gray-500 dark:text-gray-400 py-8 text-center">${state.q || state.filter ? 'Nothing matches these filters.' : 'No governance records in this period yet. Turns are recorded from the moment governance shipped; widen the date range or clear filters to see more.'}</p>`
             : `<div class="overflow-x-auto rounded-lg border border-gray-200 dark:border-neutral-700">
@@ -855,7 +925,7 @@ async function renderExplorer() {
                 </table>
                </div>`}
         ${state.q ? `<p class="text-xs text-gray-400 mt-2">${total} match${total === 1 ? '' : 'es'} across ${res.window} record${res.window === 1 ? '' : 's'} in the window · ${state.scope === 'plaintext' ? 'plaintext scan (user turns decrypted)' : 'prompt scan (window decrypted once)'}.</p>` : ''}
-        ${res.cap && state.scope !== 'plaintext' && res.window >= res.cap * 0.8 ? `<p class="text-xs text-amber-600 mt-1">Window is near the ${res.cap}-record decrypt cap — narrow the date range, or switch the scope to “In user message (plaintext)” which has no cap.</p>` : ''}
+        ${res.cap && state.scope !== 'plaintext' && res.window >= res.cap * 0.8 ? `<p class="text-xs text-amber-600 mt-1">Window is near the ${res.cap}-record decrypt cap - narrow the date range, or switch the scope to "In user message (plaintext)" which has no cap.</p>` : ''}
         ${total > PAGE_SIZE ? `
             <div class="flex items-center justify-between mt-3 text-xs text-gray-500">
                 <span>Showing ${state.offset + 1}–${Math.min(state.offset + PAGE_SIZE, total)} of ${total}</span>
@@ -865,20 +935,9 @@ async function renderExplorer() {
                 </div>
             </div>` : ''}`;
 
-    let searchTimer = null;
-    el.querySelector('#ah-search')?.addEventListener('input', e => {
-        clearTimeout(searchTimer);
-        searchTimer = setTimeout(() => { state.q = e.target.value.trim(); state.offset = 0; renderExplorer(); }, 400);
-    });
-    el.querySelector('#ah-scope')?.addEventListener('change', e => {
-        state.scope = e.target.value; state.offset = 0; renderExplorer();
-    });
-    el.querySelector('#ah-filter')?.addEventListener('change', e => {
-        state.filter = e.target.value; state.offset = 0; renderExplorer();
-    });
-    el.querySelector('#ah-prev')?.addEventListener('click', () => { state.offset = Math.max(0, state.offset - PAGE_SIZE); renderExplorer(); });
-    el.querySelector('#ah-next')?.addEventListener('click', () => { state.offset += PAGE_SIZE; renderExplorer(); });
-    el.querySelectorAll('[data-audit-event]').forEach(tr =>
+    contentEl.querySelector('#ah-prev')?.addEventListener('click', () => { state.offset = Math.max(0, state.offset - PAGE_SIZE); fetchExplorerRows(); });
+    contentEl.querySelector('#ah-next')?.addEventListener('click', () => { state.offset += PAGE_SIZE; fetchExplorerRows(); });
+    contentEl.querySelectorAll('[data-audit-event]').forEach(tr =>
         tr.addEventListener('click', () => renderDetail(tr.getAttribute('data-audit-event'))));
 }
 
