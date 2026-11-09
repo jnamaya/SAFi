@@ -35,9 +35,10 @@ class SafiClientError(Exception):
 
 
 class SafiClient:
-    def __init__(self, api_url: str, api_key: str = "", verify_ssl: Optional[bool | str] = None):
+    def __init__(self, api_url: str, api_key: str = "", verify_ssl: Optional[bool | str] = None, user_id: Optional[str] = None):
         self.api_url = api_url.rstrip("/")
         self.api_key = (api_key or "").strip()
+        self.user_id = (user_id or "").strip() or None
         self.endpoint = f"{self.api_url}/api/agentic/process_prompt"
 
         self.session = requests.Session()
@@ -113,8 +114,10 @@ class SafiClient:
         if self.api_key:
             headers["X-API-KEY"] = self.api_key
         try:
-            from . import config
-            cli_user = config.resolve_user_id()
+            cli_user = getattr(self, "user_id", None)
+            if not cli_user:
+                from . import config
+                cli_user = config.resolve_user_id()
             if cli_user:
                 headers["X-User-ID"] = cli_user
         except Exception:
@@ -186,6 +189,15 @@ class SafiClient:
         headers = {}
         if self.api_key:
             headers["X-API-KEY"] = self.api_key
+        try:
+            cli_user = getattr(self, "user_id", None)
+            if not cli_user:
+                from . import config
+                cli_user = config.resolve_user_id()
+            if cli_user:
+                headers["X-User-ID"] = cli_user
+        except Exception:
+            pass
 
         url = f"{self.api_url}/api/agents/all"
         last_error = ""
@@ -272,8 +284,8 @@ class SafiClient:
             "Content-Type": "application/json",
         }
         # Internal key for keyed endpoints (P3 remediation); injected from
-        # server-side config/env only — SAFI_INTERNAL_KEY or the shared
-        # SAFI_INTERNAL_KEYS value — never committed, never browser-side.
+        # server-side config/env only - SAFI_INTERNAL_KEY or the shared
+        # SAFI_INTERNAL_KEYS value - never committed, never browser-side.
         internal_key = os.environ.get("SAFI_INTERNAL_KEY", "").strip()
         if internal_key:
             headers["X-Internal-Key"] = internal_key

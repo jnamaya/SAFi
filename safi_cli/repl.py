@@ -951,7 +951,7 @@ def interactive_repl(
                 else:
                     ui.console.print(
                         f"[bold]Reasoning level:[/] [magenta]{current_effort or 'default (provider decides)'}[/]\n"
-                        f"[dim]Usage: /reasoning <low|medium|high|off> — controls thinking/reasoning "
+                        f"[dim]Usage: /reasoning <low|medium|high|off> - controls thinking/reasoning "
                         f"effort for reasoning-capable models (e.g. gpt-5, o-series, Claude).[/]"
                     )
                 continue
@@ -1205,6 +1205,18 @@ def _wizard_login_or_key(api_url: str, agent: str) -> str:
         # One policy key is valid for every agent - save it under all known
         # agents so none is left without a key (active agent stays 'agent').
         login_client.api_key = new_key
+        user_info = payload.get("user") or {}
+        user_id_val = user_info.get("id") or ""
+        if user_id_val:
+            login_client.user_id = user_id_val
+        save_updates = {}
+        if user_id_val:
+            save_updates["user_id"] = user_id_val
+        if user_info.get("name") or identifier:
+            save_updates["user_name"] = user_info.get("name") or identifier
+        if save_updates:
+            config.save_config(save_updates)
+
         agents = login_client.get_available_agents()
         agent_names = [a.get("key") for a in agents if isinstance(a, dict) and a.get("key")]
         if not agent_names:
@@ -1219,14 +1231,6 @@ def _wizard_login_or_key(api_url: str, agent: str) -> str:
             agent = agent_names[0]
         for name in agent_names:
             config.save_agent_api_key(name, new_key)
-        user_info = payload.get("user") or {}
-        save_updates = {}
-        if user_info.get("id"):
-            save_updates["user_id"] = user_info["id"]
-        if user_info.get("name") or identifier:
-            save_updates["user_name"] = user_info.get("name") or identifier
-        if save_updates:
-            config.save_config(save_updates)
         default_agent = "software_engineer" if "software_engineer" in agent_names else agent_names[0]
         config.set_default_agent(default_agent)
         ui.console.print(
@@ -1369,7 +1373,7 @@ def run_setup_wizard() -> tuple[str, str, Optional[str]]:
         ui.print_error("No agents currently available. Contact your administrator to grant you access to an agent.")
         sys.exit(0)
 
-    test_client = SafiClient(chosen_url, key_val or "")
+    test_client = SafiClient(chosen_url, key_val or "", user_id=config.resolve_user_id())
     discover_agents(test_client)
     if not AVAILABLE_AGENTS:
         ui.print_error("No agents currently available. Contact your administrator to grant you access to an agent.")

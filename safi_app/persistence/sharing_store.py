@@ -261,21 +261,32 @@ def can_use_built_in_or_custom_agent(user_id, role, org_id, agent_key, role_conf
         if has_grant("sysadmin", user_id, org_id):
             return True
         user_groups = get_user_group_names(user_id, org_id)
-        allowed_group_names = {"sysadmin", "sysadmins", "it-admins", "it-infrastructure", "infrastructure"}
+        allowed_group_names = {
+            "sysadmin", "sysadmins", "it-admins", "it-infrastructure",
+            "infrastructure", "it", "ops", "operations", "devops", "sre",
+            "admin", "admins"
+        }
         return bool(user_groups & allowed_group_names)
 
     if key == "security_engineer":
         if has_grant("security_engineer", user_id, org_id):
             return True
         user_groups = get_user_group_names(user_id, org_id)
-        allowed_group_names = {"secops", "security", "security_engineer", "security-operations", "infosec"}
+        allowed_group_names = {
+            "secops", "security", "security_engineer", "security-operations",
+            "infosec", "cybersecurity", "sec"
+        }
         return bool(user_groups & allowed_group_names)
 
     if key in ("software_engineer", "developer"):
-        if has_grant("software_engineer", user_id, org_id):
+        if has_grant("software_engineer", user_id, org_id) or has_grant("developer", user_id, org_id):
             return True
         user_groups = get_user_group_names(user_id, org_id)
-        allowed_group_names = {"developers", "developer", "software_engineer", "engineering", "devs"}
+        allowed_group_names = {
+            "dev", "devs", "developers", "developer", "software_engineer",
+            "software_engineering", "engineering", "engineer", "engineers",
+            "development", "devops"
+        }
         return bool(user_groups & allowed_group_names)
 
     if key == "safi":
@@ -331,7 +342,7 @@ def has_grant(agent_key, user_id, org_id) -> bool:
     try:
         return _has_grant_query(agent_key, user_id, org_id)
     except Exception as e:
-        log.error("grant lookup failed for agent %s: %s — denying grant-based access",
+        log.error("grant lookup failed for agent %s: %s: denying grant-based access",
                   agent_key, e)
         return False
 
@@ -375,7 +386,7 @@ def granted_agents(user_id, org_id):
     try:
         return _granted_agents_query(user_id, org_id)
     except Exception as e:
-        log.error("granted-agents lookup failed for user %s: %s — omitting "
+        log.error("granted-agents lookup failed for user %s: %s: omitting "
                   "shared agents from the listing", user_id, e)
         return []
 

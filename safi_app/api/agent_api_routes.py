@@ -397,6 +397,8 @@ def list_all_agents():
     x_user_id = request.headers.get("X-User-ID") or request.args.get("user_id")
     if x_user_id:
         u_det = db.get_user_details(x_user_id)
+        if not u_det:
+            u_det = db.get_user_by_identifier(x_user_id)
         if u_det:
             user_id = u_det["id"]
             user_role = u_det.get("role") or user_role

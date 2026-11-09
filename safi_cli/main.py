@@ -71,7 +71,7 @@ def main():
 
     parser = argparse.ArgumentParser(
         prog="safi-cli",
-        description="SAFi (The Self-alignment Framework Interface) — The governance engine for AI agents.",
+        description="SAFi (The Self-alignment Framework Interface) - The governance engine for AI agents.",
     )
     parser.add_argument("--setup", "--init", dest="setup_wizard", action="store_true", help="Launch the interactive first-run setup wizard.")
     parser.add_argument("prompt", nargs="?", help="Task prompt. If omitted, starts interactive REPL mode.")
@@ -228,20 +228,25 @@ def main():
         # key is valid for every agent. Save it under all known agents so no
         # agent ever lacks a key; the active/default agent is software_engineer.
         login_client.api_key = new_key
-        agents = login_client.get_available_agents()
-        agent_names = [a.get("key") for a in agents if isinstance(a, dict) and a.get("key")]
-        for name in dict.fromkeys(agent_names):
-            config.save_agent_api_key(name, new_key)
         user_info = payload.get("user") or {}
+        user_id_val = user_info.get("id") or ""
+        if user_id_val:
+            login_client.user_id = user_id_val
+
         save_updates = {}
-        if user_info.get("id"):
-            save_updates["user_id"] = user_info["id"]
+        if user_id_val:
+            save_updates["user_id"] = user_id_val
         if user_info.get("name") or identifier:
             save_updates["user_name"] = user_info.get("name") or identifier
         if not config.has_configured_api_url():
             save_updates["api_url"] = login_url
         if save_updates:
             config.save_config(save_updates)
+
+        agents = login_client.get_available_agents()
+        agent_names = [a.get("key") for a in agents if isinstance(a, dict) and a.get("key")]
+        for name in dict.fromkeys(agent_names):
+            config.save_agent_api_key(name, new_key)
 
         if not agent_names:
             config.set_default_agent("")
@@ -295,7 +300,7 @@ def main():
     api_key = config.resolve_agent_api_key(target_agent, args.api_key)
     user_name = config.resolve_user_name(args.user_name)
 
-    client = SafiClient(api_url, api_key or "")
+    client = SafiClient(api_url, api_key or "", user_id=config.resolve_user_id())
     discover_agents(client)
 
     if not AVAILABLE_AGENTS:
@@ -348,16 +353,24 @@ def main():
             if not api_key:
                 ui.print_error("Server did not return an API key.")
                 sys.exit(1)
+            client.api_key = api_key
             user_info = payload.get("user") or {}
+            user_id_val = user_info.get("id") or ""
+            if user_id_val:
+                client.user_id = user_id_val
             save_updates = {}
-            if user_info.get("id"):
-                save_updates["user_id"] = user_info["id"]
+            if user_id_val:
+                save_updates["user_id"] = user_id_val
             if user_info.get("name") or identifier:
                 save_updates["user_name"] = user_info.get("name") or identifier
             if save_updates:
                 config.save_config(save_updates)
+            discover_agents(client)
             for name in AVAILABLE_AGENTS.keys():
                 config.save_agent_api_key(name, api_key)
+            if target_agent not in AVAILABLE_AGENTS and AVAILABLE_AGENTS:
+                target_agent = next(iter(AVAILABLE_AGENTS))
+                config.set_default_agent(target_agent)
             ui.console.print(
                 f"[bold green]✓ Logged in as {payload.get('user', {}).get('name', identifier)}[/] "
                 f"[dim]Policy: {payload.get('policy_id', '?')}[/]"
