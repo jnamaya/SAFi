@@ -371,7 +371,7 @@ async function renderShareBody(modal, key) {
         `<option value="user:${escSh(m.id)}">${escSh(m.name || m.email || m.id)}</option>`).join('');
 
     body.innerHTML = `
-        <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">People and groups with access can chat with this agent. Sharing does not allow editing it.</p>
+        <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">People and groups with access can use this agent. Sharing does not allow editing it.</p>
         <div class="flex gap-2 mb-5">
             <select id="share-grantee-select" class="settings-modal-select flex-1">
                 <option value="">Select a person or group...</option>

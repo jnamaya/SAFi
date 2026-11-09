@@ -34,16 +34,12 @@ export async function renderIdentityStep(container, agentData) {
             <div class="space-y-4">
                 <div>
                     <label class="block text-sm font-bold mb-2 text-gray-700 dark:text-gray-300">Agent Name <span class="text-red-500">*</span></label>
-                    <input type="text" id="wiz-name" class="w-full p-3 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500" placeholder="e.g. The Stoic Coach" value="${escapeHtml(agentData.name)}">
+                    <input type="text" id="wiz-name" class="w-full p-3 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500" placeholder="e.g. IT Support Assistant" value="${escapeHtml(agentData.name)}">
                     ${agentData.is_update_mode && agentData.key ? `<p class="text-xs text-gray-400 mt-1">Key: ${escapeHtml(agentData.key)} (Cannot be changed)</p>` : ''}
                 </div>
                 <div>
                     <label class="block text-sm font-bold mb-2 text-gray-700 dark:text-gray-300">Short Description</label>
-                    <input type="text" id="wiz-desc" class="w-full p-3 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500" placeholder="e.g. A wise mentor based on Marcus Aurelius" value="${escapeHtml(agentData.description)}">
-                </div>
-                <div>
-                    <label class="block text-sm font-bold mb-2 text-gray-700 dark:text-gray-300">Avatar URL (Optional)</label>
-                    <input type="text" id="wiz-avatar" class="w-full p-3 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500" placeholder="https://example.com/image.png" value="${escapeHtml(agentData.avatar)}">
+                    <input type="text" id="wiz-desc" class="w-full p-3 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500" placeholder="e.g. Helps team members troubleshoot technical issues and answers IT inquiries" value="${escapeHtml(agentData.description)}">
                 </div>
             </div>
 
@@ -51,7 +47,7 @@ export async function renderIdentityStep(container, agentData) {
             <div class="rounded-xl border border-gray-200 dark:border-neutral-800 bg-gray-50 dark:bg-neutral-900 p-4 space-y-4">
                 <div>
                     <label class="block text-sm font-bold text-gray-800 dark:text-neutral-200 mb-1">Access Control</label>
-                    <p class="text-xs text-gray-500 dark:text-gray-400">Manage who can chat with this agent, like sharing a folder with specific people or groups.</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">Manage who can use this agent, like sharing a folder with specific people or groups.</p>
                 </div>
 
                 <!-- ACCESS SCOPE -->
@@ -68,7 +64,7 @@ export async function renderIdentityStep(container, agentData) {
                         <input type="radio" name="wiz-access-scope" value="member" class="mt-0.5 text-green-600 focus:ring-green-500" ${agentData.visibility === 'member' ? 'checked' : ''}>
                         <div>
                             <span class="block text-sm font-semibold text-gray-900 dark:text-white">Everyone in Organization</span>
-                            <span class="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">All organization members can chat with this agent.</span>
+                            <span class="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">All organization members can use this agent.</span>
                         </div>
                     </label>
                 </div>
@@ -142,7 +138,6 @@ function updateGovernanceWarning(agentData) {
 function attachListeners(agentData) {
     document.getElementById('wiz-name')?.addEventListener('input', (e) => agentData.name = e.target.value);
     document.getElementById('wiz-desc')?.addEventListener('input', (e) => agentData.description = e.target.value);
-    document.getElementById('wiz-avatar')?.addEventListener('input', (e) => agentData.avatar = e.target.value);
     document.querySelectorAll('input[name="wiz-access-scope"]').forEach(r => {
         r.addEventListener('change', () => {
             agentData.visibility = r.value;
