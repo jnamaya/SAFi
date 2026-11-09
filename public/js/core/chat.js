@@ -985,6 +985,11 @@ export async function sendMessage(activeProfileData, user) {
     const userMessage = ui.elements.messageInput.value.trim();
     if (!userMessage && pendingFiles.length === 0) return;
 
+    if (!activeProfileData || !activeProfileData.key) {
+        ui.showToast('No agents currently available. Contact your administrator to grant you access to an agent.', 'warning');
+        return;
+    }
+
     let isNewConversation = false;
 
     if (!currentConversationId) {
@@ -1188,7 +1193,13 @@ export async function sendMessage(activeProfileData, user) {
 
     try {
         // PASS SIGNAL AND MESSAGE_ID HERE
-        const initialResponse = await api.processUserMessage(fullMessage, currentConversationId, currentAbortController.signal, aiMessageId);
+        const initialResponse = await api.processUserMessage(
+            fullMessage,
+            currentConversationId,
+            currentAbortController.signal,
+            aiMessageId,
+            activeProfileData?.key || null
+        );
 
         ui.clearLoadingInterval();
         if (loadingIndicator && loadingIndicator.parentNode) loadingIndicator.remove();

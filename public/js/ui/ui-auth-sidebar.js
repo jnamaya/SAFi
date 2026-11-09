@@ -958,6 +958,25 @@ function setBrowserTabTitle(title) {
 export function updateActiveProfileChip(profileNameOrObject) {
   ui._ensureElements();
 
+  if (!profileNameOrObject || (typeof profileNameOrObject === 'object' && !profileNameOrObject.name && !profileNameOrObject.key)) {
+    if (ui.elements.activeProfileChip) {
+      ui.elements.activeProfileChip.classList.add('flex', 'items-center', 'gap-2');
+      ui.elements.activeProfileChip.innerHTML = `
+        <span class="truncate flex-shrink-0 text-neutral-400">Agent: None</span>
+      `;
+    }
+    if (ui.elements.activeProfileChipMobile) {
+      ui.elements.activeProfileChipMobile.classList.add('flex', 'items-center', 'gap-2', 'mx-auto', 'justify-center');
+      ui.elements.activeProfileChipMobile.innerHTML = `
+        <span class="font-semibold truncate text-neutral-400">No Agent</span>
+      `;
+    }
+    if (ui.elements.messageInput) {
+      ui.elements.messageInput.placeholder = 'No agents currently available';
+    }
+    return;
+  }
+
   // Handle both string and object input
   let profileNameText = 'Default';
   let avatarUrl = '';
@@ -1055,12 +1074,12 @@ export function initAgentSelector(profiles, activeProfileKey, onSelect) {
 
   renderAgentSelectorOptions(profiles, activeProfileKey, onSelect);
 
-  const activeProfile = profiles.find(p => p.key === activeProfileKey) || profiles[0];
+  const activeProfile = (profiles && profiles.find(p => p.key === activeProfileKey)) || (profiles && profiles[0]) || null;
   updateAgentSelectorButton(activeProfile);
 }
 
 function hideAgentSelector() {
-  // The list no longer hides itself — it is a section of the + panel, so
+  // The list no longer hides itself - it is a section of the + panel, so
   // choosing an agent dismisses the panel around it.
   closeComposerMenu();
 }
@@ -1069,7 +1088,10 @@ function hideAgentSelector() {
  * Updates the text and icon of the selector button.
  */
 export function updateAgentSelectorButton(profile) {
-  if (!profile) return;
+  if (!profile) {
+    updateAgentLabel('None');
+    return;
+  }
   const avatarUrl = profile.avatar || getAvatarForProfile(profile.name);
   updateAgentLabel(profile.name, avatarUrl);
 }
@@ -1083,6 +1105,11 @@ function renderAgentSelectorOptions(profiles, activeProfileKey, onSelect) {
   if (!agentSelectorDropdown) return;
 
   agentSelectorDropdown.innerHTML = '';
+
+  if (!profiles || profiles.length === 0) {
+    agentSelectorDropdown.innerHTML = '<div class="px-3 py-2 text-xs text-neutral-400">No agents available</div>';
+    return;
+  }
 
   // No header here any more: this list is a section of the + panel, and the
   // panel prints "Agents" above it. Two labels for one list read as two lists.

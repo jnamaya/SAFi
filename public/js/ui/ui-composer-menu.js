@@ -163,12 +163,12 @@ function _syncExpanded() {
  */
 export function updateAgentLabel(name) {
     const el = document.getElementById('plus-agent-current');
-    if (el) el.textContent = name || '—';
+    if (el) el.textContent = name || 'None';
 }
 
 export function updateModelLabel(name) {
     const el = document.getElementById('plus-model-current');
-    if (el) el.textContent = name || '—';
+    if (el) el.textContent = name || 'None';
 }
 
 /** Connector count, so the row says something before it is opened. */

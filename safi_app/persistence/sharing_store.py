@@ -237,9 +237,10 @@ def can_use_built_in_or_custom_agent(user_id, role, org_id, agent_key, role_conf
     Built-in agents:
     - sysadmin: requires role 'admin' OR membership in a group named/granted 'sysadmin',
       'sysadmins', 'it-admins', 'it-infrastructure', 'infrastructure'.
-    - security_engineer: requires role 'admin' or 'auditor' OR membership in a group
+    - security_engineer: requires role 'admin' OR membership in a group
       named/granted 'secops', 'security', 'security_engineer', 'infosec'.
-    - software_engineer: open to role 'admin', 'editor', 'member', OR any group grant.
+    - software_engineer: requires role 'admin' OR membership in a group
+      named/granted 'developers', 'developer', 'software_engineer', 'engineering', 'devs'.
 
     Custom DB agents:
     - Resolved via can_use_agent().
@@ -264,8 +265,6 @@ def can_use_built_in_or_custom_agent(user_id, role, org_id, agent_key, role_conf
         return bool(user_groups & allowed_group_names)
 
     if key == "security_engineer":
-        if role in ('admin', 'auditor'):
-            return True
         if has_grant("security_engineer", user_id, org_id):
             return True
         user_groups = get_user_group_names(user_id, org_id)
@@ -290,6 +289,34 @@ def can_use_built_in_or_custom_agent(user_id, role, org_id, agent_key, role_conf
 
     # Unrecognized agent fails closed
     return False
+
+
+def get_first_usable_agent(user_id, role, org_id, role_config=None):
+    """Return the key of the first agent this user is authorized to use,
+    or None if the user has access to no agents."""
+    if not user_id:
+        return None
+    from ..profile_resolver import AGENTS
+    for k in AGENTS.keys():
+        if can_use_built_in_or_custom_agent(user_id, role, org_id, k, role_config):
+            return k
+    if user_id or org_id:
+        try:
+            raw_list = db.list_agents(
+                user_id, org_id, role or (role_config.get("default_role") if role_config else "member"),
+                role_config.get("visibility_roles") if role_config else {},
+            )
+            for a in raw_list:
+                key = a.get("agent_key") or a.get("key")
+                if key and can_use_built_in_or_custom_agent(user_id, role, org_id, key, role_config):
+                    return key
+            for granted in granted_agents(user_id, org_id):
+                key = granted.get("key") or granted.get("agent_key")
+                if key:
+                    return key
+        except Exception:
+            pass
+    return None
 
 
 def has_grant(agent_key, user_id, org_id) -> bool:

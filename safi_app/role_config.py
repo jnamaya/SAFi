@@ -14,8 +14,8 @@ ROLE_CONFIG = {
     "visibility_roles": {
         "private": [],
         "member": ["member", "auditor", "editor", "admin"],
-        "auditor": ["auditor", "editor", "admin"],
-        "editor": ["editor", "admin"],
+        "auditor": ["admin"],
+        "editor": ["admin"],
         "admin": ["admin"],
     },
 }

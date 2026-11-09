@@ -1053,7 +1053,31 @@ const SHIELD_ICON = `<svg class="inline-block w-3.5 h-3.5 -mt-0.5 mr-1" fill="no
 export function displayEmptyState(activeProfile, promptClickHandler, firstName = '') {
     ui._ensureElements();
     document.querySelector('.empty-state-container')?.remove();
-    if (!activeProfile) return;
+
+    if (!activeProfile || !activeProfile.key) {
+        const container = document.createElement('div');
+        container.className = 'empty-state-container';
+        container.style.cssText = 'width: 100%; max-width: 36rem; margin: 0 auto; padding: 2rem 1rem;';
+
+        const greetingHtml = firstName
+            ? `<h1 class="text-4xl font-bold text-neutral-800 dark:text-neutral-200 mb-6 text-center">Hi ${escapeHtml(firstName)}</h1>`
+            : '';
+
+        container.innerHTML = `
+          <div class="text-center pt-10 pb-6 px-4">
+            ${greetingHtml}
+            <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 flex items-center justify-center text-amber-600 dark:text-amber-400">
+              <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M12 9v2m0 4h.01M5.07 19h13.86c1.54 0 2.5-1.67 1.73-3L13.73 4a2 2 0 00-3.46 0L3.34 16c-.77 1.33.19 3 1.73 3z"/></svg>
+            </div>
+            <h2 class="text-lg font-bold text-neutral-800 dark:text-neutral-100 mb-2">No Agents Available</h2>
+            <p class="text-sm text-neutral-600 dark:text-neutral-400 max-w-md mx-auto leading-relaxed">
+              No agents currently available. Contact your administrator to grant you access to an agent.
+            </p>
+          </div>`;
+
+        ui.elements.chatWindow.appendChild(container);
+        return;
+    }
 
     // "Scope Compliance" is a synthetic hard gate injected by the compiler; the
     // scope line below already communicates it, so skip its chip.
@@ -1064,7 +1088,7 @@ export function displayEmptyState(activeProfile, promptClickHandler, firstName =
             const isGate = !!v.hard_gate;
             const definition = v.definition || v.rubric?.description || '';
             let tip = isGate
-                ? `Non-negotiable — responses that violate this value are blocked.${definition ? ' ' + definition : ''}`
+                ? `Non-negotiable - responses that violate this value are blocked.${definition ? ' ' + definition : ''}`
                 : definition;
             if (tip.length > 200) tip = tip.slice(0, 197) + '…';
             const tipAttr = tip ? ` title="${escapeHtml(tip)}"` : '';
@@ -1125,7 +1149,7 @@ export function displayEmptyState(activeProfile, promptClickHandler, firstName =
     const modelLabel = isPublicDemoUi() ? getActiveModelLabel() : null;
     const modelHtml = modelLabel
         ? `<p class="text-xs text-neutral-400 dark:text-neutral-500 mb-2">
-             Running <span class="font-medium">${escapeHtml(modelLabel)}</span> — SAFi is the
+             Running <span class="font-medium">${escapeHtml(modelLabel)}</span> - SAFi is the
              governance layer, not the intelligence. The policy is enforced identically
              whichever model sits underneath.
            </p>`

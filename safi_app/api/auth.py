@@ -1419,30 +1419,50 @@ def get_me():
         if not user_details:
             return jsonify({"ok": False, "error": "User details not found"}), 404
     
-        active_profile_name = user_details.get('active_profile') or Config.DEFAULT_PROFILE
-        try:
-            user_details['active_profile_details'] = get_profile(active_profile_name)
-        except (KeyError, ValueError):
-            # KeyError: agent no longer exists. ValueError: it failed
-            # compile-time governance validation (e.g. rubric-less hard gate).
-            # Either way, fall back to the default so login still works.
-            profile, resolved = _safe_profile(
-                active_profile_name, Config.DEFAULT_PROFILE)
-            db.update_user_profile(user_id, resolved)
-            user_details['active_profile'] = resolved
-            user_details['active_profile_details'] = profile
-        except Exception:
-            # Unexpected failure (e.g. an agent row carrying a field the
-            # compiler cannot handle). Serve the default profile so login
-            # still works, but keep the stored preference: resetting it here
-            # would silently discard the user's choice over a transient bug
-            # and mask the underlying error from the person who has to fix it.
-            current_app.logger.exception(
-                "Falling back to default profile for '%s'.", active_profile_name
-            )
-            profile, resolved = _safe_profile(
-                active_profile_name, Config.DEFAULT_PROFILE)
-            user_details['active_profile_details'] = profile
+        user_role = user_details.get('role') or 'member'
+        user_org = user_details.get('org_id')
+        active_profile_name = user_details.get('active_profile')
+
+        from ..persistence import sharing_store
+        from ..role_config import ROLE_CONFIG
+
+        # Verify whether the stored profile is actually authorized for this user
+        if not active_profile_name or not sharing_store.can_use_built_in_or_custom_agent(
+                user_id, user_role, user_org, active_profile_name, ROLE_CONFIG):
+            usable = sharing_store.get_first_usable_agent(user_id, user_role, user_org, ROLE_CONFIG)
+            if usable:
+                active_profile_name = usable
+                try:
+                    db.update_user_profile(user_id, usable)
+                except Exception:
+                    pass
+                user_details['active_profile'] = usable
+            else:
+                active_profile_name = None
+                user_details['active_profile'] = None
+
+        if active_profile_name:
+            try:
+                user_details['active_profile_details'] = get_profile(active_profile_name)
+            except (KeyError, ValueError):
+                usable = sharing_store.get_first_usable_agent(user_id, user_role, user_org, ROLE_CONFIG)
+                if usable:
+                    try:
+                        db.update_user_profile(user_id, usable)
+                        user_details['active_profile'] = usable
+                        user_details['active_profile_details'] = get_profile(usable)
+                    except Exception:
+                        user_details['active_profile_details'] = None
+                else:
+                    user_details['active_profile'] = None
+                    user_details['active_profile_details'] = None
+            except Exception:
+                current_app.logger.exception(
+                    "Could not load active profile details for '%s'.", active_profile_name
+                )
+                user_details['active_profile_details'] = None
+        else:
+            user_details['active_profile_details'] = None
     
         user_details['intellect_model'] = user_details.get('intellect_model') or Config.INTELLECT_MODEL
         user_details['conscience_model'] = user_details.get('conscience_model') or Config.CONSCIENCE_MODEL

@@ -346,7 +346,26 @@ async function checkLoginStatus() {
 
       // Determine the active profile
       const currentProfileKey = user.active_profile || (availableProfiles[0] ? availableProfiles[0].key : null);
-      activeProfileData = availableProfiles.find(p => p.key === currentProfileKey) || availableProfiles[0] || {};
+      activeProfileData = availableProfiles.find(p => p.key === currentProfileKey) || availableProfiles[0] || null;
+
+      if (!activeProfileData || !activeProfileData.key) {
+        activeProfileData = null;
+        if (ui.elements.messageInput) {
+          ui.elements.messageInput.disabled = true;
+          ui.elements.messageInput.placeholder = 'No agents currently available';
+        }
+        if (ui.elements.sendButton) {
+          ui.elements.sendButton.disabled = true;
+        }
+      } else {
+        if (ui.elements.messageInput) {
+          ui.elements.messageInput.disabled = false;
+        }
+        if (user.active_profile !== activeProfileData.key) {
+          user.active_profile = activeProfileData.key;
+          api.updateUserProfile(activeProfileData.key).catch(() => {});
+        }
+      }
 
       // Update the UI with the active profile
       // Pass the FULL object so it can find the custom avatar
@@ -594,23 +613,27 @@ function renderControlPanel() {
 
   uiSettingsModals.renderSettingsProfileTab(
     availableProfiles,
-    activeProfileData.key,
+    activeProfileData?.key || null,
     handleProfileChange,
     user // Pass user for ownership checks
   );
 
   uiAuthSidebar.initAgentSelector(
     availableProfiles,
-    activeProfileData.key,
+    activeProfileData?.key || null,
     handleProfileChange
   );
-  updateAgentLabel(activeProfileData.name, activeProfileData.avatar || getAvatarForProfile(activeProfileData.name));
-  updateAiDisclosure(activeProfileData, handleViewGoverningPolicy);
+  if (activeProfileData) {
+    updateAgentLabel(activeProfileData.name, activeProfileData.avatar || getAvatarForProfile(activeProfileData.name));
+    updateAiDisclosure(activeProfileData, handleViewGoverningPolicy);
+  } else {
+    updateAgentLabel('None');
+  }
 
   updateSettingsState({
     currentUser: user,
     profiles: availableProfiles,
-    activeProfileKey: activeProfileData.key,
+    activeProfileKey: activeProfileData?.key || null,
     availableModels: availableModels,
     onProfileChange: handleProfileChange,
     currentTheme: localStorage.theme || 'system',

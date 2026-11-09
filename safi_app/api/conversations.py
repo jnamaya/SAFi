@@ -717,13 +717,23 @@ async def process_prompt_endpoint():
         db.record_prompt_usage(user_id)
 
     # Which agent governs this turn: the owner's own active_profile, as
-    # always — but a contributor continuing someone else's conversation is
+    # always - but a contributor continuing someone else's conversation is
     # governed by the conversation's OWN established agent instead, so one
     # conversation stays under one charter no matter who is typing (backlog
     # 56; see the write-up there for why this can't just be the poster's
     # own active_profile once posters other than the owner are possible).
+    agent_key_override = data.get('agent_key') or data.get('profile')
     if is_owner:
-        user_profile_name = user_details.get('active_profile') or Config.DEFAULT_PROFILE
+        if agent_key_override and sharing_store.can_use_built_in_or_custom_agent(
+                user_id, user_details.get('role'), user_details.get('org_id'), agent_key_override,
+                ROLE_CONFIG):
+            user_profile_name = agent_key_override
+            try:
+                db.update_user_profile(user_id, agent_key_override)
+            except Exception:
+                pass
+        else:
+            user_profile_name = user_details.get('active_profile') or Config.DEFAULT_PROFILE
     else:
         user_profile_name = db.get_conversation_agent_profile(conversation_id) or Config.DEFAULT_PROFILE
 
@@ -731,13 +741,13 @@ async def process_prompt_endpoint():
         agent_profile = get_profile(user_profile_name)
     except KeyError:
         # The stored agent no longer exists (retired demo agent or deleted
-        # custom agent). Fall back to the platform default and, for the
-        # owner only, heal the user record so the UI and backend agree on
-        # the next load — a contributor's own active_profile was never the
-        # thing in question here, so it must not be touched.
-        user_profile_name = Config.DEFAULT_PROFILE
+        # custom agent). Fall back to the user's first usable agent.
+        usable = sharing_store.get_first_usable_agent(
+            user_id, user_details.get('role'), user_details.get('org_id'), ROLE_CONFIG
+        ) if is_owner else None
+        user_profile_name = usable or Config.DEFAULT_PROFILE
         try:
-            if is_owner:
+            if is_owner and usable:
                 db.update_user_profile(user_id, user_profile_name)
             agent_profile = get_profile(user_profile_name)
         except Exception:
@@ -753,22 +763,29 @@ async def process_prompt_endpoint():
             user_id, user_details.get('role'), user_details.get('org_id'), user_profile_name,
             ROLE_CONFIG):
         if is_owner:
-            # Heal the stored selection so the next page load recovers.
-            try:
-                db.update_user_profile(user_id, Config.DEFAULT_PROFILE)
-            except Exception:
-                pass
+            usable = sharing_store.get_first_usable_agent(
+                user_id, user_details.get('role'), user_details.get('org_id'), ROLE_CONFIG
+            )
+            if usable:
+                try:
+                    db.update_user_profile(user_id, usable)
+                except Exception:
+                    pass
+                user_profile_name = usable
+                try:
+                    agent_profile = get_profile(user_profile_name)
+                except Exception:
+                    agent_profile = {}
+            else:
+                return jsonify({
+                    "error": "No agents currently available. Contact your administrator to grant you access to an agent.",
+                    "code": "NO_AGENTS_AVAILABLE"
+                }), 403
+        else:
             return jsonify({
-                "error": "You do not have permission to use this agent. Your active "
-                         "agent has been reset to the default.",
+                "error": "You do not have permission to use the agent this conversation uses.",
                 "code": "AGENT_ACCESS_DENIED"
             }), 403
-        # Non-owner: nothing of theirs to heal — it's the conversation's own
-        # agent they've lost access to, not a setting on their account.
-        return jsonify({
-            "error": "You do not have permission to use the agent this conversation uses.",
-            "code": "AGENT_ACCESS_DENIED"
-        }), 403
 
     # Resolution order: agent -> user -> system default. Explicit model
     # choices are kept, but duplicate faculty models resolve to another usable
