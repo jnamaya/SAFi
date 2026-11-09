@@ -309,31 +309,54 @@ def save_agent():
             except Exception as e:
                 current_app.logger.error(f"tool-change evidence failed for {key}: {e}")
 
-        # Synchronize group sharing if shared_groups is supplied in payload
-        if user.get('org_id') and 'shared_groups' in data:
+        # Synchronize sharing grants if grants or shared_groups is supplied in payload
+        if user.get('org_id') and ('grants' in data or 'shared_groups' in data):
             try:
-                desired_groups = set(data.get('shared_groups') or [])
+                desired_grants = set()
+                if 'grants' in data:
+                    for g in (data.get('grants') or []):
+                        gtype = g.get('grantee_type')
+                        gid = g.get('grantee_id')
+                        if gtype in ('user', 'group') and gid:
+                            desired_grants.add((gtype, str(gid)))
+                elif 'shared_groups' in data:
+                    for gid in (data.get('shared_groups') or []):
+                        if gid:
+                            desired_grants.add(('group', str(gid)))
+
                 existing_grants = sharing_store.list_grants(key)
-                current_group_grants = {
-                    g['grantee_id'] for g in existing_grants if g.get('grantee_type') == 'group'
+                current_grants = {
+                    (g.get('grantee_type'), str(g.get('grantee_id')))
+                    for g in existing_grants
                 }
-                for gid in current_group_grants - desired_groups:
-                    sharing_store.revoke_grant(key, 'group', gid)
+
+                for (gtype, gid) in current_grants - desired_grants:
+                    sharing_store.revoke_grant(key, gtype, gid)
                     db.append_compliance_log(
                         user['org_id'], 'agent_share_revoked', f"user:{user_id}",
-                        {"agent": key, "grantee_type": "group", "grantee": gid}
+                        {"agent": key, "grantee_type": gtype, "grantee": gid}
                     )
-                for gid in desired_groups - current_group_grants:
-                    grp = sharing_store.get_group(gid)
-                    if grp and str(grp.get('org_id')) == str(user['org_id']):
-                        created = sharing_store.create_grant(key, 'group', gid, 'can_use', user_id=user_id)
-                        if created:
-                            db.append_compliance_log(
-                                user['org_id'], 'agent_share_granted', f"user:{user_id}",
-                                {"agent": key, "grantee_type": "group", "grantee": gid, "level": "can_use"}
-                            )
+                for (gtype, gid) in desired_grants - current_grants:
+                    if gtype == 'user':
+                        target = db.get_user_details(gid)
+                        if target and str(target.get('org_id')) == str(user['org_id']):
+                            created = sharing_store.create_grant(key, 'user', gid, 'can_use', user_id=user_id)
+                            if created:
+                                db.append_compliance_log(
+                                    user['org_id'], 'agent_share_granted', f"user:{user_id}",
+                                    {"agent": key, "grantee_type": "user", "grantee": gid, "level": "can_use"}
+                                )
+                    elif gtype == 'group':
+                        grp = sharing_store.get_group(gid)
+                        if grp and str(grp.get('org_id')) == str(user['org_id']):
+                            created = sharing_store.create_grant(key, 'group', gid, 'can_use', user_id=user_id)
+                            if created:
+                                db.append_compliance_log(
+                                    user['org_id'], 'agent_share_granted', f"user:{user_id}",
+                                    {"agent": key, "grantee_type": "group", "grantee": gid, "level": "can_use"}
+                                )
             except Exception as e:
-                current_app.logger.error(f"Group share sync failed for agent {key}: {e}")
+                current_app.logger.error(f"Share sync failed for agent {key}: {e}")
 
         global_safi_cache.invalidate_profile(key)
 
@@ -472,10 +495,20 @@ def get_agent(key):
              if raw_org:
                  try:
                      grants = sharing_store.list_grants(clean)
+                     agent['grants'] = [
+                         {
+                             "grantee_type": g.get("grantee_type"),
+                             "grantee_id": str(g.get("grantee_id")),
+                             "grantee_name": g.get("grantee_name") or g.get("grantee_id"),
+                             "grantee_email": g.get("grantee_email")
+                         }
+                         for g in grants
+                     ]
                      agent['shared_groups'] = [
-                         g['grantee_id'] for g in grants if g.get('grantee_type') == 'group'
+                         str(g['grantee_id']) for g in grants if g.get('grantee_type') == 'group'
                      ]
                  except Exception:
+                     agent['grants'] = []
                      agent['shared_groups'] = []
 
         return jsonify({"ok": True, "agent": agent})

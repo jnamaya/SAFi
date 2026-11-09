@@ -47,38 +47,49 @@ export async function renderIdentityStep(container, agentData) {
                 </div>
             </div>
 
-            <!-- ACCESS & VISIBILITY (ROLE TIER + GROUP SHARING) -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <!-- VISIBILITY TIER -->
+            <!-- ACCESS PERMISSIONS (WINDOWS / DRIVE ACL MODEL) -->
+            <div class="rounded-xl border border-gray-200 dark:border-neutral-700 bg-gray-50/50 dark:bg-neutral-800/40 p-4 space-y-4">
                 <div>
-                    <label class="block text-sm font-bold mb-2 text-gray-700 dark:text-gray-300">Visibility</label>
-                    <div class="relative">
-                        <select id="wiz-visibility" class="w-full p-3 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 appearance-none">
-                            <option value="private" ${agentData.visibility === 'private' ? 'selected' : ''}>Myself only (Private)</option>
-                            <option value="member" ${agentData.visibility === 'member' ? 'selected' : ''}>All Members (Organization)</option>
-                            <option value="admin" ${agentData.visibility === 'admin' ? 'selected' : ''}>Admins only</option>
-                            <option value="auditor" ${agentData.visibility === 'auditor' ? 'selected' : ''}>Auditors & Admins</option>
-                        </select>
-                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700 dark:text-gray-300">
-                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
-                        </div>
-                    </div>
-                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Base role access tier across the organization.</p>
+                    <label class="block text-sm font-bold text-gray-800 dark:text-neutral-200 mb-1">Access Control</label>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">Manage who can chat with this agent, like sharing a folder with specific people or groups.</p>
                 </div>
 
-                <!-- SHARE WITH GROUPS -->
+                <!-- ACCESS SCOPE -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label class="flex items-start gap-3 p-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 cursor-pointer hover:border-green-500 transition-colors">
+                        <input type="radio" name="wiz-access-scope" value="private" class="mt-0.5 text-green-600 focus:ring-green-500" ${agentData.visibility !== 'member' ? 'checked' : ''}>
+                        <div>
+                            <span class="block text-sm font-semibold text-gray-900 dark:text-white">Restricted</span>
+                            <span class="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">Only you and the specific groups or people added below.</span>
+                        </div>
+                    </label>
+
+                    <label class="flex items-start gap-3 p-3 rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 cursor-pointer hover:border-green-500 transition-colors">
+                        <input type="radio" name="wiz-access-scope" value="member" class="mt-0.5 text-green-600 focus:ring-green-500" ${agentData.visibility === 'member' ? 'checked' : ''}>
+                        <div>
+                            <span class="block text-sm font-semibold text-gray-900 dark:text-white">Everyone in Organization</span>
+                            <span class="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">All organization members can chat with this agent.</span>
+                        </div>
+                    </label>
+                </div>
+
+                <!-- ADD USERS / GROUPS SELECTOR -->
                 <div>
-                    <label class="block text-sm font-bold mb-2 text-gray-700 dark:text-gray-300">Share with Groups</label>
+                    <label class="block text-xs font-bold uppercase text-gray-500 dark:text-gray-400 mb-1.5">Add User or Group</label>
                     <div class="relative">
-                        <select id="wiz-group-select" class="w-full p-3 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 appearance-none">
-                            <option value="">No group (or select a group)</option>
+                        <select id="wiz-acl-select" class="w-full p-2.5 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-green-500 appearance-none">
+                            <option value="">Select a group or person to add...</option>
                         </select>
-                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700 dark:text-gray-300">
+                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-500">
                             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
                         </div>
                     </div>
-                    <div id="wiz-selected-groups-pills" class="flex flex-wrap gap-1.5 mt-2"></div>
-                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Select specific groups (e.g. Developers, SecOps) allowed to chat with this agent.</p>
+
+                    <!-- WHO HAS ACCESS LIST -->
+                    <div class="mt-3">
+                        <span class="text-xs font-bold uppercase text-gray-400 block mb-1.5">Who Has Access</span>
+                        <div id="wiz-grantees-list" class="space-y-1.5 min-h-[36px]"></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -87,10 +98,10 @@ export async function renderIdentityStep(container, agentData) {
     // Bind Auto-Save Events
     attachListeners(agentData);
 
-    // Load Policies & Groups
+    // Load Policies & Access Control
     await Promise.all([
         loadPolicies(agentData),
-        loadGroups(agentData)
+        loadAccessControl(agentData)
     ]);
 
     // Resolve charter status so we can warn early if the agent would be ungoverned
@@ -132,7 +143,11 @@ function attachListeners(agentData) {
     document.getElementById('wiz-name')?.addEventListener('input', (e) => agentData.name = e.target.value);
     document.getElementById('wiz-desc')?.addEventListener('input', (e) => agentData.description = e.target.value);
     document.getElementById('wiz-avatar')?.addEventListener('input', (e) => agentData.avatar = e.target.value);
-    document.getElementById('wiz-visibility')?.addEventListener('change', (e) => agentData.visibility = e.target.value);
+    document.querySelectorAll('input[name="wiz-access-scope"]').forEach(r => {
+        r.addEventListener('change', () => {
+            agentData.visibility = r.value;
+        });
+    });
 }
 
 async function loadPolicies(agentData) {
@@ -210,93 +225,132 @@ async function loadPolicies(agentData) {
     }
 }
 
-async function loadGroups(agentData) {
-    const select = document.getElementById('wiz-group-select');
-    const pillsContainer = document.getElementById('wiz-selected-groups-pills');
-    if (!select) return;
+async function loadAccessControl(agentData) {
+    const select = document.getElementById('wiz-acl-select');
+    const granteesList = document.getElementById('wiz-grantees-list');
+    if (!select || !granteesList) return;
+
+    let groups = [];
+    let members = [];
 
     try {
-        const res = await api.listGroups();
-        const groups = (res && res.groups) ? res.groups : [];
-        if (!groups.length) {
-            select.innerHTML = `<option value="">No custom groups created yet</option>`;
-            select.disabled = true;
-            return;
-        }
-
-        const groupMap = new Map(groups.map(g => [g.id, g]));
-        let selectedSet = new Set(agentData.shared_groups || []);
-
-        function renderPillsAndOptions() {
-            const unselected = groups.filter(g => !selectedSet.has(g.id));
-            if (selectedSet.size === 0) {
-                select.innerHTML = `<option value="">No group (or select a group)</option>` +
-                    groups.map(g => `<option value="${escapeHtml(g.id)}">${escapeHtml(g.name)} (${g.member_count || 0} member${g.member_count === 1 ? '' : 's'})</option>`).join('');
-                select.value = '';
-            } else if (selectedSet.size === 1) {
-                const singleId = Array.from(selectedSet)[0];
-                const singleGroup = groupMap.get(singleId);
-                const otherOptions = unselected.map(g => `<option value="${escapeHtml(g.id)}">+ Add ${escapeHtml(g.name)}</option>`).join('');
-                select.innerHTML = `
-                    <option value="${escapeHtml(singleId)}">${singleGroup ? escapeHtml(singleGroup.name) : '1 group selected'}</option>
-                    <option value="__clear__">Clear selection (no group)</option>
-                    ${otherOptions}
-                `;
-                select.value = singleId;
-            } else {
-                const otherOptions = unselected.map(g => `<option value="${escapeHtml(g.id)}">+ Add ${escapeHtml(g.name)}</option>`).join('');
-                select.innerHTML = `
-                    <option value="">${selectedSet.size} groups selected (+ add another)</option>
-                    <option value="__clear__">Clear all groups</option>
-                    ${otherOptions}
-                `;
-                select.value = '';
-            }
-
-            if (pillsContainer) {
-                if (selectedSet.size > 0) {
-                    pillsContainer.innerHTML = Array.from(selectedSet).map(id => {
-                        const grp = groupMap.get(id);
-                        const label = grp ? grp.name : id;
-                        return `
-                            <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300">
-                                <span>${escapeHtml(label)}</span>
-                                <button type="button" data-remove-group="${escapeHtml(id)}" class="hover:text-red-500 font-bold ml-0.5" title="Remove">&times;</button>
-                            </span>
-                        `;
-                    }).join('');
-
-                    pillsContainer.querySelectorAll('[data-remove-group]').forEach(btn => {
-                        btn.addEventListener('click', (e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            const removeId = btn.getAttribute('data-remove-group');
-                            selectedSet.delete(removeId);
-                            agentData.shared_groups = Array.from(selectedSet);
-                            renderPillsAndOptions();
-                        });
-                    });
-                } else {
-                    pillsContainer.innerHTML = '';
-                }
-            }
-        }
-
-        select.addEventListener('change', () => {
-            const val = select.value;
-            if (!val || val === '__clear__') {
-                selectedSet.clear();
-            } else {
-                selectedSet.add(val);
-            }
-            agentData.shared_groups = Array.from(selectedSet);
-            renderPillsAndOptions();
-        });
-
-        renderPillsAndOptions();
+        const orgRes = await api.getMyOrganization().catch(() => null);
+        const orgId = orgRes?.organization?.id;
+        const [groupsRes, membersRes] = await Promise.all([
+            api.listGroups().catch(() => ({ groups: [] })),
+            orgId ? api.getOrganizationMembers(orgId).catch(() => ({ members: [] })) : Promise.resolve({ members: [] })
+        ]);
+        groups = groupsRes?.groups || [];
+        members = membersRes?.members || [];
     } catch (e) {
-        select.innerHTML = `<option value="">Could not load groups</option>`;
+        console.error("Failed to load access candidates", e);
     }
+
+    agentData.grants = agentData.grants || [];
+
+    // If agentData had shared_groups but no grants, bridge them
+    if (agentData.shared_groups && agentData.shared_groups.length && !agentData.grants.length) {
+        agentData.grants = agentData.shared_groups.map(gid => {
+            const grp = groups.find(g => g.id === gid);
+            return {
+                grantee_type: 'group',
+                grantee_id: gid,
+                grantee_name: grp ? grp.name : gid
+            };
+        });
+    }
+
+    function renderAclUI() {
+        const grantedKeys = new Set((agentData.grants || []).map(g => `${g.grantee_type}:${g.grantee_id}`));
+        const availGroups = groups.filter(g => !grantedKeys.has(`group:${g.id}`));
+        const availMembers = members.filter(m => !grantedKeys.has(`user:${m.id}`));
+
+        const groupOpts = availGroups.map(g =>
+            `<option value="group:${escapeHtml(g.id)}">${escapeHtml(g.name)} (${g.member_count || 0} members)</option>`
+        ).join('');
+        const memberOpts = availMembers.map(m =>
+            `<option value="user:${escapeHtml(m.id)}">${escapeHtml(m.name || m.email || m.id)}${m.email ? ` (${escapeHtml(m.email)})` : ''}</option>`
+        ).join('');
+
+        select.innerHTML = `
+            <option value="">Select a group or person to add...</option>
+            ${groupOpts ? `<optgroup label="Groups">${groupOpts}</optgroup>` : ''}
+            ${memberOpts ? `<optgroup label="People">${memberOpts}</optgroup>` : ''}
+        `;
+
+        const grantRows = (agentData.grants || []).map(g => {
+            const isGroup = g.grantee_type === 'group';
+            const iconSvg = isGroup
+                ? `<svg class="w-4 h-4 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>`
+                : `<svg class="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>`;
+
+            let label = g.grantee_name || g.grantee_id;
+            if (isGroup) {
+                const grp = groups.find(x => x.id === g.grantee_id);
+                if (grp) label = `${grp.name} (${grp.member_count || 0} members)`;
+            } else {
+                const mem = members.find(x => x.id === g.grantee_id);
+                if (mem) label = `${mem.name || mem.email || mem.id}${mem.email ? ` (${mem.email})` : ''}`;
+            }
+
+            return `
+                <div class="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 text-xs">
+                    <div class="flex items-center gap-2 min-w-0">
+                        ${iconSvg}
+                        <span class="font-medium text-gray-800 dark:text-neutral-200 truncate">${escapeHtml(label)}</span>
+                        <span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-neutral-700 text-gray-500 uppercase">${isGroup ? 'Group' : 'User'}</span>
+                    </div>
+                    <button type="button" data-remove-grant="${escapeHtml(g.grantee_type)}:${escapeHtml(g.grantee_id)}" class="text-red-500 hover:text-red-700 hover:underline font-semibold ml-2 flex-shrink-0">Remove</button>
+                </div>
+            `;
+        }).join('');
+
+        granteesList.innerHTML = `
+            <div class="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 text-xs">
+                <div class="flex items-center gap-2">
+                    <svg class="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+                    <span class="font-medium text-gray-800 dark:text-neutral-200">Owner (Creator)</span>
+                    <span class="text-[10px] px-1.5 py-0.5 rounded bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300 uppercase">Full Access</span>
+                </div>
+            </div>
+            ${grantRows}
+        `;
+
+        granteesList.querySelectorAll('[data-remove-grant]').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                const [gtype, gid] = btn.getAttribute('data-remove-grant').split(':');
+                agentData.grants = (agentData.grants || []).filter(g => !(g.grantee_type === gtype && g.grantee_id === gid));
+                agentData.shared_groups = (agentData.grants || []).filter(g => g.grantee_type === 'group').map(g => g.grantee_id);
+                renderAclUI();
+            });
+        });
+    }
+
+    select.addEventListener('change', () => {
+        if (!select.value) return;
+        const [granteeType, granteeId] = select.value.split(':');
+        agentData.grants = agentData.grants || [];
+        if (!agentData.grants.some(g => g.grantee_type === granteeType && g.grantee_id === granteeId)) {
+            let label = granteeId;
+            if (granteeType === 'group') {
+                const grp = groups.find(x => x.id === granteeId);
+                if (grp) label = grp.name;
+            } else {
+                const mem = members.find(x => x.id === granteeId);
+                if (mem) label = mem.name || mem.email || granteeId;
+            }
+            agentData.grants.push({
+                grantee_type: granteeType,
+                grantee_id: granteeId,
+                grantee_name: label
+            });
+            agentData.shared_groups = agentData.grants.filter(g => g.grantee_type === 'group').map(g => g.grantee_id);
+        }
+        renderAclUI();
+    });
+
+    renderAclUI();
 }
 
 export function validateIdentityStep(agentData) {
