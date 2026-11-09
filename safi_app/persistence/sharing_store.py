@@ -92,6 +92,16 @@ def init_schema() -> None:
                 INDEX idx_memberships_user (user_id)
             ) ENGINE=InnoDB DEFAULT CHARSET={charset} COLLATE={coll}
         """)
+        cursor.execute(f"""
+            CREATE TABLE IF NOT EXISTS group_nested_groups (
+                parent_group_id CHAR(36) NOT NULL,
+                child_group_id CHAR(36) NOT NULL,
+                added_by VARCHAR(255),
+                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (parent_group_id, child_group_id),
+                INDEX idx_nested_child (child_group_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET={charset} COLLATE={coll}
+        """)
         # agent_key matches agents.agent_key (VARCHAR(100) string key, not a
         # UUID). grantee_id is a users.id (VARCHAR(255)) or a custom_groups.id.
         cursor.execute(f"""
@@ -114,7 +124,7 @@ def init_schema() -> None:
         cursor.execute(
             "SELECT TABLE_NAME, TABLE_COLLATION FROM information_schema.TABLES "
             "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN "
-            "('custom_groups','group_memberships','agent_visibility_grants')")
+            "('custom_groups','group_memberships','group_nested_groups','agent_visibility_grants')")
         for name, table_coll in cursor.fetchall():
             if table_coll and table_coll != coll:
                 log.warning("sharing table %s is %s, converting to %s to match agents",
@@ -161,7 +171,7 @@ def can_use_agent(user_id, role, org_id, agent, role_config=None) -> bool:
 
 
 def get_user_group_names(user_id, org_id) -> set:
-    """Return lowercase names of all custom groups this user belongs to in org_id."""
+    """Return lowercase names of all custom groups this user belongs to in org_id (direct or nested)."""
     if not user_id or not org_id:
         return set()
     conn = None
@@ -174,8 +184,13 @@ def get_user_group_names(user_id, org_id) -> set:
             SELECT LOWER(c.name) FROM custom_groups c
             JOIN group_memberships m ON m.group_id = c.id
             WHERE m.user_id = %s AND c.org_id = %s
+            UNION
+            SELECT LOWER(p.name) FROM custom_groups p
+            JOIN group_nested_groups ng ON ng.parent_group_id = p.id
+            JOIN group_memberships m ON m.group_id = ng.child_group_id
+            WHERE m.user_id = %s AND p.org_id = %s
             """,
-            (user_id, org_id),
+            (user_id, org_id, user_id, org_id),
         )
         return {row[0] for row in cursor.fetchall() if row[0]}
     except Exception as e:
@@ -195,7 +210,7 @@ def get_user_group_names(user_id, org_id) -> set:
 
 
 def get_user_group_details(user_id, org_id) -> list:
-    """Return full custom_groups rows this user belongs to in org_id."""
+    """Return full custom_groups rows this user belongs to in org_id (direct or nested)."""
     if not user_id or not org_id:
         return []
     conn = None
@@ -208,8 +223,13 @@ def get_user_group_details(user_id, org_id) -> list:
             SELECT c.* FROM custom_groups c
             JOIN group_memberships m ON m.group_id = c.id
             WHERE m.user_id = %s AND c.org_id = %s
+            UNION
+            SELECT p.* FROM custom_groups p
+            JOIN group_nested_groups ng ON ng.parent_group_id = p.id
+            JOIN group_memberships m ON m.group_id = ng.child_group_id
+            WHERE m.user_id = %s AND p.org_id = %s
             """,
-            (user_id, org_id),
+            (user_id, org_id, user_id, org_id),
         )
         return cursor.fetchall() or []
     except Exception as e:
@@ -357,14 +377,23 @@ def _has_grant_query(agent_key, user_id, org_id) -> bool:
             WHERE g.agent_key = %s AND g.org_id = %s
               AND (
                     (g.grantee_type = 'user' AND g.grantee_id = %s)
-                 OR (g.grantee_type = 'group' AND g.grantee_id IN (
-                        SELECT m.group_id FROM group_memberships m
-                        JOIN custom_groups c ON c.id = m.group_id
-                        WHERE m.user_id = %s AND c.org_id = %s))
+                 OR (g.grantee_type = 'group' AND (
+                        g.grantee_id IN (
+                            SELECT m.group_id FROM group_memberships m
+                            JOIN custom_groups c ON c.id = m.group_id
+                            WHERE m.user_id = %s AND c.org_id = %s
+                        )
+                        OR g.grantee_id IN (
+                            SELECT ng.parent_group_id FROM group_nested_groups ng
+                            JOIN group_memberships m ON m.group_id = ng.child_group_id
+                            JOIN custom_groups p ON p.id = ng.parent_group_id
+                            WHERE m.user_id = %s AND p.org_id = %s
+                        )
+                    ))
               )
             LIMIT 1
             """,
-            (agent_key, org_id, user_id, user_id, org_id),
+            (agent_key, org_id, user_id, user_id, org_id, user_id, org_id),
         )
         return cursor.fetchone() is not None
     finally:
@@ -403,13 +432,22 @@ def _granted_agents_query(user_id, org_id):
             WHERE a.org_id = %s
               AND (
                     (g.grantee_type = 'user' AND g.grantee_id = %s)
-                 OR (g.grantee_type = 'group' AND g.grantee_id IN (
-                        SELECT m.group_id FROM group_memberships m
-                        JOIN custom_groups c ON c.id = m.group_id
-                        WHERE m.user_id = %s AND c.org_id = %s))
+                 OR (g.grantee_type = 'group' AND (
+                        g.grantee_id IN (
+                            SELECT m.group_id FROM group_memberships m
+                            JOIN custom_groups c ON c.id = m.group_id
+                            WHERE m.user_id = %s AND c.org_id = %s
+                        )
+                        OR g.grantee_id IN (
+                            SELECT ng.parent_group_id FROM group_nested_groups ng
+                            JOIN group_memberships m ON m.group_id = ng.child_group_id
+                            JOIN custom_groups p ON p.id = ng.parent_group_id
+                            WHERE m.user_id = %s AND p.org_id = %s
+                        )
+                    ))
               )
             """,
-            (org_id, user_id, user_id, org_id),
+            (org_id, user_id, user_id, org_id, user_id, org_id),
         )
         rows = cursor.fetchall()
         for row in rows:
@@ -537,15 +575,15 @@ def remove_user_from_org_sharing(user_id, org_id) -> None:
 # Groups
 # ---------------------------------------------------------------------------
 
-def create_group(org_id, name, owner_id) -> str:
+def create_group(org_id, name, owner_id, model_policy='default') -> str:
     group_id = str(uuid.uuid4())
     conn = db.get_db_connection()
     cursor = conn.cursor()
     try:
         cursor.execute(
-            "INSERT INTO custom_groups (id, org_id, name, owner_id) "
-            "VALUES (%s, %s, %s, %s)",
-            (group_id, org_id, name, owner_id),
+            "INSERT INTO custom_groups (id, org_id, name, owner_id, model_policy) "
+            "VALUES (%s, %s, %s, %s, %s)",
+            (group_id, org_id, name, owner_id, model_policy or 'default'),
         )
         conn.commit()
         return group_id
@@ -628,19 +666,84 @@ def list_groups(org_id):
 
 
 def delete_group(group_id) -> None:
-    """Delete the group, its memberships, and every grant made to it, so a
-    deleted group cannot keep conferring access through orphaned rows."""
+    """Delete the group, its memberships, its nested relationships, and every grant made to it,
+    so a deleted group cannot keep conferring access through orphaned rows."""
     conn = db.get_db_connection()
     cursor = conn.cursor()
     try:
         cursor.execute("DELETE FROM custom_groups WHERE id=%s", (group_id,))
         cursor.execute("DELETE FROM group_memberships WHERE group_id=%s", (group_id,))
+        cursor.execute("DELETE FROM group_nested_groups WHERE parent_group_id=%s OR child_group_id=%s", (group_id, group_id))
         cursor.execute(
             "DELETE FROM agent_visibility_grants "
             "WHERE grantee_type='group' AND grantee_id=%s",
             (group_id,),
         )
         conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def add_nested_group(parent_group_id: str, child_group_id: str, added_by: str = "") -> bool:
+    """Include a child group inside a parent group (nested group membership)."""
+    if not parent_group_id or not child_group_id or str(parent_group_id) == str(child_group_id):
+        return False
+    conn = db.get_db_connection()
+    cursor = conn.cursor()
+    try:
+        # Check reverse link to prevent direct cyclic loop
+        cursor.execute(
+            "SELECT 1 FROM group_nested_groups WHERE parent_group_id=%s AND child_group_id=%s",
+            (child_group_id, parent_group_id),
+        )
+        if cursor.fetchone():
+            return False
+        cursor.execute(
+            "INSERT IGNORE INTO group_nested_groups (parent_group_id, child_group_id, added_by) "
+            "VALUES (%s, %s, %s)",
+            (parent_group_id, child_group_id, added_by or None),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def remove_nested_group(parent_group_id: str, child_group_id: str) -> bool:
+    """Remove a child group from a parent group."""
+    conn = db.get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "DELETE FROM group_nested_groups WHERE parent_group_id=%s AND child_group_id=%s",
+            (parent_group_id, child_group_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def list_nested_groups(parent_group_id: str) -> list:
+    """Return all child groups included in parent_group_id."""
+    conn = db.get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """
+            SELECT c.id, c.name, c.model_policy, c.created_at, ng.added_at,
+                   (SELECT COUNT(*) FROM group_memberships m WHERE m.group_id = c.id) AS member_count
+            FROM custom_groups c
+            JOIN group_nested_groups ng ON ng.child_group_id = c.id
+            WHERE ng.parent_group_id = %s
+            ORDER BY c.name
+            """,
+            (parent_group_id,),
+        )
+        return cursor.fetchall() or []
     finally:
         cursor.close()
         conn.close()

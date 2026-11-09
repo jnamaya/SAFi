@@ -1540,9 +1540,8 @@ async function loadOrgGroups(orgId) {
                         <div class="flex items-center gap-1.5">
                             <span class="text-[11px] text-gray-400 dark:text-neutral-500 font-medium">Models:</span>
                             <select data-group-policy="${escapeHtml(g.id)}" class="grp-policy-select text-xs py-1 px-2 rounded border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-700 dark:text-gray-300">
-                                <option value="default" ${(g.model_policy || 'default') === 'default' ? 'selected' : ''}>Default (Role-based)</option>
-                                <option value="local" ${g.model_policy === 'local' ? 'selected' : ''}>Local Only (Zero Egress)</option>
-                                <option value="cloud" ${g.model_policy === 'cloud' ? 'selected' : ''}>Local + Cloud</option>
+                                <option value="default" ${(g.model_policy || 'default') !== 'cloud' ? 'selected' : ''}>Local Models Only (Default)</option>
+                                <option value="cloud" ${g.model_policy === 'cloud' ? 'selected' : ''}>Local + Cloud Models</option>
                             </select>
                         </div>
                         <button data-group="${escapeHtml(g.id)}" class="grp-members-btn text-xs text-green-600 hover:underline">Members</button>
@@ -1594,30 +1593,63 @@ async function toggleGroupPanel(orgId, groupId) {
     panel.classList.remove('hidden');
     panel.innerHTML = `<div class="py-2 text-sm text-gray-400">Loading...</div>`;
     try {
-        const [grpRes, orgRes] = await Promise.all([
+        const [grpRes, orgRes, nestedRes, allGroupsRes] = await Promise.all([
             api.listGroupMembers(groupId),
             api.getOrganizationMembers(orgId),
+            api.listNestedGroups(groupId),
+            api.listGroups(),
         ]);
         const inGroup = grpRes.members || [];
         const inGroupIds = new Set(inGroup.map(m => m.user_id));
         const candidates = (orgRes.members || []).filter(m => !inGroupIds.has(m.id));
 
-        const rows = inGroup.length ? inGroup.map(m => `
+        const nestedGroups = nestedRes.nested_groups || [];
+        const nestedGroupIds = new Set(nestedGroups.map(ng => ng.id));
+        const candidateGroups = (allGroupsRes.groups || []).filter(g => g.id !== groupId && !nestedGroupIds.has(g.id));
+
+        const userRows = inGroup.length ? inGroup.map(m => `
             <div class="flex items-center justify-between py-1.5 border-b border-gray-100 dark:border-neutral-800 last:border-0">
                 <span class="text-sm text-gray-700 dark:text-gray-300 truncate">${escapeHtml(m.name || m.user_id)} <span class="text-xs text-gray-400">${escapeHtml(m.email || '')}</span></span>
                 <button data-member="${escapeHtml(m.user_id)}" class="grp-remove-member text-xs text-red-500 hover:underline flex-shrink-0 ml-3">Remove</button>
             </div>`).join('')
-            : `<p class="py-1.5 text-sm text-gray-400">No members yet.</p>`;
+            : `<p class="py-1 text-xs text-gray-400">No direct user members assigned.</p>`;
+
+        const nestedRows = nestedGroups.length ? nestedGroups.map(ng => `
+            <div class="flex items-center justify-between py-1.5 border-b border-gray-100 dark:border-neutral-800 last:border-0">
+                <span class="text-sm text-gray-700 dark:text-gray-300 truncate font-medium">${escapeHtml(ng.name)} <span class="text-xs text-gray-400">(${ng.member_count} member${ng.member_count === 1 ? '' : 's'})</span></span>
+                <button data-nested-group="${escapeHtml(ng.id)}" class="grp-remove-nested text-xs text-red-500 hover:underline flex-shrink-0 ml-3">Remove</button>
+            </div>`).join('')
+            : `<p class="py-1 text-xs text-gray-400">No included groups.</p>`;
 
         panel.innerHTML = `
-            <div class="bg-gray-50 dark:bg-neutral-800/50 rounded-lg p-3">
-                ${rows}
-                <div class="flex gap-2 mt-2 pt-2 border-t border-gray-200 dark:border-neutral-700">
-                    <select class="grp-add-select settings-modal-select flex-1 text-sm">
-                        <option value="">Add a member...</option>
-                        ${candidates.map(m => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.name || m.email || m.id)}</option>`).join('')}
-                    </select>
-                    <button class="grp-add-btn px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-bold">Add</button>
+            <div class="bg-gray-50 dark:bg-neutral-800/50 rounded-lg p-3 space-y-4">
+                <div>
+                    <div class="flex items-center justify-between mb-1.5">
+                        <span class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-neutral-400">Users (${inGroup.length})</span>
+                    </div>
+                    ${userRows}
+                    <div class="flex gap-2 mt-2 pt-2 border-t border-gray-200 dark:border-neutral-700">
+                        <select class="grp-add-select settings-modal-select flex-1 text-sm">
+                            <option value="">Add a user member...</option>
+                            ${candidates.map(m => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.name || m.email || m.id)}</option>`).join('')}
+                        </select>
+                        <button class="grp-add-btn px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-bold">Add User</button>
+                    </div>
+                </div>
+
+                <div class="pt-3 border-t border-gray-200 dark:border-neutral-700">
+                    <div class="flex items-center justify-between mb-1.5">
+                        <span class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-neutral-400">Included Groups (${nestedGroups.length})</span>
+                        <span class="text-[11px] text-gray-400">Members of these groups inherit this group's permissions</span>
+                    </div>
+                    ${nestedRows}
+                    <div class="flex gap-2 mt-2 pt-2 border-t border-gray-200 dark:border-neutral-700">
+                        <select class="grp-add-nested-select settings-modal-select flex-1 text-sm">
+                            <option value="">Include a group...</option>
+                            ${candidateGroups.map(g => `<option value="${escapeHtml(g.id)}">${escapeHtml(g.name)} (${g.member_count} member${g.member_count === 1 ? '' : 's'})</option>`).join('')}
+                        </select>
+                        <button class="grp-add-nested-btn px-3 py-1.5 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-xs font-bold">Include Group</button>
+                    </div>
                 </div>
             </div>`;
 
@@ -1641,8 +1673,29 @@ async function toggleGroupPanel(orgId, groupId) {
                 ui.showToast(e.message || 'Remove failed', 'error');
             }
         }));
+
+        panel.querySelector('.grp-add-nested-btn').addEventListener('click', async () => {
+            const sel = panel.querySelector('.grp-add-nested-select');
+            if (!sel.value) return;
+            try {
+                await api.addNestedGroup(groupId, sel.value);
+                await loadOrgGroups(orgId);
+                await toggleGroupPanel(orgId, groupId);
+            } catch (e) {
+                ui.showToast(e.message || 'Include group failed', 'error');
+            }
+        });
+        panel.querySelectorAll('.grp-remove-nested').forEach(btn => btn.addEventListener('click', async () => {
+            try {
+                await api.removeNestedGroup(groupId, btn.getAttribute('data-nested-group'));
+                await loadOrgGroups(orgId);
+                await toggleGroupPanel(orgId, groupId);
+            } catch (e) {
+                ui.showToast(e.message || 'Remove included group failed', 'error');
+            }
+        }));
     } catch (e) {
-        panel.innerHTML = `<p class="py-2 text-sm text-red-500">${escapeHtml(e.message || 'Could not load members.')}</p>`;
+        panel.innerHTML = `<p class="py-2 text-sm text-red-500">${escapeHtml(e.message || 'Could not load group details.')}</p>`;
     }
 }
 

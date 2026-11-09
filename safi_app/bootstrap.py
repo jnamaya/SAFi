@@ -209,15 +209,21 @@ def _seed_local_admin() -> None:
             # Auto-seed standard default enterprise groups for role & agent governance
             from .persistence import sharing_store
             default_groups = [
-                ("Developers", "Software engineering and code development staff"),
-                ("IT-Infrastructure", "Systems administration, servers, and network operations"),
-                ("SecOps", "Security engineering, vulnerability assessment, and audit"),
+                ("Developers", "Software engineering and code development staff", "default"),
+                ("IT-Infrastructure", "Systems administration, servers, and network operations", "default"),
+                ("SecOps", "Security engineering, vulnerability assessment, and audit", "default"),
+                ("Cloud AI Access", "Authorized users and teams permitted to query external cloud AI models", "cloud"),
             ]
-            for gname, _desc in default_groups:
+            for gname, _desc, gpolicy in default_groups:
                 try:
                     if not sharing_store.group_name_taken(org_id, gname):
-                        sharing_store.create_group(org_id, gname, "local_admin")
-                        log.info("Bootstrapped default group '%s' for org %s", gname, org_id)
+                        sharing_store.create_group(org_id, gname, "local_admin", model_policy=gpolicy)
+                        log.info("Bootstrapped default group '%s' (policy: %s) for org %s", gname, gpolicy, org_id)
+                    elif gname == "Cloud AI Access":
+                        # Ensure Cloud AI Access has model_policy = 'cloud' if already created
+                        existing = sharing_store.get_group_by_name(org_id, gname)
+                        if existing and existing.get("model_policy") != "cloud":
+                            sharing_store.update_group_model_policy(existing["id"], "cloud")
                 except Exception as ge:
                     log.warning("Could not auto-seed group '%s': %s", gname, ge)
 

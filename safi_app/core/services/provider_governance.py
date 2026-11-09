@@ -239,8 +239,8 @@ def get_user_model_allowlist(user_id: Optional[str], org_id: Optional[str], user
 
     Rules:
     - Admins: None (unrestricted, access to all configured local and cloud models).
-    - Developers / SecOps (or group with model_policy='cloud'): local + cloud models.
-    - IT-Infrastructure / contractors / general staff: frozenset(['local']) (Strict Zero Egress).
+    - Cloud AI Access (or any group with model_policy='cloud'): local + cloud models.
+    - Baseline (all other groups, members, and roles): frozenset(['local']) (Strict Zero Egress).
     """
     if not user_id:
         return get_org_allowlist(org_id)
@@ -265,15 +265,15 @@ def get_user_model_allowlist(user_id: Optional[str], org_id: Optional[str], user
     user_groups = sharing_store.get_user_group_details(user_id, effective_org)
 
     can_use_cloud = False
-    cloud_group_names = {"developers", "developer", "software_engineer", "engineering", "devs", "secops", "security"}
+    cloud_entitlement_names = {
+        "cloud ai access", "cloud ai", "cloud models", "cloud-ai-access",
+        "cloud_ai_access", "cloud-models"
+    }
 
     for g in user_groups:
         gname = str(g.get("name") or "").lower().strip()
         gpol = str(g.get("model_policy") or "default").lower().strip()
-        if gpol == "cloud":
-            can_use_cloud = True
-            break
-        elif gpol == "default" and gname in cloud_group_names:
+        if gpol == "cloud" or gname in cloud_entitlement_names:
             can_use_cloud = True
             break
 

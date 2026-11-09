@@ -135,3 +135,52 @@ def set_group_model_policy(group_id):
         "group_id": group_id, "group": group.get('name'), "model_policy": policy
     })
     return jsonify({"ok": True, "model_policy": policy})
+
+
+@groups_bp.route('/groups/<group_id>/nested-groups', methods=['GET'], strict_slashes=False)
+@require_role('admin')
+def list_nested_groups(group_id):
+    group = _org_group_or_404(group_id)
+    if not group:
+        return jsonify({"error": "Not found"}), 404
+    nested = sharing_store.list_nested_groups(group_id)
+    return jsonify({"ok": True, "nested_groups": nested})
+
+
+@groups_bp.route('/groups/<group_id>/nested-groups', methods=['POST'], strict_slashes=False)
+@require_role('admin')
+def add_nested_group(group_id):
+    parent = _org_group_or_404(group_id)
+    if not parent:
+        return jsonify({"error": "Not found"}), 404
+    data = request.get_json(silent=True) or {}
+    child_group_id = (data.get('child_group_id') or '').strip()
+    if not child_group_id:
+        return jsonify({"error": "'child_group_id' is required."}), 400
+    child = _org_group_or_404(child_group_id)
+    if not child:
+        return jsonify({"error": "Target child group not found in organization."}), 404
+    if str(group_id) == str(child_group_id):
+        return jsonify({"error": "A group cannot be nested inside itself."}), 400
+    success = sharing_store.add_nested_group(group_id, child_group_id, _actor())
+    if not success:
+        return jsonify({"error": "Could not nest group: link already exists or would create a direct cyclic relationship."}), 400
+    db.append_compliance_log(get_current_org_id(), 'nested_group_added', f"user:{_actor()}", {
+        "parent_group_id": group_id, "parent_group_name": parent.get('name'),
+        "child_group_id": child_group_id, "child_group_name": child.get('name')
+    })
+    return jsonify({"ok": True})
+
+
+@groups_bp.route('/groups/<group_id>/nested-groups/<child_group_id>', methods=['DELETE'], strict_slashes=False)
+@require_role('admin')
+def remove_nested_group(group_id, child_group_id):
+    parent = _org_group_or_404(group_id)
+    if not parent:
+        return jsonify({"error": "Not found"}), 404
+    removed = sharing_store.remove_nested_group(group_id, child_group_id)
+    if removed:
+        db.append_compliance_log(get_current_org_id(), 'nested_group_removed', f"user:{_actor()}", {
+            "parent_group_id": group_id, "child_group_id": child_group_id
+        })
+    return jsonify({"ok": True, "removed": removed})

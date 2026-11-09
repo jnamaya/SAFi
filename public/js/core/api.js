@@ -417,6 +417,15 @@ export async function removeGroupMember(groupId, userId) {
 export async function setGroupModelPolicy(groupId, modelPolicy) {
     return httpJSON(`/api/groups/${groupId}/model-policy`, 'PUT', { model_policy: modelPolicy });
 }
+export async function listNestedGroups(groupId) {
+    return httpGet(`/api/groups/${groupId}/nested-groups`);
+}
+export async function addNestedGroup(groupId, childGroupId) {
+    return httpJSON(`/api/groups/${groupId}/nested-groups`, 'POST', { child_group_id: childGroupId });
+}
+export async function removeNestedGroup(groupId, childGroupId) {
+    return httpJSON(`/api/groups/${groupId}/nested-groups/${encodeURIComponent(childGroupId)}`, 'DELETE', {});
+}
 
 export async function fetchAvailableTools(policyId = null) {
     // With a policy id the backend marks each tool with allowed_by_policy,
