@@ -68,15 +68,16 @@ export async function renderIdentityStep(container, agentData) {
 
                 <!-- SHARE WITH GROUPS -->
                 <div>
-                    <div class="flex items-center justify-between mb-2">
-                        <label class="block text-sm font-bold text-gray-700 dark:text-gray-300">
-                            Share with Groups
-                        </label>
-                        <span id="wiz-group-count" class="text-xs text-gray-500 dark:text-gray-400"></span>
+                    <label class="block text-sm font-bold mb-2 text-gray-700 dark:text-gray-300">Share with Groups</label>
+                    <div class="relative">
+                        <select id="wiz-group-select" class="w-full p-3 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 appearance-none">
+                            <option value="">No group (or select a group)</option>
+                        </select>
+                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700 dark:text-gray-300">
+                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                        </div>
                     </div>
-                    <div id="wiz-groups-list" class="rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 p-2 max-h-36 overflow-y-auto space-y-1">
-                        <div class="text-xs text-gray-400 p-1">Loading groups...</div>
-                    </div>
+                    <div id="wiz-selected-groups-pills" class="flex flex-wrap gap-1.5 mt-2"></div>
                     <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Select specific groups (e.g. Developers, SecOps) allowed to chat with this agent.</p>
                 </div>
             </div>
@@ -210,45 +211,91 @@ async function loadPolicies(agentData) {
 }
 
 async function loadGroups(agentData) {
-    const listEl = document.getElementById('wiz-groups-list');
-    if (!listEl) return;
+    const select = document.getElementById('wiz-group-select');
+    const pillsContainer = document.getElementById('wiz-selected-groups-pills');
+    if (!select) return;
+
     try {
         const res = await api.listGroups();
         const groups = (res && res.groups) ? res.groups : [];
-        const countEl = document.getElementById('wiz-group-count');
-        if (countEl) {
-            countEl.textContent = `${groups.length} available`;
-        }
         if (!groups.length) {
-            listEl.innerHTML = `<p class="text-xs text-gray-400 p-1">No custom groups created yet. You can create groups under Identity & Access.</p>`;
+            select.innerHTML = `<option value="">No custom groups created yet</option>`;
+            select.disabled = true;
             return;
         }
 
-        const selected = new Set(agentData.shared_groups || []);
-        listEl.innerHTML = groups.map(g => {
-            const isChecked = selected.has(g.id);
-            return `
-                <label class="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-50 dark:hover:bg-neutral-700/50 rounded cursor-pointer text-xs text-gray-800 dark:text-neutral-200">
-                    <input type="checkbox" value="${escapeHtml(g.id)}" class="wiz-group-cb rounded border-gray-300 dark:border-neutral-600 text-green-600 focus:ring-green-500" ${isChecked ? 'checked' : ''}>
-                    <span class="font-medium">${escapeHtml(g.name)}</span>
-                    <span class="text-gray-400">(${g.member_count || 0} member${g.member_count === 1 ? '' : 's'})</span>
-                </label>
-            `;
-        }).join('');
+        const groupMap = new Map(groups.map(g => [g.id, g]));
+        let selectedSet = new Set(agentData.shared_groups || []);
 
-        listEl.querySelectorAll('.wiz-group-cb').forEach(cb => {
-            cb.addEventListener('change', () => {
-                const currentSelected = new Set(agentData.shared_groups || []);
-                if (cb.checked) {
-                    currentSelected.add(cb.value);
+        function renderPillsAndOptions() {
+            const unselected = groups.filter(g => !selectedSet.has(g.id));
+            if (selectedSet.size === 0) {
+                select.innerHTML = `<option value="">No group (or select a group)</option>` +
+                    groups.map(g => `<option value="${escapeHtml(g.id)}">${escapeHtml(g.name)} (${g.member_count || 0} member${g.member_count === 1 ? '' : 's'})</option>`).join('');
+                select.value = '';
+            } else if (selectedSet.size === 1) {
+                const singleId = Array.from(selectedSet)[0];
+                const singleGroup = groupMap.get(singleId);
+                const otherOptions = unselected.map(g => `<option value="${escapeHtml(g.id)}">+ Add ${escapeHtml(g.name)}</option>`).join('');
+                select.innerHTML = `
+                    <option value="${escapeHtml(singleId)}">${singleGroup ? escapeHtml(singleGroup.name) : '1 group selected'}</option>
+                    <option value="__clear__">Clear selection (no group)</option>
+                    ${otherOptions}
+                `;
+                select.value = singleId;
+            } else {
+                const otherOptions = unselected.map(g => `<option value="${escapeHtml(g.id)}">+ Add ${escapeHtml(g.name)}</option>`).join('');
+                select.innerHTML = `
+                    <option value="">${selectedSet.size} groups selected (+ add another)</option>
+                    <option value="__clear__">Clear all groups</option>
+                    ${otherOptions}
+                `;
+                select.value = '';
+            }
+
+            if (pillsContainer) {
+                if (selectedSet.size > 0) {
+                    pillsContainer.innerHTML = Array.from(selectedSet).map(id => {
+                        const grp = groupMap.get(id);
+                        const label = grp ? grp.name : id;
+                        return `
+                            <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300">
+                                <span>${escapeHtml(label)}</span>
+                                <button type="button" data-remove-group="${escapeHtml(id)}" class="hover:text-red-500 font-bold ml-0.5" title="Remove">&times;</button>
+                            </span>
+                        `;
+                    }).join('');
+
+                    pillsContainer.querySelectorAll('[data-remove-group]').forEach(btn => {
+                        btn.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const removeId = btn.getAttribute('data-remove-group');
+                            selectedSet.delete(removeId);
+                            agentData.shared_groups = Array.from(selectedSet);
+                            renderPillsAndOptions();
+                        });
+                    });
                 } else {
-                    currentSelected.delete(cb.value);
+                    pillsContainer.innerHTML = '';
                 }
-                agentData.shared_groups = Array.from(currentSelected);
-            });
+            }
+        }
+
+        select.addEventListener('change', () => {
+            const val = select.value;
+            if (!val || val === '__clear__') {
+                selectedSet.clear();
+            } else {
+                selectedSet.add(val);
+            }
+            agentData.shared_groups = Array.from(selectedSet);
+            renderPillsAndOptions();
         });
+
+        renderPillsAndOptions();
     } catch (e) {
-        listEl.innerHTML = `<p class="text-xs text-gray-400 p-1">Groups available when logged into an organization.</p>`;
+        select.innerHTML = `<option value="">Could not load groups</option>`;
     }
 }
 
