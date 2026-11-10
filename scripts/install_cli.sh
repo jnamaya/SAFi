@@ -260,7 +260,8 @@ if cfg:
     auth = str(cfg.get("auth") or "key").strip()
     desc = str(cfg.get("description") or "").strip()
     os_type = str(cfg.get("os") or "").strip()
-    print(f"FOUND=1; HOST={shlex.quote(host)}; USER={shlex.quote(user)}; PORT={shlex.quote(port)}; AUTH={shlex.quote(auth)}; DESC={shlex.quote(desc)}; OS_TYPE={shlex.quote(os_type)}")
+    key_file = str(cfg.get("key") or cfg.get("key_file") or cfg.get("identity_file") or "").strip()
+    print(f"FOUND=1; HOST={shlex.quote(host)}; USER={shlex.quote(user)}; PORT={shlex.quote(port)}; AUTH={shlex.quote(auth)}; DESC={shlex.quote(desc)}; OS_TYPE={shlex.quote(os_type)}; KEY_FILE={shlex.quote(key_file)}")
 else:
     print("FOUND=0")
 PYEOF
@@ -373,9 +374,22 @@ PYEOF
     fi
 fi
 
-SSH_OPTS=(-n -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3)
+# Bypass system-wide /etc/ssh/ssh_config.d configs which can fail if owned by nobody or on read-only mounts
+SSH_CONFIG_OPT=()
+if [ -n "$SSH_CONFIG" ] && [ -f "$SSH_CONFIG" ]; then
+    SSH_CONFIG_OPT=(-F "$SSH_CONFIG")
+elif [ -f "${HOME}/.ssh/config" ] && [ "$(stat -c '%a' "${HOME}/.ssh/config" 2>/dev/null)" != "777" ]; then
+    SSH_CONFIG_OPT=(-F "${HOME}/.ssh/config")
+else
+    SSH_CONFIG_OPT=(-F /dev/null)
+fi
+
+SSH_OPTS=("${SSH_CONFIG_OPT[@]}" -n -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3)
 if [ -n "$PORT" ] && [ "$PORT" != "null" ]; then
     SSH_OPTS+=(-p "$PORT")
+fi
+if [ -n "$KEY_FILE" ] && [ "$KEY_FILE" != "null" ]; then
+    SSH_OPTS+=(-i "$KEY_FILE")
 fi
 
 if [ -n "$USER" ] && [ "$USER" != "null" ]; then
