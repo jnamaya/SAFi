@@ -155,7 +155,20 @@ fi
 
 if [ "$1" = "--list" ] || [ "$1" = "-l" ]; then
     echo "Managed Infrastructure Inventory ($INVENTORY_FILE):"
-    jq -r 'to_entries[] | "  - \(.key): \(.value.user // "(ssh-config)")@\(.value.host) (auth: \(.value.auth)) - \(.value.description // "")"' "$INVENTORY_FILE"
+    python3 - "$INVENTORY_FILE" << 'PYEOF' 2>/dev/null || true
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        data = json.load(f)
+    for k, v in data.items():
+        user = v.get("user") or "(ssh-config)"
+        host = v.get("host") or ""
+        auth = v.get("auth") or "key"
+        desc = v.get("description") or ""
+        print(f"  - {k}: {user}@{host} (auth: {auth}) - {desc}")
+except Exception:
+    pass
+PYEOF
     exit 0
 fi
 
@@ -168,20 +181,41 @@ TARGET="$1"
 shift
 CMD="$*"
 
-TARGET_CONFIG=$(jq -r --arg t "$TARGET" '.[$t] // empty' "$INVENTORY_FILE" 2>/dev/null || true)
-if [ -z "$TARGET_CONFIG" ]; then
-    TARGET_CONFIG=$(jq -r --arg t "${TARGET,,}" 'to_entries[] | select(.key | ascii_downcase == $t) | .value' "$INVENTORY_FILE" 2>/dev/null || true)
-fi
+eval "$(python3 - "$INVENTORY_FILE" "$TARGET" << 'PYEOF' 2>/dev/null || echo "FOUND=0"
+import json, sys, shlex
 
-if [ -n "$TARGET_CONFIG" ]; then
-    HOST=$(echo "$TARGET_CONFIG" | jq -r '.host')
-    # Strip leading 'ssh ' prefix if accidentally specified in host
-    HOST="${HOST#ssh }"
-    USER=$(echo "$TARGET_CONFIG" | jq -r '.user // empty')
-    PORT=$(echo "$TARGET_CONFIG" | jq -r '.port // empty')
-    AUTH=$(echo "$TARGET_CONFIG" | jq -r '.auth // "key"')
-    DESC=$(echo "$TARGET_CONFIG" | jq -r '.description // empty')
-    OS_TYPE=$(echo "$TARGET_CONFIG" | jq -r '.os // empty')
+inv_file, target = sys.argv[1], sys.argv[2]
+data = {}
+try:
+    with open(inv_file) as f:
+        data = json.load(f)
+except Exception:
+    pass
+
+cfg = data.get(target)
+if not cfg:
+    for k, v in data.items():
+        if k.lower() == target.lower():
+            cfg = v
+            break
+
+if cfg:
+    host = str(cfg.get("host") or "")
+    if host.startswith("ssh "):
+        host = host[4:]
+    user = str(cfg.get("user") or "").strip()
+    port = str(cfg.get("port") or "").strip()
+    auth = str(cfg.get("auth") or "key").strip()
+    desc = str(cfg.get("description") or "").strip()
+    os_type = str(cfg.get("os") or "").strip()
+    print(f"FOUND=1; HOST={shlex.quote(host)}; USER={shlex.quote(user)}; PORT={shlex.quote(port)}; AUTH={shlex.quote(auth)}; DESC={shlex.quote(desc)}; OS_TYPE={shlex.quote(os_type)}")
+else:
+    print("FOUND=0")
+PYEOF
+)"
+
+if [ "$FOUND" = "1" ]; then
+    : # Target resolved from inventory
 elif [[ "$TARGET" == *"@"* ]] || [[ "$TARGET" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]] || [[ "$TARGET" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     if [[ "$TARGET" == *"@"* ]]; then
         USER="${TARGET%%@*}"
@@ -196,13 +230,17 @@ elif [[ "$TARGET" == *"@"* ]] || [[ "$TARGET" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ 
     OS_TYPE="linux"
 else
     echo "Error: Unknown host alias '$TARGET'. Available hosts:" >&2
-    jq -r 'keys[] | "  - \(.)"' "$INVENTORY_FILE" 2>/dev/null || true >&2
+    python3 - "$INVENTORY_FILE" << 'PYEOF' 2>/dev/null || true >&2
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        for k in json.load(f).keys():
+            print(f"  - {k}")
+except Exception:
+    pass
+PYEOF
     exit 1
 fi
-PORT=$(echo "$TARGET_CONFIG" | jq -r '.port // empty')
-AUTH=$(echo "$TARGET_CONFIG" | jq -r '.auth // "key"')
-DESC=$(echo "$TARGET_CONFIG" | jq -r '.description // empty')
-OS_TYPE=$(echo "$TARGET_CONFIG" | jq -r '.os // empty')
 
 # Automatically wrap PowerShell commands on Windows targets into UTF-16LE Base64 (-EncodedCommand)
 # with -NoProfile -NonInteractive -InputFormat None. Fast commands use $ProgressPreference='SilentlyContinue',
