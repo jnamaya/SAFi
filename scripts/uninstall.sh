@@ -21,9 +21,21 @@ fi
 echo "Removing application package from ~/.local/share/safi-cli..."
 rm -rf "${HOME}/.local/share/safi-cli"
 
-# 4. Remove Windows host bridges if running in WSL
+# 4. Remove config and scratchpad directories
+echo "Removing SAFi configuration and state..."
+rm -rf "${HOME}/.config/safi"
+rm -rf "${HOME}/.safi"
+
+# Clean up ~/.config if empty
+[ -d "${HOME}/.config" ] && [ -z "$(ls -A "${HOME}/.config" 2>/dev/null)" ] && rmdir "${HOME}/.config" 2>/dev/null || true
+# Clean up ~/.local/bin if empty
+[ -d "${HOME}/.local/bin" ] && [ -z "$(ls -A "${HOME}/.local/bin" 2>/dev/null)" ] && rmdir "${HOME}/.local/bin" 2>/dev/null || true
+# Clean up ~/.local if empty
+[ -d "${HOME}/.local" ] && [ -z "$(ls -A "${HOME}/.local" 2>/dev/null)" ] && rmdir "${HOME}/.local" 2>/dev/null || true
+
+# 5. Remove Windows host bridges and folders if running in WSL
 if grep -qi "microsoft" /proc/version 2>/dev/null && command -v cmd.exe &>/dev/null; then
-    echo "Removing Windows host bridges..."
+    echo "Cleaning up Windows host directories and bridges..."
     WIN_APPS_RAW=$(cmd.exe /c "echo %LOCALAPPDATA%\Microsoft\WindowsApps" 2>/dev/null | tr -d '\r')
     if [ -n "$WIN_APPS_RAW" ] && command -v wslpath &>/dev/null; then
         WIN_APPS_DIR=$(wslpath "$WIN_APPS_RAW" 2>/dev/null || true)
@@ -40,16 +52,13 @@ if grep -qi "microsoft" /proc/version 2>/dev/null && command -v cmd.exe &>/dev/n
                   "${WIN_PROFILE_DIR}/.local/bin/saficli.cmd" \
                   "${WIN_PROFILE_DIR}/.local/bin/sys-exec.cmd" \
                   "${WIN_PROFILE_DIR}/.local/bin/safi-setup-key.cmd"
+            rm -rf "${WIN_PROFILE_DIR}/.safi"
+            rm -rf "${WIN_PROFILE_DIR}/.config/safi"
+            [ -d "${WIN_PROFILE_DIR}/.config" ] && [ -z "$(ls -A "${WIN_PROFILE_DIR}/.config" 2>/dev/null)" ] && rmdir "${WIN_PROFILE_DIR}/.config" 2>/dev/null || true
+            [ -d "${WIN_PROFILE_DIR}/.local/bin" ] && [ -z "$(ls -A "${WIN_PROFILE_DIR}/.local/bin" 2>/dev/null)" ] && rmdir "${WIN_PROFILE_DIR}/.local/bin" 2>/dev/null || true
+            [ -d "${WIN_PROFILE_DIR}/.local" ] && [ -z "$(ls -A "${WIN_PROFILE_DIR}/.local" 2>/dev/null)" ] && rmdir "${WIN_PROFILE_DIR}/.local" 2>/dev/null || true
         fi
     fi
 fi
 
-# 5. Clean up config/session data if requested or default
-if [ "$1" = "--purge" ] || [ "$1" = "-p" ]; then
-    echo "Purging configuration and sessions (~/.config/safi)..."
-    rm -rf "${HOME}/.config/safi"
-else
-    echo "Configuration kept in ~/.config/safi (use --purge to remove config and sessions)."
-fi
-
-echo "✓ SAFi CLI has been completely uninstalled."
+echo "✓ SAFi CLI and all configuration (.config, .local, .safi) have been completely removed."
