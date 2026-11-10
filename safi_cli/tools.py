@@ -587,7 +587,6 @@ def _build_bwrap_command(
 
         sensitive_dirs = [
             home / ".ssh",
-            home / ".config" / "safi",
             home / ".config" / "gh",
             home / ".aws",
             home / ".azure",
@@ -601,6 +600,7 @@ def _build_bwrap_command(
                 bwrap_cmd.extend(["--tmpfs", str(sdir)])
 
         sensitive_files = [
+            home / ".config" / "safi" / "config.json",
             home / ".bash_history",
             home / ".zsh_history",
             home / ".netrc",
