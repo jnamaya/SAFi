@@ -1574,7 +1574,7 @@ def print_final_output(text: str, res: Dict[str, Any]):
     w = console.width
     margin = CLI_MARGIN if getattr(console, "is_terminal", False) else 0
     avail = w - (margin * 2) - 6
-    left_text = Text.from_markup(f"[bold {COLOR_BRAND_400}]● SAFI Response[/] ")
+    left_text = Text.from_markup(f"[bold {COLOR_BRAND_400}]● SAFi Response[/] ")
     right_text = Text.from_markup(f" [dim]{now_str}[/dim]")
     gap = avail - (left_text.cell_len + right_text.cell_len)
 
@@ -1582,7 +1582,7 @@ def print_final_output(text: str, res: Dict[str, Any]):
         top_title = Text.assemble(left_text, ("─" * gap, COLOR_BRAND_600), right_text)
         title_align = "left"
     else:
-        top_title = f"[bold {COLOR_BRAND_400}]● SAFI Response[/]"
+        top_title = f"[bold {COLOR_BRAND_400}]● SAFi Response[/]"
         title_align = "center"
 
     response_panel = Panel(
