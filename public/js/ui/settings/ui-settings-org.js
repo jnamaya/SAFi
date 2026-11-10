@@ -540,48 +540,6 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
 
         ${verificationSection}
 
-        <div class="settings-card">
-            <section>
-                <div class="flex items-center justify-between mb-3">
-                     <h4 class="text-lg font-semibold">Members</h4>
-                     <span class="text-xs text-neutral-500 bg-neutral-100 dark:bg-neutral-800 px-2 py-1 rounded-full" id="member-count-badge">...</span>
-                </div>
-                <div class="mb-3 flex items-center gap-2">
-                    <input type="text" id="inp-member-search" placeholder="Search by name, email, or username…"
-                        class="flex-1 min-w-0 rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm">
-                    <button id="btn-member-search" type="button" title="Search"
-                        class="shrink-0 rounded-lg bg-green-600 hover:bg-green-700 text-white px-4 py-2 text-sm font-medium transition-colors">
-                        Search
-                    </button>
-                    <button id="btn-member-search-clear" type="button" title="Clear search"
-                        class="shrink-0 rounded-lg border border-gray-300 dark:border-neutral-600 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 px-3 py-2 text-sm transition-colors">
-                        Clear
-                    </button>
-                </div>
-                <div id="org-members-table-container" class="bg-white dark:bg-neutral-900 rounded-lg border border-neutral-200 dark:border-neutral-800 overflow-hidden min-h-[100px]">
-                     <div class="p-8 text-center text-neutral-500">
-                         <div class="animate-spin inline-block w-6 h-6 border-[3px] border-current border-t-transparent text-green-600 rounded-full" role="status" aria-label="loading"></div>
-                     </div>
-                </div>
-                ${cloudEdition ? `<div class="border-t border-gray-200 dark:border-neutral-700 pt-4 mt-4">
-                    <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Invite a member</span>
-                    <div class="mt-2 flex flex-wrap items-center gap-2">
-                        <input type="email" id="inp-invite-email" placeholder="person@company.com"
-                            class="flex-1 min-w-[200px] rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm">
-                        <select id="sel-invite-role" class="rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm">
-                            <option value="member">member</option>
-                            <option value="auditor">auditor</option>
-                            <option value="editor">editor</option>
-                            <option value="admin">admin</option>
-                        </select>
-                        <button id="btn-send-invite" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-bold">Invite</button>
-                    </div>
-                    <p class="text-xs text-gray-400 mt-1">Applies automatically if they sign in with a matching Google or Microsoft account. If this deployment has email configured, they'll also be sent a link to set a password and join directly : otherwise a Google or Microsoft account on this address is the only way in. Expires after 14 days.</p>
-                    <div id="pending-invites-list" class="mt-3 text-sm text-gray-500"></div>
-                </div>` : ""}
-            </section>
-        </div>
-
         ${(currentUser && currentUser.role === 'admin') ? `
         <div class="settings-card">
             <section>
@@ -638,7 +596,51 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                  </div>
             </section>
         </div>
+        ` : ''}
 
+        <div class="settings-card">
+            <section>
+                <div class="flex items-center justify-between mb-3">
+                     <h4 class="text-lg font-semibold">Members</h4>
+                     <span class="text-xs text-neutral-500 bg-neutral-100 dark:bg-neutral-800 px-2 py-1 rounded-full" id="member-count-badge">...</span>
+                </div>
+                <div class="mb-3 flex items-center gap-2">
+                    <input type="text" id="inp-member-search" placeholder="Search by name, email, or username…"
+                        class="flex-1 min-w-0 rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm">
+                    <button id="btn-member-search" type="button" title="Search"
+                        class="shrink-0 rounded-lg bg-green-600 hover:bg-green-700 text-white px-4 py-2 text-sm font-medium transition-colors">
+                        Search
+                    </button>
+                    <button id="btn-member-search-clear" type="button" title="Clear search"
+                        class="shrink-0 rounded-lg border border-gray-300 dark:border-neutral-600 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 px-3 py-2 text-sm transition-colors">
+                        Clear
+                    </button>
+                </div>
+                <div id="org-members-table-container" class="bg-white dark:bg-neutral-900 rounded-lg border border-neutral-200 dark:border-neutral-800 overflow-hidden min-h-[100px]">
+                     <div class="p-8 text-center text-neutral-500">
+                         <div class="animate-spin inline-block w-6 h-6 border-[3px] border-current border-t-transparent text-green-600 rounded-full" role="status" aria-label="loading"></div>
+                     </div>
+                </div>
+                ${cloudEdition ? `<div class="border-t border-gray-200 dark:border-neutral-700 pt-4 mt-4">
+                    <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Invite a member</span>
+                    <div class="mt-2 flex flex-wrap items-center gap-2">
+                        <input type="email" id="inp-invite-email" placeholder="person@company.com"
+                            class="flex-1 min-w-[200px] rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm">
+                        <select id="sel-invite-role" class="rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm">
+                            <option value="member">member</option>
+                            <option value="auditor">auditor</option>
+                            <option value="editor">editor</option>
+                            <option value="admin">admin</option>
+                        </select>
+                        <button id="btn-send-invite" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-bold">Invite</button>
+                    </div>
+                    <p class="text-xs text-gray-400 mt-1">Applies automatically if they sign in with a matching Google or Microsoft account. If this deployment has email configured, they'll also be sent a link to set a password and join directly : otherwise a Google or Microsoft account on this address is the only way in. Expires after 14 days.</p>
+                    <div id="pending-invites-list" class="mt-3 text-sm text-gray-500"></div>
+                </div>` : ""}
+            </section>
+        </div>
+
+        ${(currentUser && currentUser.role === 'admin') ? `
         <div class="settings-card">
             <section>
                 <div class="flex items-center justify-between mb-3">
@@ -676,10 +678,10 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
             </section>
         </div>
 
-        ${identitySessionsCard}
-
         ${cloudEdition ? '<div id="scim-section"></div>' : ''}
-        ` : identitySessionsCard}
+        ` : ''}
+
+        ${identitySessionsCard}
     `;
 
     // Attach Listeners
