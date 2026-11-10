@@ -450,6 +450,30 @@ if [ -n "$PORT" ] && [ "$PORT" != "null" ]; then
     SSH_OPTS+=(-p "$PORT")
 fi
 if [ -n "$KEY_FILE" ] && [ "$KEY_FILE" != "null" ]; then
+    # Expand tilde
+    KEY_FILE="${KEY_FILE/#\~/$HOME}"
+    # Convert Windows path (e.g. C:\Users\... or C:/Users/...) to WSL /mnt/c/Users/...
+    if [[ "$KEY_FILE" =~ ^[a-zA-Z]:[/\\] ]]; then
+        DRIVE="${KEY_FILE:0:1}"
+        DRIVE="${DRIVE,,}"
+        REST="${KEY_FILE:2}"
+        REST="${REST//\\//}"
+        REST="${REST#/}"
+        KEY_FILE="/mnt/${DRIVE}/${REST}"
+    fi
+    # If the key file is on /mnt/ or has open permissions, stage a chmod 600 copy
+    if [ -f "$KEY_FILE" ]; then
+        PERMS=$(stat -c '%a' "$KEY_FILE" 2>/dev/null || echo "777")
+        if [ "$PERMS" != "600" ] && [ "$PERMS" != "400" ]; then
+            SAFE_KEY_DIR="${HOME}/.ssh/staged_keys"
+            mkdir -p "$SAFE_KEY_DIR" && chmod 700 "$SAFE_KEY_DIR"
+            KEY_NAME=$(basename "$KEY_FILE")
+            SAFE_KEY="${SAFE_KEY_DIR}/${KEY_NAME}"
+            cp -f "$KEY_FILE" "$SAFE_KEY" 2>/dev/null || true
+            chmod 600 "$SAFE_KEY" 2>/dev/null || true
+            [ -f "$SAFE_KEY" ] && KEY_FILE="$SAFE_KEY"
+        fi
+    fi
     SSH_OPTS+=(-i "$KEY_FILE")
 fi
 
