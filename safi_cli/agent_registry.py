@@ -228,7 +228,7 @@ def discover_models(client: SafiClient, force_refresh: bool = False) -> List[Dic
     """Discover available AI models from the SAFi backend policy.
 
     The backend is the single source of truth. If it returns nothing (no
-    configured providers, or the request is unauthorized), the list is empty —
+    configured providers, or the request is unauthorized), the list is empty;
     we never fall back to a bundled/static catalog.
     """
     global AVAILABLE_MODELS
@@ -472,7 +472,8 @@ COMMAND_OPTIONS = [
     ("reasoning", "Reasoning Level", "Set thinking effort: /reasoning <low|medium|high|off>"),
     ("memory", "Working Memory", "View active memory or compact tokens (/memory compress)"),
     ("skills", "Project Skills", "List custom project skills defined in .safi/skills/"),
-    ("user", "User Profile", "View or set your display name"),
+    ("schedule", "Task Scheduler", "Schedule delayed or recurring agent tasks (/schedule)"),
+    ("queue", "Prompt Queue", "View or clear queued prompts (/queue)"),
     ("usage", "Session Usage", "Show session token, cost, and compaction totals"),
     ("last", "Last Tool Output", "Page through the full output of the most recent tool result"),
     ("compact-ui", "Toggle Audit Line", "Hide or show the compact governance audit line on responses"),

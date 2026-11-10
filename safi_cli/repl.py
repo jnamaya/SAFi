@@ -3,6 +3,7 @@
 import glob
 import logging
 import os
+import queue
 import re
 import shutil
 import sys
@@ -122,6 +123,9 @@ def print_help():
         ("/usage", "Show session token, cost, and compaction totals"),
         ("/last [tool]", "Page through the full output of the last tool result"),
         ("/compact-ui", "Hide or show the compact governance audit line on responses"),
+        ("/schedule <time> <instruction>", "Schedule delayed or recurring tasks (e.g. /schedule 10m run audit)"),
+        ("/tasks", "List active scheduled tasks and countdowns"),
+        ("/queue", "View or clear queued prompts awaiting execution"),
         ("/skills", "List custom project skills defined in .safi/skills/"),
         ("/new", "Start a fresh conversation session without clearing screen"),
         ("/clear [screen]", "Clear screen & reset session memory (or /clear screen for visual only)"),
@@ -141,6 +145,109 @@ def print_help():
             {"name": "Description", "style": "dim white"},
         ],
         [list(row) for row in commands],
+    )
+
+
+def _render_scheduled_tasks(tasks: List[Any]) -> None:
+    from . import scheduler
+    if not tasks:
+        ui.console.print("[dim]No scheduled tasks. Use /schedule <time> <instruction> to create one.[/dim]")
+        return
+    rows = []
+    for t in tasks:
+        task_type = "Recurring" if t.repeat else "Once"
+        rem = scheduler.format_remaining_time(t.remaining_seconds) if t.status == "pending" else t.status
+        interval = scheduler.format_remaining_time(t.interval_seconds) if t.interval_seconds else "-"
+        prompt_snippet = t.prompt if len(t.prompt) <= 35 else t.prompt[:32] + "..."
+        agent_lbl = t.agent or "active"
+        rows.append([t.id, task_type, rem, interval, prompt_snippet, agent_lbl, t.status])
+    ui.render_menu(
+        "Scheduled Tasks",
+        [
+            {"name": "Task ID", "style": f"bold {ui.COLOR_BRAND_400}"},
+            {"name": "Type", "style": "cyan"},
+            {"name": "Next Run", "style": "bold yellow"},
+            {"name": "Interval", "style": "dim"},
+            {"name": "Prompt", "style": "white"},
+            {"name": "Agent", "style": "dim green"},
+            {"name": "Status", "style": "magenta"},
+        ],
+        rows,
+    )
+    ui.console.print("[dim]Cancel a task with: /schedule cancel <task_id>[/dim]")
+
+
+def _render_queued_prompts(items: List[Any]) -> None:
+    if not items:
+        ui.console.print("[dim]No prompts currently queued.[/dim]")
+        return
+    rows = []
+    for idx, item in enumerate(items, 1):
+        prompt_snippet = item.prompt if len(item.prompt) <= 45 else item.prompt[:42] + "..."
+        rows.append([f"#{idx}", item.id, item.source, prompt_snippet, item.agent or "active"])
+    ui.render_menu(
+        "Prompt Queue",
+        [
+            {"name": "Position", "style": f"bold {ui.COLOR_BRAND_400}"},
+            {"name": "ID", "style": "dim"},
+            {"name": "Source", "style": "cyan"},
+            {"name": "Prompt", "style": "white"},
+            {"name": "Agent", "style": "dim green"},
+        ],
+        rows,
+    )
+    ui.console.print("[dim]Clear queue with: /queue clear[/dim]")
+
+
+def _handle_schedule_command(line: str, sched: Any, current_agent: str) -> None:
+    from . import scheduler
+    parts = line.split(maxsplit=2)
+    sub = parts[1].strip().lower() if len(parts) > 1 else ""
+
+    if sub in ("list", "ls", "show", ""):
+        _render_scheduled_tasks(sched.list_all_tasks())
+        return
+
+    if sub in ("cancel", "rm", "delete", "remove"):
+        target_id = parts[2].strip() if len(parts) > 2 else ""
+        if not target_id:
+            ui.console.print("[dim]Usage: /schedule cancel <task_id>[/dim]")
+        elif sched.cancel_task(target_id):
+            ui.console.print(f"[bold green]✓ Cancelled scheduled task:[/] [cyan]{target_id}[/]")
+        else:
+            ui.console.print(f"[{ui.COLOR_WARN}]Task ID not found:[/] {target_id}")
+        return
+
+    if sub in ("every", "recurring", "repeat"):
+        sub_parts = parts[2].split(maxsplit=1) if len(parts) > 2 else []
+        if len(sub_parts) < 2:
+            ui.console.print("[dim]Usage: /schedule every <interval> <instruction> (e.g. /schedule every 1h run health check)[/dim]")
+            return
+        interval_str, task_prompt = sub_parts[0], sub_parts[1].strip()
+        interval_sec = scheduler.parse_time_offset(interval_str)
+        if not interval_sec:
+            ui.console.print(f"[{ui.COLOR_FAIL}]Invalid interval:[/] '{interval_str}'. Use formats like 30s, 5m, 1h, 1d.")
+            return
+        t = sched.schedule_recurring(interval_sec, task_prompt, agent=current_agent)
+        ui.console.print(
+            f"[bold green]✓ Scheduled recurring task:[/] [cyan]{t.id}[/]\n"
+            f"[dim]Runs every {scheduler.format_remaining_time(interval_sec)}: '{t.prompt}'[/dim]"
+        )
+        return
+
+    time_str = sub
+    task_prompt = parts[2].strip() if len(parts) > 2 else ""
+    if not task_prompt:
+        ui.console.print("[dim]Usage: /schedule <time> <instruction> (e.g. /schedule 10m run git status)[/dim]")
+        return
+    delay_sec = scheduler.parse_time_offset(time_str)
+    if not delay_sec:
+        ui.console.print(f"[{ui.COLOR_FAIL}]Invalid delay:[/] '{time_str}'. Use formats like 30s, 5m, 1h, 1d.")
+        return
+    t = sched.schedule_once(delay_sec, task_prompt, agent=current_agent)
+    ui.console.print(
+        f"[bold green]✓ Scheduled task:[/] [cyan]{t.id}[/]\n"
+        f"[dim]Runs in {scheduler.format_remaining_time(delay_sec)}: '{t.prompt}'[/dim]"
     )
 
 
@@ -415,16 +522,16 @@ def prompt_command_menu(
             ui.console.print(f"[dim]No custom skills found in {workspace_root / '.safi' / 'skills'}. Create a .md file there to add skills![/dim]")
         return current_agent, current_conv, current_model, current_user_name, False
 
-    elif choice_clean in ("user", "name"):
-        try:
-            curr = current_user_name or config.resolve_user_name() or "Unset"
-            new_name = input(f"Enter user name (currently '{curr}'): ").strip()
-            if new_name:
-                config.save_user_name(new_name)
-                current_user_name = new_name
-                ui.console.print(f"[bold {ui.COLOR_PASS}]✓ User name updated to:[/] [magenta]{new_name}[/]")
-        except (KeyboardInterrupt, EOFError):
-            pass
+    elif choice_clean in ("schedule", "tasks", "schedules"):
+        from . import scheduler
+        sched = scheduler.get_scheduler()
+        _render_scheduled_tasks(sched.list_all_tasks())
+        return current_agent, current_conv, current_model, current_user_name, False
+
+    elif choice_clean in ("queue", "queued"):
+        from . import scheduler
+        q = scheduler.get_prompt_queue()
+        _render_queued_prompts(q.peek_all())
         return current_agent, current_conv, current_model, current_user_name, False
 
     elif choice_clean in ("usage", "totals"):
@@ -491,8 +598,6 @@ SLASH_COMMANDS = [
     "/skills",
     "/audit",
     "/ledger",
-    "/user",
-    "/name",
     "/new",
     "/clear",
     "/reset",
@@ -501,6 +606,10 @@ SLASH_COMMANDS = [
     "/usage",
     "/last",
     "/compact-ui",
+    "/schedule",
+    "/tasks",
+    "/schedules",
+    "/queue",
     "/sessions",
     "/setup-key",
     "/ssh-key",
@@ -698,6 +807,60 @@ def interactive_repl(
     current_conv = conversation_id
     cancel_event = threading.Event()
 
+    from . import scheduler
+    sched = scheduler.get_scheduler()
+    sched.set_wakeup_callback(prompt_input.wakeup_prompt_session)
+    prompt_q = scheduler.get_prompt_queue()
+    draft_text = ""
+
+    ui.set_non_blocking_mode(True)
+    turn_worker_stop = threading.Event()
+
+    def _turn_worker_loop():
+        while not turn_worker_stop.is_set():
+            item = prompt_q.get(block=True, timeout=0.25)
+            if turn_worker_stop.is_set() or not item:
+                continue
+
+            prompt_text = item.prompt
+            turn_agent = item.agent or current_agent
+            cancel_event.clear()
+            scheduler.set_agent_busy(True, prompt_text)
+            if item.source == "scheduled":
+                ui.console.print(
+                    f"\n[bold cyan]● Running scheduled task ({item.task_id or item.source}):[/] "
+                    f"[bold white]{prompt_text}[/]"
+                )
+            ui.print_user_prompt(prompt_text, agent=turn_agent, user_name=current_user_name)
+            try:
+                run_agent_turn(
+                    client=client,
+                    prompt=prompt_text,
+                    workspace_root=workspace_root,
+                    conversation_id=current_conv,
+                    user_id=user_id,
+                    agent=turn_agent,
+                    user_name=current_user_name,
+                    model=current_model,
+                    auto_approve=auto_approve,
+                    max_steps=max_steps,
+                    cancel_event=cancel_event,
+                    echo_prompt=False,
+                    reasoning_effort=current_effort,
+                )
+            except KeyboardInterrupt:
+                ui.clear_live_status_tail()
+                ui.console.print("\n[bold yellow]↳ Interrupted.[/bold yellow]")
+            except Exception as exc:
+                logger.error("Turn execution error: %s", exc)
+                ui.print_error(f"Error executing turn: {exc}")
+            finally:
+                scheduler.set_agent_busy(False)
+                prompt_input.wakeup_prompt_session()
+
+    worker_thread = threading.Thread(target=_turn_worker_loop, daemon=True, name="safi-turn-worker")
+    worker_thread.start()
+
     try:
         while True:
             agent_hist_file = str(config.get_agent_history_file(current_agent))
@@ -717,23 +880,39 @@ def interactive_repl(
                     agent_label=current_agent,
                     completions_fn=_rich_completions,
                     history_path=agent_hist_file if rich_input else None,
+                    default=draft_text,
                 )
+                draft_text = ""
                 if raw_line is None:
                     ui.console.print("\n[dim]Session terminated.[/dim]")
                     break
-                line = raw_line.strip()
+
+                if isinstance(raw_line, tuple) and len(raw_line) == 2 and raw_line[0] == "__QUEUED_WAKEUP__":
+                    draft_text = raw_line[1] or ""
+                    continue
+                else:
+                    line = str(raw_line).strip()
             except (KeyboardInterrupt, EOFError):
+                if scheduler.is_agent_busy():
+                    cancel_event.set()
+                    ui.console.print("\n[bold yellow]↳ Sent interrupt to active turn (Ctrl+C).[/bold yellow]")
+                    continue
                 ui.console.print("\n[dim]Session terminated.[/dim]")
                 break
 
             if not line:
                 continue
+
             if line.lower() in ("exit", "quit", ":q", "/exit", "/quit"):
                 ui.console.print("[dim]Goodbye.[/dim]")
                 break
 
             if line.lower() in ("/cancel", "/stop", "/abort"):
-                ui.console.print("[dim]No agent turn is currently running. Press Ctrl+C during a turn to interrupt.[/dim]")
+                if scheduler.is_agent_busy():
+                    cancel_event.set()
+                    ui.console.print("\n[bold yellow]↳ Sent interrupt to active turn.[/bold yellow]")
+                else:
+                    ui.console.print("[dim]No agent turn is currently running.[/dim]")
                 continue
 
             if line.lower() in ("/status", "/progress"):
@@ -752,6 +931,20 @@ def interactive_repl(
                 )
                 if should_exit:
                     break
+                continue
+
+            if line.lower().startswith(("/schedule", "/task", "/tasks")):
+                _handle_schedule_command(line, sched, current_agent)
+                continue
+
+            if line.lower().startswith(("/queue", "/queued")):
+                parts = line.split(maxsplit=1)
+                sub = parts[1].strip().lower() if len(parts) > 1 else ""
+                if sub in ("clear", "flush", "reset", "empty"):
+                    cleared = prompt_q.clear()
+                    ui.console.print(f"[bold green]✓ Cleared {cleared} queued prompt(s).[/]")
+                else:
+                    _render_queued_prompts(prompt_q.peek_all())
                 continue
 
             if line.lower() == "/new":
@@ -922,19 +1115,6 @@ def interactive_repl(
                 )
                 continue
 
-            if line.lower().startswith(("/user", "/name")):
-                parts = line.split(maxsplit=1)
-                if len(parts) > 1:
-                    current_user_name = parts[1].strip()
-                    config.save_user_name(current_user_name)
-                    ui.console.print(f"[bold green]✓ User name updated to:[/] [magenta]{current_user_name}[/]")
-                else:
-                    ui.console.print(
-                        f"[bold]Current user name:[/] [magenta]{current_user_name or 'Unset'}[/]\n"
-                        f"[dim]To change, type: /user <Your Name>[/dim]"
-                    )
-                continue
-
             if line.lower().startswith("/reasoning") or line.lower().startswith("/thinking"):
                 parts = line.split(maxsplit=1)
                 req = parts[1].strip().lower() if len(parts) > 1 else ""
@@ -1044,29 +1224,11 @@ def interactive_repl(
                     matched_skill = local_skills[skill_trigger]
                     rendered_prompt = matched_skill.render_prompt(skill_args)
                     ui.console.print(f"[bold {ui.COLOR_BRAND_400}]● Skill:[/] [bold white]{matched_skill.description}[/]")
-                    ui.print_user_prompt(rendered_prompt)
-                    try:
-                        run_agent_turn(
-                            client=client,
-                            prompt=rendered_prompt,
-                            workspace_root=workspace_root,
-                            conversation_id=current_conv,
-                            user_id=user_id,
-                            agent=current_agent,
-                            user_name=current_user_name,
-                            model=current_model,
-                            auto_approve=auto_approve,
-                            max_steps=max_steps,
-                            cancel_event=cancel_event,
-                            echo_prompt=False,
-                            reasoning_effort=current_effort,
-                        )
-                    except KeyboardInterrupt:
-                        ui.clear_live_status_tail()
-                        ui.console.print("\n[bold yellow]↳ Interrupted.[/bold yellow]")
-                    except Exception as exc:
-                        logger.error("Skill execution error: %s", exc)
-                        ui.print_error(f"Error executing skill: {exc}")
+                    if scheduler.is_agent_busy():
+                        prompt_q.put(rendered_prompt, source=f"skill:{skill_trigger}", agent=current_agent)
+                        ui.console.print(f"[bold green]✓ Queued skill prompt for next turn:[/] [white]{matched_skill.description}[/]")
+                    else:
+                        prompt_q.put(rendered_prompt, source=f"skill:{skill_trigger}", agent=current_agent)
                     continue
                 elif skill_trigger in ("skills", "list-skills"):
                     if local_skills:
@@ -1110,33 +1272,18 @@ def interactive_repl(
             if is_serving_alias(config.resolve_intellect_model(current_agent)):
                 current_model = resolve_model_preference(client, current_agent, force_refresh=True)
 
-            ui.print_user_prompt(line)
+            if scheduler.is_agent_busy():
+                prompt_q.put(line, source="user", agent=current_agent)
+                ui.console.print(f"[bold green]✓ Queued prompt #{len(prompt_q.peek_all())}:[/] [bold white]{line}[/]")
+                continue
 
-            try:
-                run_agent_turn(
-                    client=client,
-                    prompt=line,
-                    workspace_root=workspace_root,
-                    conversation_id=current_conv,
-                    user_id=user_id,
-                    agent=current_agent,
-                    user_name=current_user_name,
-                    model=current_model,
-                    auto_approve=auto_approve,
-                    max_steps=max_steps,
-                    cancel_event=cancel_event,
-                    echo_prompt=False,
-                    reasoning_effort=current_effort,
-                )
-            except KeyboardInterrupt:
-                ui.clear_live_status_tail()
-                ui.console.print("\n[bold yellow]↳ Interrupted.[/bold yellow]")
-            except Exception as exc:
-                logger.error("Turn execution error: %s", exc)
-                ui.print_error(f"Error executing turn: {exc}")
+            prompt_q.put(line, source="user", agent=current_agent)
             continue
 
     finally:
+        ui.set_non_blocking_mode(False)
+        turn_worker_stop.set()
+        sched.shutdown()
         try:
             config.set_workspace_agent(str(workspace_root), current_agent, current_conv)
         except Exception as exc:

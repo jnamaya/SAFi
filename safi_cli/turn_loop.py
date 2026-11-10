@@ -218,7 +218,7 @@ def run_agent_turn(
                 except Exception:
                     pass
 
-            initial_step = f"Swapping {model} into VRAM (~15-20s)" if is_standby_local else "Governing turn"
+            initial_step = f"Swapping {model} into VRAM (~15-20s)" if is_standby_local else f"Running with {model}"
             last_status_markup = ui.build_progress_line(None, initial_step if is_standby_local else None, 0.0, model=model)
             try:
                 with ui.console.status(
@@ -232,9 +232,11 @@ def run_agent_turn(
                         current_step_text = initial_step
                         progress_codes: List[str] = []
                         while not stop_poller.wait(0.25):
+                            if cancel_event and cancel_event.is_set():
+                                break
                             try:
                                 progress_data = client.get_turn_progress(turn_msg_id, user_id=user_id)
-                                if stop_poller.is_set():
+                                if stop_poller.is_set() or (cancel_event and cancel_event.is_set()):
                                     break
                                 if isinstance(progress_data, dict):
                                     codes = progress_data.get("progress")
@@ -244,10 +246,10 @@ def run_agent_turn(
                                     if raw_step and raw_step != current_step_text:
                                         current_step_text = raw_step
                             except Exception as exc:
-                                if stop_poller.is_set():
+                                if stop_poller.is_set() or (cancel_event and cancel_event.is_set()):
                                     break
                                 logger.debug("Progress poll error: %s", exc)
-                            if stop_poller.is_set():
+                            if stop_poller.is_set() or (cancel_event and cancel_event.is_set()):
                                 break
                             elapsed = time.time() - start_time
                             last_status_markup = ui.build_progress_line(
@@ -276,20 +278,52 @@ def run_agent_turn(
                             else None
                         )
 
-                        res = client.send_turn(
-                            user_id=user_id,
-                            conversation_id=conversation_id,
-                            message=prompt,
-                            workspace_root=str(workspace_root.resolve()),
-                            agent=agent,
-                            user_name=user_name,
-                            model=model,
-                            tools=active_tools,
-                            tool_results=tool_results,
-                            recent_turns=recent_turns,
-                            message_id=turn_msg_id,
-                            reasoning_effort=reasoning_effort,
-                        )
+                        send_res: Optional[Dict[str, Any]] = None
+                        send_err: Optional[Exception] = None
+
+                        def _send_worker():
+                            nonlocal send_res, send_err
+                            try:
+                                send_res = client.send_turn(
+                                    user_id=user_id,
+                                    conversation_id=conversation_id,
+                                    message=prompt,
+                                    workspace_root=str(workspace_root.resolve()),
+                                    agent=agent,
+                                    user_name=user_name,
+                                    model=model,
+                                    tools=active_tools,
+                                    tool_results=tool_results,
+                                    recent_turns=recent_turns,
+                                    message_id=turn_msg_id,
+                                    reasoning_effort=reasoning_effort,
+                                )
+                            except Exception as exc:
+                                send_err = exc
+
+                        send_thread = threading.Thread(target=_send_worker, daemon=True)
+                        send_thread.start()
+
+                        cancelled_during_send = False
+                        while send_thread.is_alive():
+                            send_thread.join(timeout=0.15)
+                            if cancel_event and cancel_event.is_set():
+                                cancelled_during_send = True
+                                try:
+                                    client.cancel_turn(turn_msg_id, user_id=user_id)
+                                except Exception:
+                                    pass
+                                break
+
+                        if cancelled_during_send:
+                            ui.clear_live_status_tail(last_status_markup)
+                            ui.console.print("\n[yellow]Turn cancelled by user.[/yellow]")
+                            return None
+
+                        if send_err is not None:
+                            raise send_err
+
+                        res = send_res or {}
                     finally:
                         stop_poller.set()
                         poller.join(timeout=0.5)
@@ -304,6 +338,14 @@ def run_agent_turn(
 
             ui.clear_live_status_tail(last_status_markup)
 
+            if cancel_event and cancel_event.is_set():
+                ui.console.print("\n[yellow]Turn cancelled by user.[/yellow]")
+                return None
+
+            if res.get("audit_status") == "cancelled" or res.get("willDecision") == "cancelled":
+                ui.console.print("\n[yellow]Turn was cancelled.[/yellow]")
+                return None
+
             if is_standby_local and res and not res.get("error"):
                 try:
                     from .agent_registry import AVAILABLE_MODELS
@@ -314,9 +356,15 @@ def run_agent_turn(
                     pass
 
             if res.get("type") == "tool_call":
+                if cancel_event and cancel_event.is_set():
+                    ui.console.print("\n[yellow]Turn cancelled by user.[/yellow]")
+                    return None
                 batch = res.get("tool_calls")
                 if isinstance(batch, list) and batch:
                     for proposal in batch:
+                        if cancel_event and cancel_event.is_set():
+                            ui.console.print("\n[yellow]Turn cancelled by user.[/yellow]")
+                            return None
                         if isinstance(proposal, dict):
                             subagents_run_count = _handle_tool_proposal(
                                 proposal,
@@ -438,9 +486,17 @@ def run_agent_turn(
                 else:
                     ui.console.print(f"  [dim green]↳ ✓ Executed {t_name} (server MCP)[/dim green]")
 
+            if cancel_event and cancel_event.is_set():
+                ui.console.print("\n[yellow]Turn cancelled by user.[/yellow]")
+                return None
+
             _last_turn_result = res
             ui.print_final_output(final_text, res)
             return res
+
+        if cancel_event and cancel_event.is_set():
+            ui.console.print("\n[yellow]Turn cancelled by user.[/yellow]")
+            return None
 
         if tool_results:
             tool_results.append({
@@ -471,6 +527,11 @@ def run_agent_turn(
             except SafiClientError as err:
                 ui.print_error(str(err))
                 return None
+
+            if cancel_event and cancel_event.is_set():
+                ui.console.print("\n[yellow]Turn cancelled by user.[/yellow]")
+                return None
+
             final_text = res.get("finalOutput") or ""
             if final_text:
                 _last_turn_result = res

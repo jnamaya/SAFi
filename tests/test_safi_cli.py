@@ -458,8 +458,9 @@ class TestSafiCliDynamicAgentDiscovery(unittest.TestCase):
             timeout=5,
         )
 
+    @patch("safi_cli.config.resolve_user_id", return_value=None)
     @patch.object(requests.Session, "get")
-    def test_client_get_available_agents_route_miss_returns_empty(self, mock_get):
+    def test_client_get_available_agents_route_miss_returns_empty(self, mock_get, mock_user_id):
         # The /api/agentic/agents alias was removed in CLI 0.2.0; a miss on the
         # canonical /api/agents/all must degrade to an empty list, not retry.
         mock_404 = MagicMock()
@@ -934,6 +935,88 @@ class TestSafiModelSelection(unittest.TestCase):
             params={"user_id": "user-1"},
             timeout=2.0,
         )
+
+    @patch.object(requests.Session, "post")
+    def test_cancel_turn(self, mock_post):
+        from safi_cli.client import SafiClient
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"status": "cancelled", "message_id": "msg-456"}
+        mock_post.return_value = mock_resp
+
+        client = SafiClient("http://mock-backend:5000", "test-key")
+        ok = client.cancel_turn("msg-456", user_id="user-1")
+        self.assertTrue(ok)
+        mock_post.assert_called_once_with(
+            "http://mock-backend:5000/api/agentic/cancel/msg-456",
+            headers={"X-API-KEY": "test-key"},
+            json={"user_id": "user-1"},
+            timeout=3.0,
+        )
+
+    def test_run_agent_turn_aborts_on_cancel_event(self):
+        import threading
+        client = MagicMock()
+        client.send_turn.return_value = {
+            "type": "response",
+            "finalOutput": "Should not be displayed",
+            "willDecision": "approve",
+        }
+        cancel_evt = threading.Event()
+        cancel_evt.set()
+
+        res = run_agent_turn(
+            client=client,
+            prompt="hello",
+            workspace_root=Path("."),
+            conversation_id="test-conv",
+            user_id="test-user",
+            agent="software_engineer",
+            auto_approve=True,
+            cancel_event=cancel_evt,
+        )
+        self.assertIsNone(res)
+
+    def test_run_agent_turn_cancelled_during_send(self):
+        import threading
+        import time
+
+        cancel_evt = threading.Event()
+        client = MagicMock()
+
+        def slow_send(*args, **kwargs):
+            time.sleep(0.5)
+            return {
+                "type": "response",
+                "finalOutput": "Late response that should be discarded",
+                "willDecision": "approve",
+            }
+
+        client.send_turn.side_effect = slow_send
+        client.cancel_turn.return_value = True
+
+        # Trigger cancel_evt after 50ms
+        timer = threading.Timer(0.05, cancel_evt.set)
+        timer.start()
+
+        start = time.time()
+        res = run_agent_turn(
+            client=client,
+            prompt="hello",
+            workspace_root=Path("."),
+            conversation_id="test-conv",
+            user_id="test-user",
+            agent="software_engineer",
+            auto_approve=True,
+            cancel_event=cancel_evt,
+        )
+        elapsed = time.time() - start
+        timer.cancel()
+
+        self.assertIsNone(res)
+        # Should cancel quickly without waiting for slow_send (0.5s)
+        self.assertLess(elapsed, 0.45)
+        client.cancel_turn.assert_called_once()
 
     @patch.object(requests.Session, "post")
     def test_compress_conversation_client(self, mock_post):
@@ -1515,9 +1598,9 @@ class TestSafiUiEnhancements(unittest.TestCase):
         self.assertIn("Analyzing the request", line)
         self.assertIn("4.2s", line)
 
-        # Thinking override respects model
+        # Running override respects model
         line = build_progress_line(None, "Drafting response", 1.5, model="gpt-4o")
-        self.assertIn("Thinking with gpt-4o", line)
+        self.assertIn("Running with gpt-4o", line)
 
         # No data yet falls back to a sensible label
         line = build_progress_line(None, None, 0.0)

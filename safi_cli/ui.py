@@ -11,6 +11,7 @@ import difflib
 import os
 import re
 import shutil
+import sys
 from collections import deque
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -35,6 +36,12 @@ def _env_flag(name: str, default: bool = False) -> bool:
 
 
 CLI_MARGIN = int(os.environ.get("SAFI_CLI_MARGIN", "2"))
+_NON_BLOCKING_MODE = False
+
+
+def set_non_blocking_mode(enabled: bool) -> None:
+    global _NON_BLOCKING_MODE
+    _NON_BLOCKING_MODE = enabled
 
 
 class MarginedConsole(Console):
@@ -63,6 +70,50 @@ class MarginedConsole(Console):
             else:
                 padded_objects.append(Padding(obj, (0, CLI_MARGIN)))
         return super().print(*padded_objects, **kwargs)
+
+    def status(self, status, *args, **kwargs):
+        if _NON_BLOCKING_MODE:
+            from . import scheduler
+            class NonBlockingStatus:
+                def __init__(self, initial_status):
+                    self.current_step = ""
+                    self.update(initial_status)
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, exc_type, exc_val, exc_tb):
+                    scheduler.set_agent_status_text("")
+
+                def start(self):
+                    pass
+
+                def stop(self):
+                    scheduler.set_agent_status_text("")
+
+                def update(self, status_markup, **kw):
+                    if not status_markup:
+                        return
+                    try:
+                        from rich.text import Text
+                        plain = Text.from_markup(str(status_markup)).plain.strip()
+                    except Exception:
+                        plain = re.sub(r"\[.*?\]", "", str(status_markup)).strip()
+
+                    # Strip trailing timing like '· 2.5s' or '• 2.5s'
+                    clean = re.sub(r"\s*[·•]\s*\d+(\.\d+)?s\s*$", "", plain).strip()
+                    # Strip leading SAFi or bullet markers
+                    clean = re.sub(r"^(SAFi\s*[·•]\s*|[•·\s]+)", "", clean).strip()
+                    if clean.lower().startswith("thinking with "):
+                        clean = "Running with " + clean[14:]
+                    elif clean.lower() == "thinking":
+                        clean = "Running"
+                    step_name = clean or "Running"
+                    self.current_step = step_name
+                    scheduler.set_agent_status_text(step_name)
+
+            return NonBlockingStatus(status)
+        return super().status(status, *args, **kwargs)
 
 
 console = MarginedConsole()
@@ -294,8 +345,8 @@ def build_progress_line(
 
     step = (latest_step or "").rstrip(".…").strip()
     step_lower = step.lower()
-    if step_lower.startswith(("drafting", "thinking")):
-        label = f"Thinking with {model}" if model else "Thinking"
+    if step_lower.startswith(("drafting", "thinking", "running")):
+        label = f"Running with {model}" if model else "Running"
     elif step:
         label = step
     elif codes:
@@ -403,7 +454,7 @@ def build_tool_status_line(
 
 def clear_live_status_tail(last_status_markup: Optional[str] = None) -> None:
     """Erase any residual spinner/status lines from the terminal."""
-    if not getattr(console, "is_terminal", False):
+    if _NON_BLOCKING_MODE or not getattr(console, "is_terminal", False):
         return
     try:
         width = max(console.width or 80, 1)
@@ -1569,7 +1620,7 @@ def print_audit_details(result: Dict[str, Any]):
     for entry in ledger:
         val = str(entry.get("value") or "Standard")
         s_val = _safe_float(entry.get("score"))
-        rationale = str(entry.get("rationale") or entry.get("reason") or "—")
+        rationale = str(entry.get("rationale") or entry.get("reason") or "-")
         if s_val is None:
             continue
         if s_val >= 0.7:

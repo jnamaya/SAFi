@@ -418,6 +418,26 @@ class SafiClient:
             return None
         return None
 
+    def cancel_turn(self, message_id: str, user_id: Optional[str] = None) -> bool:
+        """Request the server to abort processing an in-flight message."""
+        headers = {}
+        if self.api_key:
+            headers["X-API-KEY"] = self.api_key
+        payload = {}
+        if user_id:
+            payload["user_id"] = user_id
+        try:
+            resp = self.session.post(
+                f"{self.api_url}/api/agentic/cancel/{message_id}",
+                headers=headers,
+                json=payload,
+                timeout=3.0,
+            )
+            return resp.status_code == 200
+        except Exception as exc:
+            logger.debug("Turn cancel request for %s failed: %s", message_id, exc)
+            return False
+
     def compress_conversation(
         self,
         conversation_id: str,

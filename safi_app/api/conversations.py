@@ -1798,6 +1798,32 @@ def agentic_progress_endpoint(message_id):
     return response
 
 
+@conversations_bp.route('/agentic/cancel/<message_id>', methods=['POST'])
+def agentic_cancel_endpoint(message_id):
+    """Authenticate and mark an in-flight agentic message as cancelled."""
+    api_key = request.headers.get("X-API-KEY") or request.headers.get("Authorization", "")
+    if api_key.startswith("Bearer "):
+        api_key = api_key.split(" ", 1)[1]
+    policy_id = db.get_policy_id_by_api_key(api_key) if api_key else None
+    if not policy_id:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    user_id = (request.args.get("user_id") or "").strip()
+    if not user_id and request.is_json:
+        user_id = (request.get_json(silent=True) or {}).get("user_id", "")
+    user_id = (user_id.strip() if isinstance(user_id, str) else "") or None
+
+    try:
+        message_id = str(uuid.UUID(str(message_id)))
+    except (ValueError, TypeError, AttributeError):
+        return jsonify({"error": "Invalid message id"}), 400
+
+    cancelled = db.cancel_message(message_id, user_id=user_id)
+    if not cancelled and user_id:
+        cancelled = db.cancel_message(message_id)
+    return jsonify({"status": "cancelled", "message_id": message_id, "found": bool(cancelled)})
+
+
 @conversations_bp.route('/agentic/process_prompt', methods=['POST'])
 async def agentic_process_prompt_endpoint():
     """Authenticate and translate client fields, then enter SAFi's orchestrator."""

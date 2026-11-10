@@ -170,7 +170,7 @@ SOFTWARE_ENGINEER_TOOL_SCHEMAS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "task",
-            "description": "Delegate READ-ONLY work to an isolated subagent: multi-file exploration/search ('researcher'), running tests ('tester'), or reviewing code ('code_reviewer'). Subagents CANNOT modify files — never delegate implementation, editing, writing, or any file change; do that yourself with edit/write. Returns synthesized findings without consuming main context tokens.",
+            "description": "Delegate READ-ONLY work to an isolated subagent: multi-file exploration/search ('researcher'), running tests ('tester'), or reviewing code ('code_reviewer'). Subagents CANNOT modify files - never delegate implementation, editing, writing, or any file change; do that yourself with edit/write. Returns synthesized findings without consuming main context tokens.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -945,7 +945,7 @@ def execute_tool(
 
             if not bwrap_cmd and on_output:
                 try:
-                    on_output("[SANDBOX NOTICE] Bubblewrap (bwrap) not installed — running unconfined on host.")
+                    on_output("[SANDBOX NOTICE] Bubblewrap (bwrap) not installed - running unconfined on host.")
                 except Exception:
                     pass
 

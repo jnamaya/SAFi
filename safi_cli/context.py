@@ -43,7 +43,7 @@ def _bound_arguments(args: Any, max_chars: int = DEFAULT_MAX_ARG_CHARS) -> Any:
             digest = hashlib.sha256(v.encode("utf-8", errors="ignore")).hexdigest()[:12]
             bounded_args[k] = (
                 f"<omitted from tool-call history: full {len(v)} chars (sha256:{digest}) "
-                "written intact to disk — do NOT re-read or rewrite>"
+                "written intact to disk - do NOT re-read or rewrite>"
             )
         else:
             bounded_args[k] = v

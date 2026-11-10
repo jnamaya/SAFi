@@ -523,7 +523,7 @@ def execute_cloud_status() -> str:
         for alias, t in tenants.items():
             t_id = t.get("tenant_id", "")
             masked_id = t_id[:8] + "..." if len(t_id) > 8 else t_id
-            lines.append(f"  - [{alias}] {t.get('name', alias)} (Tenant: {masked_id}) — {t.get('description', '')}")
+            lines.append(f"  - [{alias}] {t.get('name', alias)} (Tenant: {masked_id}) - {t.get('description', '')}")
     else:
         lines.append("\nMicrosoft 365: No tenant configured. (Run '/setup-cloud')")
 
@@ -533,7 +533,7 @@ def execute_cloud_status() -> str:
         for alias, s in subs.items():
             s_id = s.get("subscription_id", "")
             masked_sub = s_id[:8] + "..." if len(s_id) > 8 else s_id
-            lines.append(f"  - [{alias}] {s.get('name', alias)} (Subscription: {masked_sub}) — {s.get('description', '')}")
+            lines.append(f"  - [{alias}] {s.get('name', alias)} (Subscription: {masked_sub}) - {s.get('description', '')}")
     else:
         lines.append("\nAzure: No subscription configured. (Run '/setup-cloud')")
 

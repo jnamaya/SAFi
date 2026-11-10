@@ -119,8 +119,8 @@ def main():
         "--set-model",
         help="Save default AI model to ~/.config/safi/config.json and exit. Pass 'local' to always follow the model the appliance is serving.",
     )
-    parser.add_argument("--user-name", help="Display name of the user for the agent to address.")
-    parser.add_argument("--set-user", help="Save the default user display name to ~/.config/safi/config.json and exit.")
+    parser.add_argument("--user-name", help=argparse.SUPPRESS)
+    parser.add_argument("--set-user", help=argparse.SUPPRESS)
     parser.add_argument(
         "--setup-key",
         "--push-key",
@@ -172,8 +172,10 @@ def main():
         sys.exit(0)
 
     if args.set_user:
-        config.save_user_name(args.set_user.strip())
-        ui.console.print(f"[bold green]✓ Saved user name '{args.set_user.strip()}' to {config.CONFIG_FILE}[/]")
+        ui.console.print(
+            f"[bold yellow]Notice:[/] Display names are centrally managed in the SAFi Control Panel.\n"
+            f"[dim]Run 'safi-cli --login' to sync your latest account profile from the server.[/dim]"
+        )
         sys.exit(0)
 
     if args.set_model:
