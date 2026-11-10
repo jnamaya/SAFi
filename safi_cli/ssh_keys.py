@@ -1,6 +1,7 @@
 """SSH key management and deployment helper for SAFi managed infrastructure."""
 
 import base64
+import json
 import os
 import shutil
 import socket
@@ -177,8 +178,25 @@ def deploy_key_native(
         if res.returncode == 0:
             ui.console.print(f"[bold {ui.COLOR_PASS}]ALREADY CONFIGURED ✓[/]")
             ui.console.print(f"SSH key authentication is already working for {user}@{host}.")
-            if is_inventory:
-                ui.console.print(f"You can run commands using: [cyan]sys-exec {target} <command>[/]\n")
+            alias = target if "@" not in target else host
+            if not is_inventory and host:
+                try:
+                    config.ensure_config_dir()
+                    inv = config.load_inventory()
+                    if alias not in inv:
+                        inv[alias] = {
+                            "host": host,
+                            "user": user,
+                            "port": port,
+                            "auth": "key",
+                            "description": f"Target {alias}",
+                        }
+                        inv_file = config.CONFIG_DIR / "inventory.json"
+                        inv_file.write_text(json.dumps(inv, indent=2), encoding="utf-8")
+                        ui.console.print(f"[dim]✓ Added '[bold]{alias}[/]' to inventory ({inv_file})[/dim]")
+                except Exception:
+                    pass
+            ui.console.print(f"You can run commands using: [cyan]sys-exec {alias} <command>[/]\n")
             return 0
     except Exception:
         pass
@@ -255,9 +273,27 @@ def deploy_key_native(
             ui.console.print("=" * 60)
             ui.console.print(f"[bold green]✓ Key authentication successfully configured for {user}@{host}[/]")
             ui.console.print("=" * 60)
-            if is_inventory:
-                ui.console.print(f"\nTarget '[bold]{target}[/]' is now ready for autonomous execution:")
-                ui.console.print(f"   [cyan]sys-exec {target} \"uptime\"[/]\n")
+
+            alias = target if "@" not in target else host
+            if not is_inventory and host:
+                try:
+                    config.ensure_config_dir()
+                    inv = config.load_inventory()
+                    inv[alias] = {
+                        "host": host,
+                        "user": user,
+                        "port": port,
+                        "auth": "key",
+                        "description": f"Target {alias}",
+                    }
+                    inv_file = config.CONFIG_DIR / "inventory.json"
+                    inv_file.write_text(json.dumps(inv, indent=2), encoding="utf-8")
+                    ui.console.print(f"[dim]✓ Added '[bold]{alias}[/]' to inventory ({inv_file})[/dim]")
+                except Exception:
+                    pass
+
+            ui.console.print(f"\nTarget '[bold]{alias}[/]' is now ready for autonomous execution:")
+            ui.console.print(f"   [cyan]sys-exec {alias} \"uptime\"[/]\n")
             return 0
         else:
             ui.console.print(f"[bold {ui.COLOR_FAIL}]FAILED[/]")
