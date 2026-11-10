@@ -584,6 +584,14 @@ class LLMProvider:
                      params["extra_body"] = eb
 
             if provider_name == "local":
+                # Supply stop tokens for Gemma and specialized models on llama-server if not provided
+                if "gemma" in model_name.lower():
+                    existing_stops = list(params.get("stop") or [])
+                    for st in ("<end_of_turn>", "<start_of_turn>", "<|turn>", "<turn|>"):
+                        if st not in existing_stops:
+                            existing_stops.append(st)
+                    params["stop"] = existing_stops
+
                 # User-selected reasoning level (CLI /reasoning) for the local
                 # llama.cpp appliance. llama-server has no token-budget knob;
                 # the closest native control is chat_template_kwargs, which the
@@ -650,7 +658,7 @@ class LLMProvider:
                             arguments = salvaged
                         else:
                             raise RuntimeError(
-                                f"the model's tool call '{tc.function.name}' arguments were not valid JSON "
+                                f"the model's tool call arguments for '{tc.function.name}' were not valid JSON "
                                 f"({arguments.get('error')}); "
                                 + ("the generation was truncated at the output-token cap "
                                    "before the arguments closed"
