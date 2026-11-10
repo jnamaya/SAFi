@@ -444,7 +444,7 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
              <h4 class="text-lg font-semibold mb-1">Identity &amp; Sessions</h4>
              <p class="text-xs text-gray-500 mb-4">How members join and how long their sessions live. Changes are journaled to the auth events log. Sessions are revocable server-side: removing a member or changing a role ends their access on the next request.</p>
              <div class="grid md:grid-cols-3 gap-4">
-                 <label class="block">
+                 ${cloudEdition ? `<label class="block">
                      <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Join policy</span>
                      <select id="sel-join-policy" class="mt-1 w-full rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm">
                          <option value="domain_auto_join">Domain auto-join</option>
@@ -452,7 +452,7 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                          <option value="both">Invites + domain auto-join</option>
                      </select>
                      <span class="block text-xs text-gray-400 mt-1">Auto-join admits every account on your verified domain, including contractors and shared mailboxes.</span>
-                 </label>
+                 </label>` : ''}
                  <label class="block">
                      <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Idle timeout (minutes)</span>
                      <input type="number" id="inp-idle-timeout" min="5" max="43200" placeholder="platform default: 10080"
@@ -516,7 +516,7 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                      <button id="btn-add-ldap-mapping" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-bold">Add</button>
                  </div>
              </div>
-             <p class="text-xs text-gray-400 mt-4">
+             ${cloudEdition ? `<p class="text-xs text-gray-400 mt-4">
                  Verifying your domain above (DNS TXT record) fills these two fields in
                  automatically, when the domain's mail is actually hosted on Google
                  Workspace or Microsoft 365. If you already know your tenant ID or
@@ -524,7 +524,7 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                  verification is only worth doing in addition if you also want to
                  formally claim the domain (it decides who owns it if this deployment
                  ever hosts more than one organization).
-             </p>
+             </p>` : ''}
              <div class="flex justify-end mt-4">
                  <button id="btn-save-identity" class="px-5 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-bold shadow hover:shadow-md transition-all">Save Identity Settings</button>
              </div>
@@ -1321,32 +1321,50 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
     // These cards live in the Identity & Access tab (identityContainer), not
     // the Settings container, so look them up by id document-wide rather than
     // scoped to `container` — otherwise the save button never wires.
-    const selPolicy = document.getElementById('sel-join-policy');
-    if (selPolicy) {
+    const btnSaveIdentity = document.getElementById('btn-save-identity');
+    if (btnSaveIdentity) {
         api.getOrgIdentity(org.id).then(cfg => {
-            selPolicy.value = cfg.join_policy || 'domain_auto_join';
-            document.getElementById('inp-idle-timeout').value = cfg.idle_timeout_minutes ?? '';
-            document.getElementById('inp-session-lifetime').value = cfg.session_lifetime_hours ?? '';
-            document.getElementById('sel-require-mfa').value = String(!!cfg.require_mfa);
-            document.getElementById('inp-ms-tenant').value = cfg.ms_tenant_id || '';
-            document.getElementById('inp-google-hd').value = cfg.google_hd || '';
-            document.getElementById('sel-ldap-enabled').value = String(!!cfg.ldap_enabled);
-            document.getElementById('sel-ldap-auto-provision').value = String(!!cfg.ldap_auto_provision);
+            const selPolicy = document.getElementById('sel-join-policy');
+            if (selPolicy) selPolicy.value = cfg.join_policy || 'domain_auto_join';
+            const elIdle = document.getElementById('inp-idle-timeout');
+            if (elIdle) elIdle.value = cfg.idle_timeout_minutes ?? '';
+            const elLife = document.getElementById('inp-session-lifetime');
+            if (elLife) elLife.value = cfg.session_lifetime_hours ?? '';
+            const elMfa = document.getElementById('sel-require-mfa');
+            if (elMfa) elMfa.value = String(!!cfg.require_mfa);
+            const elMs = document.getElementById('inp-ms-tenant');
+            if (elMs) elMs.value = cfg.ms_tenant_id || '';
+            const elG = document.getElementById('inp-google-hd');
+            if (elG) elG.value = cfg.google_hd || '';
+            const elLdap = document.getElementById('sel-ldap-enabled');
+            if (elLdap) elLdap.value = String(!!cfg.ldap_enabled);
+            const elLdapAuto = document.getElementById('sel-ldap-auto-provision');
+            if (elLdapAuto) elLdapAuto.value = String(!!cfg.ldap_auto_provision);
         }).catch(() => {});
-        document.getElementById('btn-save-identity').addEventListener('click', async () => {
-            const idleRaw = document.getElementById('inp-idle-timeout').value;
-            const lifeRaw = document.getElementById('inp-session-lifetime').value;
+        btnSaveIdentity.addEventListener('click', async () => {
+            const idleRaw = document.getElementById('inp-idle-timeout')?.value;
+            const lifeRaw = document.getElementById('inp-session-lifetime')?.value;
+            const payload = {
+                idle_timeout_minutes: idleRaw ? parseInt(idleRaw) : null,
+                session_lifetime_hours: lifeRaw ? parseInt(lifeRaw) : null,
+                require_mfa: document.getElementById('sel-require-mfa')?.value === 'true',
+                ldap_enabled: document.getElementById('sel-ldap-enabled')?.value === 'true',
+                ldap_auto_provision: document.getElementById('sel-ldap-auto-provision')?.value === 'true',
+            };
+            const selPolicy = document.getElementById('sel-join-policy');
+            if (selPolicy) {
+                payload.join_policy = selPolicy.value;
+            }
+            const elMs = document.getElementById('inp-ms-tenant');
+            if (elMs) {
+                payload.ms_tenant_id = elMs.value.trim() || null;
+            }
+            const elG = document.getElementById('inp-google-hd');
+            if (elG) {
+                payload.google_hd = elG.value.trim() || null;
+            }
             try {
-                await api.updateOrgIdentity(org.id, {
-                    join_policy: selPolicy.value,
-                    idle_timeout_minutes: idleRaw ? parseInt(idleRaw) : null,
-                    session_lifetime_hours: lifeRaw ? parseInt(lifeRaw) : null,
-                    require_mfa: document.getElementById('sel-require-mfa').value === 'true',
-                    ms_tenant_id: document.getElementById('inp-ms-tenant').value.trim() || null,
-                    google_hd: document.getElementById('inp-google-hd').value.trim() || null,
-                    ldap_enabled: document.getElementById('sel-ldap-enabled').value === 'true',
-                    ldap_auto_provision: document.getElementById('sel-ldap-auto-provision').value === 'true',
-                });
+                await api.updateOrgIdentity(org.id, payload);
                 ui.showToast('Identity settings saved', 'success');
             } catch (e) {
                 ui.showToast(e.message || 'Save failed', 'error');
