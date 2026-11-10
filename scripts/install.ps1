@@ -26,7 +26,7 @@ wsl.exe -u root -e sh -c "apt-get update -qq && DEBIAN_FRONTEND=noninteractive a
 
 # 4. Run the SAFi CLI installer inside WSL
 Write-Host "Installing SAFi CLI and configuring Windows bridges..." -ForegroundColor Cyan
-wsl.exe -e bash -c "curl -sSL https://runsafi.com/install.sh 2>/dev/null || curl -sSL https://raw.githubusercontent.com/jnamaya/SAFi/dev/scripts/install_cli.sh | bash"
+wsl.exe -e bash -c "(curl -sSL https://runsafi.com/install.sh 2>/dev/null || curl -sSL https://raw.githubusercontent.com/jnamaya/SAFi/dev/scripts/install_cli.sh) | bash"
 
 Write-Host ""
 Write-Host "=== SAFi CLI Installation Complete ===" -ForegroundColor Green
