@@ -4,9 +4,9 @@ set -eo pipefail
 CONFIG_DIR="${HOME}/.config/safi"
 INVENTORY_FILE="${CONFIG_DIR}/inventory.json"
 
-if [ ! -f "$INVENTORY_FILE" ]; then
+if [ ! -f "$INVENTORY_FILE" ] || [ "$(wc -c < "$INVENTORY_FILE" 2>/dev/null || echo 0)" -le 10 ]; then
     for win_inv in /mnt/c/Users/*/.config/safi/inventory.json; do
-        if [ -f "$win_inv" ]; then
+        if [ -f "$win_inv" ] && [ "$(wc -c < "$win_inv" 2>/dev/null || echo 0)" -gt 10 ]; then
             INVENTORY_FILE="$win_inv"
             break
         fi
@@ -136,17 +136,46 @@ PORT="22"
 OS_TYPE=""
 IS_INVENTORY=0
 
-if [ -f "$INVENTORY_FILE" ] && command -v jq &>/dev/null; then
-    TARGET_CONFIG=$(jq -r --arg t "$TARGET" '.[$t] // empty' "$INVENTORY_FILE" 2>/dev/null || true)
-    if [ -n "$TARGET_CONFIG" ]; then
-        IS_INVENTORY=1
-        HOST=$(echo "$TARGET_CONFIG" | jq -r '.host // empty')
-        HOST="${HOST#ssh }"
-        USER=$(echo "$TARGET_CONFIG" | jq -r '.user // empty')
-        PORT=$(echo "$TARGET_CONFIG" | jq -r '.port // 22')
-        DESC=$(echo "$TARGET_CONFIG" | jq -r '.description // empty')
-        OS_TYPE=$(echo "$TARGET_CONFIG" | jq -r '.os // empty')
+if [ -f "$INVENTORY_FILE" ]; then
+    eval "$(python3 - "$INVENTORY_FILE" "$TARGET" << 'PYEOF' 2>/dev/null || true
+import json, sys, re, shlex
 
+def parse_lenient(text):
+    text = text.lstrip("\ufeff").strip()
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+    cleaned = re.sub(r'("(?:\\.|[^"\\])*")|//.*?$|/\*.*?\*/|^\s*#.*?$', lambda m: m.group(1) if m.group(1) else '', text, flags=re.MULTILINE | re.DOTALL)
+    cleaned = re.sub(r'("(?:\\.|[^"\\])*")|(,\s*([\}\]]))', lambda m: m.group(1) if m.group(1) else m.group(3), cleaned)
+    cleaned = re.sub(r'("(?:\\.|[^"\\])*")', lambda m: re.sub(r'\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})', r'\\\\', m.group(0)), cleaned)
+    return json.loads(cleaned)
+
+inv_file, target = sys.argv[1], sys.argv[2]
+try:
+    with open(inv_file, encoding="utf-8-sig") as f:
+        data = parse_lenient(f.read())
+    cfg = data.get(target)
+    if not cfg:
+        for k, v in data.items():
+            if k.lower() == target.lower():
+                cfg = v
+                break
+    if cfg and isinstance(cfg, dict):
+        host = str(cfg.get("host") or "")
+        if host.startswith("ssh "):
+            host = host[4:]
+        user = str(cfg.get("user") or "")
+        port = str(cfg.get("port") or "22")
+        desc = str(cfg.get("description") or "")
+        os_type = str(cfg.get("os") or "")
+        key = str(cfg.get("key") or cfg.get("key_file") or cfg.get("identity_file") or "")
+        print(f"IS_INVENTORY=1; HOST={shlex.quote(host)}; USER={shlex.quote(user)}; PORT={shlex.quote(port)}; DESC={shlex.quote(desc)}; OS_TYPE={shlex.quote(os_type)}; KEY_FILE={shlex.quote(key)}")
+except Exception:
+    pass
+PYEOF
+)"
+    if [ "$IS_INVENTORY" = "1" ]; then
         if [ -z "$OS_TYPE" ]; then
             if [[ "${DESC,,}" == *"windows"* ]] || [[ "${TARGET,,}" == *"win"* ]]; then
                 OS_TYPE="windows"

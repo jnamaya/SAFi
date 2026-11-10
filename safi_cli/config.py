@@ -23,15 +23,96 @@ HISTORY_FILE = CONFIG_DIR / "history"
 INVENTORY_FILE = CONFIG_DIR / "inventory.json"
 
 
+def parse_lenient_json(text: str) -> Dict[str, Any]:
+    """Parse JSON text tolerating UTF-8 BOM, comments, trailing commas, and unescaped Windows paths."""
+    if not text:
+        return {}
+    import re
+    cleaned = text.lstrip("\ufeff").strip()
+    if not cleaned:
+        return {}
+
+    # Fast path: strict standard JSON
+    try:
+        data = json.loads(cleaned)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        pass
+
+    # Strip single-line (// and #) and multi-line (/* */) comments
+    comment_pat = r'("(?:\\.|[^"\\])*")|//.*?$|/\*.*?\*/|^\s*#.*?$'
+    def _strip_comment(m):
+        return m.group(1) if m.group(1) else ""
+    cleaned = re.sub(comment_pat, _strip_comment, cleaned, flags=re.MULTILINE | re.DOTALL)
+
+    # Strip trailing commas before closing braces/brackets
+    comma_pat = r'("(?:\\.|[^"\\])*")|(,\s*([\}\]]))'
+    def _strip_comma(m):
+        return m.group(1) if m.group(1) else m.group(3)
+    cleaned = re.sub(comma_pat, _strip_comma, cleaned)
+
+    try:
+        data = json.loads(cleaned)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        pass
+
+    # Fix unescaped Windows backslashes inside string literals (e.g. C:\Users\... -> C:\\Users\\...)
+    def _fix_escapes(s):
+        return re.sub(r'\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})', r'\\\\', s)
+
+    str_pat = r'("(?:\\.|[^"\\])*")'
+    cleaned = re.sub(str_pat, lambda m: _fix_escapes(m.group(0)), cleaned)
+
+    try:
+        data = json.loads(cleaned)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
 def resolve_inventory_file() -> Path:
     """Return the active inventory.json path, checking WSL ~/.config/safi then Windows user profile."""
+    # Honor explicit INVENTORY_FILE overrides or test patches
+    if INVENTORY_FILE != CONFIG_DIR / "inventory.json":
+        return INVENTORY_FILE
+
     local_inv = CONFIG_DIR / "inventory.json"
-    if local_inv.is_file():
+
+    # Find Windows host inventory candidates if running inside WSL
+    win_inv: Optional[Path] = None
+    try:
+        candidates = []
+        for p in Path("/mnt/c/Users").glob("*/.config/safi/inventory.json"):
+            p_str = str(p)
+            if p.is_file() and not p.name.startswith("All Users") and "Default" not in p_str and "Public" not in p_str:
+                candidates.append(p)
+        if candidates:
+            # Sort with preference for non-empty files, then newest modification time
+            candidates.sort(key=lambda x: (x.stat().st_size > 10, x.stat().st_mtime), reverse=True)
+            win_inv = candidates[0]
+    except Exception:
+        pass
+
+    # If local inventory exists and has meaningful targets (>10 bytes)
+    if local_inv.is_file() and local_inv.stat().st_size > 10:
         return local_inv
-    # In WSL, fallback to Windows host user profile
-    for win_inv in sorted(Path("/mnt/c/Users").glob("*/.config/safi/inventory.json")):
-        if win_inv.is_file():
-            return win_inv
+
+    # If in WSL and Windows inventory exists with content
+    if win_inv and win_inv.is_file():
+        # Auto-heal: if local ~/.config/safi is an empty directory or stub, symlink to Windows
+        try:
+            if not CONFIG_DIR.is_symlink():
+                if not local_inv.is_file() or local_inv.stat().st_size <= 10:
+                    import shutil
+                    if CONFIG_DIR.is_dir():
+                        shutil.rmtree(CONFIG_DIR, ignore_errors=True)
+                    CONFIG_DIR.symlink_to(win_inv.parent)
+                    return CONFIG_DIR / "inventory.json"
+        except Exception:
+            pass
+        return win_inv
+
     return local_inv
 
 
@@ -42,8 +123,8 @@ def load_inventory() -> Dict[str, Any]:
         return {}
     try:
         with open(inv_file, "r", encoding="utf-8-sig") as f:
-            data = json.load(f)
-            return data if isinstance(data, dict) else {}
+            content = f.read()
+        return parse_lenient_json(content)
     except Exception:
         return {}
 

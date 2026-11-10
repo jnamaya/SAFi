@@ -55,7 +55,8 @@ if (-not (Test-Path $winInvFile)) {
 try {
     $wslWinConfig = (wsl.exe -e wslpath -u "$winConfigDir" 2>$null).Trim()
     if ($wslWinConfig) {
-        wsl.exe -e sh -c "mkdir -p ~/.config 2>/dev/null; ln -sf '$wslWinConfig' ~/.config/safi 2>/dev/null || true" 2>$null
+        wsl.exe -e bash -c "mkdir -p ~/.config 2>/dev/null; if [ -d ~/.config/safi ] && [ ! -L ~/.config/safi ]; then rm -rf ~/.config/safi 2>/dev/null || true; fi; ln -sfn '$wslWinConfig' ~/.config/safi 2>/dev/null || true" 2>$null
+        Write-Host "Linked Windows config directory directly to WSL ~/.config/safi" -ForegroundColor Green
     }
 } catch {
     # Ignore if WSL path conversion fails

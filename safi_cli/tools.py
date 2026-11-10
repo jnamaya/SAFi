@@ -516,12 +516,12 @@ def resolve_safe_path(
     expanded_path = os.path.expanduser(rel_path)
     raw_target = Path(expanded_path) if Path(expanded_path).is_absolute() else (workspace_root / rel_path)
 
-    # In WSL, fallback to Windows host user profile if local inventory.json does not exist
-    if is_sysadmin and raw_target.name == "inventory.json" and not raw_target.exists():
-        for win_inv in sorted(Path("/mnt/c/Users").glob("*/.config/safi/inventory.json")):
-            if win_inv.is_file():
-                raw_target = win_inv
-                break
+    # In WSL, fallback to Windows host user profile if local inventory.json does not exist or is empty stub
+    if is_sysadmin and raw_target.name == "inventory.json":
+        from safi_cli.config import resolve_inventory_file
+        resolved_inv = resolve_inventory_file()
+        if resolved_inv.exists():
+            raw_target = resolved_inv
 
     if follow_symlinks:
         target = raw_target.resolve()
@@ -533,11 +533,12 @@ def resolve_safe_path(
     except ValueError:
         # sysadmin is explicitly permitted to read inventory.json from ~/.config/safi or Windows profile
         if is_sysadmin and target.name == "inventory.json":
-            if target.is_file():
+            if target.is_file() and target.stat().st_size > 10:
                 return target
-            for win_inv in sorted(Path("/mnt/c/Users").glob("*/.config/safi/inventory.json")):
-                if win_inv.is_file():
-                    return win_inv.resolve()
+            from safi_cli.config import resolve_inventory_file
+            resolved_inv = resolve_inventory_file()
+            if resolved_inv.is_file():
+                return resolved_inv.resolve()
         raise PermissionError(f"Access denied: '{rel_path}' resolves outside the repository root.")
 
     raw_norm_parts = Path(os.path.normpath(rel_path)).parts

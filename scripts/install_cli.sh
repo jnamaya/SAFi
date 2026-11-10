@@ -182,14 +182,31 @@ set -eo pipefail
 CONFIG_DIR="${HOME}/.config/safi"
 INVENTORY_FILE="${CONFIG_DIR}/inventory.json"
 
-# In WSL, fallback to Windows host user profile if local inventory does not exist
-if [ ! -f "$INVENTORY_FILE" ]; then
-    for win_inv in /mnt/c/Users/*/.config/safi/inventory.json; do
-        if [ -f "$win_inv" ]; then
-            INVENTORY_FILE="$win_inv"
-            break
+# In WSL, fallback to Windows host user profile and auto-link config directory
+WIN_INV=""
+for win_path in /mnt/c/Users/*/.config/safi/inventory.json; do
+    if [ -f "$win_path" ] && [[ "$win_path" != *"Public"* ]] && [[ "$win_path" != *"Default"* ]]; then
+        WIN_INV="$win_path"
+        break
+    fi
+done
+
+if [ -n "$WIN_INV" ]; then
+    WIN_DIR="$(dirname "$WIN_INV")"
+    LOCAL_SIZE=0
+    [ -f "$INVENTORY_FILE" ] && LOCAL_SIZE=$(wc -c < "$INVENTORY_FILE" 2>/dev/null || echo 0)
+    # Auto-heal: if local ~/.config/safi is not a symlink, and is empty or stub, point to Windows
+    if [ ! -L "$CONFIG_DIR" ]; then
+        if [ ! -f "$INVENTORY_FILE" ] || [ "$LOCAL_SIZE" -le 10 ]; then
+            mkdir -p "$(dirname "$CONFIG_DIR")" 2>/dev/null || true
+            rm -rf "$CONFIG_DIR" 2>/dev/null || true
+            ln -sf "$WIN_DIR" "$CONFIG_DIR" 2>/dev/null || true
+            INVENTORY_FILE="${CONFIG_DIR}/inventory.json"
         fi
-    done
+    fi
+    if [ ! -f "$INVENTORY_FILE" ] || [ "$LOCAL_SIZE" -le 10 ]; then
+        INVENTORY_FILE="$WIN_INV"
+    fi
 fi
 
 usage() {
@@ -218,10 +235,22 @@ fi
 if [ "$1" = "--list" ] || [ "$1" = "-l" ]; then
     echo "Managed Infrastructure Inventory ($INVENTORY_FILE):"
     python3 - "$INVENTORY_FILE" << 'PYEOF' 2>/dev/null || true
-import json, sys
+import json, sys, re
+
+def parse_lenient(text):
+    text = text.lstrip("\ufeff").strip()
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+    cleaned = re.sub(r'("(?:\\.|[^"\\])*")|//.*?$|/\*.*?\*/|^\s*#.*?$', lambda m: m.group(1) if m.group(1) else '', text, flags=re.MULTILINE | re.DOTALL)
+    cleaned = re.sub(r'("(?:\\.|[^"\\])*")|(,\s*([\}\]]))', lambda m: m.group(1) if m.group(1) else m.group(3), cleaned)
+    cleaned = re.sub(r'("(?:\\.|[^"\\])*")', lambda m: re.sub(r'\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})', r'\\\\', m.group(0)), cleaned)
+    return json.loads(cleaned)
+
 try:
     with open(sys.argv[1], encoding="utf-8-sig") as f:
-        data = json.load(f)
+        data = parse_lenient(f.read())
     for k, v in data.items():
         user = v.get("user") or "(ssh-config)"
         host = v.get("host") or ""
@@ -244,13 +273,24 @@ shift
 CMD="$*"
 
 eval "$(python3 - "$INVENTORY_FILE" "$TARGET" << 'PYEOF' 2>/dev/null || echo "FOUND=0"
-import json, sys, shlex
+import json, sys, re, shlex
+
+def parse_lenient(text):
+    text = text.lstrip("\ufeff").strip()
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+    cleaned = re.sub(r'("(?:\\.|[^"\\])*")|//.*?$|/\*.*?\*/|^\s*#.*?$', lambda m: m.group(1) if m.group(1) else '', text, flags=re.MULTILINE | re.DOTALL)
+    cleaned = re.sub(r'("(?:\\.|[^"\\])*")|(,\s*([\}\]]))', lambda m: m.group(1) if m.group(1) else m.group(3), cleaned)
+    cleaned = re.sub(r'("(?:\\.|[^"\\])*")', lambda m: re.sub(r'\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})', r'\\\\', m.group(0)), cleaned)
+    return json.loads(cleaned)
 
 inv_file, target = sys.argv[1], sys.argv[2]
 data = {}
 try:
     with open(inv_file, encoding="utf-8-sig") as f:
-        data = json.load(f)
+        data = parse_lenient(f.read())
 except Exception:
     pass
 
@@ -294,10 +334,21 @@ elif [[ "$TARGET" == *"@"* ]] || [[ "$TARGET" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ 
 else
     echo "Error: Unknown host alias '$TARGET'. Available hosts:" >&2
     python3 - "$INVENTORY_FILE" << 'PYEOF' 2>/dev/null || true >&2
-import json, sys
+import json, sys, re
+def parse_lenient(text):
+    text = text.lstrip("\ufeff").strip()
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+    cleaned = re.sub(r'("(?:\\.|[^"\\])*")|//.*?$|/\*.*?\*/|^\s*#.*?$', lambda m: m.group(1) if m.group(1) else '', text, flags=re.MULTILINE | re.DOTALL)
+    cleaned = re.sub(r'("(?:\\.|[^"\\])*")|(,\s*([\}\]]))', lambda m: m.group(1) if m.group(1) else m.group(3), cleaned)
+    cleaned = re.sub(r'("(?:\\.|[^"\\])*")', lambda m: re.sub(r'\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})', r'\\\\', m.group(0)), cleaned)
+    return json.loads(cleaned)
+
 try:
-    with open(sys.argv[1]) as f:
-        for k in json.load(f).keys():
+    with open(sys.argv[1], encoding="utf-8-sig") as f:
+        for k in parse_lenient(f.read()).keys():
             print(f"  - {k}")
 except Exception:
     pass
@@ -620,7 +671,16 @@ EOF
     WIN_PROFILE_RAW=$(cmd.exe /c "echo %USERPROFILE%" 2>/dev/null | tr -d '\r')
     if [ -n "$WIN_PROFILE_RAW" ] && command -v wslpath &>/dev/null; then
         WIN_PROFILE_DIR=$(wslpath "$WIN_PROFILE_RAW" 2>/dev/null || true)
-        if [ -n "$WIN_PROFILE_DIR" ] && [ -d "$WIN_PROFILE_DIR" ]; then
+    fi
+    if [ -z "$WIN_PROFILE_DIR" ] && [ -d "/mnt/c/Users" ]; then
+        for u in /mnt/c/Users/*; do
+            if [ -d "$u" ] && [ ! -L "$u" ] && [[ "$u" != *"Public"* ]] && [[ "$u" != *"Default"* ]] && [[ "$u" != *"All Users"* ]]; then
+                WIN_PROFILE_DIR="$u"
+                break
+            fi
+        done
+    fi
+    if [ -n "$WIN_PROFILE_DIR" ] && [ -d "$WIN_PROFILE_DIR" ]; then
             mkdir -p "${WIN_PROFILE_DIR}/.local/bin"
             cat << 'EOF' > "${WIN_PROFILE_DIR}/.local/bin/safi-cli.cmd"
 @echo off

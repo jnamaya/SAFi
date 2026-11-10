@@ -2238,6 +2238,32 @@ class TestSshKeyManagement(unittest.TestCase):
                 targets = config.get_inventory_targets()
                 self.assertEqual(targets, ["test-vm", "test-win"])
 
+    def test_parse_lenient_json(self):
+        from safi_cli import config
+        # UTF-8 BOM, comments, trailing commas, and unescaped Windows paths
+        messy_json = (
+            "\ufeff"
+            "{\n"
+            "    // Host configuration\n"
+            "    \"dev-server\": {\n"
+            "        \"host\": \"192.168.1.100\", // target IP\n"
+            "        \"user\": \"ubuntu\",\n"
+            "        \"key\": \"C:\\Users\\NelsonAmaya\\.ssh\\id_rsa\",\n"
+            "        \"auth\": \"key\",\n"
+            "    },\n"
+            "    /* Database cluster */\n"
+            "    \"db-server\": {\n"
+            "        \"host\": \"192.168.1.101\",\n"
+            "    },\n"
+            "}\n"
+        )
+        parsed = config.parse_lenient_json(messy_json)
+        self.assertIn("dev-server", parsed)
+        self.assertIn("db-server", parsed)
+        self.assertEqual(parsed["dev-server"]["host"], "192.168.1.100")
+        self.assertEqual(parsed["dev-server"]["user"], "ubuntu")
+        self.assertIn("NelsonAmaya", parsed["dev-server"]["key"])
+
     def test_find_setup_script(self):
         from safi_cli import ssh_keys
         script = ssh_keys.find_setup_script()
