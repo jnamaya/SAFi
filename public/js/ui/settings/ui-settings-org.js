@@ -678,12 +678,12 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
 
         ${identitySessionsCard}
 
-        <div id="scim-section"></div>
+        ${cloudEdition ? '<div id="scim-section"></div>' : ''}
         ` : identitySessionsCard}
     `;
 
     // Attach Listeners
-    if (currentUser && currentUser.role === 'admin') {
+    if (cloudEdition && currentUser && currentUser.role === 'admin') {
         renderScimSection(org.id);
     }
 
@@ -2166,6 +2166,7 @@ function _wireMembersControls(container, orgId) {
 // --- Directory Sync (SCIM 2.0), backlog 68. Admin-only. ---
 // Automated provisioning/deprovisioning and group->role from the org's IdP.
 async function renderScimSection(orgId) {
+    if (!cloudEdition) return;
     const host = document.getElementById('scim-section');
     if (!host) return;
     let cfg;
