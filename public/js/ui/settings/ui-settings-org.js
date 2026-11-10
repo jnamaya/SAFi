@@ -585,7 +585,7 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
         ${(currentUser && currentUser.role === 'admin') ? `
         <div class="settings-card">
             <section>
-                 <h4 class="text-lg font-semibold mb-1">Create Local Account</h4>
+                 <h4 class="text-lg font-semibold mb-1">Create User Account</h4>
                  <p class="text-xs text-gray-400 mb-4">Provision an account with a username and password (or auto-generate) - no email or external identity provider required. Hand the credentials to the user out of band (in person or by phone). The user signs in on the login screen or via <code class="font-mono text-neutral-800 dark:text-neutral-200">safi --login</code>.</p>
                  <div class="flex flex-wrap gap-2 items-end">
                      <label class="block">
