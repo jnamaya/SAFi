@@ -1476,19 +1476,10 @@ def run_setup_wizard() -> tuple[str, str, Optional[str]]:
             else:
                 ui.console.print("[dim]Please re-enter the correct endpoint URL.[/dim]")
 
-    # 2. Default agent (no choice): software_engineer. The provisioned key is
-    #    saved for ALL available agents, so the default only sets the starting agent.
-    chosen_agent = "software_engineer"
-    if chosen_agent not in AVAILABLE_AGENTS:
-        chosen_agent = next(iter(AVAILABLE_AGENTS), "software_engineer")
-    config.set_default_agent(chosen_agent)
-    agent_title = AVAILABLE_AGENTS.get(chosen_agent, {}).get("title", chosen_agent)
-    ui.console.print(f"\n[bold white]2. Default Agent[/]")
-    ui.console.print(f"[bold green]✓ Default agent: {agent_title} ({chosen_agent})[/] [dim](the Policy API key is saved for all available agents)[/]")
-
-    # 3. Authenticate: web login (default) or manual Policy API key
-    ui.console.print(f"\n[bold white]3. Authenticate[/]")
-    existing_key = config.resolve_agent_api_key(chosen_agent)
+    # 2. Authenticate: web login (default) or manual Policy API key
+    ui.console.print(f"\n[bold white]2. Authenticate[/]")
+    default_probe_agent = config.get_default_agent() or "software_engineer"
+    existing_key = config.resolve_agent_api_key(default_probe_agent) or config.load_config().get("api_key")
     if existing_key:
         cfg = config.load_config()
         current_user = cfg.get("user_name") or cfg.get("user_id")
@@ -1505,7 +1496,7 @@ def run_setup_wizard() -> tuple[str, str, Optional[str]]:
                 "is provisioned automatically and saved for all available agents.\n"
                 "Or paste an existing key (sk-safi-...).[/dim]"
             )
-            key_val = _wizard_login_or_key(chosen_url, chosen_agent)
+            key_val = _wizard_login_or_key(chosen_url, default_probe_agent)
         else:
             key_val = existing_key
     else:
@@ -1514,7 +1505,7 @@ def run_setup_wizard() -> tuple[str, str, Optional[str]]:
             "is provisioned automatically and saved for all available agents.\n"
             "Or paste an existing key (sk-safi-...).[/dim]"
         )
-        key_val = _wizard_login_or_key(chosen_url, chosen_agent)
+        key_val = _wizard_login_or_key(chosen_url, default_probe_agent)
 
     if not key_val:
         ui.print_error("No agents currently available. Contact your administrator to grant you access to an agent.")
