@@ -340,6 +340,11 @@ class Config:
     # hiding the buttons -- an unauthenticated /api/login/google would
     # otherwise remain a working (if unreachable) entry point.
     SSO_LOGIN_ENABLED = _env_bool("SAFI_SSO_ENABLED", True)
+    # Cloud edition = full cloud product. Set SAFI_CLOUD_EDITION=false on
+    # appliance/local installs to hide cloud-only UI (domain verification,
+    # Google/Microsoft SSO settings) in the Control Panel. Backend SSO routes
+    # are independently gated by SSO_LOGIN_ENABLED + provider client config.
+    CLOUD_EDITION = _env_bool("SAFI_CLOUD_EDITION", True)
 
     GITHUB_CLIENT_ID = os.environ.get("GITHUB_CLIENT_ID")
     GITHUB_CLIENT_SECRET = os.environ.get("GITHUB_CLIENT_SECRET")

@@ -476,6 +476,7 @@ def app_config():
     google_configured = bool(Config.GOOGLE_CLIENT_ID and Config.GOOGLE_CLIENT_SECRET)
     microsoft_configured = bool(Config.MICROSOFT_CLIENT_ID and Config.MICROSOFT_CLIENT_SECRET)
     return jsonify({
+        "cloud_edition":       Config.CLOUD_EDITION,
         "demo_enabled":        Config.ENABLE_DEMO_LOGIN,
         "local_login_enabled": Config.password_login_available(),
         "voice_input_enabled": Config.VOICE_INPUT_ENABLED,

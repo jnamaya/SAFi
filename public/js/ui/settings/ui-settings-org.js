@@ -4,6 +4,11 @@ import { escapeHtml } from '../../core/utils.js';
 import { loadToolCategories, renderToolGrid } from '../shared/tool-picker.js';
 
 let currentUser = null; // We need to set this if we want to check "isSelf"
+// Cloud edition flag (SAFI_CLOUD_EDITION via /app-config). false on the
+// appliance: hides domain verification and Google/Microsoft SSO restriction
+// fields in the Identity & Access tab. Defaults true so an older backend
+// (flag absent) keeps the full cloud UI.
+let cloudEdition = true;
 // But how? 
 // The original file had a module-level `currentUser`.
 // We should probably export an update function here too, or fetch it.
@@ -57,6 +62,8 @@ async function _renderOrgTabs() {
     if (identityContainer) identityContainer.innerHTML = spinner;
 
     try {
+        const appCfg = await api.getAppConfig().catch(() => ({}));
+        cloudEdition = appCfg.cloud_edition !== false;
         const res = await api.getMyOrganization();
         const org = res ? res.organization : null;
 
@@ -90,7 +97,10 @@ async function _renderOrgTabs() {
 
 function renderOrganizationUI(container, identityContainer, org, charter, aiStandards) {
     const isVerified = org.domain_verified;
-    const verificationSection = isVerified
+    // Appliance edition: domain verification is a cloud-product feature (it
+    // locks sign-in to a Google/Microsoft tenant and claims the domain across
+    // hosted deployments), so hide it entirely on non-cloud installs.
+    const verificationSection = !cloudEdition ? '' : isVerified
         ? `
             <div class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4 mb-6">
                 <div class="flex items-center gap-3">
@@ -463,7 +473,7 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                      </select>
                      <span class="block text-xs text-gray-400 mt-1">Password accounts must enroll an authenticator app. Microsoft sign-ins must present MFA evidence (amr) from Entra, which most app registrations do not send by default: add amr as an optional ID token claim in the app's Manifest first (not the Token configuration wizard, which doesn't list it), or every Microsoft sign-in will be blocked, not just unenrolled ones. Google MFA is enforced at Workspace, not checked here.</span>
                  </label>
-                 <label class="block">
+                 ${cloudEdition ? `<label class="block">
                      <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Microsoft tenant ID</span>
                      <input type="text" id="inp-ms-tenant" placeholder="not restricted" spellcheck="false"
                          class="mt-1 w-full rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm font-mono">
@@ -474,7 +484,7 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                      <input type="text" id="inp-google-hd" placeholder="not restricted" spellcheck="false"
                          class="mt-1 w-full rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm font-mono">
                      <span class="block text-xs text-gray-400 mt-1">When set, only Google sign-ins from this Workspace domain are accepted; consumer Gmail accounts are rejected.</span>
-                 </label>
+                 </label>` : ''}
                  <label class="block">
                      <span class="text-sm font-bold text-gray-700 dark:text-gray-300">LDAP / Active Directory sign-in</span>
                      <select id="sel-ldap-enabled" class="mt-1 w-full rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm">
