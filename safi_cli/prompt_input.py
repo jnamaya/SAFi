@@ -293,56 +293,88 @@ def _prompt_text(agent_label: str) -> "FormattedText":
 def _bottom_divider_text() -> "FormattedText":
     cols = _terminal_columns()
     divider = _get_divider(cols)
+    margin = " " * int(os.environ.get("SAFI_CLI_MARGIN", "2") or "2")
     try:
         from . import scheduler
         sched = scheduler.get_scheduler()
         is_busy = scheduler.is_agent_busy()
         active_tasks = sched.list_active_tasks()
+        prompt_q = scheduler.get_prompt_queue()
+        queued_items = prompt_q.peek_all() if prompt_q else []
 
-        if is_busy:
-            text_parts: List[tuple[str, str]] = []
-            text_len = 0
+        if is_busy or active_tasks or queued_items:
+            # 1. Build right-side text (Ctrl+C, scheduled tasks info)
+            right_parts: List[tuple[str, str]] = []
+            right_len = 0
 
-            if active_tasks:
-                s_tasks = f"⏱ {len(active_tasks)} Scheduled • "
-                text_parts.append(("class:safi-scheduled", s_tasks))
-                text_len += len(s_tasks)
+            if is_busy:
+                if active_tasks:
+                    s_tasks = f"⏱ {len(active_tasks)} Scheduled • "
+                    right_parts.append(("class:safi-scheduled", s_tasks))
+                    right_len += len(s_tasks)
 
-            s_abort = "(Ctrl+C to abort) • /tasks"
-            if cols < (text_len + len(s_abort) + 4) and text_len > 0:
-                s_abort = "(Ctrl+C)"
-            text_parts.append(("class:safi-dim", s_abort))
-            text_len += len(s_abort)
+                s_abort = "(Ctrl+C to abort)"
+                if cols < 50:
+                    s_abort = "(Ctrl+C)"
+                right_parts.append(("class:safi-dim", s_abort))
+                right_len += len(s_abort)
+            elif active_tasks:
+                next_task = active_tasks[0]
+                rem = scheduler.format_remaining_time(next_task.remaining_seconds)
+                lbl = next_task.label
+                if len(lbl) > 16:
+                    lbl = lbl[:13] + "..."
+                s_label = f"⏱ {len(active_tasks)} Scheduled"
+                s_detail = f" (next: '{lbl}' in {rem}) • /tasks"
+                right_parts.extend([
+                    ("class:safi-scheduled", s_label),
+                    ("class:safi-dim", s_detail),
+                ])
+                right_len += len(s_label) + len(s_detail)
+            elif queued_items:
+                s_q_hint = "/queue"
+                right_parts.append(("class:safi-dim", s_q_hint))
+                right_len += len(s_q_hint)
 
-            spaces = max(0, cols - text_len - 2)
+            # 2. Build left-side text (queued prompt awaiting execution)
+            left_parts: List[tuple[str, str]] = []
+            left_len = 0
+
+            if queued_items:
+                first_item = queued_items[0]
+                prompt_raw = first_item.prompt.replace("\n", " ").strip()
+                count = len(queued_items)
+
+                q_prefix = "⏳ Queued: " if count == 1 else f"⏳ Queued ({count}): "
+                q_suffix = f" (+{count - 1} more)" if count > 1 else ""
+
+                fixed_len = len(margin) + len(q_prefix) + len(q_suffix) + 2  # +2 for quotes
+                avail_prompt = max(4, cols - right_len - fixed_len - 3)
+
+                if len(prompt_raw) > avail_prompt:
+                    prompt_preview = prompt_raw[: max(3, avail_prompt - 3)].rstrip() + "..."
+                else:
+                    prompt_preview = prompt_raw
+
+                left_parts.append(("", margin))
+                left_parts.append(("class:safi-queued", q_prefix))
+                left_parts.append(("class:safi-step", f'"{prompt_preview}"'))
+                if q_suffix:
+                    left_parts.append(("class:safi-dim", q_suffix))
+
+                left_len = len(margin) + len(q_prefix) + len(prompt_preview) + 2 + len(q_suffix)
+
+            # 3. Calculate gap between left and right sides
+            gap = max(1, cols - left_len - right_len - 2)
+            if not left_parts:
+                gap = max(0, cols - right_len - 2)
+
             fragments: List[tuple[str, str]] = [
                 ("class:safi-divider", divider + "\n"),
-                ("", " " * spaces),
             ]
-            fragments.extend(text_parts)
-            return FormattedText(fragments)
-
-        if active_tasks:
-            next_task = active_tasks[0]
-            rem = scheduler.format_remaining_time(next_task.remaining_seconds)
-            lbl = next_task.label
-            if len(lbl) > 16:
-                lbl = lbl[:13] + "..."
-            s_label = f"⏱ {len(active_tasks)} Scheduled"
-            s_detail = f" (next: '{lbl}' in {rem}) • /tasks"
-
-            text_parts = [
-                ("class:safi-scheduled", s_label),
-                ("class:safi-dim", s_detail),
-            ]
-            text_len = len(s_label) + len(s_detail)
-
-            spaces = max(0, cols - text_len - 2)
-            fragments = [
-                ("class:safi-divider", divider + "\n"),
-                ("", " " * spaces),
-            ]
-            fragments.extend(text_parts)
+            fragments.extend(left_parts)
+            fragments.append(("", " " * gap))
+            fragments.extend(right_parts)
             return FormattedText(fragments)
     except Exception:
         pass
