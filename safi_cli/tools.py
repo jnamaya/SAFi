@@ -20,7 +20,7 @@ logger = logging.getLogger("safi.tools")
 FORBIDDEN_NAMES = frozenset({
     ".env", "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa",
     "authorized_keys", "known_hosts", "credentials", ".netrc", ".pgpass",
-    "secrets.json", "inventory.json",
+    "secrets.json",
 })
 FORBIDDEN_DIRS = frozenset({
     ".git", ".ssh", ".aws", ".gnupg", ".kube",
@@ -928,8 +928,11 @@ def execute_tool(
             clean_env = os.environ.copy()
             home_bin = str(Path.home() / ".local" / "bin")
             cur_path = clean_env.get("PATH", "")
-            if home_bin not in cur_path.split(os.pathsep):
-                clean_env["PATH"] = f"{home_bin}{os.pathsep}{cur_path}" if cur_path else home_bin
+            path_parts = cur_path.split(os.pathsep) if cur_path else []
+            for bp in (home_bin, "/usr/local/bin", "/usr/bin", "/bin"):
+                if bp not in path_parts:
+                    path_parts.insert(0, bp)
+            clean_env["PATH"] = os.pathsep.join(path_parts)
 
             if not is_sysadmin:
                 for k in (
