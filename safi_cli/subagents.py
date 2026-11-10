@@ -48,25 +48,24 @@ def run_subagent_task(
     if subagent_type == "researcher":
         allowed_tool_names = ("read", "grep", "glob", "list", "git_status", "git_diff")
         role_prompt = (
-            "You are a focused, read-only Research Subagent for SAFi. "
-            "Your objective is to inspect repository files, search patterns, and return a concise, factual summary of findings. "
-            "Do NOT propose write, edit, delete, or bash commands. Be specific with file paths and line numbers."
+            "Subtask objective: Research and inspect repository files and search patterns, "
+            "then provide a concise, factual summary of findings with specific file paths and line numbers."
         )
     elif subagent_type == "tester":
         allowed_tool_names = ("bash", "read", "grep", "list")
         role_prompt = (
-            "You are a focused Test Runner Subagent for SAFi. "
-            "Run relevant test commands using 'bash', inspect results, and report pass/fail status and failure causes."
+            "Subtask objective: Run relevant test commands, inspect results, "
+            "and report pass/fail status and failure causes."
         )
     elif subagent_type == "code_reviewer":
         allowed_tool_names = ("read", "grep", "glob", "list", "git_status", "git_diff")
         role_prompt = (
-            "You are a Code Review Subagent for SAFi. "
-            "Inspect files and diffs to identify bugs, potential edge cases, security flaws, or architectural discrepancies."
+            "Subtask objective: Inspect repository files and diffs to identify bugs, "
+            "potential edge cases, security flaws, or architectural discrepancies."
         )
     else:
         allowed_tool_names = ("read", "grep", "glob", "list", "git_status", "git_diff")
-        role_prompt = f"You are a specialized subagent for SAFi focused on: {subagent_type}."
+        role_prompt = f"Subtask objective ({subagent_type}): Complete the delegated investigation."
 
     # Mutation policy is enforced authoritatively by the server's Will gate plus
     # the role tool filtering above: read-only subagents simply have no mutating
