@@ -149,13 +149,13 @@ if [ $# -eq 0 ] || [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
 fi
 
 if [ ! -f "$INVENTORY_FILE" ]; then
-    echo "Error: Inventory file not found at $INVENTORY_FILE" >&2
-    exit 1
+    mkdir -p "$(dirname "$INVENTORY_FILE")"
+    echo "{}" > "$INVENTORY_FILE"
 fi
 
 if [ "$1" = "--list" ] || [ "$1" = "-l" ]; then
     echo "Managed Infrastructure Inventory ($INVENTORY_FILE):"
-    jq -r 'to_entries[] | "  - \(.key): \(.value.user // "(ssh-config)")@\(.value.host) (auth: \(.value.auth)) — \(.value.description // "")"' "$INVENTORY_FILE"
+    jq -r 'to_entries[] | "  - \(.key): \(.value.user // "(ssh-config)")@\(.value.host) (auth: \(.value.auth)) - \(.value.description // "")"' "$INVENTORY_FILE"
     exit 0
 fi
 
@@ -168,21 +168,37 @@ TARGET="$1"
 shift
 CMD="$*"
 
-TARGET_CONFIG=$(jq -r --arg t "$TARGET" '.[$t] // empty' "$INVENTORY_FILE")
+TARGET_CONFIG=$(jq -r --arg t "$TARGET" '.[$t] // empty' "$INVENTORY_FILE" 2>/dev/null || true)
 if [ -z "$TARGET_CONFIG" ]; then
     TARGET_CONFIG=$(jq -r --arg t "${TARGET,,}" 'to_entries[] | select(.key | ascii_downcase == $t) | .value' "$INVENTORY_FILE" 2>/dev/null || true)
 fi
-if [ -z "$TARGET_CONFIG" ]; then
+
+if [ -n "$TARGET_CONFIG" ]; then
+    HOST=$(echo "$TARGET_CONFIG" | jq -r '.host')
+    # Strip leading 'ssh ' prefix if accidentally specified in host
+    HOST="${HOST#ssh }"
+    USER=$(echo "$TARGET_CONFIG" | jq -r '.user // empty')
+    PORT=$(echo "$TARGET_CONFIG" | jq -r '.port // empty')
+    AUTH=$(echo "$TARGET_CONFIG" | jq -r '.auth // "key"')
+    DESC=$(echo "$TARGET_CONFIG" | jq -r '.description // empty')
+    OS_TYPE=$(echo "$TARGET_CONFIG" | jq -r '.os // empty')
+elif [[ "$TARGET" == *"@"* ]] || [[ "$TARGET" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]] || [[ "$TARGET" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    if [[ "$TARGET" == *"@"* ]]; then
+        USER="${TARGET%%@*}"
+        HOST="${TARGET#*@}"
+    else
+        USER="root"
+        HOST="$TARGET"
+    fi
+    PORT=22
+    AUTH="key"
+    DESC=""
+    OS_TYPE="linux"
+else
     echo "Error: Unknown host alias '$TARGET'. Available hosts:" >&2
-    jq -r 'keys[] | "  - \(.)"' "$INVENTORY_FILE" >&2
+    jq -r 'keys[] | "  - \(.)"' "$INVENTORY_FILE" 2>/dev/null || true >&2
     exit 1
 fi
-
-HOST=$(echo "$TARGET_CONFIG" | jq -r '.host')
-# Strip leading 'ssh ' prefix if accidentally specified in host
-HOST="${HOST#ssh }"
-
-USER=$(echo "$TARGET_CONFIG" | jq -r '.user // empty')
 PORT=$(echo "$TARGET_CONFIG" | jq -r '.port // empty')
 AUTH=$(echo "$TARGET_CONFIG" | jq -r '.auth // "key"')
 DESC=$(echo "$TARGET_CONFIG" | jq -r '.description // empty')
