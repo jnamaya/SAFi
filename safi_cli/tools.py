@@ -482,9 +482,12 @@ def get_tools_for_agent(agent: Optional[str]) -> List[Dict[str, Any]]:
     return list(SOFTWARE_ENGINEER_TOOL_SCHEMAS)
 
 
-def _is_secret_name(name: str) -> bool:
+def _is_secret_name(name: str, agent: Optional[str] = None) -> bool:
     """True for credential files: exact names, key suffixes, and .env.* variants (templates excepted)."""
     lower = name.lower()
+    is_sysadmin = agent is not None and "sysadmin" in agent.lower()
+    if lower == "inventory.json":
+        return not is_sysadmin
     if lower in FORBIDDEN_NAMES or any(lower.endswith(s) for s in FORBIDDEN_SUFFIXES):
         return True
     if lower.startswith(".env.") and not lower.endswith(ENV_TEMPLATE_SUFFIXES):
@@ -499,10 +502,19 @@ def _safe_int(value: Any, default: int) -> int:
         return default
 
 
-def resolve_safe_path(rel_path: str, workspace_root: Path, *, follow_symlinks: bool = True) -> Path:
+def resolve_safe_path(
+    rel_path: str,
+    workspace_root: Path,
+    *,
+    follow_symlinks: bool = True,
+    agent: Optional[str] = None,
+) -> Path:
     """Confine a relative path to workspace_root and block protected directories and secret files."""
     ws_resolved = workspace_root.resolve()
-    raw_target = workspace_root / rel_path
+    is_sysadmin = agent is not None and "sysadmin" in agent.lower()
+
+    expanded_path = os.path.expanduser(rel_path)
+    raw_target = Path(expanded_path) if Path(expanded_path).is_absolute() else (workspace_root / rel_path)
 
     if follow_symlinks:
         target = raw_target.resolve()
@@ -512,26 +524,30 @@ def resolve_safe_path(rel_path: str, workspace_root: Path, *, follow_symlinks: b
     try:
         rel_parts = target.relative_to(ws_resolved).parts
     except ValueError:
+        # sysadmin is explicitly permitted to read ~/.config/safi/inventory.json
+        inv_path = (Path.home() / ".config" / "safi" / "inventory.json").resolve()
+        if is_sysadmin and target == inv_path:
+            return target
         raise PermissionError(f"Access denied: '{rel_path}' resolves outside the repository root.")
 
     raw_norm_parts = Path(os.path.normpath(rel_path)).parts
     for part in set(rel_parts) | set(raw_norm_parts):
         if part.lower() in FORBIDDEN_DIRS:
             raise PermissionError(f"Access denied: '{part}' is a protected directory and cannot be accessed directly.")
-        if _is_secret_name(part):
+        if _is_secret_name(part, agent=agent):
             raise PermissionError(f"Access denied: '{part}' is a secret/credential file and cannot be accessed.")
 
     return target
 
 
-def _dir_contains_protected(directory: Path) -> Optional[str]:
+def _dir_contains_protected(directory: Path, agent: Optional[str] = None) -> Optional[str]:
     """Return the name of any protected directory or secret file inside `directory`, else None."""
     for root, dirs, files in os.walk(directory, followlinks=False):
         for d in dirs:
-            if d.lower() in FORBIDDEN_DIRS or _is_secret_name(d):
+            if d.lower() in FORBIDDEN_DIRS or _is_secret_name(d, agent=agent):
                 return d
         for f in files:
-            if _is_secret_name(f):
+            if _is_secret_name(f, agent=agent):
                 return f
     return None
 
@@ -587,6 +603,7 @@ def _build_bwrap_command(
 
         sensitive_dirs = [
             home / ".ssh",
+            home / ".config" / "safi",
             home / ".config" / "gh",
             home / ".aws",
             home / ".azure",
@@ -601,6 +618,7 @@ def _build_bwrap_command(
 
         sensitive_files = [
             home / ".config" / "safi" / "config.json",
+            home / ".config" / "safi" / "inventory.json",
             home / ".bash_history",
             home / ".zsh_history",
             home / ".netrc",
@@ -657,7 +675,7 @@ def execute_tool(
             path_str = args.get("path") or args.get("filePath") or args.get("file_path") or ""
             if not path_str.strip():
                 return "Error: 'path' parameter is required for read."
-            target = resolve_safe_path(path_str, workspace_root)
+            target = resolve_safe_path(path_str, workspace_root, agent=agent)
             if not target.exists():
                 return f"Error: No such file: {path_str}"
             if target.is_dir():
@@ -712,7 +730,7 @@ def execute_tool(
             content = str(args.get("content") if args.get("content") is not None else "")
             if path_str.endswith("scratchpad.md") and "\\n" in content and "\n" not in content:
                 content = content.replace("\\n", "\n")
-            target = resolve_safe_path(path_str, workspace_root)
+            target = resolve_safe_path(path_str, workspace_root, agent=agent)
             if target == workspace_root.resolve() or target.is_dir():
                 return f"Error: Cannot write to directory '{path_str}'. Specify a target file path."
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -741,7 +759,7 @@ def execute_tool(
             )
             if not target_str:
                 return f"Error: 'target' text is required for edit. Use 'write' to create or rewrite {path_str}."
-            target = resolve_safe_path(path_str, workspace_root)
+            target = resolve_safe_path(path_str, workspace_root, agent=agent)
             if not target.exists():
                 return f"Error: No such file: {path_str}"
 
@@ -774,7 +792,7 @@ def execute_tool(
             path_str = args.get("path") or args.get("filePath") or args.get("file_path") or ""
             if not path_str.strip():
                 return "Error: 'path' parameter is required for delete."
-            target = resolve_safe_path(path_str, workspace_root, follow_symlinks=False)
+            target = resolve_safe_path(path_str, workspace_root, follow_symlinks=False, agent=agent)
             if not target.exists() and not target.is_symlink():
                 return f"Error: No such file or directory: {path_str}"
             if target == workspace_root.resolve():
@@ -783,7 +801,7 @@ def execute_tool(
                 target.unlink()
                 return f"Successfully deleted file: {path_str}"
             elif target.is_dir():
-                protected_item = _dir_contains_protected(target)
+                protected_item = _dir_contains_protected(target, agent=agent)
                 if protected_item:
                     raise PermissionError(
                         f"Access denied: Cannot delete directory '{path_str}' because it contains protected item '{protected_item}'."
@@ -796,7 +814,7 @@ def execute_tool(
             pattern = args.get("pattern") or ""
             sub_path = args.get("path") or "."
             include = args.get("include")
-            search_dir = resolve_safe_path(sub_path, workspace_root)
+            search_dir = resolve_safe_path(sub_path, workspace_root, agent=agent)
             if not search_dir.exists():
                 return f"Error: Path does not exist: {sub_path}"
 
@@ -822,7 +840,7 @@ def execute_tool(
                     if proc.returncode == 0:
                         lines = [
                             l for l in proc.stdout.splitlines()
-                            if l.strip() and not _is_secret_name(Path(l.split(":", 1)[0]).name)
+                            if l.strip() and not _is_secret_name(Path(l.split(":", 1)[0]).name, agent=agent)
                         ]
                         if not lines:
                             return f"No matches found for pattern: '{pattern}'"
@@ -846,7 +864,7 @@ def execute_tool(
                     if d not in SKIP_DIRS and d.lower() not in FORBIDDEN_DIRS and not d.startswith(".")
                 ]
                 for f in sorted(filenames):
-                    if f.startswith(".") or _is_secret_name(f):
+                    if f.startswith(".") or _is_secret_name(f, agent=agent):
                         continue
                     if any(f.lower().endswith(ext) for ext in BINARY_EXTENSIONS):
                         continue
@@ -874,7 +892,7 @@ def execute_tool(
         elif name == "glob":
             pattern = args.get("pattern") or "*"
             sub_path = args.get("path") or "."
-            search_dir = resolve_safe_path(sub_path, workspace_root)
+            search_dir = resolve_safe_path(sub_path, workspace_root, agent=agent)
             if not search_dir.exists():
                 return f"Error: Path does not exist: {sub_path}"
 
@@ -885,7 +903,7 @@ def execute_tool(
                     if d not in SKIP_DIRS and d.lower() not in FORBIDDEN_DIRS and not d.startswith(".")
                 ]
                 for f in sorted(filenames):
-                    if f.startswith(".") or _is_secret_name(f):
+                    if f.startswith(".") or _is_secret_name(f, agent=agent):
                         continue
                     if any(f.lower().endswith(ext) for ext in BINARY_EXTENSIONS):
                         continue
@@ -902,7 +920,7 @@ def execute_tool(
 
         elif name == "list":
             sub_path = args.get("path") or "."
-            target = resolve_safe_path(sub_path, workspace_root)
+            target = resolve_safe_path(sub_path, workspace_root, agent=agent)
             if not target.exists():
                 return f"Error: Path does not exist: {sub_path}"
             if not target.is_dir():
@@ -914,7 +932,7 @@ def execute_tool(
                     item.name.startswith(".")
                     or item.name in SKIP_DIRS
                     or item.name.lower() in FORBIDDEN_DIRS
-                    or _is_secret_name(item.name)
+                    or _is_secret_name(item.name, agent=agent)
                 ):
                     continue
                 suffix = "/" if item.is_dir() else ""
@@ -924,6 +942,12 @@ def execute_tool(
         elif name == "bash":
             cmd = args.get("command") or ""
             is_sysadmin = agent is not None and "sysadmin" in agent.lower()
+            if not is_sysadmin:
+                if re.search(r"\b(sys-exec)\b", cmd) or "inventory.json" in cmd:
+                    return (
+                        "Error: Access denied. 'sys-exec' and the infrastructure inventory (inventory.json) "
+                        "are restricted exclusively to the Systems Administrator agent."
+                    )
             bash_timeout = 420 if is_sysadmin else 120
             clean_env = os.environ.copy()
             home_bin = str(Path.home() / ".local" / "bin")
@@ -1095,7 +1119,7 @@ def execute_tool(
             if staged:
                 diff_cmd.append("--staged")
             if path_arg:
-                resolve_safe_path(path_arg, workspace_root)
+                resolve_safe_path(path_arg, workspace_root, agent=agent)
                 diff_cmd.extend(["--", path_arg])
             proc = subprocess.run(
                 diff_cmd,
