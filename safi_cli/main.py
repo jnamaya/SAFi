@@ -139,6 +139,16 @@ def main():
         help="Reset SAFi CLI configuration and sessions to initial clean state.",
     )
     parser.add_argument(
+        "--uninstall",
+        action="store_true",
+        help="Uninstall SAFi CLI, removing binaries, virtual environment, and system bridges.",
+    )
+    parser.add_argument(
+        "--purge",
+        action="store_true",
+        help="Used with --uninstall to delete configuration, inventory, and session tokens (~/.config/safi).",
+    )
+    parser.add_argument(
         "--setup-cloud",
         "--cloud",
         dest="setup_cloud",
@@ -156,6 +166,49 @@ def main():
     if getattr(args, "reset", False):
         config.clear_all_config()
         ui.console.print("[bold green]✓ SAFi CLI configuration and sessions have been reset to factory state.[/]")
+        sys.exit(0)
+
+    if getattr(args, "uninstall", False):
+        import shutil, subprocess
+        ui.console.print("[bold red]Uninstalling SAFi CLI...[/]")
+        home = Path.home()
+        for bin_name in ("safi-cli", "saficli", "sys-exec", "safi-setup-key"):
+            p = home / ".local" / "bin" / bin_name
+            if p.exists() or p.is_symlink():
+                try:
+                    p.unlink()
+                except Exception:
+                    pass
+        pkg_dir = home / ".local" / "share" / "safi-cli"
+        if pkg_dir.exists():
+            shutil.rmtree(pkg_dir, ignore_errors=True)
+        try:
+            if Path("/proc/version").exists() and "microsoft" in Path("/proc/version").read_text().lower():
+                res = subprocess.run(["cmd.exe", "/c", "echo %LOCALAPPDATA%\\Microsoft\\WindowsApps"], capture_output=True, text=True, timeout=3)
+                if res.returncode == 0 and res.stdout.strip():
+                    wpath = subprocess.run(["wslpath", res.stdout.strip()], capture_output=True, text=True, timeout=3)
+                    if wpath.returncode == 0 and Path(wpath.stdout.strip()).is_dir():
+                        for cmd_f in ("safi-cli.cmd", "saficli.cmd", "sys-exec.cmd", "safi-setup-key.cmd"):
+                            (Path(wpath.stdout.strip()) / cmd_f).unlink(missing_ok=True)
+                res2 = subprocess.run(["cmd.exe", "/c", "echo %USERPROFILE%"], capture_output=True, text=True, timeout=3)
+                if res2.returncode == 0 and res2.stdout.strip():
+                    wpath2 = subprocess.run(["wslpath", res2.stdout.strip()], capture_output=True, text=True, timeout=3)
+                    if wpath2.returncode == 0 and Path(wpath2.stdout.strip()).is_dir():
+                        win_bin = Path(wpath2.stdout.strip()) / ".local" / "bin"
+                        if win_bin.is_dir():
+                            for cmd_f in ("safi-cli.cmd", "saficli.cmd", "sys-exec.cmd", "safi-setup-key.cmd"):
+                                (win_bin / cmd_f).unlink(missing_ok=True)
+        except Exception:
+            pass
+        if getattr(args, "purge", False):
+            config.clear_all_config()
+            cfg_dir = home / ".config" / "safi"
+            if cfg_dir.exists():
+                shutil.rmtree(cfg_dir, ignore_errors=True)
+            ui.console.print("[dim]Purged configuration and credentials in ~/.config/safi.[/dim]")
+        else:
+            ui.console.print("[dim]Configuration preserved in ~/.config/safi. Pass --purge to delete it.[/dim]")
+        ui.console.print("[bold green]✓ SAFi CLI has been completely uninstalled.[/]")
         sys.exit(0)
 
     if args.setup_key is not None:
