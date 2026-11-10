@@ -623,12 +623,12 @@ EOF
     fi
 fi
 
-# 9. Scaffold inventory template if missing
-CONFIG_DIR="${HOME}/.config/safi"
-mkdir -p "${CONFIG_DIR}"
-
-if [ ! -f "${CONFIG_DIR}/inventory.json" ]; then
-    cat << 'EOF' > "${CONFIG_DIR}/inventory.json"
+# 9. Scaffold inventory template and synchronize with Windows profile if in WSL
+if [ -n "$WIN_PROFILE_DIR" ] && [ -d "$WIN_PROFILE_DIR" ]; then
+    WIN_CONFIG_DIR="${WIN_PROFILE_DIR}/.config/safi"
+    mkdir -p "${WIN_CONFIG_DIR}"
+    if [ ! -f "${WIN_CONFIG_DIR}/inventory.json" ]; then
+        cat << 'EOF' > "${WIN_CONFIG_DIR}/inventory.json"
 {
   "example-server": {
     "host": "192.168.1.100",
@@ -639,7 +639,36 @@ if [ ! -f "${CONFIG_DIR}/inventory.json" ]; then
   }
 }
 EOF
-    echo "Created sample inventory at ${CONFIG_DIR}/inventory.json"
+        echo "Created inventory at ${WIN_CONFIG_DIR}/inventory.json"
+    fi
+
+    mkdir -p "${HOME}/.config"
+    if [ ! -L "${HOME}/.config/safi" ]; then
+        if [ -d "${HOME}/.config/safi" ]; then
+            cp -rn "${HOME}/.config/safi/"* "${WIN_CONFIG_DIR}/" 2>/dev/null || true
+            rm -rf "${HOME}/.config/safi"
+        fi
+        ln -sf "${WIN_CONFIG_DIR}" "${HOME}/.config/safi"
+        echo "✓ Linked WSL ~/.config/safi directly to Windows user profile: ${WIN_CONFIG_DIR}"
+    fi
+    CONFIG_DIR="${HOME}/.config/safi"
+else
+    CONFIG_DIR="${HOME}/.config/safi"
+    mkdir -p "${CONFIG_DIR}"
+    if [ ! -f "${CONFIG_DIR}/inventory.json" ]; then
+        cat << 'EOF' > "${CONFIG_DIR}/inventory.json"
+{
+  "example-server": {
+    "host": "192.168.1.100",
+    "user": "admin",
+    "port": 22,
+    "auth": "key",
+    "description": "Example target server"
+  }
+}
+EOF
+        echo "Created sample inventory at ${CONFIG_DIR}/inventory.json"
+    fi
 fi
 
 # Auto-configure default appliance URL if running on a SAFi appliance

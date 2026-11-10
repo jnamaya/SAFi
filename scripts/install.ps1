@@ -20,11 +20,32 @@ if (-not $wslDistros -or $wslDistros.Count -eq 0) {
     Write-Host "Ubuntu installed. Please restart if prompted by Windows." -ForegroundColor Green
 }
 
-# 3. Pre-install all Linux operational dependencies using WSL root bridge (no sudo password needed)
+# 3. Scaffold Windows user profile configuration directory (~/.config/safi)
+$winConfigDir = Join-Path $env:USERPROFILE ".config\safi"
+if (-not (Test-Path $winConfigDir)) {
+    New-Item -ItemType Directory -Force -Path $winConfigDir | Out-Null
+}
+$winInvFile = Join-Path $winConfigDir "inventory.json"
+if (-not (Test-Path $winInvFile)) {
+    @'
+{
+  "example-server": {
+    "host": "192.168.1.100",
+    "user": "admin",
+    "port": 22,
+    "auth": "key",
+    "description": "Example target server"
+  }
+}
+'@ | Set-Content -Path $winInvFile -Encoding UTF8
+    Write-Host "Scaffolded inventory in $winInvFile" -ForegroundColor Cyan
+}
+
+# 4. Pre-install all Linux operational dependencies using WSL root bridge (no sudo password needed)
 Write-Host "Ensuring core operational utilities (ssh, sshpass, nmap, jq, curl, rsync, python3) in WSL..." -ForegroundColor Cyan
 wsl.exe -u root -e sh -c "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3 python3-pip python3-venv ssh sshpass nmap jq curl iputils-ping dnsutils rsync git" 2>$null
 
-# 4. Run the SAFi CLI installer inside WSL
+# 5. Run the SAFi CLI installer inside WSL
 Write-Host "Installing SAFi CLI and configuring Windows bridges..." -ForegroundColor Cyan
 wsl.exe -e bash -c "(curl -sSL https://runsafi.com/install.sh 2>/dev/null || curl -sSL https://raw.githubusercontent.com/jnamaya/SAFi/dev/scripts/install_cli.sh) | bash"
 
