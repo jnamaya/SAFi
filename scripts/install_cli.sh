@@ -182,6 +182,16 @@ set -eo pipefail
 CONFIG_DIR="${HOME}/.config/safi"
 INVENTORY_FILE="${CONFIG_DIR}/inventory.json"
 
+# In WSL, fallback to Windows host user profile if local inventory does not exist
+if [ ! -f "$INVENTORY_FILE" ]; then
+    for win_inv in /mnt/c/Users/*/.config/safi/inventory.json; do
+        if [ -f "$win_inv" ]; then
+            INVENTORY_FILE="$win_inv"
+            break
+        fi
+    done
+fi
+
 usage() {
     cat << 'HELP'
 Usage:
@@ -201,8 +211,8 @@ if [ $# -eq 0 ] || [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
 fi
 
 if [ ! -f "$INVENTORY_FILE" ]; then
-    mkdir -p "$(dirname "$INVENTORY_FILE")"
-    echo "{}" > "$INVENTORY_FILE"
+    mkdir -p "$(dirname "$INVENTORY_FILE")" 2>/dev/null || true
+    echo "{}" > "$INVENTORY_FILE" 2>/dev/null || true
 fi
 
 if [ "$1" = "--list" ] || [ "$1" = "-l" ]; then

@@ -516,6 +516,13 @@ def resolve_safe_path(
     expanded_path = os.path.expanduser(rel_path)
     raw_target = Path(expanded_path) if Path(expanded_path).is_absolute() else (workspace_root / rel_path)
 
+    # In WSL, fallback to Windows host user profile if local inventory.json does not exist
+    if is_sysadmin and raw_target.name == "inventory.json" and not raw_target.exists():
+        for win_inv in sorted(Path("/mnt/c/Users").glob("*/.config/safi/inventory.json")):
+            if win_inv.is_file():
+                raw_target = win_inv
+                break
+
     if follow_symlinks:
         target = raw_target.resolve()
     else:
@@ -524,10 +531,13 @@ def resolve_safe_path(
     try:
         rel_parts = target.relative_to(ws_resolved).parts
     except ValueError:
-        # sysadmin is explicitly permitted to read ~/.config/safi/inventory.json
-        inv_path = (Path.home() / ".config" / "safi" / "inventory.json").resolve()
-        if is_sysadmin and target == inv_path:
-            return target
+        # sysadmin is explicitly permitted to read inventory.json from ~/.config/safi or Windows profile
+        if is_sysadmin and target.name == "inventory.json":
+            if target.is_file():
+                return target
+            for win_inv in sorted(Path("/mnt/c/Users").glob("*/.config/safi/inventory.json")):
+                if win_inv.is_file():
+                    return win_inv.resolve()
         raise PermissionError(f"Access denied: '{rel_path}' resolves outside the repository root.")
 
     raw_norm_parts = Path(os.path.normpath(rel_path)).parts
