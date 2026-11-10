@@ -50,12 +50,17 @@ else
     rm -rf "${TMP_DIR}"
 fi
 
-# 3. Check & Install system packages (python3-venv, sshpass, nmap, jq)
+# 3. Check & Install system packages (ssh, sshpass, nmap, jq, curl, ping, dig, rsync, python3-venv)
 echo "Checking operational system packages..."
 PKGS=()
-for tool in ssh sshpass nmap jq; do
+for tool in ssh sshpass nmap jq curl ping dig rsync; do
+    case "$tool" in
+        ping) pkg="iputils-ping" ;;
+        dig)  pkg="dnsutils" ;;
+        *)    pkg="$tool" ;;
+    esac
     if ! command -v "$tool" &>/dev/null; then
-        PKGS+=("$tool")
+        PKGS+=("$pkg")
     fi
 done
 
@@ -65,10 +70,57 @@ fi
 
 if [ ${#PKGS[@]} -gt 0 ]; then
     echo "Installing missing system utilities: ${PKGS[*]}..."
-    if command -v apt-get &>/dev/null && [ "$(id -u)" -eq 0 ]; then
-        apt-get update -qq && apt-get install -y -qq "${PKGS[@]}" || true
-    elif command -v apt-get &>/dev/null && command -v sudo &>/dev/null; then
-        sudo -n apt-get update -qq && sudo -n apt-get install -y -qq "${PKGS[@]}" 2>/dev/null || true
+    INSTALLED=0
+
+    # Strategy 1: If running inside WSL, use wsl.exe -u root (passwordless root access in WSL)
+    if (grep -qi "microsoft" /proc/version 2>/dev/null || [ -n "$WSL_DISTRO_NAME" ]); then
+        WSL_BIN=""
+        if command -v wsl.exe &>/dev/null; then
+            WSL_BIN="wsl.exe"
+        elif [ -x /mnt/c/Windows/System32/wsl.exe ]; then
+            WSL_BIN="/mnt/c/Windows/System32/wsl.exe"
+        fi
+        if [ -n "$WSL_BIN" ]; then
+            echo "Requesting WSL root bridge to install ${PKGS[*]}..."
+            if "$WSL_BIN" -u root -e sh -c "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ${PKGS[*]}" 2>/dev/null; then
+                INSTALLED=1
+            fi
+        fi
+    fi
+
+    # Strategy 2: If running as root directly
+    if [ "$INSTALLED" -eq 0 ] && [ "$(id -u)" -eq 0 ] && command -v apt-get &>/dev/null; then
+        apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${PKGS[@]}" && INSTALLED=1
+    fi
+
+    # Strategy 3: Try passwordless sudo or interactive sudo via /dev/tty
+    if [ "$INSTALLED" -eq 0 ] && command -v apt-get &>/dev/null && command -v sudo &>/dev/null; then
+        if sudo -n true 2>/dev/null; then
+            sudo apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${PKGS[@]}" && INSTALLED=1
+        elif [ -t 0 ] || [ -e /dev/tty ]; then
+            echo "Administrator (sudo) privileges required to install: ${PKGS[*]}"
+            sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "${PKGS[@]}" < /dev/tty && INSTALLED=1
+        fi
+    fi
+
+    # Verify what got installed
+    STILL_MISSING=()
+    for tool in ssh sshpass nmap jq curl ping dig rsync; do
+        if ! command -v "$tool" &>/dev/null; then
+            case "$tool" in
+                ping) pkg="iputils-ping" ;;
+                dig)  pkg="dnsutils" ;;
+                *)    pkg="$tool" ;;
+            esac
+            STILL_MISSING+=("$pkg")
+        fi
+    done
+
+    if [ ${#STILL_MISSING[@]} -gt 0 ]; then
+        echo "Note: The following packages could not be installed automatically: ${STILL_MISSING[*]}" >&2
+        echo "To install them manually, run: sudo apt update && sudo apt install -y ${STILL_MISSING[*]}" >&2
+    else
+        echo "✓ All required system utilities are installed."
     fi
 fi
 
