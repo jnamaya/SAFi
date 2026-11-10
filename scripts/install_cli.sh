@@ -456,22 +456,22 @@ if grep -qi "microsoft" /proc/version 2>/dev/null && command -v cmd.exe &>/dev/n
         if [ -n "$WIN_APPS_DIR" ] && [ -d "$WIN_APPS_DIR" ]; then
             cat << 'EOF' > "${WIN_APPS_DIR}/safi-cli.cmd"
 @echo off
-wsl.exe -e safi-cli %*
+wsl.exe bash -c "export PATH=\"$HOME/.local/bin:$PATH\"; exec safi-cli \"$@\"" -- %*
 exit /b %ERRORLEVEL%
 EOF
             cat << 'EOF' > "${WIN_APPS_DIR}/saficli.cmd"
 @echo off
-wsl.exe -e saficli %*
+wsl.exe bash -c "export PATH=\"$HOME/.local/bin:$PATH\"; exec saficli \"$@\"" -- %*
 exit /b %ERRORLEVEL%
 EOF
             cat << 'EOF' > "${WIN_APPS_DIR}/sys-exec.cmd"
 @echo off
-wsl.exe -e sys-exec %*
+wsl.exe bash -c "export PATH=\"$HOME/.local/bin:$PATH\"; exec sys-exec \"$@\"" -- %*
 exit /b %ERRORLEVEL%
 EOF
             cat << 'EOF' > "${WIN_APPS_DIR}/safi-setup-key.cmd"
 @echo off
-wsl.exe -e safi-setup-key %*
+wsl.exe bash -c "export PATH=\"$HOME/.local/bin:$PATH\"; exec safi-setup-key \"$@\"" -- %*
 exit /b %ERRORLEVEL%
 EOF
             chmod +x "${WIN_APPS_DIR}/safi-cli.cmd" "${WIN_APPS_DIR}/saficli.cmd" "${WIN_APPS_DIR}/sys-exec.cmd" "${WIN_APPS_DIR}/safi-setup-key.cmd" 2>/dev/null || true
@@ -486,22 +486,22 @@ EOF
             mkdir -p "${WIN_PROFILE_DIR}/.local/bin"
             cat << 'EOF' > "${WIN_PROFILE_DIR}/.local/bin/safi-cli.cmd"
 @echo off
-wsl.exe -e safi-cli %*
+wsl.exe bash -c "export PATH=\"$HOME/.local/bin:$PATH\"; exec safi-cli \"$@\"" -- %*
 exit /b %ERRORLEVEL%
 EOF
             cat << 'EOF' > "${WIN_PROFILE_DIR}/.local/bin/saficli.cmd"
 @echo off
-wsl.exe -e saficli %*
+wsl.exe bash -c "export PATH=\"$HOME/.local/bin:$PATH\"; exec saficli \"$@\"" -- %*
 exit /b %ERRORLEVEL%
 EOF
             cat << 'EOF' > "${WIN_PROFILE_DIR}/.local/bin/sys-exec.cmd"
 @echo off
-wsl.exe -e sys-exec %*
+wsl.exe bash -c "export PATH=\"$HOME/.local/bin:$PATH\"; exec sys-exec \"$@\"" -- %*
 exit /b %ERRORLEVEL%
 EOF
             cat << 'EOF' > "${WIN_PROFILE_DIR}/.local/bin/safi-setup-key.cmd"
 @echo off
-wsl.exe -e safi-setup-key %*
+wsl.exe bash -c "export PATH=\"$HOME/.local/bin:$PATH\"; exec safi-setup-key \"$@\"" -- %*
 exit /b %ERRORLEVEL%
 EOF
             if command -v powershell.exe &>/dev/null; then
