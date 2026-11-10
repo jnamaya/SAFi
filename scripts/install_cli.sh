@@ -449,29 +449,29 @@ fi
 # 8. WSL Windows Host Integration
 # If running inside WSL, bridge safi-cli to Windows
 if grep -qi "microsoft" /proc/version 2>/dev/null && command -v cmd.exe &>/dev/null; then
-    echo "Detected WSL environment — configuring Windows PowerShell & CMD integration..."
+    echo "Detected WSL environment - configuring Windows PowerShell & CMD integration..."
     WIN_APPS_RAW=$(cmd.exe /c "echo %LOCALAPPDATA%\Microsoft\WindowsApps" 2>/dev/null | tr -d '\r')
     if [ -n "$WIN_APPS_RAW" ] && command -v wslpath &>/dev/null; then
         WIN_APPS_DIR=$(wslpath "$WIN_APPS_RAW" 2>/dev/null || true)
         if [ -n "$WIN_APPS_DIR" ] && [ -d "$WIN_APPS_DIR" ]; then
             cat << 'EOF' > "${WIN_APPS_DIR}/safi-cli.cmd"
 @echo off
-wsl.exe bash -c "export PATH=\"$HOME/.local/bin:$PATH\"; exec safi-cli \"$@\"" -- %*
+wsl.exe -e bash -lic "exec safi-cli \"$@\"" bash %*
 exit /b %ERRORLEVEL%
 EOF
             cat << 'EOF' > "${WIN_APPS_DIR}/saficli.cmd"
 @echo off
-wsl.exe bash -c "export PATH=\"$HOME/.local/bin:$PATH\"; exec saficli \"$@\"" -- %*
+wsl.exe -e bash -lic "exec saficli \"$@\"" bash %*
 exit /b %ERRORLEVEL%
 EOF
             cat << 'EOF' > "${WIN_APPS_DIR}/sys-exec.cmd"
 @echo off
-wsl.exe bash -c "export PATH=\"$HOME/.local/bin:$PATH\"; exec sys-exec \"$@\"" -- %*
+wsl.exe -e bash -lic "exec sys-exec \"$@\"" bash %*
 exit /b %ERRORLEVEL%
 EOF
             cat << 'EOF' > "${WIN_APPS_DIR}/safi-setup-key.cmd"
 @echo off
-wsl.exe bash -c "export PATH=\"$HOME/.local/bin:$PATH\"; exec safi-setup-key \"$@\"" -- %*
+wsl.exe -e bash -lic "exec safi-setup-key \"$@\"" bash %*
 exit /b %ERRORLEVEL%
 EOF
             chmod +x "${WIN_APPS_DIR}/safi-cli.cmd" "${WIN_APPS_DIR}/saficli.cmd" "${WIN_APPS_DIR}/sys-exec.cmd" "${WIN_APPS_DIR}/safi-setup-key.cmd" 2>/dev/null || true
@@ -486,22 +486,22 @@ EOF
             mkdir -p "${WIN_PROFILE_DIR}/.local/bin"
             cat << 'EOF' > "${WIN_PROFILE_DIR}/.local/bin/safi-cli.cmd"
 @echo off
-wsl.exe bash -c "export PATH=\"$HOME/.local/bin:$PATH\"; exec safi-cli \"$@\"" -- %*
+wsl.exe -e bash -lic "exec safi-cli \"$@\"" bash %*
 exit /b %ERRORLEVEL%
 EOF
             cat << 'EOF' > "${WIN_PROFILE_DIR}/.local/bin/saficli.cmd"
 @echo off
-wsl.exe bash -c "export PATH=\"$HOME/.local/bin:$PATH\"; exec saficli \"$@\"" -- %*
+wsl.exe -e bash -lic "exec saficli \"$@\"" bash %*
 exit /b %ERRORLEVEL%
 EOF
             cat << 'EOF' > "${WIN_PROFILE_DIR}/.local/bin/sys-exec.cmd"
 @echo off
-wsl.exe bash -c "export PATH=\"$HOME/.local/bin:$PATH\"; exec sys-exec \"$@\"" -- %*
+wsl.exe -e bash -lic "exec sys-exec \"$@\"" bash %*
 exit /b %ERRORLEVEL%
 EOF
             cat << 'EOF' > "${WIN_PROFILE_DIR}/.local/bin/safi-setup-key.cmd"
 @echo off
-wsl.exe bash -c "export PATH=\"$HOME/.local/bin:$PATH\"; exec safi-setup-key \"$@\"" -- %*
+wsl.exe -e bash -lic "exec safi-setup-key \"$@\"" bash %*
 exit /b %ERRORLEVEL%
 EOF
             if command -v powershell.exe &>/dev/null; then
