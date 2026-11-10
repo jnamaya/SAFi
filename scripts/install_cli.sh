@@ -59,7 +59,7 @@ for tool in ssh sshpass nmap jq; do
     fi
 done
 
-if ! "${PYTHON_BIN}" -m venv --help &>/dev/null; then
+if ! "${PYTHON_BIN}" -c 'import ensurepip' &>/dev/null; then
     PKGS+=("python3-venv" "python3-pip")
 fi
 
@@ -95,6 +95,7 @@ if [ "${USE_VENV}" -eq 0 ]; then
             TARGET_PYTHON="${PYTHON_BIN}"
         else
             echo "Warning: could not auto-install requests and rich."
+            echo "Hint: Install python3-venv with 'sudo apt update && sudo apt install -y python3-venv python3-pip' and re-run."
         fi
     fi
 fi
