@@ -530,15 +530,23 @@ if [ -w "/usr/local/bin" ]; then
         rm -f /usr/local/bin/safi
         [ -x "/usr/local/sbin/safi" ] && ln -sf /usr/local/sbin/safi /usr/local/bin/safi 2>/dev/null || true
     fi
-elif command -v sudo &>/dev/null; then
+elif command -v sudo &>/dev/null && sudo -n true 2>/dev/null; then
     sudo -n ln -sf "${BIN_DIR}/safi-cli" /usr/local/bin/safi-cli 2>/dev/null || true
     sudo -n ln -sf "${BIN_DIR}/safi-cli" /usr/local/bin/saficli 2>/dev/null || true
     sudo -n ln -sf "${BIN_DIR}/sys-exec" /usr/local/bin/sys-exec 2>/dev/null || true
     sudo -n ln -sf "${BIN_DIR}/safi-setup-key" /usr/local/bin/safi-setup-key 2>/dev/null || true
-    # Restore appliance tool if legacy symlink existed
-    if [ -L "/usr/local/bin/safi" ] && [ "$(readlink /usr/local/bin/safi 2>/dev/null)" = "${BIN_DIR}/safi" ]; then
-        sudo -n rm -f /usr/local/bin/safi 2>/dev/null || true
-        [ -x "/usr/local/sbin/safi" ] && sudo -n ln -sf /usr/local/sbin/safi /usr/local/bin/safi 2>/dev/null || true
+elif (grep -qi "microsoft" /proc/version 2>/dev/null || [ -n "$WSL_DISTRO_NAME" ]); then
+    WSL_ROOT_BIN=""
+    if command -v wsl.exe &>/dev/null; then
+        WSL_ROOT_BIN="wsl.exe"
+    elif [ -x /mnt/c/Windows/System32/wsl.exe ]; then
+        WSL_ROOT_BIN="/mnt/c/Windows/System32/wsl.exe"
+    fi
+    if [ -n "$WSL_ROOT_BIN" ]; then
+        "$WSL_ROOT_BIN" -u root -e ln -sf "${BIN_DIR}/safi-cli" /usr/local/bin/safi-cli 2>/dev/null || true
+        "$WSL_ROOT_BIN" -u root -e ln -sf "${BIN_DIR}/safi-cli" /usr/local/bin/saficli 2>/dev/null || true
+        "$WSL_ROOT_BIN" -u root -e ln -sf "${BIN_DIR}/sys-exec" /usr/local/bin/sys-exec 2>/dev/null || true
+        "$WSL_ROOT_BIN" -u root -e ln -sf "${BIN_DIR}/safi-setup-key" /usr/local/bin/safi-setup-key 2>/dev/null || true
     fi
 fi
 

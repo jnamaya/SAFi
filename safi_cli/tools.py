@@ -926,6 +926,11 @@ def execute_tool(
             is_sysadmin = agent is not None and "sysadmin" in agent.lower()
             bash_timeout = 420 if is_sysadmin else 120
             clean_env = os.environ.copy()
+            home_bin = str(Path.home() / ".local" / "bin")
+            cur_path = clean_env.get("PATH", "")
+            if home_bin not in cur_path.split(os.pathsep):
+                clean_env["PATH"] = f"{home_bin}{os.pathsep}{cur_path}" if cur_path else home_bin
+
             if not is_sysadmin:
                 for k in (
                     "ANTHROPIC_API_KEY",
