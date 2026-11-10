@@ -13,10 +13,38 @@ from typing import List, Optional
 from . import config, ui
 
 
+def get_ssh_config_args() -> list[str]:
+    """Return SSH -F args to bypass corrupted or read-only /etc/ssh/ssh_config.d proxy files."""
+    user_cfg = Path.home() / ".ssh" / "config"
+    if user_cfg.is_file():
+        try:
+            if (user_cfg.stat().st_mode & 0o002) == 0:
+                return ["-F", str(user_cfg)]
+        except Exception:
+            pass
+    return ["-F", "/dev/null"]
+
+
 def get_default_key_paths() -> tuple[Path, Path]:
-    """Return paths to (private_key, public_key) in ~/.ssh/."""
+    """Return paths to (private_key, public_key) in ~/.ssh/ (or Windows user .ssh if in WSL)."""
     ssh_dir = Path.home() / ".ssh"
-    return ssh_dir / "id_ed25519", ssh_dir / "id_ed25519.pub"
+    priv = ssh_dir / "id_ed25519"
+    pub = ssh_dir / "id_ed25519.pub"
+    if pub.is_file():
+        return priv, pub
+
+    # Check for existing id_rsa in ~/.ssh
+    if (ssh_dir / "id_rsa.pub").is_file():
+        return ssh_dir / "id_rsa", ssh_dir / "id_rsa.pub"
+
+    # In WSL, check if keys exist in Windows user profile
+    for win_ssh in sorted(Path("/mnt/c/Users").glob("*/.ssh")):
+        if (win_ssh / "id_ed25519.pub").is_file():
+            return win_ssh / "id_ed25519", win_ssh / "id_ed25519.pub"
+        if (win_ssh / "id_rsa.pub").is_file():
+            return win_ssh / "id_rsa", win_ssh / "id_rsa.pub"
+
+    return priv, pub
 
 
 def find_setup_script() -> Optional[Path]:
@@ -162,10 +190,13 @@ def deploy_key_native(
 
     ui.console.print(f"  [dim]Target Connection:[/]  [bold white]{user}@{host}[/] (port {port}, os: {os_type})\n")
 
+    ssh_cfg_args = get_ssh_config_args()
+
     # Step 1: Check existing passwordless connection
     ui.console.print("[dim]Checking existing passwordless connectivity... [/dim]", end="")
     check_cmd = [
         "ssh",
+        *ssh_cfg_args,
         "-o", "BatchMode=yes",
         "-o", "StrictHostKeyChecking=accept-new",
         "-o", "ConnectTimeout=4",
@@ -181,7 +212,8 @@ def deploy_key_native(
             alias = target if "@" not in target else host
             if not is_inventory and host:
                 try:
-                    config.ensure_config_dir()
+                    inv_file = config.resolve_inventory_file()
+                    inv_file.parent.mkdir(parents=True, exist_ok=True)
                     inv = config.load_inventory()
                     if alias not in inv:
                         inv[alias] = {
@@ -191,7 +223,6 @@ def deploy_key_native(
                             "auth": "key",
                             "description": f"Target {alias}",
                         }
-                        inv_file = config.CONFIG_DIR / "inventory.json"
                         inv_file.write_text(json.dumps(inv, indent=2), encoding="utf-8")
                         ui.console.print(f"[dim]✓ Added '[bold]{alias}[/]' to inventory ({inv_file})[/dim]")
                 except Exception:
@@ -214,6 +245,7 @@ def deploy_key_native(
 
         ssh_cmd = [
             "ssh",
+            *ssh_cfg_args,
             "-o", "StrictHostKeyChecking=accept-new",
             "-p", str(port),
             f"{user}@{host}",
@@ -230,6 +262,7 @@ def deploy_key_native(
         if shutil.which("ssh-copy-id"):
             copy_cmd = [
                 "ssh-copy-id",
+                *ssh_cfg_args,
                 "-o", "StrictHostKeyChecking=accept-new",
                 "-i", str(pub_path),
                 "-p", str(port),
@@ -244,6 +277,7 @@ def deploy_key_native(
             )
             fallback_cmd = [
                 "ssh",
+                *ssh_cfg_args,
                 "-o", "StrictHostKeyChecking=accept-new",
                 "-p", str(port),
                 f"{user}@{host}",
@@ -259,6 +293,7 @@ def deploy_key_native(
     ui.console.print("\n[dim]Verifying passwordless SSH connection... [/dim]", end="")
     verify_cmd = [
         "ssh",
+        *ssh_cfg_args,
         "-o", "BatchMode=yes",
         "-o", "StrictHostKeyChecking=accept-new",
         "-o", "ConnectTimeout=5",
@@ -277,7 +312,8 @@ def deploy_key_native(
             alias = target if "@" not in target else host
             if not is_inventory and host:
                 try:
-                    config.ensure_config_dir()
+                    inv_file = config.resolve_inventory_file()
+                    inv_file.parent.mkdir(parents=True, exist_ok=True)
                     inv = config.load_inventory()
                     inv[alias] = {
                         "host": host,
@@ -286,7 +322,6 @@ def deploy_key_native(
                         "auth": "key",
                         "description": f"Target {alias}",
                     }
-                    inv_file = config.CONFIG_DIR / "inventory.json"
                     inv_file.write_text(json.dumps(inv, indent=2), encoding="utf-8")
                     ui.console.print(f"[dim]✓ Added '[bold]{alias}[/]' to inventory ({inv_file})[/dim]")
                 except Exception:
@@ -382,11 +417,13 @@ def interactive_setup_key(target_arg: Optional[str] = None) -> None:
         run_setup_key([target_arg.strip()])
         return
 
+    inv_file = config.resolve_inventory_file()
     ui.console.print(f"\n[bold {ui.COLOR_BRAND_400}]🔑 Deploy SSH Key to Server[/]")
+    ui.console.print(f"  [dim]Inventory file:[/] [cyan]{inv_file}[/]")
     ui.console.print("[dim]Pushes your local Ed25519 public key to Linux or Windows targets for passwordless execution.[/dim]\n")
 
     if not inventory:
-        ui.console.print(f"[{ui.COLOR_WARN}]No targets found in {config.INVENTORY_FILE}.[/]")
+        ui.console.print(f"[{ui.COLOR_WARN}]No targets found in {inv_file}.[/]")
         try:
             target = input("Enter target (user@host or hostname): ").strip()
         except (KeyboardInterrupt, EOFError):

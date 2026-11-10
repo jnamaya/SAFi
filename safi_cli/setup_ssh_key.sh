@@ -3,8 +3,44 @@ set -eo pipefail
 
 CONFIG_DIR="${HOME}/.config/safi"
 INVENTORY_FILE="${CONFIG_DIR}/inventory.json"
+
+if [ ! -f "$INVENTORY_FILE" ]; then
+    for win_inv in /mnt/c/Users/*/.config/safi/inventory.json; do
+        if [ -f "$win_inv" ]; then
+            INVENTORY_FILE="$win_inv"
+            break
+        fi
+    done
+fi
+
 DEFAULT_KEY="${HOME}/.ssh/id_ed25519"
 PUB_KEY="${DEFAULT_KEY}.pub"
+
+if [ ! -f "$PUB_KEY" ]; then
+    if [ -f "${HOME}/.ssh/id_rsa.pub" ]; then
+        DEFAULT_KEY="${HOME}/.ssh/id_rsa"
+        PUB_KEY="${DEFAULT_KEY}.pub"
+    else
+        for win_ssh in /mnt/c/Users/*/.ssh; do
+            if [ -f "${win_ssh}/id_ed25519.pub" ]; then
+                DEFAULT_KEY="${win_ssh}/id_ed25519"
+                PUB_KEY="${DEFAULT_KEY}.pub"
+                break
+            elif [ -f "${win_ssh}/id_rsa.pub" ]; then
+                DEFAULT_KEY="${win_ssh}/id_rsa"
+                PUB_KEY="${DEFAULT_KEY}.pub"
+                break
+            fi
+        done
+    fi
+fi
+
+SSH_CFG_ARGS=()
+if [ -f "${HOME}/.ssh/config" ] && [ "$(stat -c '%a' "${HOME}/.ssh/config" 2>/dev/null)" != "777" ]; then
+    SSH_CFG_ARGS=(-F "${HOME}/.ssh/config")
+else
+    SSH_CFG_ARGS=(-F /dev/null)
+fi
 
 usage() {
     cat << 'HELP'
@@ -145,7 +181,7 @@ echo "Deploying key to: ${USER}@${HOST} (port ${PORT}, os: ${OS_TYPE})"
 
 # 3. Check if key is already active
 echo -n "Checking existing passwordless connectivity... "
-if ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=4 -p "$PORT" "${USER}@${HOST}" "echo OK" &>/dev/null; then
+if ssh "${SSH_CFG_ARGS[@]}" -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=4 -p "$PORT" "${USER}@${HOST}" "echo OK" &>/dev/null; then
     echo "ALREADY CONFIGURED ✓"
     echo "SSH key authentication is already working for ${USER}@${HOST}."
     if [ "$IS_INVENTORY" -eq 1 ]; then
@@ -204,7 +240,7 @@ PSEOF
     PS_DEPLOY="${PS_DEPLOY/__KEY_PLACEHOLDER__/$KEY_CONTENT}"
     B64_PS=$(echo -n "$PS_DEPLOY" | iconv -f UTF-8 -t UTF-16LE | base64 -w 0)
 
-    ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "${USER}@${HOST}" "powershell.exe -NoProfile -NonInteractive -EncodedCommand $B64_PS"
+    ssh "${SSH_CFG_ARGS[@]}" -o StrictHostKeyChecking=accept-new -p "$PORT" "${USER}@${HOST}" "powershell.exe -NoProfile -NonInteractive -EncodedCommand $B64_PS"
 
 else
     echo ""
@@ -213,10 +249,10 @@ else
     echo ""
 
     if command -v ssh-copy-id &>/dev/null; then
-        ssh-copy-id -o StrictHostKeyChecking=accept-new -i "$PUB_KEY" -p "$PORT" "${USER}@${HOST}"
+        ssh-copy-id "${SSH_CFG_ARGS[@]}" -o StrictHostKeyChecking=accept-new -i "$PUB_KEY" -p "$PORT" "${USER}@${HOST}"
     else
         # Fallback manual install if ssh-copy-id is unavailable
-        ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "${USER}@${HOST}" \
+        ssh "${SSH_CFG_ARGS[@]}" -o StrictHostKeyChecking=accept-new -p "$PORT" "${USER}@${HOST}" \
             "mkdir -p ~/.ssh && chmod 700 ~/.ssh && (grep -qF '$KEY_CONTENT' ~/.ssh/authorized_keys 2>/dev/null || echo '$KEY_CONTENT' >> ~/.ssh/authorized_keys) && chmod 600 ~/.ssh/authorized_keys"
     fi
 fi
@@ -224,7 +260,7 @@ fi
 # 5. Final Verification
 echo ""
 echo -n "Verifying passwordless SSH connection... "
-if ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 -p "$PORT" "${USER}@${HOST}" "echo OK" &>/dev/null; then
+if ssh "${SSH_CFG_ARGS[@]}" -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 -p "$PORT" "${USER}@${HOST}" "echo OK" &>/dev/null; then
     echo "SUCCESS! ✓"
     echo "=========================================================="
     echo "✓ Key authentication successfully configured for ${USER}@${HOST}"

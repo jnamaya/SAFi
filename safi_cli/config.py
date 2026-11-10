@@ -23,12 +23,25 @@ HISTORY_FILE = CONFIG_DIR / "history"
 INVENTORY_FILE = CONFIG_DIR / "inventory.json"
 
 
+def resolve_inventory_file() -> Path:
+    """Return the active inventory.json path, checking WSL ~/.config/safi then Windows user profile."""
+    local_inv = CONFIG_DIR / "inventory.json"
+    if local_inv.is_file():
+        return local_inv
+    # In WSL, fallback to Windows host user profile
+    for win_inv in sorted(Path("/mnt/c/Users").glob("*/.config/safi/inventory.json")):
+        if win_inv.is_file():
+            return win_inv
+    return local_inv
+
+
 def load_inventory() -> Dict[str, Any]:
-    """Load managed infrastructure hosts from ~/.config/safi/inventory.json."""
-    if not INVENTORY_FILE.exists():
+    """Load managed infrastructure hosts from ~/.config/safi/inventory.json or Windows profile."""
+    inv_file = resolve_inventory_file()
+    if not inv_file.exists():
         return {}
     try:
-        with open(INVENTORY_FILE, "r", encoding="utf-8") as f:
+        with open(inv_file, "r", encoding="utf-8") as f:
             data = json.load(f)
             return data if isinstance(data, dict) else {}
     except Exception:
