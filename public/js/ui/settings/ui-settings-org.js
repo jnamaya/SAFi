@@ -597,12 +597,19 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                              <option value="admin">Admin</option>
                          </select>
                      </label>
-                     <label class="block">
-                         <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Assign Group</span>
-                         <select id="sel-local-group" class="mt-1 rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm min-w-[120px]">
-                             <option value="">None</option>
-                         </select>
-                     </label>
+                     <div class="block relative" id="container-local-groups">
+                         <span class="text-sm font-bold text-gray-700 dark:text-gray-300 block">Assign Groups</span>
+                         <button type="button" id="btn-local-groups-toggle"
+                             class="mt-1 flex items-center justify-between gap-2 rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm min-w-[150px] text-left hover:border-gray-400 dark:hover:border-neutral-500">
+                             <span id="lbl-local-groups" class="truncate text-gray-400 dark:text-neutral-500">None</span>
+                             <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                         </button>
+                         <div id="dropdown-local-groups" class="hidden absolute left-0 z-30 mt-1 w-64 max-h-56 overflow-y-auto rounded-lg border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 shadow-xl p-2 space-y-1">
+                             <div id="local-groups-list" class="space-y-1">
+                                 <p class="text-xs text-gray-400 p-2">Loading groups...</p>
+                             </div>
+                         </div>
+                     </div>
                      <label class="block">
                          <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Password <span class="font-normal text-xs text-gray-400">(optional)</span></span>
                          <input type="password" id="inp-local-password" placeholder="Auto-generated if blank" autocomplete="new-password"
@@ -610,6 +617,7 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                      </label>
                      <button id="btn-create-local" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-bold">Create account</button>
                  </div>
+                 <div id="local-groups-selected-badges" class="flex flex-wrap gap-1 mt-2 empty:hidden"></div>
                  <div id="local-account-result" class="hidden mt-4 p-4 rounded-lg border border-amber-300 bg-amber-50 dark:border-amber-700/50 dark:bg-amber-900/20">
                      <div class="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase mb-2">Initial Account Password — copy it now</div>
                      <div class="flex items-center gap-3">
@@ -1411,8 +1419,7 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
             const name = document.getElementById('inp-local-name').value.trim();
             const role = document.getElementById('sel-local-role').value;
             const password = document.getElementById('inp-local-password')?.value.trim() || null;
-            const selectedGroup = document.getElementById('sel-local-group')?.value;
-            const groups = selectedGroup ? [selectedGroup] : [];
+            const groups = Array.from(document.querySelectorAll('.chk-local-group:checked')).map(el => el.value);
             const resultBox = document.getElementById('local-account-result');
             if (!username) { ui.showToast('Enter a username', 'error'); return; }
             if (!/^[a-z0-9._-]{3,64}$/.test(username)) {
@@ -1427,13 +1434,18 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
             try {
                 const res = await api.createLocalAccount(org.id, username, name || null, role, password, groups);
                 document.getElementById('local-account-password').textContent = res.initial_password || '';
-                const groupNote = (res.groups && res.groups.length) ? ` Added to group.` : '';
+                const groupCount = (res.groups && res.groups.length) || 0;
+                const groupNote = groupCount ? ` Added to ${groupCount} group${groupCount === 1 ? '' : 's'}.` : '';
                 document.getElementById('local-account-meta').textContent =
                     `Account "${res.username}" created with role "${role}".${groupNote} This password is shown only once.`;
                 resultBox.classList.remove('hidden');
                 document.getElementById('inp-local-username').value = '';
                 document.getElementById('inp-local-name').value = '';
                 if (document.getElementById('inp-local-password')) document.getElementById('inp-local-password').value = '';
+                document.querySelectorAll('.chk-local-group').forEach(c => { c.checked = false; });
+                _updateLocalGroupsLabel();
+                const dropdown = document.getElementById('dropdown-local-groups');
+                if (dropdown) dropdown.classList.add('hidden');
                 ui.showToast('Local account created', 'success');
                 loadOrganizationMembers(org.id);
             } catch (e) {
@@ -1518,12 +1530,25 @@ async function loadOrgGroups(orgId) {
         const res = await api.listGroups();
         const groups = res.groups || [];
         if (badge) badge.textContent = `${groups.length} group${groups.length === 1 ? '' : 's'}`;
-        const selLocalGroup = document.getElementById('sel-local-group');
-        if (selLocalGroup) {
-            const curVal = selLocalGroup.value;
-            selLocalGroup.innerHTML = '<option value="">None</option>' +
-                groups.map(g => `<option value="${escapeHtml(g.id)}">${escapeHtml(g.name)}</option>`).join('');
-            selLocalGroup.value = curVal;
+        const localGroupsList = document.getElementById('local-groups-list');
+        if (localGroupsList) {
+            if (!groups.length) {
+                localGroupsList.innerHTML = '<p class="text-xs text-gray-400 p-2">No groups created yet</p>';
+            } else {
+                const currentlyChecked = new Set(
+                    Array.from(document.querySelectorAll('.chk-local-group:checked')).map(el => el.value)
+                );
+                localGroupsList.innerHTML = groups.map(g => `
+                    <label class="flex items-center gap-2 px-2.5 py-1.5 hover:bg-gray-100 dark:hover:bg-neutral-700/70 rounded cursor-pointer select-none">
+                        <input type="checkbox" value="${escapeHtml(g.id)}" data-group-name="${escapeHtml(g.name)}"
+                            class="chk-local-group rounded border-gray-300 dark:border-neutral-600 text-emerald-600 focus:ring-emerald-500 bg-white dark:bg-neutral-900"
+                            ${currentlyChecked.has(g.id) ? 'checked' : ''}>
+                        <span class="text-xs text-gray-800 dark:text-neutral-200 font-medium truncate">${escapeHtml(g.name)}</span>
+                    </label>
+                `).join('');
+                _wireLocalGroupsDropdown();
+                _updateLocalGroupsLabel();
+            }
         }
         if (!groups.length) {
             el.innerHTML = `<p class="p-4 text-sm text-gray-500">No groups yet. Create one below, then share agents with it from the Agents tab.</p>`;
@@ -2244,5 +2269,69 @@ async function renderScimSection(orgId) {
             ui.showToast('Mapping saved.', 'success');
             renderScimSection(orgId);
         } catch (err) { ui.showToast(err.message, 'error'); }
+    });
+}
+
+
+function _updateLocalGroupsLabel() {
+    const checked = Array.from(document.querySelectorAll('.chk-local-group:checked'));
+    const lbl = document.getElementById('lbl-local-groups');
+    const badges = document.getElementById('local-groups-selected-badges');
+    if (!lbl) return;
+    if (checked.length === 0) {
+        lbl.textContent = 'None';
+        lbl.className = 'truncate text-gray-400 dark:text-neutral-500';
+        if (badges) badges.innerHTML = '';
+    } else if (checked.length === 1) {
+        lbl.textContent = checked[0].dataset.groupName || '1 group';
+        lbl.className = 'truncate text-gray-800 dark:text-neutral-200 font-medium';
+    } else {
+        lbl.textContent = `${checked.length} groups selected`;
+        lbl.className = 'truncate text-gray-800 dark:text-neutral-200 font-medium';
+    }
+    if (badges) {
+        badges.innerHTML = checked.map(c => `
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-emerald-50 dark:bg-neutral-800 text-emerald-800 dark:text-emerald-400 border border-emerald-200 dark:border-neutral-700 shadow-sm">
+                <span>${escapeHtml(c.dataset.groupName || '')}</span>
+                <button type="button" class="btn-remove-local-group text-emerald-600 hover:text-emerald-900 dark:text-neutral-400 dark:hover:text-white font-bold ml-0.5" data-gid="${escapeHtml(c.value)}">&times;</button>
+            </span>
+        `).join('');
+        badges.querySelectorAll('.btn-remove-local-group').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const gid = btn.getAttribute('data-gid');
+                const chk = document.querySelector(`.chk-local-group[value="${gid}"]`);
+                if (chk) {
+                    chk.checked = false;
+                    _updateLocalGroupsLabel();
+                }
+            });
+        });
+    }
+}
+
+function _wireLocalGroupsDropdown() {
+    const btnToggle = document.getElementById('btn-local-groups-toggle');
+    const dropdown = document.getElementById('dropdown-local-groups');
+    const container = document.getElementById('container-local-groups');
+    if (btnToggle && dropdown && !btnToggle._wired) {
+        btnToggle._wired = true;
+        btnToggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            dropdown.classList.toggle('hidden');
+        });
+        document.addEventListener('click', (e) => {
+            if (container && !container.contains(e.target)) {
+                dropdown.classList.add('hidden');
+            }
+        });
+    }
+    document.querySelectorAll('.chk-local-group').forEach(chk => {
+        if (!chk._wired) {
+            chk._wired = true;
+            chk.addEventListener('change', () => {
+                _updateLocalGroupsLabel();
+            });
+        }
     });
 }

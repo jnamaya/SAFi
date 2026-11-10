@@ -119,3 +119,6 @@ docs/internal/
 certs/
 *.bak-*
 *.db
+cybersecurity
+public/downloads/
+*.whl

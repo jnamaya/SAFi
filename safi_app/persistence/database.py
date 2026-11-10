@@ -7163,10 +7163,20 @@ def create_local_account(username, password, name=None, org_id=None, role=None):
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
-        cursor.execute("SELECT id FROM users WHERE username=%s OR email=%s",
+        cursor.execute("SELECT id, org_id, email FROM users WHERE username=%s OR email=%s",
                        (username, username))
-        if cursor.fetchone():
-            return None
+        existing = cursor.fetchone()
+        if existing:
+            if existing.get("org_id") is not None or existing.get("email") is not None:
+                return None
+            user_id = existing["id"]
+            cursor.execute(
+                "UPDATE users SET password_hash=%s, name=%s, org_id=%s, role=%s, "
+                "totp_secret=NULL, totp_enabled_at=NULL WHERE id=%s",
+                (generate_password_hash(password), name, org_id, role, user_id),
+            )
+            conn.commit()
+            return {"user_id": user_id, "username": username}
         user_id = str(uuid.uuid4())
         cursor.execute(
             "INSERT INTO users (id, username, email, name, password_hash, org_id, role) "
