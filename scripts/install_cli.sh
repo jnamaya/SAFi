@@ -220,7 +220,7 @@ if [ "$1" = "--list" ] || [ "$1" = "-l" ]; then
     python3 - "$INVENTORY_FILE" << 'PYEOF' 2>/dev/null || true
 import json, sys
 try:
-    with open(sys.argv[1]) as f:
+    with open(sys.argv[1], encoding="utf-8-sig") as f:
         data = json.load(f)
     for k, v in data.items():
         user = v.get("user") or "(ssh-config)"
@@ -249,7 +249,7 @@ import json, sys, shlex
 inv_file, target = sys.argv[1], sys.argv[2]
 data = {}
 try:
-    with open(inv_file) as f:
+    with open(inv_file, encoding="utf-8-sig") as f:
         data = json.load(f)
 except Exception:
     pass

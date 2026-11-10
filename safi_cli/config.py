@@ -41,7 +41,7 @@ def load_inventory() -> Dict[str, Any]:
     if not inv_file.exists():
         return {}
     try:
-        with open(inv_file, "r", encoding="utf-8") as f:
+        with open(inv_file, "r", encoding="utf-8-sig") as f:
             data = json.load(f)
             return data if isinstance(data, dict) else {}
     except Exception:
