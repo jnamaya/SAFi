@@ -242,10 +242,16 @@ def _prompt_key_bindings():
     return kb
 
 
-# Rotational braille spinner: each frame is a dense 2x4 dot block whose
-# "gap" travels around the cell, so the sequence reads as continuous
-# rotation (not pulsing) and renders larger/denser than outline glyphs.
-_SPINNER_FRAMES = ["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"]
+# SAFi-logo spinner: the brand mark is a rosetta of dots around a center
+# dot (see iconLogo in public/js/ui/ui-auth-sidebar.js). Terminals can't
+# render SVG, so we rebuild that mark in a single braille cell — a fixed
+# center dot (braille dots 2+5) with one "petal" dot orbiting it
+# clockwise. The rotation reads as the logo's ring of dots spinning.
+_SPINNER_CENTER_MASK = 0x12  # braille dots 2 and 5 (vertical center)
+_SPINNER_ORBIT_BITS = [0x01, 0x08, 0x20, 0x80, 0x40, 0x04]  # dots 1,4,6,8,7,3
+_SPINNER_FRAMES = [
+    chr(0x2800 | _SPINNER_CENTER_MASK | bit) for bit in _SPINNER_ORBIT_BITS
+]
 
 
 def _get_spinner_char() -> str:
