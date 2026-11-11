@@ -243,50 +243,13 @@ def _prompt_key_bindings():
     return kb
 
 
-# SAFi-logo spinner: a small spinning flower. Compact single-braille-cell
-# version of the brand rosetta (see iconLogo in
-# public/js/ui/ui-auth-sidebar.js): a 2x4 dot grid with petal dots riding
-# an 8-cell perimeter ring around a fixed center pair. Each frame rotates
-# every petal one ring cell clockwise, so the flower spins as a set
-# instead of pulsing. Rendered in the brand green via the safi-spinner
-# style.
-_BRAILLE_BASE = 0x2800
-# Braille dot bit values by (col, row) within a 2x4-dot cell.
-_DOT_BITS = [
-    [0x01, 0x02, 0x04, 0x40],  # col 0 -> dots 1, 2, 3, 7
-    [0x08, 0x10, 0x20, 0x80],  # col 1 -> dots 4, 5, 6, 8
-]
-
-
-def _build_flower_frames() -> list[str]:
-    """A compact flower on a 2x4 grid (a single braille cell).
-
-    Three petal dots ride the 8-cell perimeter ring, spaced ~120° apart,
-    around a fixed center pair of dots. Each frame advances every petal
-    one ring cell clockwise, so the whole flower spins forward rather
-    than pulsing. 8 frames = one full revolution.
-    """
-    ring = [(0, 0), (1, 0), (1, 1), (1, 2), (1, 3), (0, 3), (0, 2), (0, 1)]
-    petal_offsets = [0, 3, 5]  # ~120°-ish spacing around the ring
-    center = {(0, 1), (1, 2)}
-    frames = []
-    for f in range(len(ring)):
-        points = set(center)
-        for off in petal_offsets:
-            x, y = ring[(off + f) % len(ring)]
-            points.add((x, y))
-        mask = 0
-        for x, y in points:
-            mask |= _DOT_BITS[x][y]
-        frames.append(chr(_BRAILLE_BASE | mask))
-    return frames
-
-
-_SPINNER_FRAMES = _build_flower_frames()
+# Original SAFi-logo spinner: the flower-glyph sequence at ~150ms/frame,
+# rendered in the brand green via the safi-spinner style.
+_SPINNER_FRAMES = ["✻", "✼", "✽", "✾", "❁", "❂"]
 
 
 def _get_spinner_char() -> str:
-    frame_idx = int(time.time() / 0.10) % len(_SPINNER_FRAMES)
+    frame_idx = int(time.time() / 0.15) % len(_SPINNER_FRAMES)
     return _SPINNER_FRAMES[frame_idx]
 
 
