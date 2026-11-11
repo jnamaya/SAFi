@@ -242,11 +242,14 @@ def _prompt_key_bindings():
     return kb
 
 
-_SPINNER_FRAMES = ["✻", "✼", "✽", "✾", "❁", "❂"]
+# Rotational braille spinner: each frame is a dense 2x4 dot block whose
+# "gap" travels around the cell, so the sequence reads as continuous
+# rotation (not pulsing) and renders larger/denser than outline glyphs.
+_SPINNER_FRAMES = ["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"]
 
 
 def _get_spinner_char() -> str:
-    frame_idx = int(time.time() / 0.15) % len(_SPINNER_FRAMES)
+    frame_idx = int(time.time() / 0.10) % len(_SPINNER_FRAMES)
     return _SPINNER_FRAMES[frame_idx]
 
 

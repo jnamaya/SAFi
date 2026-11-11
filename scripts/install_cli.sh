@@ -737,7 +737,6 @@ EOF
             fi
         fi
     fi
-fi
 
 # 9. Scaffold inventory template and synchronize with Windows profile if in WSL
 if [ -n "$WIN_PROFILE_DIR" ] && [ -d "$WIN_PROFILE_DIR" ]; then
