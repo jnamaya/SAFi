@@ -243,50 +243,25 @@ def _prompt_key_bindings():
     return kb
 
 
-# SAFi-logo spinner: a five-petal flower spinning forward. The brand mark
-# is a rosetta of dots around a center dot (see iconLogo in
-# public/js/ui/ui-auth-sidebar.js). Terminals can't render SVG, so we
-# rebuild that mark across two side-by-side braille cells — a 4x4 dot
-# grid. Five "petal" dots sit on a ring around a fixed center dot, and
-# each frame rotates the whole ring forward by one fifth of a turn
-# (72°), so the flower spins as a set instead of pulsing. Rendered in
-# the brand green via the safi-spinner style.
-_BRAILLE_BASE = 0x2800
-# Braille dot bit values by (col, row) within a 2x4-dot cell.
-_DOT_BITS = [
-    [0x01, 0x02, 0x04, 0x40],  # col 0 -> dots 1, 2, 3, 7
-    [0x08, 0x10, 0x20, 0x80],  # col 1 -> dots 4, 5, 6, 8
+# SAFi spinner: a single block glyph rotating inside its character cell.
+# The braille rosetta looked noisy at terminal sizes, so we fall back to
+# quarter/tri/half block glyphs (▖ ▘ ▝ ▗ ◰ ◳ ◲ ◱ ◐ ◒ ◓ ◑) that sweep a
+# filled quadrant around the cell — a clean block that visibly spins
+# forward. Rendered in the brand green via the safi-spinner style.
+_SPINNER_FRAMES = [
+    "▖",  # bottom-left quadrant
+    "▘",  # top-left
+    "▝",  # top-right
+    "▗",  # bottom-right
+    "◰",  # top-left triangle
+    "◳",  # top-right triangle
+    "◲",  # bottom-right triangle
+    "◱",  # bottom-left triangle
+    "◐",  # left half
+    "◓",  # top half
+    "◑",  # right half
+    "◒",  # bottom half
 ]
-
-
-def _build_flower_frames() -> list[str]:
-    """A five-petal flower on a 4x4 grid (two braille cells side by side).
-
-    Five petal dots ride the 12-cell perimeter ring, spaced ~72° apart
-    like a pentagon (SAFi rosetta), around a fixed center dot. Each frame
-    advances every petal one ring cell clockwise, so the whole flower
-    spins forward rather than pulsing. 12 frames = one full revolution.
-    """
-    ring = [(0, 0), (1, 0), (2, 0), (3, 0), (3, 1), (3, 2),
-            (3, 3), (2, 3), (1, 3), (0, 3), (0, 2), (0, 1)]
-    petals = 5
-    petal_offsets = [0, 2, 5, 7, 10]  # ~pentagon spacing around the ring
-    center = {(1, 1), (2, 2)}
-    frames = []
-    for f in range(len(ring)):
-        points = set(center)
-        for off in petal_offsets:
-            x, y = ring[(off + f) % len(ring)]
-            points.add((x, y))
-        masks = [0, 0]
-        for x, y in points:
-            cell, col = divmod(x, 2)
-            masks[cell] |= _DOT_BITS[col][y]
-        frames.append("".join(chr(_BRAILLE_BASE | m) for m in masks))
-    return frames
-
-
-_SPINNER_FRAMES = _build_flower_frames()
 
 
 def _get_spinner_char() -> str:
