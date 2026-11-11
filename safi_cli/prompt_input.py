@@ -245,7 +245,7 @@ def _prompt_key_bindings():
 
 # Original SAFi-logo spinner: the flower-glyph sequence at ~150ms/frame,
 # rendered in the brand green via the safi-spinner style.
-_SPINNER_FRAMES = ["✻", "✼", "✽", "✾", "❁", "❂"]
+_SPINNER_FRAMES = ["❃", "✿", "❀", "❁", "❈", "❉"]
 
 
 def _get_spinner_char() -> str:
