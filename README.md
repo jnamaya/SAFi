@@ -5,16 +5,19 @@
 [![Python](https://img.shields.io/badge/Python-3.11+-blue?logo=python&logoColor=white)](requirements.txt)
 [![License](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![Demo](https://img.shields.io/badge/Live%20Demo-Try%20It-brightgreen)](https://safi.selfalignmentframework.com)
-[![Managed Hosting](https://img.shields.io/badge/Managed%20Hosting-Available-16a34a)](https://runsafi.com)
+[![Hardware Appliance](https://img.shields.io/badge/Hardware%20Appliance-Available-16a34a)](https://runsafi.com)
 
 # SAFi: Self-Alignment Framework Interface
 
 > SAFi is an open source governance engine for AI agents. It lets institutions enforce their policies in real time, govern tool calls, and maintain an auditable record of every governed decision.
+>
+> Looking for a plug-and-play governance solution? Explore the SAFi appliance at [https://runsafi.com](https://runsafi.com).
 
 ## Table of Contents
 
 - [The Problem](#the-problem)
 - [What SAFi does instead](#what-safi-does-instead)
+- [The SAFi Appliance](#the-safi-appliance)
 - [The Five Principles Behind SAFi](#the-five-principles-behind-safi)
 - [Where to start](#where-to-start)
 - [Live Demo](#live-demo)
@@ -108,6 +111,18 @@ The central question is whether a governance theory can be operationalized and t
 - **[Review the mathematical specification](https://selfalignmentframework.com/safi-math-specification/)** — See how the evaluation is defined and what each faculty is deliberately permitted or denied to do. The separation of responsibilities is central to the independence of the audit.
 - **[Review benchmarks and validation](#benchmarks--validation)** — Examine the methods, results, and supporting evidence behind SAFi's reported performance.
 - **[Inspect a real audit record](https://selfalignmentframework.com/)** — Open an issue with the part you find least convincing.
+
+---
+
+## The SAFi Appliance
+
+Looking for a plug-and-play governance solution? Explore the SAFi appliance at [https://runsafi.com](https://runsafi.com).
+
+The SAFi appliance is a 15-minute setup solution, giving you access to cloud and local AI models:
+* 64GB unified memory
+* 3 local AI models (Qwen & Gemma) governed by the SAFi governance engine
+* Pre-loaded Sysadmin, Security, and Dev IT agents
+* Air-gapped, zero-trust approach
 
 ---
 
