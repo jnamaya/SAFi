@@ -876,6 +876,7 @@ def interactive_repl(
                     except OSError:
                         pass
             try:
+                ui.service_pending_interactive_prompt()
                 raw_line = prompt_input.read_prompt(
                     agent_label=current_agent,
                     completions_fn=_rich_completions,
@@ -889,6 +890,7 @@ def interactive_repl(
 
                 if isinstance(raw_line, tuple) and len(raw_line) == 2 and raw_line[0] == "__QUEUED_WAKEUP__":
                     draft_text = raw_line[1] or ""
+                    ui.service_pending_interactive_prompt()
                     continue
                 else:
                     line = str(raw_line).strip()

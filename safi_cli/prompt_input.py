@@ -92,10 +92,12 @@ def collect_multiline(initial: str) -> str:
 
 
 def wakeup_prompt_session() -> bool:
-    """Wake up the active prompt session if a background scheduled prompt is ready."""
+    """Wake up the active prompt session if a background task or prompt needs the terminal."""
     try:
-        from prompt_toolkit.application.current import get_app
-        app = get_app()
+        app = getattr(_SESSION, "app", None) if _SESSION is not None else None
+        if app is None:
+            from prompt_toolkit.application.current import get_app
+            app = get_app()
         if app and app.is_running:
             draft = ""
             try:
@@ -103,7 +105,19 @@ def wakeup_prompt_session() -> bool:
                     draft = app.current_buffer.text or ""
             except Exception:
                 pass
-            app.exit(result=("__QUEUED_WAKEUP__", draft))
+
+            def _do_exit() -> None:
+                try:
+                    if app.is_running:
+                        app.exit(result=("__QUEUED_WAKEUP__", draft))
+                except Exception:
+                    pass
+
+            loop = getattr(app, "loop", None)
+            if loop is not None and loop.is_running():
+                loop.call_soon_threadsafe(_do_exit)
+            else:
+                _do_exit()
             return True
     except Exception:
         pass

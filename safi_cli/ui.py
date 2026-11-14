@@ -12,6 +12,7 @@ import os
 import re
 import shutil
 import sys
+import threading
 from collections import deque
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -37,11 +38,48 @@ def _env_flag(name: str, default: bool = False) -> bool:
 
 CLI_MARGIN = int(os.environ.get("SAFI_CLI_MARGIN", "2"))
 _NON_BLOCKING_MODE = False
+_INTERACTIVE_LOCK = threading.Lock()
+_INTERACTIVE_REQUESTED = threading.Event()
+_INTERACTIVE_READY = threading.Event()
+_INTERACTIVE_DONE = threading.Event()
 
 
 def set_non_blocking_mode(enabled: bool) -> None:
     global _NON_BLOCKING_MODE
     _NON_BLOCKING_MODE = enabled
+    if not enabled:
+        _INTERACTIVE_REQUESTED.clear()
+        _INTERACTIVE_READY.set()
+        _INTERACTIVE_DONE.set()
+
+
+def service_pending_interactive_prompt() -> None:
+    """Pause the main REPL thread while a worker thread reads interactive stdin."""
+    if _INTERACTIVE_REQUESTED.is_set():
+        _INTERACTIVE_READY.set()
+        _INTERACTIVE_DONE.wait()
+
+
+def _run_with_terminal_input(fn):
+    """Run an interactive stdin prompt safely even when the non-blocking REPL is active."""
+    if not _NON_BLOCKING_MODE:
+        return fn()
+    from . import prompt_input
+    if not prompt_input.using_prompt_toolkit():
+        return fn()
+    with _INTERACTIVE_LOCK:
+        if not _NON_BLOCKING_MODE:
+            return fn()
+        _INTERACTIVE_READY.clear()
+        _INTERACTIVE_DONE.clear()
+        _INTERACTIVE_REQUESTED.set()
+        prompt_input.wakeup_prompt_session()
+        _INTERACTIVE_READY.wait(timeout=5.0)
+        try:
+            return fn()
+        finally:
+            _INTERACTIVE_REQUESTED.clear()
+            _INTERACTIVE_DONE.set()
 
 
 class MarginedConsole(Console):
@@ -1241,23 +1279,26 @@ def prompt_user_permission(name: str, args: Dict[str, Any], auto_approve: bool =
     ):
         return True
 
-    margin = " " * CLI_MARGIN if CLI_MARGIN > 0 else ""
-    console.print(
-        f"\n{margin}[bold black on {COLOR_WARN}] ⚠️  ACTION CONFIRMATION [/] "
-        f"[bold white]Allow executing tool [cyan]{escape(name)}[/]? "
-        f"[Y/n/a (always)]:[/] ",
-        end="",
-    )
-    try:
-        choice = input().strip().lower()
-        if choice in ("a", "always"):
-            _APPROVAL_STATE["approve_all"] = True
-            console.print(f"{margin}[dim]All future tool executions approved for this session.[/]")
-            return True
-        return choice in ("", "y", "yes")
-    except (KeyboardInterrupt, EOFError):
-        console.print(f"\n[{COLOR_WARN}]Action cancelled by user.[/]")
-        return False
+    def _ask() -> bool:
+        margin = " " * CLI_MARGIN if CLI_MARGIN > 0 else ""
+        console.print(
+            f"\n{margin}[bold black on {COLOR_WARN}] ⚠️  ACTION CONFIRMATION [/] "
+            f"[bold white]Allow executing tool [cyan]{escape(name)}[/]? "
+            f"[Y/n/a (always)]:[/] ",
+            end="",
+        )
+        try:
+            choice = input().strip().lower()
+            if choice in ("a", "always"):
+                _APPROVAL_STATE["approve_all"] = True
+                console.print(f"{margin}[dim]All future tool executions approved for this session.[/]")
+                return True
+            return choice in ("", "y", "yes")
+        except (KeyboardInterrupt, EOFError):
+            console.print(f"\n[{COLOR_WARN}]Action cancelled by user.[/]")
+            return False
+
+    return _run_with_terminal_input(_ask)
 
 
 def prompt_question(question: str, options: Optional[List[str]] = None) -> str:
@@ -1277,21 +1318,24 @@ def prompt_question(question: str, options: Optional[List[str]] = None) -> str:
         box=box.ROUNDED,
         padding=(1, 2),
     )
-    console.print()
-    console.print(panel)
+    def _ask() -> str:
+        console.print()
+        console.print(panel)
 
-    margin = " " * CLI_MARGIN if CLI_MARGIN > 0 else ""
-    prompt_label = f"{margin}Choice / Answer › "
-    try:
-        ans = input(prompt_label).strip()
-        if options and ans.isdigit():
-            idx = int(ans) - 1
-            if 0 <= idx < len(options):
-                return options[idx]
-        return ans if ans else (options[0] if options else "Acknowledged.")
-    except (KeyboardInterrupt, EOFError):
-        console.print(f"\n[{COLOR_WARN}]Clarification skipped by developer.[/]")
-        return "Developer skipped answering the question."
+        margin = " " * CLI_MARGIN if CLI_MARGIN > 0 else ""
+        prompt_label = f"{margin}Choice / Answer › "
+        try:
+            ans = input(prompt_label).strip()
+            if options and ans.isdigit():
+                idx = int(ans) - 1
+                if 0 <= idx < len(options):
+                    return options[idx]
+            return ans if ans else (options[0] if options else "Acknowledged.")
+        except (KeyboardInterrupt, EOFError):
+            console.print(f"\n[{COLOR_WARN}]Clarification skipped by developer.[/]")
+            return "Developer skipped answering the question."
+
+    return _run_with_terminal_input(_ask)
 
 
 def build_plan_panel(todos: Optional[List[Dict[str, Any]]] = None) -> Optional[Panel]:
