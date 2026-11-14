@@ -277,6 +277,7 @@ class SafiClient:
         message_id: Optional[str] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         reasoning_effort: Optional[str] = None,
+        policy_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Dispatch a single turn to SAFi's governed pipeline."""
         headers = {
@@ -331,6 +332,9 @@ class SafiClient:
             payload["message_id"] = message_id
         if reasoning_effort and reasoning_effort.strip():
             payload["reasoning_effort"] = reasoning_effort.strip().lower()
+
+        if policy_id:
+            payload["policy_id"] = policy_id
 
         client_timeout = int(os.environ.get("SAFI_CLIENT_TIMEOUT", "1800"))
         try:
