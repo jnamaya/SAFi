@@ -4,7 +4,7 @@ from typing import Any, Dict, List
 from ...agents.security_engineer import SECURITY_ENGINEER_AGENT
 from .base import _lift_values
 
-POLICY_ID = "demo_security_engineer_policy"
+POLICY_ID = "prod_security_engineer_policy"
 AGENT_KEY = "security_engineer"
 
 SECURITY_ENGINEER_VALUES: List[Dict[str, Any]] = [
@@ -65,10 +65,10 @@ SECURITY_ENGINEER_VALUES: List[Dict[str, Any]] = [
 ]
 
 POLICY: Dict[str, Any] = {
-    "name": "Security Engineering & Testing Policy",
+    "name": "Security Policy",
     "business_unit": "Cybersecurity & Red Team (Demo)",
     "worldview": (
-        "You operate under the Security Engineering & Testing Policy.\n\n"
+        "You operate under the Security Policy.\n\n"
         "This policy governs authorized penetration testing, vulnerability discovery, reconnaissance, "
         "code security reviews, and defensive hardening across all operator-specified domains and systems.\n\n"
         "Core Directives:\n"

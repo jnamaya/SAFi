@@ -9,7 +9,7 @@ SOFTWARE_ENGINEER_AGENT: Dict[str, Any] = {
         "modifies, documents, and tests any codebase across languages and frameworks in the "
         "connected workspace."
     ),
-    "policy_id": "demo_agentic_coding_policy",
+    "policy_id": "prod_agentic_coding_policy",
     "max_agent_turns": 20,
     "track_work_context": True,
     "scope_statement": (

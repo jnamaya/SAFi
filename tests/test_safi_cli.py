@@ -717,7 +717,7 @@ class TestSafiClientToolPayload(unittest.TestCase):
 
         # Verify audit details formatting for all score tiers
         test_payload = {
-            "policyName": "Agentic Coding Policy",
+            "policyName": "Software Policy",
             "conscienceLedger": [
                 {"value": "Non-Destructive Operations", "score": 0.85, "rationale": "Read-only exploration"},
                 {"value": "Scope Compliance", "score": -0.2, "rationale": "Accessed unexpected path"},
@@ -1352,7 +1352,7 @@ class TestSafiSubagentDelegation(unittest.TestCase):
 
         # Test print_final_output side-by-side with active plan
         test_payload = {
-            "policyName": "Agentic Coding Policy",
+            "policyName": "Software Policy",
             "spirit_score": 8.0,
             "conscienceLedger": [],
         }

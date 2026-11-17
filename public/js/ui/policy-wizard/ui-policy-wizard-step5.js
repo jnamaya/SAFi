@@ -86,6 +86,11 @@ export function renderWillStep(container, policyData) {
     if (!Array.isArray(policyData.early_prompt_blacklist)) {
         policyData.early_prompt_blacklist = [];
     }
+    // Without this, a stale localStorage draft restored without the key would
+    // make addForbidden() push onto undefined and fail silently.
+    if (!Array.isArray(policyData.forbidden_paths)) {
+        policyData.forbidden_paths = [];
+    }
 
     const sr = policyData.structural_requirements;
 
@@ -189,6 +194,34 @@ export function renderWillStep(container, policyData) {
                     <button id="pw-add-blacklist-btn" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-semibold transition-colors shrink-0">Add</button>
                 </div>
                 <ul id="pw-blacklist-list" class="space-y-2"></ul>
+            </div>
+
+            <!-- RESTRICTED PATHS (path-gate denylist) -->
+            <div class="bg-white dark:bg-neutral-900 border border-purple-200 dark:border-purple-900/40 rounded-xl p-5 shadow-sm">
+                <div class="flex items-start gap-3 mb-4">
+                    <span class="shrink-0 w-9 h-9 rounded-lg bg-purple-100 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-800 flex items-center justify-center">
+                        <svg class="w-5 h-5 text-purple-600 dark:text-purple-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2h-.5A2.5 2.5 0 0015 8.5v-1A2.5 2.5 0 0012.5 5h-1A2.5 2.5 0 009 7.5v1A2.5 2.5 0 016.5 11H6a2 2 0 00-2 2v6a2 2 0 002 2z"/></svg>
+                    </span>
+                    <div class="min-w-0">
+                        <h3 class="font-bold text-purple-700 dark:text-purple-300">Restricted Paths</h3>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Filesystem paths agents under this policy may never read or write — the Will's path-gate denylist. Entries are matched literally, so prefer short, distinctive prefixes such as <code class="font-mono text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-900/20 px-1 rounded">.ssh</code> or <code class="font-mono text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-900/20 px-1 rounded">.config/safi</code>.</p>
+                    </div>
+                </div>
+                <label for="pw-forbidden-input" class="block text-[11px] font-semibold uppercase tracking-wide text-purple-600 dark:text-purple-400 mb-1.5">Path prefix</label>
+                <div class="flex gap-2 mb-3">
+                    <div class="relative flex-1 min-w-0">
+                        <input type="text" id="pw-forbidden-input" autocomplete="off" spellcheck="false"
+                            class="w-full p-2.5 rounded-lg border border-purple-200 dark:border-purple-700 bg-purple-50/40 dark:bg-neutral-800 text-sm font-mono text-gray-900 dark:text-neutral-100 placeholder-purple-400 dark:placeholder-neutral-500 focus:border-purple-400 dark:focus:border-purple-500 focus:ring-2 focus:ring-purple-500/40 outline-none transition"
+                            placeholder="e.g. .ssh or .config/safi">
+                    </div>
+                    <button id="pw-add-forbidden-btn"
+                        class="px-4 py-2 rounded-lg text-sm font-semibold shrink-0 inline-flex items-center gap-1.5 bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white shadow-sm transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                        Add
+                    </button>
+                </div>
+                <ul id="pw-forbidden-list" class="space-y-2"></ul>
+                <p id="pw-forbidden-empty" class="hidden text-xs text-gray-400 dark:text-gray-500 italic mt-2">No restricted paths yet — agents under this policy are only limited by the defaults above.</p>
             </div>
 
             <!-- WRITTEN RULES → compiled into enforceable standards -->
@@ -306,6 +339,24 @@ export function renderWillStep(container, policyData) {
     };
     document.getElementById('pw-add-blacklist-btn').addEventListener('click', addBlacklist);
     document.getElementById('pw-blacklist-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') addBlacklist(); });
+
+    // --- RESTRICTED PATHS (Will path-gate denylist) ---
+    renderList('pw-forbidden-list', policyData.forbidden_paths, 'purple', (i) => {
+        policyData.forbidden_paths.splice(i, 1);
+    });
+    const addForbidden = () => {
+        const input = document.getElementById('pw-forbidden-input');
+        const val = input.value.trim();
+        if (val) {
+            if (!policyData.forbidden_paths.includes(val)) {
+                policyData.forbidden_paths.push(val);
+            }
+            input.value = '';
+            renderList('pw-forbidden-list', policyData.forbidden_paths, 'purple', (i) => policyData.forbidden_paths.splice(i, 1));
+        }
+    };
+    document.getElementById('pw-add-forbidden-btn').addEventListener('click', addForbidden);
+    document.getElementById('pw-forbidden-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') addForbidden(); });
 
     // --- LEGACY RULES ---
     renderList('pw-rules-list', policyData.will_rules, 'gray', (i) => {
@@ -497,6 +548,7 @@ function renderList(id, arr, color, onRemove) {
             green: 'bg-green-50 dark:bg-green-900/10 border-green-100 dark:border-green-900/30 text-green-900 dark:text-green-200',
             amber: 'bg-amber-50 dark:bg-amber-900/10 border-amber-100 dark:border-amber-900/30 text-amber-900 dark:text-amber-200',
             gray:  'bg-gray-50 dark:bg-neutral-900 border-gray-200 dark:border-neutral-700 text-gray-800 dark:text-gray-200',
+            purple: 'bg-purple-50 dark:bg-purple-900/10 border-purple-100 dark:border-purple-900/30 text-purple-900 dark:text-purple-200',
         }[color] || '';
         li.className = `flex items-center gap-2 p-2.5 border rounded-lg ${colorCls}`;
         li.innerHTML = `

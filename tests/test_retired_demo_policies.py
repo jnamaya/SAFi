@@ -12,7 +12,7 @@ Use Policy was visible on the demo host months after the agent was removed.
 The contract, pinned here:
 
 - `list_policies` surfaces a demo row only when its id is in the CURRENT seed
-  set (DEMO_AGENT_POLICIES keys plus safi_default_policy). An is_demo row with
+  set (DEMO_AGENT_POLICIES keys). An is_demo row with
   any other id is a retired leftover and stays hidden.
 - `get_policy` stays unfiltered, so historical governance records that
   reference a retired policy by id keep resolving it.

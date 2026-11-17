@@ -406,7 +406,7 @@ class HarnessProgressEndpointTests(unittest.TestCase):
 
     def test_harness_uses_api_key_policy_for_fiduciary(self):
         fake_safi = SimpleNamespace(
-            profile={"policy_id": "safinstitute_org_safi_financial_advisory_policy", "policy_name": "Financial Advisory Policy"},
+            profile={"policy_id": "safinstitute_org_safi_financial_advisory_policy", "policy_name": "Pro Financial Advisory Policy"},
             process_prompt=AsyncMock(return_value={"finalOutput": "financial advice", "audit_status": "complete"}),
         )
         with patch.object(conv.db, "get_policy_id_by_api_key", return_value="safinstitute_org_safi_financial_advisory_policy"), \
@@ -435,14 +435,14 @@ class HarnessProgressEndpointTests(unittest.TestCase):
         self.assertEqual(call_kwargs.get("policy_id"), "safinstitute_org_safi_financial_advisory_policy")
         self.assertEqual(mock_get_or_create.call_args.args[0], "fiduciary")
         data = response.get_json()
-        self.assertEqual(data.get("policyName"), "Financial Advisory Policy")
+        self.assertEqual(data.get("policyName"), "Pro Financial Advisory Policy")
         self.assertEqual(data.get("policyId"), "safinstitute_org_safi_financial_advisory_policy")
         # Verify client_owned_tools is None when tools is omitted
         self.assertIsNone(fake_safi.process_prompt.call_args.kwargs.get("client_owned_tools"))
 
     def test_harness_preserves_server_mcp_tools_when_client_sends_tools_for_fiduciary(self):
         fake_safi = SimpleNamespace(
-            profile={"policy_id": "demo_financial_advisory_policy", "policy_name": "Financial Advisory Policy"},
+            profile={"policy_id": "prod_financial_advisory_policy", "policy_name": "Pro Financial Advisory Policy"},
             process_prompt=AsyncMock(return_value={"finalOutput": "NVDA PE is 65", "audit_status": "complete"}),
         )
         tool = {

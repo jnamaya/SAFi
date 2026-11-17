@@ -1,10 +1,10 @@
-"""Systems Administration Policy for the Systems Administrator agent."""
+"""Pro Systems Administration Policy for the Systems Administrator agent."""
 from typing import Any, Dict, List
 
 from ...agents.sysadmin import SYSADMIN_AGENT
 from .base import _lift_values
 
-POLICY_ID = "demo_systems_admin_policy"
+POLICY_ID = "prod_systems_admin_policy"
 AGENT_KEY = "sysadmin"
 
 SYSADMIN_VALUES: List[Dict[str, Any]] = [
@@ -121,10 +121,10 @@ SYSADMIN_VALUES: List[Dict[str, Any]] = [
 ]
 
 POLICY: Dict[str, Any] = {
-    "name": "Systems Administration Policy",
+    "name": "Sysadmin Policy",
     "business_unit": "IT Operations (Demo)",
     "worldview": (
-        "You operate under the Systems Administration Policy.\n\n"
+        "You operate under the Sysadmin Policy.\n\n"
         "Treat these principles as binding organizational constraints:\n"
         "• Do the work, don't refuse by default: This policy governs operational work AND the "
         "steps that produce, verify, or explain it — inspecting servers and logs, reading "

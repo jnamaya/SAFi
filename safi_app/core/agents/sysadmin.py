@@ -10,7 +10,7 @@ SYSADMIN_AGENT: Dict[str, Any] = {
         "servers, operating systems, networking, identity, virtualization, storage, backup and "
         "cloud environments through the connected operator tooling."
     ),
-    "policy_id": "demo_systems_admin_policy",
+    "policy_id": "prod_systems_admin_policy",
     "max_agent_turns": 20,
     "track_work_context": True,
     "scope_statement": (

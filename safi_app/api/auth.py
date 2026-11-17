@@ -631,7 +631,7 @@ def login_mobile():
         user_details = db.get_user_details(user_id)
         
         if not user_details.get('active_profile'):
-            default_profile = getattr(Config, 'DEFAULT_PROFILE', 'fiduciary')
+            default_profile = getattr(Config, 'DEFAULT_PROFILE', 'software_engineer')
             db.update_user_profile(user_id, default_profile)
             user_details['active_profile'] = default_profile
 

@@ -15,36 +15,6 @@ from .role_config import ROLE_CONFIG
 
 log = logging.getLogger(__name__)
 
-SAFI_POLICY_ID = "safi_default_policy"
-
-
-def _seed_default_policy() -> None:
-    conn = db.get_db_connection()
-    cursor = conn.cursor()
-    try:
-        cursor.execute("SELECT id FROM policies WHERE id=%s", (SAFI_POLICY_ID,))
-        if cursor.fetchone():
-            return
-        cursor.execute(
-            "INSERT INTO policies "
-            "(id, org_id, name, worldview, will_rules, values_weights, created_by, is_demo) "
-            "VALUES (%s, NULL, %s, %s, %s, %s, NULL, TRUE)",
-            (
-                SAFI_POLICY_ID,
-                "SAFi Default Policy",
-                SAFI_DEFAULT_POLICY.get("global_worldview", ""),
-                json.dumps(SAFI_DEFAULT_POLICY.get("global_will_rules", [])),
-                json.dumps(SAFI_DEFAULT_POLICY.get("global_values", [])),
-            ),
-        )
-        conn.commit()
-    except Exception:
-        log.exception("Could not seed the default policy template.")
-    finally:
-        cursor.close()
-        conn.close()
-
-
 def _seed_demo_policies() -> None:
     active_ids = {
         policy_id for agent_key, policy_id in DEMO_AGENT_POLICY_MAP.items()
@@ -56,20 +26,11 @@ def _seed_demo_policies() -> None:
         try:
             existing = db.get_policy(policy_id)
             if existing:
-                if existing.get("is_demo") and existing.get("org_id") is None:
-                    new_rules = policy.get("will_rules", [])
-                    if existing.get("will_rules") != new_rules:
-                        conn = db.get_db_connection()
-                        cursor = conn.cursor()
-                        try:
-                            cursor.execute(
-                                "UPDATE policies SET will_rules=%s WHERE id=%s",
-                                (json.dumps(new_rules), policy_id),
-                            )
-                            conn.commit()
-                        finally:
-                            cursor.close()
-                            conn.close()
+                # Insert-only: the DB row is the runtime source of truth for
+                # will_rules, so an existing row is never re-synced from the
+                # flat file. Overwriting here would silently revert DB-side
+                # edits (made in the UI/API) back to the seed value on every
+                # restart. The flat file only seeds a row on first boot.
                 continue
             db.create_policy(
                 name=policy["name"],
@@ -243,7 +204,6 @@ def _seed_local_admin() -> None:
 
 def initialize() -> None:
     """Seed deployment-owned configuration after the generic schema exists."""
-    _seed_default_policy()
     _seed_demo_policies()
     _seed_local_admin()
 

@@ -9,7 +9,7 @@ SECURITY_ENGINEER_AGENT: Dict[str, Any] = {
         "workflows, vulnerability assessments, exploit payload verification, security posture auditing, "
         "and defensive hardening through connected operator tooling."
     ),
-    "policy_id": "demo_security_engineer_policy",
+    "policy_id": "prod_security_engineer_policy",
     "max_agent_turns": 25,
     "track_work_context": True,
     "scope_statement": (

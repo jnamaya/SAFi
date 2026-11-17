@@ -1,13 +1,17 @@
 import * as api from '../../core/api.js';
 import * as ui from '../ui.js';
 
-import { renderDefinitionStep, validateDefinitionStep }       from './ui-policy-wizard-step1.js';
-import { renderConstitutionStep, validateConstitutionStep }   from './ui-policy-wizard-step2.js';
-import { renderScopeStep, validateScopeStep }                 from './ui-policy-wizard-step3.js';
-import { renderValuesStep, validateValuesStep }               from './ui-policy-wizard-step4.js';
-import { renderWillStep, validateWillStep }                   from './ui-policy-wizard-step5.js';
-import { renderGovernanceStep, validateGovernanceStep }       from './ui-policy-wizard-governance.js';
-import { renderSuccessStep }                                  from './ui-policy-wizard-success.js';
+// NOTE: version query strings are cache busting. The browser caches these
+// unversioned ES modules by ETag, which once shipped a stale step5 to a
+// user and reproduced "the Add button does nothing" for a full session.
+// Bump all of these together (and app.js in index.html) when shipping UI changes.
+import { renderDefinitionStep, validateDefinitionStep }       from './ui-policy-wizard-step1.js?v=20261117.1';
+import { renderConstitutionStep, validateConstitutionStep }   from './ui-policy-wizard-step2.js?v=20260928.1';
+import { renderScopeStep, validateScopeStep }                 from './ui-policy-wizard-step3.js?v=20260928.1';
+import { renderValuesStep, validateValuesStep }               from './ui-policy-wizard-step4.js?v=20260928.1';
+import { renderWillStep, validateWillStep }                   from './ui-policy-wizard-step5.js?v=20261117.3';
+import { renderGovernanceStep, validateGovernanceStep }       from './ui-policy-wizard-governance.js?v=20260928.1';
+import { renderSuccessStep }                                  from './ui-policy-wizard-success.js?v=20260928.1';
 
 // --- STATE ---
 let currentStep = 1;
@@ -43,6 +47,9 @@ function getInitialState() {
 
         // Will tool-gate allowlist
         allowed_tools: [],
+
+        // Will path-gate denylist (forbidden_paths)
+        forbidden_paths: [],
 
         // Legacy free-text rules (engine still reads these as fallback)
         will_rules: [],
@@ -159,6 +166,7 @@ function hydratePolicy(existingPolicy) {
     let blacklist  = [];
     let allowed    = [];
     let legacyList = [];
+    let forbiddenPaths = [];
     // undefined = the policy does not narrow knowledge; an array = exactly
     // these (possibly none). The distinction is load-bearing — see below.
     let allowedKnowledge;
@@ -166,10 +174,11 @@ function hydratePolicy(existingPolicy) {
     if (Array.isArray(wr)) {
         legacyList = wr;
     } else if (wr && typeof wr === 'object') {
-        structural = { ...structural, ...(wr.structural_requirements || {}) };
-        blacklist  = wr.early_prompt_blacklist || [];
-        allowed    = wr.allowed_tools || [];
-        legacyList = wr.rules || [];
+        structural    = { ...structural, ...(wr.structural_requirements || {}) };
+        blacklist     = wr.early_prompt_blacklist || [];
+        allowed       = wr.allowed_tools || [];
+        legacyList    = wr.rules || [];
+        forbiddenPaths = wr.forbidden_paths || [];
         // Only carried when the stored policy actually has it. Coercing an
         // absent key to [] here would turn "does not narrow" into "authorize
         // nothing" the first time anyone opens an older policy.
@@ -196,6 +205,7 @@ function hydratePolicy(existingPolicy) {
         values:                 (existingPolicy.values_weights || []).map(normalizeStandard),
         structural_requirements: structural,
         allowed_tools:          allowed,
+        forbidden_paths:        forbiddenPaths,
         will_rules:             legacyList,
 
         alignment_threshold: cfg.alignment_threshold ?? 0.5,
@@ -291,6 +301,7 @@ async function submitPolicy(btn = null) {
             early_prompt_blacklist: policyData.early_prompt_blacklist || [],
             allowed_tools:          policyData.allowed_tools || [],
             rules:                  policyData.will_rules || [],
+            forbidden_paths:        policyData.forbidden_paths || [],
             // Written ONLY when the admin ticked "Restrict" on the Knowledge
             // card. `|| []` here would be a bug, not a tidy-up: it would make
             // every save of an unrestricted policy authorize no knowledge and

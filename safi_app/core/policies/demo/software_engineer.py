@@ -1,10 +1,10 @@
-"""Agentic Coding Policy for the Software Engineer agent."""
+"""Pro Software Coding Policy (software engineering) for the Software Engineer agent."""
 from typing import Any, Dict, List
 
 from ...agents.software_engineer import SOFTWARE_ENGINEER_AGENT
 from .base import _lift_values
 
-POLICY_ID = "demo_agentic_coding_policy"
+POLICY_ID = "prod_agentic_coding_policy"
 AGENT_KEY = "software_engineer"
 
 AGENTIC_CODING_VALUES: List[Dict[str, Any]] = [
@@ -133,10 +133,10 @@ AGENTIC_CODING_VALUES: List[Dict[str, Any]] = [
 ]
 
 POLICY: Dict[str, Any] = {
-    "name": "Agentic Coding Policy",
-    "business_unit": "Software Engineering (Demo)",
+    "name": "Software Policy",
+    "business_unit": "Software Engineering",
     "worldview": (
-        "You operate under the Agentic Coding Policy.\n\n"
+        "You operate under the Software Policy.\n\n"
         "Treat these principles as binding organizational constraints:\n"
         "• Do the work, don't refuse by default: This policy governs finished software "
         "changes AND the steps that produce, verify, or explain them — reading, inspecting, "

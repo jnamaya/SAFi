@@ -3685,7 +3685,7 @@ def list_policies(user_id=None, org_id=None):
         # but do not include them in the list shown to users.
         from safi_app.core.policies.demo import get_current_demo_policy_ids
 
-        current_demo_ids = get_current_demo_policy_ids() | {"safi_default_policy"}
+        current_demo_ids = get_current_demo_policy_ids()
         cursor.execute("""
             SELECT * FROM policies
             WHERE (is_demo=TRUE AND org_id IS NULL)
