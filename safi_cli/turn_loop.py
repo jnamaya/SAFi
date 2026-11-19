@@ -408,20 +408,27 @@ def run_agent_turn(
             will_dec = str(res.get("willDecision") or "approve").lower()
             is_intercepted = will_dec not in ("approve", "approved", "pass")
 
-            unfinished_todos = [
-                t for t in ui.get_active_todos()
-                if (t.get("status") or "pending").lower() not in ("completed", "done")
-            ]
-
-            def _is_actionable(task_text: str) -> bool:
-                tl = task_text.lower()
-                passive_markers = ("await", "wait", "ask", "confirm", "user input", "operator", "clarif", "pending user")
-                return not any(m in tl for m in passive_markers)
-
-            actionable_todos = [
-                t for t in unfinished_todos
-                if _is_actionable(str(t.get("task") or t.get("content") or t.get("description") or ""))
-            ]
+            def _looks_incomplete_handoff(text: str) -> bool:
+                stripped = (text or "").strip()
+                if not stripped:
+                    return True
+                if len(stripped) > 1200:
+                    return False
+                tl = stripped.lower()
+                handoff_phrases = (
+                    "next i will",
+                    "next, i will",
+                    "i'll now",
+                    "i will now",
+                    "moving on to",
+                    "let me now",
+                    "proceeding to",
+                    "let me check",
+                    "let me run",
+                    "let me update",
+                    "one moment",
+                )
+                return any(p in tl for p in handoff_phrases) or stripped.endswith(("...", ":"))
 
             clean_prompt = prompt.strip().lower()
             is_question = (
@@ -435,32 +442,26 @@ def run_agent_turn(
 
             if (
                 not is_intercepted
-                and actionable_todos
+                and _looks_incomplete_handoff(final_text)
                 and not is_question
                 and not is_asking_user
                 and resume_budget > 0
                 and step < max_steps - 1
             ):
                 resume_budget -= 1
-                remaining = "; ".join(
-                    str(t.get("task") or t.get("content") or t.get("description") or "step")
-                    for t in actionable_todos
-                )[:500]
                 pause_note = " ".join((final_text or "").split())[:500]
                 tool_results.append({
                     "tool_name": "harness_note",
                     "arguments": {},
                     "result": (
-                        "[Harness] Your last message was a mid-task status note, not "
-                        "the final answer. The plan in '.safi/scratchpad.md' still has unfinished steps: "
-                        f"{remaining}. Do not ask the user for permission. Continue "
-                        "now with the appropriate tools, or, if the work is genuinely "
-                        "done, use 'write' to rewrite '.safi/scratchpad.md' with the remaining steps marked [x] complete "
-                        "(prefer 'write' over 'edit' to avoid target-matching errors). Never repeat plaintext passwords or secrets in your summary. "
+                        "[Harness] Your last message looks like an incomplete mid-task status note "
+                        "rather than the final answer. Do not ask the user for permission. Continue "
+                        "executing the remaining steps with the appropriate tools now, or provide the "
+                        "complete final response. Never repeat plaintext passwords or secrets in your summary. "
                         f"(Your note: {pause_note})"
                     ),
                 })
-                ui.console.print("[dim yellow]↳ Plan incomplete: continuing autonomously...[/dim yellow]")
+                ui.console.print("[dim yellow]↳ Response incomplete: continuing autonomously...[/dim yellow]")
                 continue
 
             executed_tools = res.get("toolCalls") or res.get("tool_calls") or []
