@@ -51,6 +51,10 @@ function getInitialState() {
         // Will path-gate denylist (forbidden_paths)
         forbidden_paths: [],
 
+        // Will command-gate denylists (forbidden_executables / forbidden_shell_patterns)
+        forbidden_executables: [],
+        forbidden_shell_patterns: [],
+
         // Legacy free-text rules (engine still reads these as fallback)
         will_rules: [],
 
@@ -167,6 +171,8 @@ function hydratePolicy(existingPolicy) {
     let allowed    = [];
     let legacyList = [];
     let forbiddenPaths = [];
+    let forbiddenExecutables = [];
+    let forbiddenShellPatterns = [];
     // undefined = the policy does not narrow knowledge; an array = exactly
     // these (possibly none). The distinction is load-bearing — see below.
     let allowedKnowledge;
@@ -179,6 +185,8 @@ function hydratePolicy(existingPolicy) {
         allowed       = wr.allowed_tools || [];
         legacyList    = wr.rules || [];
         forbiddenPaths = wr.forbidden_paths || [];
+        forbiddenExecutables = wr.forbidden_executables || [];
+        forbiddenShellPatterns = wr.forbidden_shell_patterns || [];
         // Only carried when the stored policy actually has it. Coercing an
         // absent key to [] here would turn "does not narrow" into "authorize
         // nothing" the first time anyone opens an older policy.
@@ -206,6 +214,8 @@ function hydratePolicy(existingPolicy) {
         structural_requirements: structural,
         allowed_tools:          allowed,
         forbidden_paths:        forbiddenPaths,
+        forbidden_executables:  forbiddenExecutables,
+        forbidden_shell_patterns: forbiddenShellPatterns,
         will_rules:             legacyList,
 
         alignment_threshold: cfg.alignment_threshold ?? 0.5,
@@ -302,6 +312,8 @@ async function submitPolicy(btn = null) {
             allowed_tools:          policyData.allowed_tools || [],
             rules:                  policyData.will_rules || [],
             forbidden_paths:        policyData.forbidden_paths || [],
+            forbidden_executables: policyData.forbidden_executables || [],
+            forbidden_shell_patterns: policyData.forbidden_shell_patterns || [],
             // Written ONLY when the admin ticked "Restrict" on the Knowledge
             // card. `|| []` here would be a bug, not a tidy-up: it would make
             // every save of an unrestricted policy authorize no knowledge and

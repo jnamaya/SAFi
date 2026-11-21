@@ -664,7 +664,7 @@ class MCPManager:
         elif "security_engineer" in pid_lower:
             harness_category = "Security Engineering Tools"
         else:
-            harness_category = "Agentic Coding"
+            harness_category = "Agentic Tools"
 
         return [
             {

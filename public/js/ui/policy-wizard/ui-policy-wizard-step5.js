@@ -91,6 +91,12 @@ export function renderWillStep(container, policyData) {
     if (!Array.isArray(policyData.forbidden_paths)) {
         policyData.forbidden_paths = [];
     }
+    if (!Array.isArray(policyData.forbidden_executables)) {
+        policyData.forbidden_executables = [];
+    }
+    if (!Array.isArray(policyData.forbidden_shell_patterns)) {
+        policyData.forbidden_shell_patterns = [];
+    }
 
     const sr = policyData.structural_requirements;
 
@@ -222,6 +228,49 @@ export function renderWillStep(container, policyData) {
                 </div>
                 <ul id="pw-forbidden-list" class="space-y-2"></ul>
                 <p id="pw-forbidden-empty" class="hidden text-xs text-gray-400 dark:text-gray-500 italic mt-2">No restricted paths yet — agents under this policy are only limited by the defaults above.</p>
+            </div>
+
+            <!-- BLOCKED COMMANDS (command-gate denylists) -->
+            <div class="bg-white dark:bg-neutral-900 border border-rose-200 dark:border-rose-900/40 rounded-xl p-5 shadow-sm">
+                <div class="flex items-start gap-3 mb-4">
+                    <span class="shrink-0 w-9 h-9 rounded-lg bg-rose-100 dark:bg-rose-900/30 border border-rose-200 dark:border-rose-800 flex items-center justify-center">
+                        <svg class="w-5 h-5 text-rose-600 dark:text-rose-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+                    </span>
+                    <div class="min-w-0">
+                        <h3 class="font-bold text-rose-700 dark:text-rose-300">Blocked Commands</h3>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Two denylists the Will's command gate enforces on every shell command, in addition to the built-in defaults.</p>
+                    </div>
+                </div>
+                <label for="pw-forbidden-exec-input" class="block text-[11px] font-semibold uppercase tracking-wide text-rose-600 dark:text-rose-400 mb-1.5">Blocked executables</label>
+                <p class="text-xs text-gray-400 dark:text-gray-500 mb-1.5">Whole command names agents may never run — matched against the first token of every shell command, so <code class="font-mono text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-900/20 px-1 rounded">sudo</code> blocks <code class="font-mono text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-900/20 px-1 rounded">sudo rm -rf /</code> entirely.</p>
+                <div class="flex gap-2 mb-3">
+                    <div class="relative flex-1 min-w-0">
+                        <input type="text" id="pw-forbidden-exec-input" autocomplete="off" spellcheck="false"
+                            class="w-full p-2.5 rounded-lg border border-rose-200 dark:border-rose-700 bg-rose-50/40 dark:bg-neutral-800 text-sm font-mono text-gray-900 dark:text-neutral-100 placeholder-rose-400 dark:placeholder-neutral-500 focus:border-rose-400 dark:focus:border-rose-500 focus:ring-2 focus:ring-rose-500/40 outline-none transition"
+                            placeholder="e.g. sudo or nmap">
+                    </div>
+                    <button id="pw-add-forbidden-exec-btn"
+                        class="px-4 py-2 rounded-lg text-sm font-semibold shrink-0 inline-flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white shadow-sm transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                        Add
+                    </button>
+                </div>
+                <ul id="pw-forbidden-exec-list" class="space-y-2 mb-5"></ul>
+                <label for="pw-forbidden-shell-input" class="block text-[11px] font-semibold uppercase tracking-wide text-rose-600 dark:text-rose-400 mb-1.5">Blocked shell patterns</label>
+                <p class="text-xs text-gray-400 dark:text-gray-500 mb-1.5">Substrings that may never appear anywhere in a shell command — such as <code class="font-mono text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-900/20 px-1 rounded">rm -rf /</code> or <code class="font-mono text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-900/20 px-1 rounded">mkfs</code>. Use these for dangerous argument combinations rather than whole commands.</p>
+                <div class="flex gap-2 mb-3">
+                    <div class="relative flex-1 min-w-0">
+                        <input type="text" id="pw-forbidden-shell-input" autocomplete="off" spellcheck="false"
+                            class="w-full p-2.5 rounded-lg border border-rose-200 dark:border-rose-700 bg-rose-50/40 dark:bg-neutral-800 text-sm font-mono text-gray-900 dark:text-neutral-100 placeholder-rose-400 dark:placeholder-neutral-500 focus:border-rose-400 dark:focus:border-rose-500 focus:ring-2 focus:ring-rose-500/40 outline-none transition"
+                            placeholder="e.g. rm -rf / or dd if=">
+                    </div>
+                    <button id="pw-add-forbidden-shell-btn"
+                        class="px-4 py-2 rounded-lg text-sm font-semibold shrink-0 inline-flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white shadow-sm transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                        Add
+                    </button>
+                </div>
+                <ul id="pw-forbidden-shell-list" class="space-y-2"></ul>
             </div>
 
             <!-- WRITTEN RULES → compiled into enforceable standards -->
@@ -357,6 +406,42 @@ export function renderWillStep(container, policyData) {
     };
     document.getElementById('pw-add-forbidden-btn').addEventListener('click', addForbidden);
     document.getElementById('pw-forbidden-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') addForbidden(); });
+
+    // --- BLOCKED EXECUTABLES (command-gate: first-token denylist) ---
+    renderList('pw-forbidden-exec-list', policyData.forbidden_executables, 'red', (i) => {
+        policyData.forbidden_executables.splice(i, 1);
+    });
+    const addForbiddenExec = () => {
+        const input = document.getElementById('pw-forbidden-exec-input');
+        const val = input.value.trim();
+        if (val) {
+            if (!policyData.forbidden_executables.includes(val)) {
+                policyData.forbidden_executables.push(val);
+            }
+            input.value = '';
+            renderList('pw-forbidden-exec-list', policyData.forbidden_executables, 'red', (i) => policyData.forbidden_executables.splice(i, 1));
+        }
+    };
+    document.getElementById('pw-add-forbidden-exec-btn').addEventListener('click', addForbiddenExec);
+    document.getElementById('pw-forbidden-exec-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') addForbiddenExec(); });
+
+    // --- BLOCKED SHELL PATTERNS (command-gate: substring denylist) ---
+    renderList('pw-forbidden-shell-list', policyData.forbidden_shell_patterns, 'red', (i) => {
+        policyData.forbidden_shell_patterns.splice(i, 1);
+    });
+    const addForbiddenShell = () => {
+        const input = document.getElementById('pw-forbidden-shell-input');
+        const val = input.value.trim();
+        if (val) {
+            if (!policyData.forbidden_shell_patterns.includes(val)) {
+                policyData.forbidden_shell_patterns.push(val);
+            }
+            input.value = '';
+            renderList('pw-forbidden-shell-list', policyData.forbidden_shell_patterns, 'red', (i) => policyData.forbidden_shell_patterns.splice(i, 1));
+        }
+    };
+    document.getElementById('pw-add-forbidden-shell-btn').addEventListener('click', addForbiddenShell);
+    document.getElementById('pw-forbidden-shell-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') addForbiddenShell(); });
 
     // --- LEGACY RULES ---
     renderList('pw-rules-list', policyData.will_rules, 'gray', (i) => {
