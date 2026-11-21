@@ -142,6 +142,8 @@ def local_model_inventory(catalogue_path: str | None = None) -> List[dict]:
 
     out = []
     for model in catalogue.get("models", []) or []:
+        if model.get("conscience_only"):
+            continue
         # Per-model, not per-catalogue. A single malformed entry must cost only
         # that entry: an outer try around the whole loop turns one bad key into
         # an empty catalog, which reads as "this box has no models" and hides
