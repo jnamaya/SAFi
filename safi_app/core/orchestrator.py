@@ -3389,6 +3389,27 @@ class SAFi:
             f"Please submit a request that aligns with {agent_name}'s designated role."
         )
 
+    @staticmethod
+    def _is_directive_echo(output: str, directive: str) -> bool:
+        """Detect when Intellect parrots internal_rephrase_directives verbatim."""
+        if not output:
+            return False
+        out_l = " ".join(output.lower().split())
+        markers = (
+            "do not engage with, validate, or roleplay",
+            "respond cleanly in 1-2",
+            "generate a compliant redirect",
+            "per the system directive",
+            "falls outside your operational scope",
+        )
+        if any(m in out_l for m in markers):
+            return True
+        if directive:
+            dir_l = " ".join(directive.lower().split())
+            if len(dir_l) >= 40 and dir_l[:60] in out_l:
+                return True
+        return False
+
     async def trigger_agent_redirect(
         self,
         original_prompt: str,
@@ -3421,6 +3442,12 @@ class SAFi:
         )
         
         safe_output = safe_intent.get("content") or "I am currently unable to process this request under governance rules."
+        if self._is_directive_echo(safe_output, directive):
+            self.log.warning(
+                "[Governance | Redirect Echo Guard] Intellect echoed internal redirect directive; "
+                "using deterministic policy fallback."
+            )
+            safe_output = self._deterministic_redirect_fallback(violation_type)
 
         # Enforce the structural gate on the redirect too. Normal drafts run
         # through _finalize_draft (which redirects on a structural failure), but
