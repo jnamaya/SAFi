@@ -57,6 +57,10 @@ from ..faculties.conscience import CONSCIENCE_TEMPERATURE  # noqa: F401  (re-exp
 # Kept under 300s so even a turn's two calls (intellect + conscience) stay inside
 # the request budget.
 LLM_TIMEOUT_SECONDS = int(os.environ.get("SAFI_LLM_TIMEOUT", "300"))
+# Conscience audits typically finish in ~12-15s; bound runaway/stalled
+# audit calls without capping max_tokens so large multi-value audits aren't
+# truncated while stuck generations fail fast.
+CONSCIENCE_TIMEOUT_SECONDS = float(os.environ.get("SAFI_CONSCIENCE_TIMEOUT", "45"))
 
 
 # Output-token ceiling for the Intellect. Was a hardcoded 8192 until 2026-08-27
@@ -1145,13 +1149,16 @@ class LLMProvider:
                 # Constrain decoding to valid JSON at the API level: eliminates the
                 # markdown-fence/prose failure class that otherwise degrades the
                 # ledger and burns the orchestrator's re-audit retry.
-                raw_content = await self._chat_completion(
-                    route="conscience",
-                    system_prompt=system_prompt,
-                    user_prompt=user_prompt,
-                    temperature=CONSCIENCE_TEMPERATURE,
-                    max_tokens=8192,
-                    json_mode=True,
+                raw_content = await asyncio.wait_for(
+                    self._chat_completion(
+                        route="conscience",
+                        system_prompt=system_prompt,
+                        user_prompt=user_prompt,
+                        temperature=CONSCIENCE_TEMPERATURE,
+                        max_tokens=8192,
+                        json_mode=True,
+                    ),
+                    timeout=CONSCIENCE_TIMEOUT_SECONDS,
                 )
                 ledger = parse_conscience_response(raw_content, self.log)
                 if ledger:
@@ -1164,6 +1171,11 @@ class LLMProvider:
                 # than by guessing from the model id, at the cost of one wasted
                 # call on those models.
                 self.log.warning("Conscience json_mode returned an empty/unusable ledger; retrying without json_mode.")
+            except asyncio.TimeoutError:
+                self.log.warning(
+                    "Conscience json_mode call timed out after %.1fs; retrying without json_mode.",
+                    CONSCIENCE_TIMEOUT_SECONDS,
+                )
             except Exception as e:
                 # A stalled provider must not be re-run: a second call at the
                 # per-call timeout would push the turn past the request budget.
@@ -1180,12 +1192,15 @@ class LLMProvider:
                 # Retry once without it; the text parser handles unconstrained output.
                 self.log.warning(f"Conscience json_mode call failed ({e}); retrying without json_mode.")
 
-            raw_content = await self._chat_completion(
-                route="conscience",
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                temperature=CONSCIENCE_TEMPERATURE,
-                max_tokens=8192,
+            raw_content = await asyncio.wait_for(
+                self._chat_completion(
+                    route="conscience",
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    temperature=CONSCIENCE_TEMPERATURE,
+                    max_tokens=8192,
+                ),
+                timeout=CONSCIENCE_TIMEOUT_SECONDS,
             )
             return parse_conscience_response(raw_content, self.log)
         except Exception as e:
