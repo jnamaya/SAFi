@@ -339,12 +339,12 @@ class Config:
     # Enforced in auth.py by refusing the endpoints themselves, not just by
     # hiding the buttons -- an unauthenticated /api/login/google would
     # otherwise remain a working (if unreachable) entry point.
-    SSO_LOGIN_ENABLED = _env_bool("SAFI_SSO_ENABLED", True)
-    # Cloud edition = full cloud product. Set SAFI_CLOUD_EDITION=false on
-    # appliance/local installs to hide cloud-only UI (domain verification,
-    # Google/Microsoft SSO settings) in the Control Panel. Backend SSO routes
-    # are independently gated by SSO_LOGIN_ENABLED + provider client config.
-    CLOUD_EDITION = _env_bool("SAFI_CLOUD_EDITION", True)
+    # Cloud edition = full cloud product. Defaults to false for self-hosted /
+    # appliance deployments: hides cloud-only UI (domain verification, SCIM,
+    # email invites, tenant restrictions) and disables Google/Microsoft OAuth SSO
+    # endpoints (unless SAFI_SSO_ENABLED=false overrides it on a cloud deploy).
+    CLOUD_EDITION = _env_bool("SAFI_CLOUD_EDITION", False)
+    SSO_LOGIN_ENABLED = CLOUD_EDITION and _env_bool("SAFI_SSO_ENABLED", True)
 
     GITHUB_CLIENT_ID = os.environ.get("GITHUB_CLIENT_ID")
     GITHUB_CLIENT_SECRET = os.environ.get("GITHUB_CLIENT_SECRET")
