@@ -56,7 +56,9 @@ def _seed_demo_policies() -> None:
 
     # Retired seed rows remain available to historical records but not in the
     # current example-policy picker.
-    visible_ids = active_ids | {SAFI_POLICY_ID}
+    visible_ids = set(active_ids)
+    if not visible_ids:
+        return
     conn = db.get_db_connection()
     cursor = conn.cursor()
     try:
