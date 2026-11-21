@@ -1444,14 +1444,14 @@ def get_me():
 
         if active_profile_name:
             try:
-                user_details['active_profile_details'] = get_profile(active_profile_name)
+                user_details['active_profile_details'] = get_profile(active_profile_name, org_id=user_org)
             except (KeyError, ValueError):
                 usable = sharing_store.get_first_usable_agent(user_id, user_role, user_org, ROLE_CONFIG)
                 if usable:
                     try:
                         db.update_user_profile(user_id, usable)
                         user_details['active_profile'] = usable
-                        user_details['active_profile_details'] = get_profile(usable)
+                        user_details['active_profile_details'] = get_profile(usable, org_id=user_org)
                     except Exception:
                         user_details['active_profile_details'] = None
                 else:

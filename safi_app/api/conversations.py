@@ -169,18 +169,19 @@ class SafiInstanceCache:
         # Prefix is the plaintext profile name; suffix is a unique hash.
         return f"{norm_name}|{rest_hash}"
 
-    def get_or_create(self, profile_name, intellect_model, will_model, conscience_model, policy_id=None):
+    def get_or_create(self, profile_name, intellect_model, will_model, conscience_model, policy_id=None, org_id=None):
         # The profile adapter resolves user-land data, then calls the pure compiler.
         # resolves role + Policy + Charter (+ weights and β) and stamps policy_id /
         # org_id / spirit_beta. Here we only handle caching and SAFi instantiation.
         # `policy_id`, when given (e.g. the API-key path), overrides the agent's own.
-        prof = get_profile(profile_name, policy_id=policy_id)
+        prof = get_profile(profile_name, policy_id=policy_id, org_id=org_id)
         spirit_beta = float(prof.get("spirit_beta", 0.90))
 
         # The cache key folds in the governing config: any Charter / Policy / weight
         # edit changes the compiled profile, which changes this hash and busts the
         # cached instance on the next request.
         gov_fingerprint = {
+            "org_id": prof.get("org_id"),
             "worldview": prof.get("worldview", ""),
             "values": prof.get("values", []),
             "will_rules": prof.get("will_rules", []),
@@ -338,7 +339,8 @@ async def bot_process_prompt_endpoint():
             selected_intellect,
             None,
             selected_conscience,
-            policy_id=policy_id # <--- INJECT POLICY
+            policy_id=policy_id, # <--- INJECT POLICY
+            org_id=org_id,
         )
 
         # JIT bot users carry no org, so provider governance falls to the
@@ -635,7 +637,8 @@ async def public_process_prompt_endpoint():
         agent_key,
         intellect_model,   # isolated from the main app's model selection
         None,
-        conscience_model
+        conscience_model,
+        org_id=org_id,
     )
 
     # org_id was already resolved above (user -> policy -> configured public org).
@@ -738,7 +741,7 @@ async def process_prompt_endpoint():
         user_profile_name = db.get_conversation_agent_profile(conversation_id) or Config.DEFAULT_PROFILE
 
     try:
-        agent_profile = get_profile(user_profile_name)
+        agent_profile = get_profile(user_profile_name, org_id=user_details.get('org_id'))
     except KeyError:
         # The stored agent no longer exists (retired demo agent or deleted
         # custom agent). Fall back to the user's first usable agent.
@@ -749,7 +752,7 @@ async def process_prompt_endpoint():
         try:
             if is_owner and usable:
                 db.update_user_profile(user_id, user_profile_name)
-            agent_profile = get_profile(user_profile_name)
+            agent_profile = get_profile(user_profile_name, org_id=user_details.get('org_id'))
         except Exception:
             agent_profile = {}
     except Exception:
@@ -773,7 +776,7 @@ async def process_prompt_endpoint():
                     pass
                 user_profile_name = usable
                 try:
-                    agent_profile = get_profile(user_profile_name)
+                    agent_profile = get_profile(user_profile_name, org_id=user_details.get('org_id'))
                 except Exception:
                     agent_profile = {}
             else:
@@ -827,15 +830,16 @@ async def process_prompt_endpoint():
     full_name = user_details.get('name', 'User')
     user_name = full_name.split(' ')[0] if full_name else 'User'
 
+    org_id = user_details.get('org_id')
     saf_system = global_safi_cache.get_or_create(
         user_profile_name,
         intellect_model,
         None,
-        conscience_model
+        conscience_model,
+        org_id=org_id,
     )
     
     try:
-        org_id = user_details.get('org_id')
         result = await saf_system.process_prompt(
             data['message'],
             user_id,
@@ -1967,6 +1971,7 @@ async def agentic_process_prompt_endpoint():
             None,
             selected_conscience,
             policy_id=target_policy_id,
+            org_id=org_id,
         )
         pg.activate_org(org_id, allowlist=user_allowlist)
         db.ensure_conversation_access(user_id, conversation_id, source="cli")

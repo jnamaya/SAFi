@@ -418,7 +418,7 @@ def list_all_agents():
         # Compile through get_profile() so built-ins carry the same governed
         # view (scope, hard gates, policy/org names) the UI shows for DB agents.
         try:
-            a = get_profile(k)
+            a = get_profile(k, org_id=org_id)
         except Exception:
             a = v.copy()
         a['key'] = k
@@ -444,7 +444,7 @@ def list_all_agents():
                     # get_profile() is the sole compiler — it returns the full
                     # governed view (role + Policy + Charter), so the details modal
                     # shows charter mission in the worldview + charter/policy values.
-                    merged = get_profile(agent['key'])
+                    merged = get_profile(agent['key'], org_id=org_id)
 
                     merged['key'] = agent['key']
                     merged['is_custom'] = agent.get('is_custom', True)
@@ -465,7 +465,8 @@ def get_agent(key):
     clean = "".join(c for c in key.lower() if c.isalnum() or c == '_')
     
     try:
-        agent = get_profile(clean)
+        sess_org_id = (session.get('user') or {}).get('org_id')
+        agent = get_profile(clean, org_id=sess_org_id)
         
         # Cross-org guard (backlog 70): db.get_agent is org-unfiltered, so the
         # full raw config of a custom agent may only be returned to the owning

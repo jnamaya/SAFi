@@ -89,7 +89,8 @@ async def evaluate_endpoint():
             intellect_model,
             None,
             conscience_model,
-            policy_id=policy_id
+            policy_id=policy_id,
+            org_id=org_id,
         )
 
         # Governance only: SAFi evaluates, it never generates and never redirects.

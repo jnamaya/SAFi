@@ -158,7 +158,11 @@ def _resolve_kb_display_name(kb_name: Optional[str]) -> Optional[str]:
     return kb_name.replace("_", " ").replace("-", " ")
 
 
-def get_profile(name: str, policy_id: Optional[str] = None) -> Dict[str, Any]:
+def get_profile(
+    name: str,
+    policy_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+) -> Dict[str, Any]:
     """Resolve persisted/content inputs, then call the pure profile compiler."""
     raw_agent = _load_profile(name)
     if not raw_agent:
@@ -173,7 +177,9 @@ def get_profile(name: str, policy_id: Optional[str] = None) -> Dict[str, Any]:
     _stamp_legacy_gate_reasons(agent.get("values"))
 
     effective_policy_id = policy_id or agent.get("policy_id")
-    org_id = agent.get("org_id")
+    # Built-in agents and seeded demo policies carry org_id=None, so fall back
+    # to the caller's org_id when neither the agent nor policy specifies one.
+    resolved_org_id = agent.get("org_id") or org_id
     policy_values: List[Dict[str, Any]] = []
     policy_config: Dict[str, Any] = {}
     policy_version = None
@@ -210,16 +216,16 @@ def get_profile(name: str, policy_id: Optional[str] = None) -> Dict[str, Any]:
                 "global_values": policy_values,
                 "scope_statement": policy_config.get("scope_statement") or None,
             }
-            org_id = policy.get("org_id") or org_id
+            resolved_org_id = policy.get("org_id") or resolved_org_id
 
     charter = None
     ai_standards = None
     charter_weight = 0.40
     spirit_beta = 0.90
     org_name = None
-    if org_id:
+    if resolved_org_id:
         try:
-            org = db.get_organization(org_id)
+            org = db.get_organization(resolved_org_id)
             org_name = org.get("name") if org else None
             settings = org.get("settings") if org else None
             if isinstance(settings, str):
@@ -227,8 +233,8 @@ def get_profile(name: str, policy_id: Optional[str] = None) -> Dict[str, Any]:
             settings = settings or {}
             charter_weight = float(settings.get("governance_split", charter_weight))
             spirit_beta = float(settings.get("spirit_beta", spirit_beta))
-            charter = db.get_charter(org_id)
-            ai_standards = db.get_ai_standards(org_id)
+            charter = db.get_charter(resolved_org_id)
+            ai_standards = db.get_ai_standards(resolved_org_id)
         except Exception:
             log.exception("Could not resolve organization governance data.")
 
@@ -263,7 +269,7 @@ def get_profile(name: str, policy_id: Optional[str] = None) -> Dict[str, Any]:
     final.update({
         "policy_id": effective_policy_id or "standalone",
         "policy_version": policy_version,
-        "org_id": org_id,
+        "org_id": resolved_org_id,
         "spirit_beta": spirit_beta,
         "policy_name": policy_name,
         "org_name": org_name,
