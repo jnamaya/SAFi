@@ -3757,8 +3757,11 @@ def delete_policy_keys_by_label(pid, label):
 def get_or_create_policy_key_for_user(user, label="safi-cli"):
     """Resolve the policy that governs this user and return a fresh raw API
     key bound to it: {"api_key": raw, "policy_id": pid}, or None when the
-    user has no usable policy. Preference order: the organization's global
-    policy, else the most recent policy the user created."""
+    user has no usable policy. Preference order:
+      1. The organization's global_policy_id
+      2. The most recent policy created by the user
+      3. Any policy belonging to the user's organization
+      4. The user's active_profile policy or a seeded default policy"""
     pid = None
     if user.get('org_id'):
         org = get_organization(user['org_id'])
@@ -3772,13 +3775,39 @@ def get_or_create_policy_key_for_user(user, label="safi-cli"):
                 (user['id'],))
             row = cursor.fetchone()
             pid = row[0] if row else None
+            if not pid and user.get('org_id'):
+                cursor.execute(
+                    "SELECT id FROM policies WHERE org_id=%s ORDER BY created_at LIMIT 1",
+                    (user['org_id'],))
+                row = cursor.fetchone()
+                pid = row[0] if row else None
+            if not pid:
+                active_prof = user.get('active_profile')
+                if active_prof:
+                    try:
+                        from ..profile_resolver import _load_profile
+                        prof_data = _load_profile(active_prof)
+                        cand_pid = (prof_data or {}).get('policy_id')
+                        if cand_pid:
+                            cursor.execute("SELECT id FROM policies WHERE id=%s LIMIT 1", (cand_pid,))
+                            row = cursor.fetchone()
+                            pid = row[0] if row else None
+                    except Exception:
+                        pass
+            if not pid:
+                cursor.execute(
+                    "SELECT id FROM policies WHERE is_demo=TRUE ORDER BY id LIMIT 1"
+                )
+                row = cursor.fetchone()
+                pid = row[0] if row else None
         finally:
             cursor.close()
             conn.close()
     if not pid:
         return None
-    delete_policy_keys_by_label(pid, label)
-    raw = create_api_key(pid, label)
+    effective_label = f"{label}:{user['id']}" if label == "safi-cli" and user.get("id") else label
+    delete_policy_keys_by_label(pid, effective_label)
+    raw = create_api_key(pid, effective_label)
     return {"api_key": raw, "policy_id": pid}
 
 def get_policy_keys(pid):
