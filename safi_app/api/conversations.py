@@ -1886,6 +1886,26 @@ async def agentic_process_prompt_endpoint():
     recent_turns = data.get("recent_turns", "")
     recent_turns = recent_turns[-12000:] if isinstance(recent_turns, str) else ""
 
+    cli_demo_limit = getattr(Config, "CLI_DEMO_TURN_LIMIT", 0)
+    if cli_demo_limit > 0:
+        client_ip = request.headers.get('X-Forwarded-For', request.remote_addr or '').split(',')[0].strip()
+        ip_hash = hashlib.md5(client_ip.encode()).hexdigest()[:16]
+        ip_key = f"cli_ip_{ip_hash}"
+        step_key = f"cli_step_{ip_hash}"
+        if (not tool_results and db.get_todays_prompt_count(ip_key) >= cli_demo_limit) or (
+            db.get_todays_prompt_count(step_key) >= cli_demo_limit * 8
+        ):
+            return jsonify({
+                "error": (
+                    f"Demo CLI limit reached ({cli_demo_limit} turns/day). "
+                    "Deploy SAFi locally or get an appliance at https://runsafi.com to continue."
+                ),
+                "code": "DEMO_LIMIT_REACHED",
+            }), 429
+        if not tool_results:
+            db.record_prompt_usage(ip_key)
+        db.record_prompt_usage(step_key)
+
     try:
         user_details = db.get_user_details(user_id)
         if not user_details:

@@ -391,6 +391,9 @@ class Config:
     SUPER_ADMIN_EMAILS = [e.strip() for e in os.environ.get("SAFI_SUPER_ADMINS", "").split(",") if e.strip()]
 
     DAILY_PROMPT_LIMIT = int(os.environ.get("SAFI_DAILY_PROMPT_LIMIT", "0"))
+    # Optional per-IP daily turn cap for public CLI demos (/api/cli/turn).
+    # 0 disables the cap (default for self-hosted/appliance deployments).
+    CLI_DEMO_TURN_LIMIT = int(os.environ.get("SAFI_CLI_DEMO_TURN_LIMIT", "0"))
 
     # --- Internal-key auth for public-facing endpoints (P3 remediation) ----
     # Comma-separated shared secrets, injected server-side by the Apache
