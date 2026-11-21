@@ -480,6 +480,7 @@ def app_config():
         "demo_enabled":        Config.ENABLE_DEMO_LOGIN,
         "local_login_enabled": Config.password_login_available(),
         "voice_input_enabled": Config.VOICE_INPUT_ENABLED,
+        "tts_enabled":         Config.tts_enabled(),
         "sso_login_enabled":   Config.SSO_LOGIN_ENABLED and (google_configured or microsoft_configured),
         "google_login_enabled": Config.SSO_LOGIN_ENABLED and google_configured,
         "microsoft_login_enabled": Config.SSO_LOGIN_ENABLED and microsoft_configured,

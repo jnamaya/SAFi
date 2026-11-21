@@ -18,6 +18,34 @@ const iconDots = `<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><
 const iconBookmark = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path></svg>`;
 const iconDownload = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"></path></svg>`;
 
+// Cache TTS availability once per session from /api/app-config so the audio
+// playback button stays hidden when no audio provider is configured.
+let _ttsEnabled = null;
+let _ttsEnabledPromise = null;
+function _getTtsEnabled() {
+    if (_ttsEnabled !== null) return Promise.resolve(_ttsEnabled);
+    if (!_ttsEnabledPromise) {
+        _ttsEnabledPromise = api.getAppConfig()
+            .then(cfg => {
+                _ttsEnabled = Boolean(cfg && cfg.tts_enabled);
+                return _ttsEnabled;
+            })
+            .catch(() => {
+                _ttsEnabled = false;
+                return false;
+            });
+    }
+    return _ttsEnabledPromise;
+}
+
+function _createTtsButton(text) {
+    const btn = document.createElement('button');
+    btn.className = 'tts-btn shrink-0';
+    btn.innerHTML = iconPlay;
+    btn.onclick = () => playSpeech(text, btn);
+    return btn;
+}
+
 // Action-menu outside-click close: bind once for the whole module, not per
 // message (a listener per rendered message would leak).
 let _actionMenuOutsideBound = false;
@@ -670,10 +698,9 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
         const profileName = payload?.profile || null;
         const avatarUrl = getAvatarForProfile(profileName);
 
-        ttsBtn = document.createElement('button');
-        ttsBtn.className = 'tts-btn shrink-0';
-        ttsBtn.innerHTML = iconPlay;
-        ttsBtn.onclick = () => playSpeech(final_text_raw, ttsBtn);
+        if (_ttsEnabled === true) {
+            ttsBtn = _createTtsButton(final_text_raw);
+        }
 
         copyBtn = document.createElement('button');
         copyBtn.className = 'copy-btn shrink-0';
@@ -779,6 +806,20 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
         if (copyBtn) bar.appendChild(copyBtn);
         if (ttsBtn) bar.appendChild(ttsBtn);
         if (overflowCtrl) bar.appendChild(overflowCtrl);
+
+        // On the very first message before /api/app-config resolves, insert the
+        // audio button once enabled so we never flash it when TTS is off.
+        if (_ttsEnabled === null) {
+            _getTtsEnabled().then(enabled => {
+                if (!enabled) return;
+                const btn = _createTtsButton(final_text_raw);
+                if (overflowCtrl && overflowCtrl.parentNode === bar) {
+                    bar.insertBefore(btn, overflowCtrl);
+                } else {
+                    bar.appendChild(btn);
+                }
+            });
+        }
 
         // Conflict note claims its own line above the bar (see .conflict-note).
         const conflictNote = whyHandler ? _createConflictNote(payload, () => whyHandler(payload)) : null;

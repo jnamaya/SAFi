@@ -375,6 +375,8 @@ def tts_audio_endpoint():
     user_id = get_user_id()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
+    if not Config.tts_enabled():
+        return jsonify({"error": "Text-to-speech is not configured on this deployment."}), 404
 
     try:
         data = request.get_json()

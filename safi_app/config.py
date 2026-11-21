@@ -640,7 +640,9 @@ class Config:
 
     # --- TTS CONFIGURATION ---
     # Provider: "edge-tts" (free), "voxtral-*" (Mistral), "gpt-4o-mini-tts"
-    # (OpenAI), or "gemini-*"
+    # (OpenAI), or "gemini-*". Set to "" / "none" or omit the provider API
+    # key (or set SAFI_TTS_ENABLED=false) to hide the frontend audio button.
+    TTS_ENABLED_ENV = os.environ.get("SAFI_TTS_ENABLED", "").strip().lower()
     TTS_MODEL = os.environ.get("SAFI_TTS_MODEL", "voxtral-mini-tts-2603")
     # edge-tts voices: en-US-AvaMultilingualNeural, en-US-AndrewNeural, en-US-AriaNeural
     TTS_VOICE = os.environ.get("SAFI_TTS_VOICE", "en-US-AvaMultilingualNeural")
@@ -653,6 +655,24 @@ class Config:
     # are swept opportunistically on cache access. 0 disables caching
     # entirely (synthesize every time, keep nothing on disk).
     TTS_CACHE_TTL_DAYS = int(os.environ.get("SAFI_TTS_CACHE_TTL_DAYS", "7"))
+
+    @classmethod
+    def tts_enabled(cls) -> bool:
+        """True only when TTS is not disabled and an audio provider is configured."""
+        if cls.TTS_ENABLED_ENV in ("false", "0", "no", "off", "disabled"):
+            return False
+        model = (cls.TTS_MODEL or "").strip().lower()
+        if not model or model in ("none", "off", "false", "disabled"):
+            return False
+        if model.startswith(("voxtral-", "mistral-")):
+            return bool(cls.MISTRAL_API_KEY)
+        if model.startswith("gpt-"):
+            return bool(cls.OPENAI_API_KEY)
+        if model.startswith("gemini"):
+            return bool(cls.GEMINI_API_KEY)
+        if model == "edge-tts":
+            return True
+        return False
 
     SPIRIT_BETA = float(os.environ.get("SAFI_SPIRIT_BETA", "0.9"))
 
