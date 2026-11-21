@@ -1,5 +1,5 @@
 [Unit]
-Description=SAFi local Conscience model server (SAFi Qwen3.6 35B A3B)
+Description=SAFi local Conscience model server (SAFi Gemma4 26B A4B)
 After=network.target local-fs.target
 Before=safi.service
 
@@ -10,7 +10,7 @@ Group=safi
 SupplementaryGroups=render video
 EnvironmentFile=/etc/safi/conscience-llama-server.env
 Environment=LD_LIBRARY_PATH=/opt/safi/vulkan
-ExecStart=/opt/safi/vulkan/llama-server --model /var/lib/safi/models/safi-qwen3.6-35b-a3b/safi-qwen3.6-35b-a3b.gguf --host 127.0.0.1 --port 8082 --alias safi-conscience,safi-qwen3.6-35b-a3b,safi-qwen3.6_35b-a3b,safi-qwen3.6-35b-a3b-abliterated --ctx-size 65536 --threads 16 --n-gpu-layers 99 --spec-type draft-mtp --spec-draft-n-max 3 -np 2 -b 2048 -ub 512 -fa on -ctk q8_0 -ctv q8_0 --reasoning off
+ExecStart=/opt/safi/vulkan/llama-server --model /var/lib/safi/models/safi-gemma4-26b-a4b/safi-gemma4-26b-a4b.gguf --host 127.0.0.1 --port 8082 --alias safi-conscience,safi-gemma4-26b-a4b --ctx-size 65536 --threads 16 --n-gpu-layers 99 -np 2 -b 2048 -ub 512 -fa on -ctk q8_0 -ctv q8_0 --reasoning off
 Restart=on-failure
 RestartSec=5
 TimeoutStartSec=300
