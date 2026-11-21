@@ -543,32 +543,42 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
         ${(currentUser && currentUser.role === 'admin') ? `
         <div class="settings-card">
             <section>
-                 <h4 class="text-lg font-semibold mb-1">Create User Account</h4>
-                 <p class="text-xs text-gray-400 mb-4">Provision an account with a username and password (or auto-generate) - no email or external identity provider required. Hand the credentials to the user out of band (in person or by phone). The user signs in on the login screen or via <code class="font-mono text-neutral-800 dark:text-neutral-200">safi --login</code>.</p>
-                 <div class="flex flex-wrap gap-2 items-end">
+                 <div class="flex items-start gap-3 mb-4">
+                     <div class="flex-shrink-0 w-9 h-9 rounded-lg bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center">
+                         <svg class="w-5 h-5 text-neutral-600 dark:text-neutral-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+                     </div>
+                     <div>
+                         <h4 class="text-lg font-semibold leading-tight">Create User Account</h4>
+                         <p class="text-xs text-gray-400 mt-0.5">Provision a local account with a username and password - no email or external identity provider required.</p>
+                     </div>
+                 </div>
+                 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                      <label class="block">
                          <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Username</span>
                          <input type="text" id="inp-local-username" placeholder="jdoe" spellcheck="false" autocomplete="off"
-                             class="mt-1 w-36 rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm font-mono">
+                             class="mt-1 w-full rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm font-mono">
+                         <span class="block text-xs text-gray-400 mt-1">3-64 chars: lowercase letters, digits, dot, underscore, hyphen.</span>
                      </label>
                      <label class="block">
                          <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Display name</span>
                          <input type="text" id="inp-local-name" placeholder="John Doe" autocomplete="off"
-                             class="mt-1 w-40 rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm">
+                             class="mt-1 w-full rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm">
+                         <span class="block text-xs text-gray-400 mt-1">Shown to other members; optional.</span>
                      </label>
                      <label class="block">
                          <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Role</span>
-                         <select id="sel-local-role" class="mt-1 rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm">
+                         <select id="sel-local-role" class="mt-1 w-full rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm">
                              <option value="member">Member</option>
                              <option value="editor">Editor</option>
                              <option value="auditor">Auditor</option>
                              <option value="admin">Admin</option>
                          </select>
+                         <span class="block text-xs text-gray-400 mt-1">Admins manage users, policies, and settings.</span>
                      </label>
                      <div class="block relative" id="container-local-groups">
-                         <span class="text-sm font-bold text-gray-700 dark:text-gray-300 block">Assign Groups</span>
+                         <span class="text-sm font-bold text-gray-700 dark:text-gray-300 block">Assign Groups <span class="font-normal text-xs text-gray-400">(optional)</span></span>
                          <button type="button" id="btn-local-groups-toggle"
-                             class="mt-1 flex items-center justify-between gap-2 rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm min-w-[150px] text-left hover:border-gray-400 dark:hover:border-neutral-500">
+                             class="mt-1 w-full flex items-center justify-between gap-2 rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm text-left hover:border-gray-400 dark:hover:border-neutral-500">
                              <span id="lbl-local-groups" class="truncate text-gray-400 dark:text-neutral-500">None</span>
                              <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                          </button>
@@ -580,10 +590,20 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                      </div>
                      <label class="block">
                          <span class="text-sm font-bold text-gray-700 dark:text-gray-300">Password <span class="font-normal text-xs text-gray-400">(optional)</span></span>
-                         <input type="password" id="inp-local-password" placeholder="Auto-generated if blank" autocomplete="new-password"
-                             class="mt-1 w-44 rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm font-mono">
+                         <span class="block relative">
+                             <input type="password" id="inp-local-password" placeholder="Auto-generated if blank" autocomplete="new-password"
+                                 class="mt-1 w-full rounded-lg border border-gray-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 pr-10 text-sm font-mono">
+                             <button type="button" id="btn-toggle-local-password" aria-label="Show password"
+                                 class="absolute right-2 top-1/2 mt-0.5 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-neutral-300">
+                                 <svg id="icon-local-password-show" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+                             </button>
+                         </span>
+                         <span class="block text-xs text-gray-400 mt-1">Leave blank to auto-generate. Custom passwords need 8+ characters.</span>
                      </label>
-                     <button id="btn-create-local" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-bold">Create account</button>
+                 </div>
+                 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mt-4">
+                     <p class="text-xs text-gray-400">Hand credentials to the user out of band (in person or by phone). They sign in using this URL or via terminal by typing <code class="font-mono text-neutral-800 dark:text-neutral-200">saficli</code>.</p>
+                     <button id="btn-create-local" class="flex-shrink-0 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed">Create account</button>
                  </div>
                  <div id="local-groups-selected-badges" class="flex flex-wrap gap-1 mt-2 empty:hidden"></div>
                  <div id="local-account-result" class="hidden mt-4 p-4 rounded-lg border border-amber-300 bg-amber-50 dark:border-amber-700/50 dark:bg-amber-900/20">
@@ -1442,6 +1462,23 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
     }
 
     // --- Local accounts (admin only; card rendered above only for admins) ---
+    const btnTogglePw = document.getElementById('btn-toggle-local-password');
+    if (btnTogglePw) {
+        btnTogglePw.addEventListener('click', () => {
+            const inp = document.getElementById('inp-local-password');
+            if (!inp) return;
+            const show = inp.type === 'password';
+            inp.type = show ? 'text' : 'password';
+            btnTogglePw.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+            const icon = document.getElementById('icon-local-password-show');
+            if (icon) {
+                icon.innerHTML = show
+                    ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.542-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L6.59 6.59m7.532 7.532l3.29 3.29M3 3l18 18"></path>'
+                    : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>';
+            }
+        });
+    }
+
     const btnCreateLocal = document.getElementById('btn-create-local');
     if (btnCreateLocal) {
         btnCreateLocal.addEventListener('click', async () => {
