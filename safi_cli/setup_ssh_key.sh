@@ -60,9 +60,9 @@ Options:
   -h, --help         Show this help message
 
 Examples:
-  safi setup-key local-VM
+  safi setup-key my-server
   safi setup-key win-server
-  safi setup-key nelson@192.168.1.218
+  safi setup-key admin@192.0.2.10
 HELP
     exit "${1:-1}"
 }

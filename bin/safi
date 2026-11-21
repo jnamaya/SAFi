@@ -1,3 +1,11 @@
 #!/usr/bin/env bash
-export PYTHONPATH="/home/nelson/Documents/SAFi:${PYTHONPATH}"
-exec /home/nelson/Documents/SAFi/venv/bin/python -m safi_cli.main "$@"
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+if command -v readlink >/dev/null 2>&1; then
+    SCRIPT_PATH="$(readlink -f "$SCRIPT_PATH" 2>/dev/null || echo "$SCRIPT_PATH")"
+fi
+REPO_ROOT="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
+export PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
+if [ -x "${REPO_ROOT}/venv/bin/python" ]; then
+    exec "${REPO_ROOT}/venv/bin/python" -m safi_cli.main "$@"
+fi
+exec python3 -m safi_cli.main "$@"
