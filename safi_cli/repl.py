@@ -1309,9 +1309,9 @@ def _wizard_login_or_key(api_url: str, agent: str) -> str:
     app_cfg = probe_client.get_app_config()
     sso_enabled = bool(app_cfg.get("sso_login_enabled"))
     prompt_label = (
-        "Local account (or 'sso' for Google/Microsoft browser login, or press Enter for API key): "
+        "Use a Local account (or type 'sso' for Google/Microsoft browser login, or press Enter to use a Policy API key): "
         if sso_enabled
-        else "Local account (or DOMAIN\\user, or press Enter for API key): "
+        else "Use a Local account (or DOMAIN\\user, or press Enter to use a Policy API key): "
     )
 
     while True:
