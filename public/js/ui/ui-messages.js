@@ -1179,64 +1179,86 @@ export function displayEmptyState(activeProfile, promptClickHandler, firstName =
         : '';
 
     const serverOrigin = escapeHtml(window.location.origin);
+    const copyIconSvg = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
+    const checkIconSvg = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+
     const cliExamplesHtml = (activeProfile.example_prompts || [])
-        .map(p => `<li class="text-xs text-neutral-600 dark:text-neutral-300 bg-neutral-100/80 dark:bg-neutral-800/70 border border-neutral-200/80 dark:border-neutral-700/70 rounded-lg px-3 py-2 font-mono">&ldquo;${escapeHtml(p)}&rdquo;</li>`)
+        .map(p => `<li class="cli-example-pill"><span class="cli-example-prompt-char">&gt;</span><span>${escapeHtml(p)}</span></li>`)
         .join('');
 
     const cliOnboardingHtml = `
-      <div class="text-left max-w-3xl mx-auto mt-2 mb-6 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white/80 dark:bg-neutral-900/70 p-5 shadow-sm">
-        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+      <div class="cli-onboard-card">
+        <div class="cli-onboard-header">
           <div>
-            <span class="inline-block text-[11px] font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 mb-1">Desktop CLI Onboarding</span>
-            <h3 class="text-base font-bold text-neutral-800 dark:text-neutral-100">Run ${escapeHtml(activeProfile.name || 'this Agent')} from Your Terminal with <code class="font-mono text-sm">safi-cli</code></h3>
+            <span class="cli-onboard-badge">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+              Desktop CLI Onboarding
+            </span>
+            <h3 class="cli-onboard-title">Run ${escapeHtml(activeProfile.name || 'this Agent')} from Your Terminal</h3>
+            <p class="cli-onboard-subtitle">
+              This agent executes commands, inspects files, and operates on your workstation or infrastructure via <strong>safi-cli</strong> while every action is governed by this SAFi server.
+            </p>
           </div>
-          <a href="https://runsafi.com/start" target="_blank" rel="noopener noreferrer" class="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline">Full Quick Start Guide &rarr;</a>
-        </div>
-        <p class="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed mb-4">
-          This agent is designed to execute commands, inspect files, and operate directly on your workstation or server via the <strong>SAFi CLI</strong> while every action is governed by this SAFi server.
-        </p>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-          <div class="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950/60 p-3.5">
-            <div class="flex items-center justify-between mb-1.5">
-              <span class="text-xs font-semibold text-neutral-700 dark:text-neutral-200">1a. Windows 10 / 11 (PowerShell)</span>
-              <button type="button" class="cli-copy-btn text-[11px] font-semibold px-2 py-0.5 rounded bg-neutral-200/80 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-300 dark:hover:bg-neutral-700 transition" data-copy="irm https://runsafi.com/install.ps1 | iex">Copy</button>
-            </div>
-            <pre class="text-xs font-mono text-neutral-800 dark:text-neutral-200 overflow-x-auto select-all"><code>irm https://runsafi.com/install.ps1 | iex</code></pre>
-          </div>
-
-          <div class="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950/60 p-3.5">
-            <div class="flex items-center justify-between mb-1.5">
-              <span class="text-xs font-semibold text-neutral-700 dark:text-neutral-200">1b. Linux &amp; macOS (Terminal)</span>
-              <button type="button" class="cli-copy-btn text-[11px] font-semibold px-2 py-0.5 rounded bg-neutral-200/80 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-300 dark:hover:bg-neutral-700 transition" data-copy="curl -sSL https://runsafi.com/install.sh | bash">Copy</button>
-            </div>
-            <pre class="text-xs font-mono text-neutral-800 dark:text-neutral-200 overflow-x-auto select-all"><code>curl -sSL https://runsafi.com/install.sh | bash</code></pre>
-          </div>
+          <a href="https://runsafi.com/start" target="_blank" rel="noopener noreferrer" class="cli-onboard-guide-link">
+            <span>Quick Start Guide</span>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
+          </a>
         </div>
 
-        <div class="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950/60 p-3.5 mb-4">
-          <div class="flex items-center justify-between mb-1.5">
-            <span class="text-xs font-semibold text-neutral-700 dark:text-neutral-200">2. Pair Your Workstation with This Server</span>
-            <button type="button" class="cli-copy-btn text-[11px] font-semibold px-2 py-0.5 rounded bg-neutral-200/80 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-300 dark:hover:bg-neutral-700 transition" data-copy="safi-cli --setup">Copy</button>
+        <div class="cli-steps-grid">
+          <div class="cli-step-box">
+            <div class="cli-step-header">
+              <span class="cli-step-label"><span class="cli-step-num">1</span>Install on Windows</span>
+              <span class="cli-os-pill">PowerShell</span>
+            </div>
+            <div class="cli-code-block">
+              <code>irm https://runsafi.com/install.ps1 | iex</code>
+              <button type="button" class="cli-copy-btn" data-copy="irm https://runsafi.com/install.ps1 | iex">${copyIconSvg}<span>Copy</span></button>
+            </div>
           </div>
-          <pre class="text-xs font-mono text-neutral-800 dark:text-neutral-200 overflow-x-auto select-all mb-1.5"><code>safi-cli --setup</code></pre>
-          <p class="text-xs text-neutral-500 dark:text-neutral-400">
-            Enter <code class="font-mono text-neutral-700 dark:text-neutral-200 select-all">${serverOrigin}</code> when prompted for the server URL, then sign in (use a local account, type <code class="font-mono">sso</code> for Google/Microsoft browser login, or press Enter to use a Policy API key).
+
+          <div class="cli-step-box">
+            <div class="cli-step-header">
+              <span class="cli-step-label"><span class="cli-step-num">1</span>Install on Linux &amp; macOS</span>
+              <span class="cli-os-pill">Terminal</span>
+            </div>
+            <div class="cli-code-block">
+              <code>curl -sSL https://runsafi.com/install.sh | bash</code>
+              <button type="button" class="cli-copy-btn" data-copy="curl -sSL https://runsafi.com/install.sh | bash">${copyIconSvg}<span>Copy</span></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="cli-step-box">
+          <div class="cli-step-header">
+            <span class="cli-step-label"><span class="cli-step-num">2</span>Pair Your Workstation with This Server</span>
+            <span class="cli-os-pill">First-Time Setup</span>
+          </div>
+          <div class="cli-code-block">
+            <code>safi-cli --setup</code>
+            <button type="button" class="cli-copy-btn" data-copy="safi-cli --setup">${copyIconSvg}<span>Copy</span></button>
+          </div>
+          <p class="cli-step-hint">
+            Enter <code class="cli-inline-code">${serverOrigin}</code> as the server URL, then authenticate with a local account, type <code class="cli-inline-code">sso</code> for Google/Microsoft browser login, or press Enter to use a Policy API key.
           </p>
         </div>
 
         ${cliExamplesHtml ? `
-        <div class="mb-4">
-          <p class="text-xs font-semibold text-neutral-600 dark:text-neutral-300 mb-2">3. Example prompts to run inside <code class="font-mono">safi-cli</code>:</p>
-          <ul class="grid grid-cols-1 md:grid-cols-2 gap-2">${cliExamplesHtml}</ul>
+        <div class="cli-examples-section">
+          <div class="cli-examples-heading">
+            <span class="cli-step-num">3</span>
+            <span>Example tasks to run inside <code class="cli-inline-code">safi-cli</code>:</span>
+          </div>
+          <ul class="cli-examples-grid">${cliExamplesHtml}</ul>
         </div>` : ''}
 
-        <div class="rounded-xl border border-emerald-500/30 bg-emerald-500/5 dark:bg-emerald-500/10 px-4 py-3 flex flex-wrap items-center justify-between gap-2">
-          <p class="text-xs text-neutral-700 dark:text-neutral-200">
-            <strong>Interested in a turnkey solution like this?</strong> Deploy governed local AI agents on dedicated hardware in your own environment.
+        <div class="cli-promo-banner">
+          <p class="cli-promo-text">
+            <strong>Interested in a turnkey solution like this?</strong> Deploy governed local AI agents on dedicated hardware inside your own environment.
           </p>
-          <a href="https://runsafi.com" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition shrink-0">
-            Visit runsafi.com &rarr;
+          <a href="https://runsafi.com" target="_blank" rel="noopener noreferrer" class="cli-promo-cta">
+            <span>Visit runsafi.com</span>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
           </a>
         </div>
       </div>`;
@@ -1323,9 +1345,12 @@ export function displayEmptyState(activeProfile, promptClickHandler, firstName =
                     document.execCommand('copy');
                     document.body.removeChild(ta);
                 }
-                const orig = btn.textContent;
-                btn.textContent = 'Copied!';
-                setTimeout(() => { btn.textContent = orig; }, 2000);
+                btn.classList.add('copied');
+                btn.innerHTML = `${checkIconSvg}<span>Copied!</span>`;
+                setTimeout(() => {
+                    btn.classList.remove('copied');
+                    btn.innerHTML = `${copyIconSvg}<span>Copy</span>`;
+                }, 2000);
             } catch (err) {
                 console.error('Copy failed:', err);
             }
