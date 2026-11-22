@@ -1,1 +1,0 @@
-This folder contains the scripts used to run the benchmarks 
