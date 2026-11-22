@@ -1365,16 +1365,16 @@ export async function sendMessage(activeProfileData, user) {
         }
 
         const updateMeta = { last_updated: new Date().toISOString() };
-        if (initialResponse.newTitle && isNewConversation) {
+        if (initialResponse.newTitle) {
             updateMeta.title = initialResponse.newTitle;
 
             // The truncation shows immediately; a generated title lands in the
             // database a beat later (background thread on the light model).
-            // Check twice and stop as soon as it differs — if generation failed,
+            // Check and stop as soon as it differs — if generation failed,
             // the truncation simply stays, which was the old behaviour.
             const convoId = currentConversationId;
             const truncated = initialResponse.newTitle;
-            [2500, 7000].forEach(delay => setTimeout(async () => {
+            [2500, 7000, 15000].forEach(delay => setTimeout(async () => {
                 try {
                     if (convoId !== currentConversationId) return; // switched away
                     const link = document.querySelector(`a[data-id="${convoId}"] .convo-title`);
@@ -1384,6 +1384,7 @@ export async function sendMessage(activeProfileData, user) {
                     if (fresh && fresh.title && fresh.title !== truncated) {
                         await cache.updateConvoInList(convoId, { title: fresh.title });
                         if (link) { link.textContent = fresh.title; link.title = fresh.title; }
+                        uiAuthSidebar.updateChatTitle(fresh.title);
                     }
                 } catch (e) { /* keep the truncation */ }
             }, delay));
@@ -1393,7 +1394,7 @@ export async function sendMessage(activeProfileData, user) {
             const link = document.querySelector(`a[data-id="${currentConversationId}"]`);
             if (link) {
                 const titleEl = link.querySelector('.convo-title');
-                if (updateMeta.title) titleEl.textContent = updateMeta.title;
+                if (updateMeta.title) { titleEl.textContent = updateMeta.title; titleEl.title = updateMeta.title; }
                 uiAuthSidebar.updateChatTitle(updateMeta.title || 'Untitled');
             }
         }
@@ -1413,6 +1414,15 @@ export async function sendMessage(activeProfileData, user) {
             if (recovered) {
                 if (loadingIndicator && loadingIndicator.parentNode) loadingIndicator.remove();
                 ui.clearLoadingInterval();
+                try {
+                    const convos = await api.fetchConversations();
+                    const fresh = (Array.isArray(convos) ? convos : []).find(c => c.id === currentConversationId);
+                    if (fresh && fresh.title) {
+                        await cache.updateConvoInList(currentConversationId, { title: fresh.title });
+                        const link = document.querySelector(`a[data-id="${currentConversationId}"] .convo-title`);
+                        if (link) { link.textContent = fresh.title; link.title = fresh.title; }
+                    }
+                } catch (e) { /* ignore sidebar refresh errors */ }
                 await switchConversation(currentConversationId, activeProfileData, user, showConscienceAuditModal, true);
                 return;
             }
