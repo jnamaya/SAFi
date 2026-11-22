@@ -121,7 +121,7 @@ def cleanup_old_demo_users():
             for table in (
                 "llm_usage", "org_compliance_log", "knowledge_bases", "agents", "policies",
                 "org_charter", "org_ai_standards", "org_invitations", "custom_groups",
-                "approval_settings",
+                "approval_settings", "users",
             ):
                 cursor.execute(f"DELETE FROM {table} WHERE org_id IN ({placeholders})", params)
             cursor.execute(f"DELETE FROM organizations WHERE id IN ({placeholders})", params)

@@ -890,6 +890,8 @@ def create_local_member(org_id):
     invitation — the admin is the authority — minus the SMTP delivery."""
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
+    if str(_actor() or "").startswith("demo_"):
+        return jsonify({"error": "Local account creation is not available in guest demo sessions."}), 403
 
     data = request.get_json(silent=True) or {}
     username = (data.get('username') or '').strip().lower()

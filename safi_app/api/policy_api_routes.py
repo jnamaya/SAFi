@@ -302,7 +302,8 @@ def create_policy():
             db.append_compliance_log(org_id, 'tool_request_created', f"user:{user_id}", {
                 "policy": pid, "request": rid, "added": pending_tools})
 
-        default_key = db.create_api_key(pid, "Initial Key")
+        is_demo_guest = str(user_id or "").startswith("demo_")
+        default_key = None if is_demo_guest else db.create_api_key(pid, "Initial Key")
 
         return jsonify({
             "ok": True,
@@ -697,6 +698,8 @@ def restore_policy_version_endpoint(policy_id, version):
 @require_role('editor')
 def rotate_key(policy_id):
     try:
+        if str((session.get('user') or {}).get('id') or '').startswith('demo_'):
+            return jsonify({"error": "API key generation is not available in guest demo sessions."}), 403
         if not hasattr(db, 'delete_policy_keys'):
             return jsonify({"error": "FATAL: database.delete_policy_keys missing"}), 500
 
@@ -741,6 +744,8 @@ def delete_policy(policy_id):
 @require_role('editor')
 def generate_key(policy_id):
     try:
+        if str((session.get('user') or {}).get('id') or '').startswith('demo_'):
+            return jsonify({"error": "API key generation is not available in guest demo sessions."}), 403
         _policy, err = _load_policy_for_write(policy_id)
         if err: return err
         data = request.get_json(force=True, silent=True) or {}
