@@ -964,7 +964,7 @@ async function recoverInFlightTurn(messageId, signal) {
                     uiMessages.updatePipelineTrace(log);
                 }
             }
-            if (result && result.audit_status === 'complete') {
+            if (result && (result.status === 'complete' || result.audit_status === 'complete')) {
                 return true;
             }
         } catch (pollErr) {
