@@ -259,7 +259,16 @@ def is_serving_alias(value: Optional[str]) -> bool:
 
 
 def serving_model_id(models: List[Dict[str, Any]]) -> Optional[str]:
-    """Id of the served model within an available-models list, else None."""
+    """Id of the default/served model within an available-models list, else None.
+
+    Prefers GLM (glm-5.3-flash / glm-5.3) when offered by the server, falling
+    back to the active local model in VRAM.
+    """
+    for m in (models or []):
+        mid = str(m.get("id") or "").strip().lower()
+        mlabel = str(m.get("label") or "").strip().lower()
+        if mid in ("glm-5.3-flash", "glm-5.3", "glm") or mlabel == "glm":
+            return m.get("id") or None
     local_models = [m for m in (models or []) if str(m.get("provider") or "").lower() == "local"]
     for m in local_models:
         if m.get("active"):
@@ -355,8 +364,8 @@ def prompt_switch_model(
             )
             is_local = bool(m.get("local")) or str(m.get("provider", "")).lower() == "local"
             if is_local:
-                if m.get("active"):
-                    appliance_state = f"[bold {ui.COLOR_PASS}]● Serving in VRAM[/]"
+                if m.get("active") or not m.get("local"):
+                    appliance_state = f"[bold {ui.COLOR_PASS}]● Serving[/]"
                 else:
                     appliance_state = f"[bold {ui.COLOR_WARN}]○ Standby (Disk)[/]"
             else:
@@ -436,11 +445,11 @@ def prompt_switch_model(
         )
         return serving
 
-    # Check if target_model is a standby local model
+    # Check if target_model is a standby on-appliance GGUF model
     target_match = next((m for m in models if m.get("id") == target_model or m.get("label") == target_model), None)
     is_standby = bool(
         target_match
-        and (target_match.get("local") or str(target_match.get("provider", "")).lower() == "local")
+        and target_match.get("local")
         and not target_match.get("active")
     )
 

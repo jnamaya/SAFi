@@ -1413,11 +1413,16 @@ def _wizard_login_or_key(api_url: str, agent: str) -> str:
             config.save_agent_api_key(name, new_key)
         default_agent = "software_engineer" if "software_engineer" in agent_names else agent_names[0]
         config.set_default_agent(default_agent)
+
+        preferred_model = discover_serving_model(login_client, force_refresh=True)
+        if preferred_model:
+            config.save_intellect_model(preferred_model)
+        model_display = preferred_model or "GLM"
+
         ui.console.print(
             f"[bold green]✓ Logged in as {payload.get('user', {}).get('name', identifier)} - "
-            f"Policy API key saved for {len(agent_names)} agent(s) to {config.CONFIG_FILE}[/]\n"
-            f"[dim]Policy: {payload.get('policy_id', '?')} - key labelled 'safi-cli' (re-login replaces it). "
-            f"Default agent: {default_agent}.[/]"
+            f"access configured for {len(agent_names)} agent(s) ({', '.join(agent_names)}) in {config.CONFIG_FILE}[/]\n"
+            f"[dim]Default agent: {default_agent}  •  Default AI model: {model_display}[/]"
         )
         return new_key
 
@@ -1467,7 +1472,7 @@ def run_setup_wizard() -> tuple[str, str, Optional[str]]:
     ui.console.print("\n[bold white]1. SAFi Appliance Endpoint[/]")
     ui.console.print(
         "[dim]Enter the base URL of your SAFi server or appliance.\n"
-        "Examples: [cyan]https://localhost[/], [cyan]https://safi.example.com[/][/dim]"
+        "Examples: [cyan]https://safi.selfalignmentframework.com[/], [cyan]https://192.168.1.200[/], [cyan]https://localhost[/][/dim]"
     )
 
     while True:
@@ -1525,18 +1530,18 @@ def run_setup_wizard() -> tuple[str, str, Optional[str]]:
         if reauth in ("n", "no"):
             config.clear_credentials()
             ui.console.print(
-                "[dim]Sign in with your new SAFi web username and password. A Policy API key\n"
-                "is provisioned automatically and saved for all available agents.\n"
-                "Or paste an existing key (sk-safi-...).[/dim]"
+                "[dim]Sign in with your SAFi account (local username/password or Google/Microsoft SSO)\n"
+                "to automatically configure access for all available agents, or press Enter\n"
+                "to paste a single Policy API key (sk-safi-...).[/dim]"
             )
             key_val = _wizard_login_or_key(chosen_url, default_probe_agent)
         else:
             key_val = existing_key
     else:
         ui.console.print(
-            "[dim]Sign in with your SAFi web username and password. A Policy API key\n"
-            "is provisioned automatically and saved for all available agents.\n"
-            "Or paste an existing key (sk-safi-...).[/dim]"
+            "[dim]Sign in with your SAFi account (local username/password or Google/Microsoft SSO)\n"
+            "to automatically configure access for all available agents, or press Enter\n"
+            "to paste a single Policy API key (sk-safi-...).[/dim]"
         )
         key_val = _wizard_login_or_key(chosen_url, default_probe_agent)
 

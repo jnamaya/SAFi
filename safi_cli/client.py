@@ -27,6 +27,64 @@ def _json_or_none(resp: "requests.Response"):
         return None
 
 
+def _open_browser_url(url: str) -> None:
+    """Open *url* in the user's browser, including across the WSL -> Windows boundary."""
+    import subprocess
+    import sys
+
+    is_wsl = bool(os.environ.get("WSL_DISTRO_NAME") or os.environ.get("WSL_INTEROP"))
+    if not is_wsl:
+        try:
+            is_wsl = "microsoft" in Path("/proc/version").read_text(encoding="utf-8", errors="ignore").lower()
+        except OSError:
+            is_wsl = False
+
+    if is_wsl:
+        safe_ps_url = url.replace("'", "''")
+        for ps_bin in (
+            "powershell.exe",
+            "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
+        ):
+            try:
+                res = subprocess.run(
+                    [ps_bin, "-NoProfile", "-NonInteractive", "-Command", f"Start-Process '{safe_ps_url}'"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=5,
+                )
+                if res.returncode == 0:
+                    return
+            except Exception:
+                continue
+        safe_cmd_url = url.replace("&", "^&")
+        for cmd_bin in ("cmd.exe", "/mnt/c/Windows/System32/cmd.exe"):
+            try:
+                res = subprocess.run(
+                    [cmd_bin, "/c", "start", "", safe_cmd_url],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=5,
+                )
+                if res.returncode == 0:
+                    return
+            except Exception:
+                continue
+        return
+
+    if sys.platform == "darwin":
+        try:
+            subprocess.Popen(["open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+        return
+
+    if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
+        try:
+            subprocess.Popen(["xdg-open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+
+
 class SafiClientError(Exception):
     def __init__(self, message: str, status_code: Optional[int] = None, details: Optional[str] = None):
         super().__init__(message)
@@ -225,10 +283,7 @@ class SafiClient:
 
         if callable(on_url):
             on_url(auth_url)
-        try:
-            webbrowser.open(auth_url)
-        except Exception:
-            pass
+        _open_browser_url(auth_url)
 
         deadline = time.time() + min(timeout, int(start_data.get("expires_in") or timeout))
         while time.time() < deadline:
