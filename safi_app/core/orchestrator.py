@@ -1736,21 +1736,9 @@ class SAFi:
 
         # --- PHASE 1: Conscience Prompt Scope Preflight ---
         # Verifies that the initial user prompt falls within the agent's authorized scope
-        # BEFORE any planning, tool loop, or operative execution begins.
-        # Chatbots do not need preflight because their drafts are held safely in memory and audited at Phase 4.
-        # Agents with tool execution capabilities DO need preflight to prevent un-audited state mutation (bash/edit/write).
-        agent_tools = set(
-            (self.profile or {}).get("allowed_tools")
-            or (self.profile or {}).get("tools")
-            or []
-        )
-        mutating_tools = {
-            "bash", "write", "edit", "patch", "delete",
-            "agentic_coding", "coding_harness",
-            "software_engineer_tools", "sysadmin_tools", "security_engineer_tools",
-        }
-        has_execution_tools = bool(agent_tools & mutating_tools) or client_owned or bool((self.profile or {}).get("track_work_context"))
-
+        # BEFORE any planning, tool loop, or expensive Intellect generation begins.
+        # Runs for every agent with a scope_statement unless explicitly disabled
+        # via policy will_rules.preflight_prompt_scope = false or SAFI_PREFLIGHT_PROMPT_SCOPE=0.
         policy_preflight = _will_rules.get("preflight_prompt_scope") if isinstance(_will_rules, dict) else None
         if policy_preflight is None:
             _pol = getattr(self, "policy", None)
@@ -1762,8 +1750,7 @@ class SAFi:
             preflight_scope_trigger = bool(policy_preflight) and bool((self.profile or {}).get("scope_statement"))
         else:
             preflight_scope_trigger = (
-                has_execution_tools
-                and (os.environ.get("SAFI_PREFLIGHT_PROMPT_SCOPE", "1").lower() in ("1", "true", "yes"))
+                (os.environ.get("SAFI_PREFLIGHT_PROMPT_SCOPE", "1").lower() in ("1", "true", "yes"))
                 and bool((self.profile or {}).get("scope_statement"))
             )
         is_continuation_turn = bool(client_owned and client_tool_results)

@@ -226,7 +226,9 @@ class TestConsciencePromptScope(unittest.IsolatedAsyncioTestCase):
         orch.max_context_chars = 12000
         orch._is_cancelled = MagicMock(return_value=False)
 
-        orch.conscience.evaluate_prompt_scope = AsyncMock()
+        orch.conscience.evaluate_prompt_scope = AsyncMock(return_value=[
+            {"value": "Scope Compliance", "score": 1.0, "reason": "In scope"}
+        ])
         orch.intellect_engine.generate = AsyncMock(return_value=(
             {"type": "message", "content": "Tool finished."},
             "reflection",
@@ -259,7 +261,7 @@ class TestConsciencePromptScope(unittest.IsolatedAsyncioTestCase):
         orch.conscience.evaluate_prompt_scope.assert_not_called()
         orch.intellect_engine.generate.assert_awaited_once()
 
-    async def test_chatbot_without_execution_tools_skips_preflight(self):
+    async def test_chatbot_with_scope_statement_runs_preflight(self):
         orch = SAFi.__new__(SAFi)
         orch.log = MagicMock()
         orch.store = MagicMock()
@@ -297,7 +299,9 @@ class TestConsciencePromptScope(unittest.IsolatedAsyncioTestCase):
         orch.max_context_chars = 12000
         orch._is_cancelled = MagicMock(return_value=False)
 
-        orch.conscience.evaluate_prompt_scope = AsyncMock()
+        orch.conscience.evaluate_prompt_scope = AsyncMock(return_value=[
+            {"value": "Scope Compliance", "score": 1.0, "reason": "In scope"}
+        ])
         orch.intellect_engine.generate = AsyncMock(return_value=(
             {"type": "message", "content": "Let us solve this together."},
             "reflection",
@@ -316,8 +320,8 @@ class TestConsciencePromptScope(unittest.IsolatedAsyncioTestCase):
             conversation_id="conv_456",
         )
 
-        # Chatbot must NEVER call prompt scope preflight!
-        orch.conscience.evaluate_prompt_scope.assert_not_called()
+        # Chatbot with a scope_statement now runs prompt scope preflight!
+        orch.conscience.evaluate_prompt_scope.assert_awaited_once()
         orch.intellect_engine.generate.assert_awaited_once()
 
     async def test_cli_execution_agent_defaults_to_preflight_without_explicit_policy_flag(self):
