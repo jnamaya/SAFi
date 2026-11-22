@@ -41,6 +41,7 @@ from .repl import (
     _archive_scratchpad,
     _collect_multiline,
     _compute_completions,
+    _wizard_login_or_key,
     interactive_repl,
     print_help,
     prompt_command_menu,
@@ -250,75 +251,18 @@ def main():
         target_login_agent = args.agent or "software_engineer"
         login_url = config.resolve_api_url(args.api_url)
         if not login_url:
-            ui.print_error("No SAFi backend URL configured. Run 'safi --set-url https://your-appliance' first.")
+            ui.print_error("No SAFi backend URL configured. Run 'safi-cli --setup' first.")
             sys.exit(1)
-        try:
-            identifier = input("SAFi username (or DOMAIN\\user): ").strip()
-            password = getpass.getpass("Password: ")
-            totp_code = ""
-            ldap_hint = "\\" in identifier
-            totp_hint = input("TOTP code (blank if MFA not enabled): ").strip()
-        except (KeyboardInterrupt, EOFError):
-            sys.exit(1)
-        login_client = SafiClient(login_url)
-        try:
-            payload = login_client.login(identifier, password, totp_code=totp_hint, ldap=ldap_hint)
-        except Exception as exc:
-            # Second chance: server demanded MFA we didn't supply.
-            if getattr(exc, "status_code", None) == 401 and not totp_hint:
-                try:
-                    totp_code = input("Multi-factor code required. Enter TOTP code: ").strip()
-                    payload = login_client.login(identifier, password, totp_code=totp_code, ldap=ldap_hint)
-                except Exception as exc2:
-                    ui.print_error(f"Login failed: {exc2}")
-                    sys.exit(1)
-            else:
-                ui.print_error(f"Login failed: {exc}")
-                sys.exit(1)
-        new_key = payload.get("api_key") or ""
-        if not new_key:
-            ui.print_error("Server did not return an API key.")
-            sys.exit(1)
-        # The provisioned key is bound to the user's governing policy, so one
-        # key is valid for every agent. Save it under all known agents so no
-        # agent ever lacks a key; the active/default agent is software_engineer.
-        login_client.api_key = new_key
-        user_info = payload.get("user") or {}
-        user_id_val = user_info.get("id") or ""
-        if user_id_val:
-            login_client.user_id = user_id_val
-
-        save_updates = {}
-        if user_id_val:
-            save_updates["user_id"] = user_id_val
-        if user_info.get("name") or identifier:
-            save_updates["user_name"] = user_info.get("name") or identifier
-        if not config.has_configured_api_url():
-            save_updates["api_url"] = login_url
-        if save_updates:
-            config.save_config(save_updates)
-
-        agents = login_client.get_available_agents()
-        agent_names = [a.get("key") for a in agents if isinstance(a, dict) and a.get("key")]
-        for name in dict.fromkeys(agent_names):
-            config.save_agent_api_key(name, new_key)
-
-        if not agent_names:
-            config.set_default_agent("")
-            ui.console.print(
-                f"[bold green]✓ Logged in as {payload.get('user', {}).get('name', identifier)}[/]\n"
-                f"[bold yellow]Notice:[/] No agents currently available. Contact your administrator to grant you access to an agent."
-            )
-            sys.exit(0)
-
-        default_agent = "software_engineer" if "software_engineer" in agent_names else agent_names[0]
-        config.set_default_agent(default_agent)
         ui.console.print(
-            f"[bold green]✓ Logged in as {payload.get('user', {}).get('name', identifier)} - "
-            f"Policy API key saved for {len(agent_names)} agent(s) to {config.CONFIG_FILE}[/]\n"
-            f"[dim]Policy: {payload.get('policy_id', '?')} - key labelled 'safi-cli' (re-login replaces it). "
-            f"Default agent: {default_agent}.[/]"
+            "[dim]Sign in with your SAFi account (local username/password or Google/Microsoft SSO)\n"
+            "to automatically configure access for all available agents, or press Enter\n"
+            "to paste a single Policy API key (sk-safi-...).[/dim]"
         )
+        new_key = _wizard_login_or_key(login_url, target_login_agent)
+        if not new_key:
+            sys.exit(1)
+        if not config.has_configured_api_url():
+            config.save_config({"api_url": login_url})
         sys.exit(0)
 
     if args.set_url:
@@ -372,80 +316,18 @@ def main():
         config.set_workspace_agent(str(workspace_root), target_agent)
 
     if not api_key:
-        agent_title = AVAILABLE_AGENTS.get(target_agent, {}).get("title", target_agent)
         ui.console.print(
-            f"[bold yellow]🔑 No Policy API Key found for '{agent_title}' ({target_agent}).[/]\n"
-            f"[dim]Each agent is governed by its own domain policy and requires its own Policy API Key.[/dim]"
+            f"[bold yellow]🔑 Authentication required for {api_url}[/]\n"
+            f"[dim]Sign in with your SAFi account (local username/password or Google/Microsoft SSO)\n"
+            f"to automatically configure access for all available agents, or press Enter\n"
+            f"to paste a single Policy API key (sk-safi-...).[/dim]"
         )
-        try:
-            identifier = input("SAFi username (or DOMAIN\\user, or press Enter for API key): ").strip()
-        except (KeyboardInterrupt, EOFError):
+        api_key = _wizard_login_or_key(api_url, target_agent)
+        if not api_key:
             sys.exit(1)
-
-        if identifier:
-            try:
-                password = getpass.getpass("Password: ")
-                totp_code = input("TOTP code (blank if MFA not enabled): ").strip()
-                ldap_hint = "\\" in identifier
-                payload = client.login(identifier, password, totp_code=totp_code, ldap=ldap_hint)
-            except Exception as exc:
-                if getattr(exc, "status_code", None) == 401 and not totp_code:
-                    try:
-                        totp_code = input("Multi-factor code required. Enter TOTP code: ").strip()
-                        payload = client.login(identifier, password, totp_code=totp_code, ldap=ldap_hint)
-                    except Exception as exc2:
-                        ui.print_error(
-                            f"Login failed: {exc2}\n\n"
-                            "You can also set a key via:\n"
-                            f"  • safi-cli --login\n"
-                            f"  • safi-cli --set-key sk-safi-... -a {target_agent}"
-                        )
-                        sys.exit(1)
-                else:
-                    ui.print_error(f"Login failed: {exc}")
-                    sys.exit(1)
-            api_key = payload.get("api_key") or ""
-            if not api_key:
-                ui.print_error("Server did not return an API key.")
-                sys.exit(1)
-            client.api_key = api_key
-            user_info = payload.get("user") or {}
-            user_id_val = user_info.get("id") or ""
-            if user_id_val:
-                client.user_id = user_id_val
-            save_updates = {}
-            if user_id_val:
-                save_updates["user_id"] = user_id_val
-            if user_info.get("name") or identifier:
-                save_updates["user_name"] = user_info.get("name") or identifier
-            if save_updates:
-                config.save_config(save_updates)
-            discover_agents(client)
-            for name in AVAILABLE_AGENTS.keys():
-                config.save_agent_api_key(name, api_key)
-            if target_agent not in AVAILABLE_AGENTS and AVAILABLE_AGENTS:
-                target_agent = next(iter(AVAILABLE_AGENTS))
-                config.set_default_agent(target_agent)
-            ui.console.print(
-                f"[bold green]✓ Logged in as {payload.get('user', {}).get('name', identifier)}[/] "
-                f"[dim]Policy: {payload.get('policy_id', '?')}[/]"
-            )
-        else:
-            try:
-                api_key = input(f"Enter Policy API Key (sk-safi-...): ").strip()
-            except (KeyboardInterrupt, EOFError):
-                sys.exit(1)
-            if not api_key:
-                ui.print_error(
-                    f"No SAFi Policy API key provided for '{target_agent}'.\n\n"
-                    "You can also set it via:\n"
-                    f"  • export SAFI_API_KEY_{target_agent.upper()}=sk-safi-...\n"
-                    f"  • safi-cli --set-key sk-safi-... -a {target_agent}"
-                )
-                sys.exit(1)
-        config.save_agent_api_key(target_agent, api_key)
         client.api_key = api_key
-        ui.console.print(f"[bold green]✓ Saved Policy API Key for {target_agent} to {config.CONFIG_FILE}[/]")
+        client.user_id = config.resolve_user_id()
+        user_name = config.resolve_user_name(args.user_name)
         discover_agents(client)
         if AVAILABLE_AGENTS and target_agent not in AVAILABLE_AGENTS:
             target_agent = next(iter(AVAILABLE_AGENTS))
