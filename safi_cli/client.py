@@ -88,8 +88,41 @@ class SafiClient:
         val = os.environ.get("SAFI_TRUST_ON_REINSTALL", "1")
         return val.strip().lower() not in ("0", "false", "no", "off")
 
+    def _host_validates_with_system_ca(self) -> Optional[Any]:
+        """Return True or a system CA bundle path if standard CA verification
+        succeeds against self.api_url, or None if the peer is self-signed."""
+        try:
+            parsed = urlparse(self.api_url)
+            host = parsed.hostname
+            port = parsed.port or 443
+            if not host:
+                return None
+            candidates: list[Any] = [True]
+            sys_ca = Path("/etc/ssl/certs/ca-certificates.crt")
+            if sys_ca.exists():
+                candidates.append(str(sys_ca))
+            for candidate in candidates:
+                try:
+                    ctx = (
+                        ssl.create_default_context()
+                        if candidate is True
+                        else ssl.create_default_context(cafile=str(candidate))
+                    )
+                    with socket.create_connection((host, port), timeout=4) as sock:
+                        with ctx.wrap_socket(sock, server_hostname=host):
+                            return candidate
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return None
+
     def _ensure_appliance_cert(self, force_refresh: bool = False) -> None:
         if not self.api_url.startswith("https://"):
+            return
+        sys_verify = self._host_validates_with_system_ca()
+        if sys_verify is not None:
+            self.session.verify = sys_verify
             return
         if self.default_ca.exists() and not force_refresh:
             self.session.verify = str(self.default_ca)
@@ -168,6 +201,52 @@ class SafiClient:
             msg = (data or {}).get("error") or f"Login failed (HTTP {resp.status_code})."
             raise SafiClientError(msg, resp.status_code)
         return data
+
+    def get_app_config(self, timeout: int = 5) -> Dict[str, Any]:
+        """Fetch /api/app-config feature flags (sso_login_enabled, etc.)."""
+        data = self._get_json("/api/app-config", timeout=timeout)
+        return data if isinstance(data, dict) else {}
+
+    def sso_login(self, on_url=None, timeout: int = 180) -> Dict[str, Any]:
+        """Browser-based OAuth SSO login (Google / Microsoft) for safi-cli."""
+        import time
+        import webbrowser
+
+        resp = self.session.post(f"{self.api_url}/api/cli/sso/start", json={}, timeout=10)
+        start_data = _json_or_none(resp)
+        if resp.status_code != 200 or not start_data or not start_data.get("ok"):
+            msg = (start_data or {}).get("error") or f"SSO login unavailable (HTTP {resp.status_code})."
+            raise SafiClientError(msg, resp.status_code)
+
+        device_code = start_data["device_code"]
+        poll_token = start_data["poll_token"]
+        auth_path = start_data.get("authorize_path") or f"/api/cli/sso/authorize?code={device_code}"
+        auth_url = f"{self.api_url}{auth_path}"
+
+        if callable(on_url):
+            on_url(auth_url)
+        try:
+            webbrowser.open(auth_url)
+        except Exception:
+            pass
+
+        deadline = time.time() + min(timeout, int(start_data.get("expires_in") or timeout))
+        while time.time() < deadline:
+            time.sleep(2.0)
+            poll_resp = self.session.post(
+                f"{self.api_url}/api/cli/sso/poll",
+                json={"device_code": device_code, "poll_token": poll_token},
+                timeout=10,
+            )
+            poll_data = _json_or_none(poll_resp)
+            if poll_resp.status_code == 200 and isinstance(poll_data, dict):
+                if poll_data.get("status") == "complete" and poll_data.get("ok"):
+                    return poll_data
+                continue
+            msg = (poll_data or {}).get("error") or f"SSO login failed (HTTP {poll_resp.status_code})."
+            raise SafiClientError(msg, poll_resp.status_code)
+
+        raise SafiClientError("SSO login timed out waiting for browser authorization.", 408)
 
     def verify_connection(self, timeout: int = 5) -> tuple[bool, str, Dict[str, Any]]:
         """Strongly verify that the target endpoint is an active, responsive SAFi server.

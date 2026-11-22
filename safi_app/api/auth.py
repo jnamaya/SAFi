@@ -497,6 +497,9 @@ def app_config():
 @auth_bp.route('/login')
 @sso_required
 def login():
+    cli_code = (request.args.get('cli_code') or '').strip()
+    if cli_code:
+        session['cli_sso_code'] = cli_code
     nonce = secrets.token_urlsafe(16)
     session['nonce'] = nonce
     redirect_uri = url_for('auth.callback', _external=True, _scheme='https')
@@ -551,9 +554,12 @@ def callback():
         denied = _org_claim_gate(user_details, 'google', id_claims)
         if denied:
             return redirect(f'/?error=login_denied&reason={denied}')
+        cli_code = session.pop('cli_sso_code', None)
         _establish_session(user_details, idp='google',
                            extra_context=_sso_evidence('google', id_claims))
 
+        if cli_code:
+            return redirect(url_for('auth.cli_sso_authorize', code=cli_code))
         current_app.logger.info(f"Web callback successful for User {user_id}. Redirecting to /")
         return redirect('/')
     except Exception as e:
@@ -806,6 +812,223 @@ def cli_login():
                     "policy_id": provisioned["policy_id"],
                     "user": {"id": user["id"], "name": user.get("name") or user.get("email"),
                              "org_id": user.get("org_id")}})
+
+
+_CLI_SSO_TTL_SECONDS = 300
+
+
+def _cli_sso_file(device_code: str) -> Optional[str]:
+    import re
+    import tempfile
+    if not device_code or not re.fullmatch(r"[A-Za-z0-9_-]{16,64}", device_code):
+        return None
+    return os.path.join(tempfile.gettempdir(), f"safi_cli_sso_{device_code}.json")
+
+
+def _cli_sso_load(device_code: str) -> Optional[dict]:
+    import time
+    path = _cli_sso_file(device_code)
+    if not path or not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            rec = json.load(fh)
+        if time.time() - float(rec.get("created_at", 0)) > _CLI_SSO_TTL_SECONDS:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+            return None
+        return rec
+    except Exception:
+        return None
+
+
+def _cli_sso_save(device_code: str, rec: dict) -> None:
+    path = _cli_sso_file(device_code)
+    if not path:
+        return
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(rec, fh)
+
+
+@auth_bp.route('/cli/sso/start', methods=['POST'])
+@sso_required
+def cli_sso_start():
+    """Mint a short-lived device code + poll token for safi-cli browser SSO."""
+    import hashlib
+    import time
+    from .keys import per_minute_allowed as _pm_allowed
+
+    if not _pm_allowed("cli-sso:ip:{}".format(request.remote_addr or "-")):
+        return jsonify({"error": "Too many attempts. Try again shortly."}), 429
+
+    device_code = secrets.token_urlsafe(24)
+    poll_token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(poll_token.encode("utf-8")).hexdigest()
+    _cli_sso_save(device_code, {
+        "device_code": device_code,
+        "poll_token_hash": token_hash,
+        "created_at": time.time(),
+        "status": "pending",
+    })
+    return jsonify({
+        "ok": True,
+        "device_code": device_code,
+        "poll_token": poll_token,
+        "authorize_path": f"/api/cli/sso/authorize?code={device_code}",
+        "expires_in": _CLI_SSO_TTL_SECONDS,
+    })
+
+
+@auth_bp.route('/cli/sso/authorize', methods=['GET', 'POST'])
+@sso_required
+def cli_sso_authorize():
+    """Browser endpoint where an SSO user authenticates and approves safi-cli."""
+    import html as _html
+
+    code = (request.args.get("code") or request.form.get("code") or "").strip()
+    rec = _cli_sso_load(code)
+    if not rec:
+        return (
+            "<!doctype html><html><head><meta charset='utf-8'><title>SAFi CLI Login</title></head>"
+            "<body style='font-family:system-ui,sans-serif;background:#0a0a0a;color:#e5e7eb;display:flex;"
+            "align-items:center;justify-content:center;min-height:100vh;margin:0'>"
+            "<div style='max-width:420px;padding:28px;border:1px solid #262626;border-radius:12px;background:#141414'>"
+            "<h2 style='margin-top:0;color:#f87171'>Invalid or Expired Code</h2>"
+            "<p style='color:#a3a3a3'>This SAFi CLI sign-in request has expired or was already used. "
+            "Please start a new login from your terminal.</p></div></body></html>",
+            400,
+        )
+
+    sess_user = session.get("user")
+    user_id = (sess_user.get("id") or sess_user.get("sub")) if isinstance(sess_user, dict) else None
+    is_demo_user = not user_id or str(user_id).startswith("demo_")
+
+    if is_demo_user:
+        session["cli_sso_code"] = code
+        esc_code = _html.escape(code, quote=True)
+        google_ok = bool(Config.GOOGLE_CLIENT_ID and Config.GOOGLE_CLIENT_SECRET)
+        ms_ok = bool(Config.MICROSOFT_CLIENT_ID and Config.MICROSOFT_CLIENT_SECRET)
+        buttons = []
+        if google_ok:
+            buttons.append(
+                f"<a href='/api/login?cli_code={esc_code}' style='display:block;text-align:center;"
+                "padding:12px 16px;margin-top:12px;background:#16a34a;color:#fff;text-decoration:none;"
+                "border-radius:8px;font-weight:600'>Continue with Google</a>"
+            )
+        if ms_ok:
+            buttons.append(
+                f"<a href='/api/login/microsoft?cli_code={esc_code}' style='display:block;text-align:center;"
+                "padding:12px 16px;margin-top:12px;background:#2563eb;color:#fff;text-decoration:none;"
+                "border-radius:8px;font-weight:600'>Continue with Microsoft</a>"
+            )
+        return (
+            "<!doctype html><html><head><meta charset='utf-8'><title>SAFi CLI SSO</title></head>"
+            "<body style='font-family:system-ui,sans-serif;background:#0a0a0a;color:#e5e7eb;display:flex;"
+            "align-items:center;justify-content:center;min-height:100vh;margin:0'>"
+            "<div style='max-width:420px;width:100%;padding:28px;border:1px solid #262626;border-radius:12px;background:#141414'>"
+            "<h2 style='margin-top:0'>Sign in to SAFi CLI</h2>"
+            "<p style='color:#a3a3a3;font-size:14px'>Choose your identity provider to authorize your terminal session and provision a governed Policy API key.</p>"
+            + "".join(buttons)
+            + "</div></body></html>"
+        )
+
+    user = db.get_user_details(user_id)
+    if not user:
+        return jsonify({"error": "User not found."}), 404
+
+    if request.method == "GET":
+        esc_code = _html.escape(code, quote=True)
+        esc_name = _html.escape(user.get("name") or user.get("email") or str(user_id))
+        esc_email = _html.escape(user.get("email") or "")
+        return (
+            "<!doctype html><html><head><meta charset='utf-8'><title>Authorize SAFi CLI</title></head>"
+            "<body style='font-family:system-ui,sans-serif;background:#0a0a0a;color:#e5e7eb;display:flex;"
+            "align-items:center;justify-content:center;min-height:100vh;margin:0'>"
+            "<div style='max-width:420px;width:100%;padding:28px;border:1px solid #262626;border-radius:12px;background:#141414'>"
+            "<h2 style='margin-top:0'>Authorize SAFi CLI</h2>"
+            f"<p style='color:#a3a3a3;font-size:14px'>Signed in as <strong style='color:#fff'>{esc_name}</strong>"
+            + (f" ({esc_email})" if esc_email else "")
+            + ".</p>"
+            "<p style='color:#a3a3a3;font-size:14px'>Click below to provision a governed Policy API key for your terminal.</p>"
+            "<form method='POST' action='/api/cli/sso/authorize'>"
+            f"<input type='hidden' name='code' value='{esc_code}'>"
+            "<button type='submit' style='width:100%;padding:12px 16px;margin-top:8px;background:#16a34a;"
+            "color:#fff;border:none;border-radius:8px;font-weight:600;font-size:15px;cursor:pointer'>"
+            "Authorize SAFi CLI</button></form></div></body></html>"
+        )
+
+    provisioned = db.get_or_create_policy_key_for_user(user, label="safi-cli")
+    if not provisioned:
+        return (
+            "<!doctype html><html><head><meta charset='utf-8'><title>SAFi CLI Error</title></head>"
+            "<body style='font-family:system-ui,sans-serif;background:#0a0a0a;color:#e5e7eb;display:flex;"
+            "align-items:center;justify-content:center;min-height:100vh;margin:0'>"
+            "<div style='max-width:420px;padding:28px;border:1px solid #262626;border-radius:12px;background:#141414'>"
+            "<h2 style='margin-top:0;color:#f87171'>No Policy Available</h2>"
+            "<p style='color:#a3a3a3'>No governance policy is available for your account; ask an administrator to assign one.</p>"
+            "</div></body></html>",
+            403,
+        )
+
+    db.log_auth_event("login_success", f"user:{user['id']}", org_id=user.get("org_id"),
+                      user_id=user["id"], detail={"idp": "sso", "via": "cli"})
+    rec["status"] = "complete"
+    rec["payload"] = {
+        "ok": True,
+        "api_key": provisioned["api_key"],
+        "policy_id": provisioned["policy_id"],
+        "user": {
+            "id": user["id"],
+            "name": user.get("name") or user.get("email"),
+            "org_id": user.get("org_id"),
+        },
+    }
+    _cli_sso_save(code, rec)
+    return (
+        "<!doctype html><html><head><meta charset='utf-8'><title>SAFi CLI Authorized</title></head>"
+        "<body style='font-family:system-ui,sans-serif;background:#0a0a0a;color:#e5e7eb;display:flex;"
+        "align-items:center;justify-content:center;min-height:100vh;margin:0'>"
+        "<div style='max-width:420px;padding:28px;border:1px solid #16a34a;border-radius:12px;background:#141414'>"
+        "<h2 style='margin-top:0;color:#4ade80'>✓ SAFi CLI Authorized</h2>"
+        "<p style='color:#a3a3a3'>Your Policy API key has been sent to your terminal. You can close this browser tab.</p>"
+        "</div></body></html>"
+    )
+
+
+@auth_bp.route('/cli/sso/poll', methods=['POST'])
+@sso_required
+def cli_sso_poll():
+    """Poll for completion of a pending safi-cli browser SSO login."""
+    import hashlib
+    import hmac
+
+    data = request.get_json(silent=True) or {}
+    code = (data.get("device_code") or "").strip()
+    poll_token = (data.get("poll_token") or "").strip()
+    rec = _cli_sso_load(code)
+    if not rec or not poll_token:
+        return jsonify({"error": "Invalid or expired device code."}), 404
+
+    expected_hash = rec.get("poll_token_hash") or ""
+    given_hash = hashlib.sha256(poll_token.encode("utf-8")).hexdigest()
+    if not hmac.compare_digest(expected_hash, given_hash):
+        return jsonify({"error": "Invalid poll token."}), 403
+
+    if rec.get("status") != "complete":
+        return jsonify({"ok": True, "status": "pending"})
+
+    path = _cli_sso_file(code)
+    if path:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+    payload = dict(rec.get("payload") or {})
+    payload["status"] = "complete"
+    return jsonify(payload)
 
 
 @auth_bp.route('/login/local/mfa', methods=['POST'])
@@ -1184,6 +1407,9 @@ def login_demo():
 @auth_bp.route('/login/microsoft')
 @sso_required
 def login_microsoft():
+    cli_code = (request.args.get('cli_code') or '').strip()
+    if cli_code:
+        session['cli_sso_code'] = cli_code
     nonce = secrets.token_urlsafe(16)
     session['nonce'] = nonce
     # scheme='https' explicitly: Authlib's inferred scheme otherwise fails with
@@ -1282,10 +1508,12 @@ def callback_microsoft():
         denied = _org_claim_gate(user_details, 'microsoft', id_claims)
         if denied:
             return redirect(f'/?error=login_denied&reason={denied}')
+        cli_code = session.pop('cli_sso_code', None)
         _establish_session(user_details, idp='microsoft',
                            extra_context=_sso_evidence('microsoft', id_claims))
         
-        
+        if cli_code:
+            return redirect(url_for('auth.cli_sso_authorize', code=cli_code))
         current_app.logger.info(f"Microsoft callback successful for User {user_id}. Redirecting to /")
         return redirect('/')
         

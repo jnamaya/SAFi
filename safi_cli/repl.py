@@ -1298,16 +1298,25 @@ def interactive_repl(
 
 
 def _wizard_login_or_key(api_url: str, agent: str) -> str:
-    """Setup-wizard auth step: web username/password login (default) or manual key.
+    """Setup-wizard auth step: web username/password login (default), browser SSO, or manual key.
 
     Returns the Policy API key (already saved to config), or an empty string
     if the user skips.
     """
     import getpass
 
+    probe_client = SafiClient(api_url)
+    app_cfg = probe_client.get_app_config()
+    sso_enabled = bool(app_cfg.get("sso_login_enabled"))
+    prompt_label = (
+        "SAFi username (or 'sso' for Google/Microsoft browser login, or press Enter for API key): "
+        if sso_enabled
+        else "SAFi username (or DOMAIN\\user, or press Enter for API key): "
+    )
+
     while True:
         try:
-            identifier = input("SAFi username (or DOMAIN\\user, or press Enter for API key): ").strip()
+            identifier = input(prompt_label).strip()
         except (KeyboardInterrupt, EOFError):
             sys.exit(0)
 
@@ -1323,29 +1332,51 @@ def _wizard_login_or_key(api_url: str, agent: str) -> str:
                 ui.console.print(f"[yellow]Skipped for now. You will be prompted when launching '{agent}'.[/]")
             return key_val
 
-        # Web-credential login: exchange username/password for a provisioned key.
-        try:
-            password = getpass.getpass("Password: ")
-            totp_code = input("TOTP code (blank if MFA not enabled): ").strip()
-        except (KeyboardInterrupt, EOFError):
-            sys.exit(0)
-
         login_client = SafiClient(api_url)
-        ldap_hint = "\\" in identifier
-        try:
-            payload = login_client.login(identifier, password, totp_code=totp_code, ldap=ldap_hint)
-        except Exception as exc:
-            # Second chance: server demanded MFA we didn't supply.
-            if getattr(exc, "status_code", None) == 401 and not totp_code:
-                try:
-                    totp_code = input("Multi-factor code required. Enter TOTP code: ").strip()
-                    payload = login_client.login(identifier, password, totp_code=totp_code, ldap=ldap_hint)
-                except Exception as exc2:
-                    ui.print_error(f"Login failed: {exc2}")
-                    continue
-            else:
-                ui.print_error(f"Login failed: {exc}")
+        use_sso = sso_enabled and identifier.lower() in ("sso", "google", "microsoft", "oauth")
+
+        if not use_sso:
+            # Web-credential login: exchange username/password for a provisioned key.
+            try:
+                password = getpass.getpass(
+                    "Password (leave blank for Google/Microsoft browser SSO): "
+                    if sso_enabled and "@" in identifier
+                    else "Password: "
+                )
+                if not password and sso_enabled and "@" in identifier:
+                    use_sso = True
+                else:
+                    totp_code = input("TOTP code (blank if MFA not enabled): ").strip()
+            except (KeyboardInterrupt, EOFError):
+                sys.exit(0)
+
+        if use_sso:
+            try:
+                payload = login_client.sso_login(
+                    on_url=lambda url: ui.console.print(
+                        f"\n[bold cyan]→ Complete sign-in in your browser:[/] [underline]{url}[/]\n"
+                        f"[dim]Waiting for browser authorization...[/dim]"
+                    )
+                )
+            except Exception as exc:
+                ui.print_error(f"SSO login failed: {exc}")
                 continue
+        else:
+            ldap_hint = "\\" in identifier
+            try:
+                payload = login_client.login(identifier, password, totp_code=totp_code, ldap=ldap_hint)
+            except Exception as exc:
+                # Second chance: server demanded MFA we didn't supply.
+                if getattr(exc, "status_code", None) == 401 and not totp_code:
+                    try:
+                        totp_code = input("Multi-factor code required. Enter TOTP code: ").strip()
+                        payload = login_client.login(identifier, password, totp_code=totp_code, ldap=ldap_hint)
+                    except Exception as exc2:
+                        ui.print_error(f"Login failed: {exc2}")
+                        continue
+                else:
+                    ui.print_error(f"Login failed: {exc}")
+                    continue
 
         new_key = payload.get("api_key") or ""
         if not new_key:
