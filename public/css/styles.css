@@ -3401,12 +3401,15 @@ html {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.79rem;
   line-height: 1.45;
-  overflow-x: auto;
 }
 
 .cli-code-block code {
   color: #f1f5f9;
-  white-space: nowrap;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  flex: 1 1 auto;
+  min-width: 0;
   user-select: all;
 }
 

@@ -1199,10 +1199,6 @@ export function displayEmptyState(activeProfile, promptClickHandler, firstName =
               This agent executes commands, inspects files, and operates on your workstation or infrastructure via <strong>safi-cli</strong> while every action is governed by this SAFi server.
             </p>
           </div>
-          <a href="https://runsafi.com/start" target="_blank" rel="noopener noreferrer" class="cli-onboard-guide-link">
-            <span>Quick Start Guide</span>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
-          </a>
         </div>
 
         <div class="cli-steps-grid">
@@ -1254,7 +1250,7 @@ export function displayEmptyState(activeProfile, promptClickHandler, firstName =
 
         <div class="cli-promo-banner">
           <p class="cli-promo-text">
-            <strong>Interested in a turnkey solution like this?</strong> Deploy governed local AI agents on dedicated hardware inside your own environment.
+            <strong>Want a turnkey solution</strong> to run these agents locally on your network with zero cloud dependence?
           </p>
           <a href="https://runsafi.com" target="_blank" rel="noopener noreferrer" class="cli-promo-cta">
             <span>Visit runsafi.com</span>
