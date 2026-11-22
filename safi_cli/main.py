@@ -72,7 +72,7 @@ def main():
 
     parser = argparse.ArgumentParser(
         prog="safi-cli",
-        description="SAFi (The Self-alignment Framework Interface) - The governance engine for AI agents.",
+        description="SAFi (The Self-alignment Framework Interface) - The governance gateway for AI agents.",
     )
     parser.add_argument("--setup", "--init", dest="setup_wizard", action="store_true", help="Launch the interactive first-run setup wizard.")
     parser.add_argument("prompt", nargs="?", help="Task prompt. If omitted, starts interactive REPL mode.")

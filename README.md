@@ -5,7 +5,7 @@
 [![Demo](https://img.shields.io/badge/Live%20Demo-Try%20It-brightgreen)](https://safi.selfalignmentframework.com)
 [![Hardware Appliance](https://img.shields.io/badge/Hardware%20Appliance-runsafi.com-16a34a)](https://runsafi.com)
 
-> SAFi is an open source governance engine for AI agents. It lets institutions enforce their policies in real time, govern tool calls, and maintain an auditable record of every governed decision.
+> SAFi is an open source governance gateway for AI agents. It lets you enforce your policies in real time, govern tool calls, and maintain an audit trail of every agent's action.
 
 <p align="center">
   <a href="https://runsafi.com/assets/saficli_demo.mp4" title="Watch full HD terminal demo">

@@ -520,7 +520,7 @@ def print_banner(
     header_text.append("SAFi", style=f"bold {COLOR_BRAND_400}")
     header_text.append(" (The Self-alignment Framework Interface)", style="bold")
     header_text.append("\n")
-    header_text.append("The governance engine for AI agents", style="dim")
+    header_text.append("The governance gateway for AI agents", style="dim")
 
     # Explicit theme-aware text color; "white" renders light-yellow on light themes.
     info_table = Table.grid(padding=(0, 2))
