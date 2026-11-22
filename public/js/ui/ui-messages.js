@@ -1136,6 +1136,8 @@ export function displayEmptyState(activeProfile, promptClickHandler, firstName =
             return `<span class="value-chip${isGate ? ' value-chip-gate' : ''}"${tipAttr}>${isGate ? LOCK_ICON : ''}${name}</span>`;
         })
         .join('');
+    const CLI_AGENT_KEYS = new Set(['software_engineer', 'security_engineer', 'sysadmin']);
+    const isCliAgent = CLI_AGENT_KEYS.has(String(activeProfile.key || '').toLowerCase());
     const promptsHtml = (activeProfile.example_prompts || [])
         .map(p => `<button class="example-prompt-btn">"${escapeHtml(p)}"</button>`)
         .join('');
@@ -1176,10 +1178,75 @@ export function displayEmptyState(activeProfile, promptClickHandler, firstName =
         ? `<p class="text-xs text-neutral-400 dark:text-neutral-500 mb-2">Has access to the &ldquo;${escapeHtml(String(kbName))}&rdquo; knowledge base.</p>`
         : '';
 
-    const promptsSectionHtml = promptsHtml
-        ? `<p class="text-sm text-neutral-500 dark:text-neutral-400 mb-3">Try asking:</p>
-           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mx-auto w-full">${promptsHtml}</div>`
-        : '';
+    const serverOrigin = escapeHtml(window.location.origin);
+    const cliExamplesHtml = (activeProfile.example_prompts || [])
+        .map(p => `<li class="text-xs text-neutral-600 dark:text-neutral-300 bg-neutral-100/80 dark:bg-neutral-800/70 border border-neutral-200/80 dark:border-neutral-700/70 rounded-lg px-3 py-2 font-mono">&ldquo;${escapeHtml(p)}&rdquo;</li>`)
+        .join('');
+
+    const cliOnboardingHtml = `
+      <div class="text-left max-w-3xl mx-auto mt-2 mb-6 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white/80 dark:bg-neutral-900/70 p-5 shadow-sm">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <div>
+            <span class="inline-block text-[11px] font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 mb-1">Desktop CLI Onboarding</span>
+            <h3 class="text-base font-bold text-neutral-800 dark:text-neutral-100">Run ${escapeHtml(activeProfile.name || 'this Agent')} from Your Terminal with <code class="font-mono text-sm">safi-cli</code></h3>
+          </div>
+          <a href="https://runsafi.com/start" target="_blank" rel="noopener noreferrer" class="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline">Full Quick Start Guide &rarr;</a>
+        </div>
+        <p class="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed mb-4">
+          This agent is designed to execute commands, inspect files, and operate directly on your workstation or server via the <strong>SAFi CLI</strong> while every action is governed by this SAFi server.
+        </p>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+          <div class="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950/60 p-3.5">
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="text-xs font-semibold text-neutral-700 dark:text-neutral-200">1a. Windows 10 / 11 (PowerShell)</span>
+              <button type="button" class="cli-copy-btn text-[11px] font-semibold px-2 py-0.5 rounded bg-neutral-200/80 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-300 dark:hover:bg-neutral-700 transition" data-copy="irm https://runsafi.com/install.ps1 | iex">Copy</button>
+            </div>
+            <pre class="text-xs font-mono text-neutral-800 dark:text-neutral-200 overflow-x-auto select-all"><code>irm https://runsafi.com/install.ps1 | iex</code></pre>
+          </div>
+
+          <div class="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950/60 p-3.5">
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="text-xs font-semibold text-neutral-700 dark:text-neutral-200">1b. Linux &amp; macOS (Terminal)</span>
+              <button type="button" class="cli-copy-btn text-[11px] font-semibold px-2 py-0.5 rounded bg-neutral-200/80 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-300 dark:hover:bg-neutral-700 transition" data-copy="curl -sSL https://runsafi.com/install.sh | bash">Copy</button>
+            </div>
+            <pre class="text-xs font-mono text-neutral-800 dark:text-neutral-200 overflow-x-auto select-all"><code>curl -sSL https://runsafi.com/install.sh | bash</code></pre>
+          </div>
+        </div>
+
+        <div class="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950/60 p-3.5 mb-4">
+          <div class="flex items-center justify-between mb-1.5">
+            <span class="text-xs font-semibold text-neutral-700 dark:text-neutral-200">2. Pair Your Workstation with This Server</span>
+            <button type="button" class="cli-copy-btn text-[11px] font-semibold px-2 py-0.5 rounded bg-neutral-200/80 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-300 dark:hover:bg-neutral-700 transition" data-copy="safi-cli --setup">Copy</button>
+          </div>
+          <pre class="text-xs font-mono text-neutral-800 dark:text-neutral-200 overflow-x-auto select-all mb-1.5"><code>safi-cli --setup</code></pre>
+          <p class="text-xs text-neutral-500 dark:text-neutral-400">
+            Enter <code class="font-mono text-neutral-700 dark:text-neutral-200 select-all">${serverOrigin}</code> when prompted for the server URL, then sign in (use a local account, type <code class="font-mono">sso</code> for Google/Microsoft browser login, or press Enter to use a Policy API key).
+          </p>
+        </div>
+
+        ${cliExamplesHtml ? `
+        <div class="mb-4">
+          <p class="text-xs font-semibold text-neutral-600 dark:text-neutral-300 mb-2">3. Example prompts to run inside <code class="font-mono">safi-cli</code>:</p>
+          <ul class="grid grid-cols-1 md:grid-cols-2 gap-2">${cliExamplesHtml}</ul>
+        </div>` : ''}
+
+        <div class="rounded-xl border border-emerald-500/30 bg-emerald-500/5 dark:bg-emerald-500/10 px-4 py-3 flex flex-wrap items-center justify-between gap-2">
+          <p class="text-xs text-neutral-700 dark:text-neutral-200">
+            <strong>Interested in a turnkey solution like this?</strong> Deploy governed local AI agents on dedicated hardware in your own environment.
+          </p>
+          <a href="https://runsafi.com" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition shrink-0">
+            Visit runsafi.com &rarr;
+          </a>
+        </div>
+      </div>`;
+
+    const promptsSectionHtml = isCliAgent
+        ? cliOnboardingHtml
+        : (promptsHtml
+            ? `<p class="text-sm text-neutral-500 dark:text-neutral-400 mb-3">Try asking:</p>
+               <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mx-auto w-full">${promptsHtml}</div>`
+            : '');
 
     // Public demo only. A visitor there reads a small model's prose as SAFi's
     // quality, so the last surface before the first message has to say that
@@ -1229,6 +1296,35 @@ export function displayEmptyState(activeProfile, promptClickHandler, firstName =
             const text = btn.innerText.replace(/^"|"$/g, ''); // Remove surrounding quotes only
             if (promptClickHandler && typeof promptClickHandler === 'function') {
                 promptClickHandler(text);
+            }
+        };
+    });
+
+    const copyButtons = container.querySelectorAll('.cli-copy-btn');
+    copyButtons.forEach(btn => {
+        btn.onclick = async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const textToCopy = btn.getAttribute('data-copy') || '';
+            if (!textToCopy) return;
+            try {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(textToCopy);
+                } else {
+                    const ta = document.createElement('textarea');
+                    ta.value = textToCopy;
+                    ta.style.position = 'fixed';
+                    ta.style.opacity = '0';
+                    document.body.appendChild(ta);
+                    ta.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(ta);
+                }
+                const orig = btn.textContent;
+                btn.textContent = 'Copied!';
+                setTimeout(() => { btn.textContent = orig; }, 2000);
+            } catch (err) {
+                console.error('Copy failed:', err);
             }
         };
     });
