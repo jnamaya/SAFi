@@ -1,9 +1,9 @@
 """
 Registrations for the plugins that ship with SAFi. Imported once by the
 orchestrator; importing this module IS the registration.
-
-All retired demo agents (fiduciary, bible scholar, etc.) and their plugins
-were removed in the 2026-11 policy reduction to Software / Security /
-Sysadmin only.
 """
-PLUGIN_REGISTRATIONS = []
+from .bible_scholar_readings import handle_bible_scholar_commands
+
+PLUGIN_REGISTRATIONS = [
+    ({"the bible scholar", "the_bible_scholar"}, handle_bible_scholar_commands),
+]

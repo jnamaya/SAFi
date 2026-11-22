@@ -370,7 +370,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO)
     print(f"graph gateway on :{PORT}\n  issuer/AS: {BASE_URL}\n  resource:  {RESOURCE_URI}")
     # Single worker on purpose: see the module docstring.
-    uvicorn.run(build_app(), host="0.0.0.0", port=PORT, log_level="info")
+    uvicorn.run(build_app(), host=os.environ.get("BIND_HOST", "127.0.0.1"), port=PORT, log_level="info")
 
 
 if __name__ == "__main__":

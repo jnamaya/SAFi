@@ -177,8 +177,10 @@ export async function playSpeech(text, buttonElement) {
     showPlayer(true);
 
     try {
-        if (MSE_SUPPORTED) await loadStreaming(text);
-        else               await loadBlob(text);
+        // Mistral TTS returns the complete MP3 in one response (Content-Length set),
+        // so MSE streaming adds nothing and some browsers fail playing audio/mpeg MSE.
+        // Always use the blob path: fetch full clip, createObjectURL, play.
+        await loadBlob(text);
     } catch (err) {
         console.error('TTS failed:', err);
         ui.showToast('TTS service unavailable.', 'error');
