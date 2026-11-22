@@ -778,7 +778,7 @@ export function displayMessage(sender, text, date = new Date(), messageId = null
             fileChipHtml = `<div class="flex flex-wrap gap-2 mb-2">${cards.join('')}</div>`;
         }
 
-        const avatarUrl = options.avatarUrl || `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40"><rect width="40" height="40" fill="%2316a34a"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="%23FFFFFF" font-family="sans-serif" font-size="18" font-weight="600">U</text></svg>`;
+        const avatarUrl = options.avatarUrl || `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 40 40'><rect width='40' height='40' fill='%2316a34a'/><text x='50%25' y='54%25' dominant-baseline='middle' text-anchor='middle' fill='%23FFFFFF' font-family='sans-serif' font-size='18' font-weight='600'>U</text></svg>`;
         messageDiv.innerHTML = `
         <div class="user-content-wrapper">
            <div class="chat-bubble">${fileChipHtml}${final_html}<div class="meta"></div></div>
