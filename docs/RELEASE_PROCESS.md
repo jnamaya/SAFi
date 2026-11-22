@@ -22,7 +22,7 @@ exact code it contains, and no branch offers that anchor.
 
 ## Cadence
 
-Releases target an **8-week cadence** (anchored on v1.4.1, August 2026). The
+Releases target a **12-week (quarterly) cadence** (anchored on v1.4.1, August 2026). The
 final week of each cycle is a freeze: a last promotion from `dev` to `main`,
 then fixes only until the tag is cut. A target is not a contract; if a cycle
 ends with something half-settled, the release waits for it rather than
