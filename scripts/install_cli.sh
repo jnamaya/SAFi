@@ -37,7 +37,7 @@ if [ -d "${REPO_DIR}/safi_cli" ]; then
         chmod +x "${INSTALL_DIR}/setup_ssh_key.sh"
     fi
 else
-    SAFI_BRANCH="${SAFI_BRANCH:-dev}"
+    SAFI_BRANCH="${SAFI_BRANCH:-main}"
     echo "Downloading safi_cli package from repository (${SAFI_BRANCH} branch)..."
     rm -rf "${INSTALL_DIR}/safi_cli"
     TMP_DIR=$(mktemp -d)
