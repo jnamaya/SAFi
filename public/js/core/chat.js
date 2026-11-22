@@ -950,7 +950,7 @@ async function recoverInFlightTurn(messageId, signal) {
     // created the turn (consecutive 404s), bail out quickly; if it did, keep
     // updating the trace until audit_status === 'complete'.
     let consecutiveNotFound = 0;
-    const deadline = Date.now() + 180_000;
+    const deadline = Date.now() + 1_800_000;
     while (Date.now() < deadline && (!signal || !signal.aborted)) {
         await new Promise(r => setTimeout(r, 2000));
         if (signal && signal.aborted) return false;
@@ -1405,7 +1405,7 @@ export async function sendMessage(activeProfileData, user) {
         // If the connection dropped mid-flight (e.g. net::ERR_NETWORK_CHANGED),
         // the backend may still be finishing the turn. Poll audit_result and
         // reload the conversation instead of leaving the chat dead.
-        if (!error.status && aiMessageId && currentAbortController) {
+        if ((!error.status || error.status === 502 || error.status === 504) && aiMessageId && currentAbortController) {
             clearInterval(statusPollInterval);
             const recovered = await recoverInFlightTurn(aiMessageId, currentAbortController.signal);
             if (recovered) {
