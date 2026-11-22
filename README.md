@@ -19,6 +19,7 @@
 
 ## Table of Contents
 
+- [Client-Server Architecture](#client-server-architecture)
 - [Quick Start — Install SAFi](#quick-start--install-safi)
   - [1. Install the SAFi CLI (`safi-cli`)](#1-install-the-safi-cli-safi-cli)
   - [2. Self-Host the SAFi Server (Docker)](#2-self-host-the-safi-server-docker)
@@ -33,6 +34,20 @@
 - [Releases](#releases)
 - [License & Governance](#license--governance)
 - [About the Author](#about-the-author)
+
+---
+
+## Client-Server Architecture
+
+Unlike standalone terminal agents where API keys, rules, and logs live unmanaged on individual laptops, **SAFi separates the workstation harness from the central governance gateway**:
+
+```text
+[ Workstation: safi-cli ] ──HTTPS──▶ [ SAFi Governance Gateway (Server / Appliance) ] ──▶ [ Local / Cloud Models ]
+ • Thin terminal harness               • Central Identity (SSO / LDAP / SCIM) & RBAC
+ • Executes repo & ops tools           • Immutable Charters & Policies (no local overrides)
+ • Zero LLM API keys on laptop         • Deterministic policy & risk gates (R0–R4) + audit scoring
+                                       • Unified hash-chained Audit Hub across every workstation
+```
 
 ---
 
