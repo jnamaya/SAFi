@@ -944,6 +944,40 @@ function generateUUID() {
     });
 }
 
+async function recoverInFlightTurn(messageId, signal) {
+    // Poll /api/audit_result when the long-lived /api/process_prompt socket
+    // drops mid-flight (e.g. net::ERR_NETWORK_CHANGED). If the server never
+    // created the turn (consecutive 404s), bail out quickly; if it did, keep
+    // updating the trace until audit_status === 'complete'.
+    let consecutiveNotFound = 0;
+    const deadline = Date.now() + 180_000;
+    while (Date.now() < deadline && (!signal || !signal.aborted)) {
+        await new Promise(r => setTimeout(r, 2000));
+        if (signal && signal.aborted) return false;
+        try {
+            const result = await api.fetchAuditResult(messageId);
+            consecutiveNotFound = 0;
+            if (result && result.reasoning_log) {
+                let log = result.reasoning_log;
+                if (typeof log === 'string') log = JSON.parse(log);
+                if (Array.isArray(log) && log.length > 0) {
+                    uiMessages.updatePipelineTrace(log);
+                }
+            }
+            if (result && result.audit_status === 'complete') {
+                return true;
+            }
+        } catch (pollErr) {
+            if (pollErr && pollErr.status === 404) {
+                consecutiveNotFound += 1;
+                if (consecutiveNotFound >= 3) return false;
+            }
+            // Transient offline blip while recovering — keep trying until deadline.
+        }
+    }
+    return false;
+}
+
 export async function sendMessage(activeProfileData, user) {
     // 1. Check if we are currently sending (and thus can cancel)
     if (currentAbortController) {
@@ -1366,6 +1400,20 @@ export async function sendMessage(activeProfileData, user) {
     } catch (error) {
         if (error.name === 'AbortError') {
             return;
+        }
+
+        // If the connection dropped mid-flight (e.g. net::ERR_NETWORK_CHANGED),
+        // the backend may still be finishing the turn. Poll audit_result and
+        // reload the conversation instead of leaving the chat dead.
+        if (!error.status && aiMessageId && currentAbortController) {
+            clearInterval(statusPollInterval);
+            const recovered = await recoverInFlightTurn(aiMessageId, currentAbortController.signal);
+            if (recovered) {
+                if (loadingIndicator && loadingIndicator.parentNode) loadingIndicator.remove();
+                ui.clearLoadingInterval();
+                await switchConversation(currentConversationId, activeProfileData, user, showConscienceAuditModal, true);
+                return;
+            }
         }
 
         // FIX: Ensure loading indicator is removed on error

@@ -204,7 +204,7 @@ export const processUserMessage = (message, conversation_id, signal = null, mess
         // IANA zone name so the agent's "Current Date" line uses the user's
         // calendar instead of the server's UTC one. Validated server-side.
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || null
-    }, { signal });
+    }, { signal, noQueue: true });
 export const fetchAuditResult = (messageId) =>
     httpGet(`${urls.AUDIT}/${messageId}`);
 export const cancelMessage = (messageId) =>

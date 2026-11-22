@@ -229,8 +229,8 @@ async function postWithQueue(urlOrRequest, body, method = 'POST', headers = {}, 
           throw err;
         }
 
-        // Queue on 5xx errors or network failures (unless offline is forbidden)
-        if (!offlineAllowed) {
+        // Queue on 5xx errors or network failures (unless offline is forbidden or caller opted out)
+        if (!offlineAllowed || options.noQueue) {
           const msg = await res.text().catch(() => '');
           const err = new Error(apiErrorMessage(msg, res.statusText));
           err.status = res.status;
@@ -249,7 +249,7 @@ async function postWithQueue(urlOrRequest, body, method = 'POST', headers = {}, 
       if (e.status && e.status >= 400 && e.status < 500) {
         throw e;
       }
-      if (!offlineAllowed) throw e; // no local persistence of request bodies
+      if (!offlineAllowed || options.noQueue) throw e; // no local persistence of request bodies or mid-flight retries
       console.warn("Fetch failed, queuing:", e);
       await queueRequest({ url: requestUrl, method: requestMethod, headers: requestHeaders, body: requestBody });
       return 'QUEUED';
