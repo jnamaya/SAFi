@@ -29,12 +29,23 @@ $winInvFile = Join-Path $winConfigDir "inventory.json"
 if (-not (Test-Path $winInvFile)) {
     $invTemplate = @'
 {
-  "example-server": {
+  "example-linux-server": {
     "host": "192.168.1.100",
     "user": "admin",
     "port": 22,
     "auth": "key",
-    "description": "Example target server"
+    "key_path": "~/.ssh/id_ed25519",
+    "os": "linux",
+    "description": "Example Linux target server (replace with your host details)"
+  },
+  "example-windows-server": {
+    "host": "192.168.1.101",
+    "user": "administrator",
+    "port": 22,
+    "auth": "key",
+    "key_path": "~/.ssh/id_ed25519",
+    "os": "windows",
+    "description": "Example Windows target server over OpenSSH"
   }
 }
 '@

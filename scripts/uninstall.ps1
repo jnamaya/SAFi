@@ -1,8 +1,15 @@
-# SAFi Windows PowerShell Uninstaller
-# Completely removes all Windows wrappers, user profile directories (.config, .local, .safi),
-# and the WSL Linux installation.
+﻿# SAFi Windows PowerShell Uninstaller
+# Removes Windows wrappers and the WSL Linux runtime while preserving user configuration
+# (.config\safi\inventory.json, config.json) unless -Purge or $env:SAFI_PURGE="1" is set.
+
+param(
+    [switch]$Purge
+)
 
 $ErrorActionPreference = "SilentlyContinue"
+if ($env:SAFI_PURGE -eq "1") {
+    $Purge = $true
+}
 
 Write-Host "=== SAFi CLI Windows Uninstaller ===" -ForegroundColor Cyan
 
@@ -21,26 +28,28 @@ foreach ($file in $winApps) {
     }
 }
 
-# 2. Remove Windows user profile directories (.safi, .config\safi, .local\bin wrappers)
+# 2. Remove user profile configuration directories ONLY when -Purge / SAFI_PURGE=1 is set
 $winSafiDir = Join-Path $env:USERPROFILE ".safi"
-if (Test-Path $winSafiDir) {
-    Remove-Item -Recurse -Force $winSafiDir -ErrorAction SilentlyContinue
-    Write-Host "Removed $winSafiDir" -ForegroundColor Gray
-}
-
 $winConfigSafiDir = Join-Path $env:USERPROFILE ".config\safi"
-if (Test-Path $winConfigSafiDir) {
-    Remove-Item -Recurse -Force $winConfigSafiDir -ErrorAction SilentlyContinue
-    Write-Host "Removed $winConfigSafiDir" -ForegroundColor Gray
-}
-
-$winConfigDir = Join-Path $env:USERPROFILE ".config"
-if (Test-Path $winConfigDir) {
-    $remaining = Get-ChildItem -Force $winConfigDir -ErrorAction SilentlyContinue
-    if (-not $remaining -or $remaining.Count -eq 0) {
-        Remove-Item -Recurse -Force $winConfigDir -ErrorAction SilentlyContinue
-        Write-Host "Removed empty $winConfigDir" -ForegroundColor Gray
+if ($Purge) {
+    if (Test-Path $winSafiDir) {
+        Remove-Item -Recurse -Force $winSafiDir -ErrorAction SilentlyContinue
+        Write-Host "Purged $winSafiDir" -ForegroundColor Gray
     }
+    if (Test-Path $winConfigSafiDir) {
+        Remove-Item -Recurse -Force $winConfigSafiDir -ErrorAction SilentlyContinue
+        Write-Host "Purged $winConfigSafiDir" -ForegroundColor Gray
+    }
+    $winConfigDir = Join-Path $env:USERPROFILE ".config"
+    if (Test-Path $winConfigDir) {
+        $remaining = Get-ChildItem -Force $winConfigDir -ErrorAction SilentlyContinue
+        if (-not $remaining -or $remaining.Count -eq 0) {
+            Remove-Item -Recurse -Force $winConfigDir -ErrorAction SilentlyContinue
+            Write-Host "Removed empty $winConfigDir" -ForegroundColor Gray
+        }
+    }
+} else {
+    Write-Host "Preserving user configuration and inventory.json in $winConfigSafiDir (pass -Purge or set `$env:SAFI_PURGE='1' to remove)." -ForegroundColor Yellow
 }
 
 $winLocalBin = Join-Path $env:USERPROFILE ".local\bin"
@@ -78,17 +87,31 @@ if ($userPath -and $userPath -like "*\.local\bin*") {
 # 3. Call Linux uninstall inside WSL
 $wslCmd = Get-Command "wsl.exe" -ErrorAction SilentlyContinue
 if ($wslCmd) {
-    wsl.exe -e bash -c "
-        rm -rf ~/.local/share/safi-cli
-        rm -f ~/.local/bin/safi-cli ~/.local/bin/saficli ~/.local/bin/sys-exec ~/.local/bin/safi-setup-key
-        rm -rf ~/.config/safi
-        rm -rf ~/.safi
-        [ -d ~/.config ] && [ -z \"\$(ls -A ~/.config 2>/dev/null)\" ] && rmdir ~/.config 2>/dev/null || true
-        [ -d ~/.local/bin ] && [ -z \"\$(ls -A ~/.local/bin 2>/dev/null)\" ] && rmdir ~/.local/bin 2>/dev/null || true
-        [ -d ~/.local ] && [ -z \"\$(ls -A ~/.local 2>/dev/null)\" ] && rmdir ~/.local 2>/dev/null || true
-    " 2>$null
-    Write-Host "Removed Linux binaries, runtime, and configuration from WSL." -ForegroundColor Gray
+    if ($Purge) {
+        wsl.exe -e bash -c "
+            rm -rf ~/.local/share/safi-cli
+            rm -f ~/.local/bin/safi-cli ~/.local/bin/saficli ~/.local/bin/sys-exec ~/.local/bin/safi-setup-key
+            rm -rf ~/.config/safi
+            rm -rf ~/.safi
+            [ -d ~/.config ] && [ -z \"\$(ls -A ~/.config 2>/dev/null)\" ] && rmdir ~/.config 2>/dev/null || true
+            [ -d ~/.local/bin ] && [ -z \"\$(ls -A ~/.local/bin 2>/dev/null)\" ] && rmdir ~/.local/bin 2>/dev/null || true
+            [ -d ~/.local ] && [ -z \"\$(ls -A ~/.local 2>/dev/null)\" ] && rmdir ~/.local 2>/dev/null || true
+        " 2>$null
+        Write-Host "Removed Linux binaries, runtime, and configuration from WSL." -ForegroundColor Gray
+    } else {
+        wsl.exe -e bash -c "
+            rm -rf ~/.local/share/safi-cli
+            rm -f ~/.local/bin/safi-cli ~/.local/bin/saficli ~/.local/bin/sys-exec ~/.local/bin/safi-setup-key
+            [ -d ~/.local/bin ] && [ -z \"\$(ls -A ~/.local/bin 2>/dev/null)\" ] && rmdir ~/.local/bin 2>/dev/null || true
+            [ -d ~/.local ] && [ -z \"\$(ls -A ~/.local 2>/dev/null)\" ] && rmdir ~/.local 2>/dev/null || true
+        " 2>$null
+        Write-Host "Removed Linux binaries and runtime from WSL (configuration preserved)." -ForegroundColor Gray
+    }
 }
 
 Write-Host ""
-Write-Host "✓ SAFi CLI and all user configuration (.config, .local, .safi) have been completely removed." -ForegroundColor Green
+if ($Purge) {
+    Write-Host "✓ SAFi CLI and all user configuration (.config\safi, .safi) have been completely removed." -ForegroundColor Green
+} else {
+    Write-Host "✓ SAFi CLI uninstalled. Your configuration and inventory.json were preserved in $winConfigSafiDir." -ForegroundColor Green
+}
