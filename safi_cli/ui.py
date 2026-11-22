@@ -1008,6 +1008,8 @@ def build_audit_footer(result: Dict[str, Any]) -> Optional[Text]:
         line.append(f"{prefix}{' '.join(tally)}", style="dim")
     line.append(" · for full audit type ", style="dim")
     line.append("/audit", style=f"bold {COLOR_BRAND_400}")
+    line.append(" · main menu: ", style="dim")
+    line.append("/", style=f"bold {COLOR_BRAND_400}")
     return line
 
 
