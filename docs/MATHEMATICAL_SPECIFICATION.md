@@ -1,8 +1,8 @@
 # SAFi Mathematical Specification
 
-> **Version:** 1.10.0
-> **Last Updated:** 2026-10-15
-> **Status:** Aligned with code implementation
+> **Version:** 1.11.0
+> **Last Updated:** 2026-11-22
+> **Status:** Aligned with v1.6.0 code implementation
 
 This document defines the formal mathematical foundation of SAFi's five-stage architecture.
 
@@ -55,26 +55,25 @@ This document defines the formal mathematical foundation of SAFi's five-stage ar
 │      │             │                        │                    └────────┘ │Will P3 │                 │
 │  [unsafe]   [out_of_scope]             [violation]                   │      │alignmnt│                 │
 │      │             │                        ▼                    [violation]└────────┘                 │
-│      │             │                  redirect (no              │     │          │                     │
-│      │             │                   reflexion)          redirect    │   [violation:                 │
-│      │             │                                                   │  low_align /                  │
-│      │             │                                                   │  ethical]                     │
-│      │             │                                                   │        ▼                      │
-│      │             │                                                   │  ┌──────────┐                 │
-│      │             │                                                   │  │Reflexion │                 │
-│      │             │                                                   │  │(regen →  │                 │
-│      │             │                                                   │  │ re-audit)│                 │
-│      │             │                                                   │  └──────────┘                 │
-│      │             │                                                   │   Retry once                  │
-│      │             │                                                   │        │                      │
-│      │             │                                                   │  still violation?             │
-│      │             │                                                   │  ├ low_align →                │
-│      │             │                                                   │  │  system notice             │
-│      │             │                                                   │  └ ethical →                  │
-│      ▼             ▼                                                   ▼     redirect                   │
-│  redirect ◀──────────────────────────────────────────────────────────┘        │                      │
-│                                                                               ▼                      │
-│                                                                         Return to User                │
+│      │             │                  system notice              │     │          │                     │
+│      │             │                 (no reflexion)       [scope]│     │   [violation:                 │
+│      │             │                                         ▼   │     │  low_align /                  │
+│      │             │                                     redirect│     │  ethical]                     │
+│      │             │                                             │     │        ▼                      │
+│      │             │                                   [ethical /│     │  ┌──────────┐                 │
+│      │             │                                   grounding]└─────┴─▶│Reflexion │                 │
+│      │             │                                                      │(regen →  │                 │
+│      │             │                                                      │ re-audit)│                 │
+│      │             │                                                      └──────────┘                 │
+│      │             │                                                       Retry once                  │
+│      │             │                                                            │                      │
+│      │             │                                                      still violation?             │
+│      │             │                                                            ▼                      │
+│      │             │                                                      system notice                │
+│      ▼             ▼                                                            │                      │
+│  redirect ──────────────────────────────────────────────────────────────────────┘                      │
+│                                                                                 ▼                      │
+│                                                                           Return to User               │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────┘
                          │
                          ▼ (ThreadPoolExecutor, fire and forget)
@@ -93,11 +92,10 @@ All gates above run synchronously. Summarization and profile extraction run asyn
 | Phase Zero: any check | Agent redirect. Intellect never called. |
 | Phase 1: scope preflight (`preflight_prompt_scope`) | Agent redirect (`phase_one_scope`). Intellect never called. |
 | Pass 1: unrepairable structural failure | System failure notice. No retry. |
-| Pass 1: audit unavailable (fail-closed) | System failure notice. No retry. |
-| Pass 2: scope/grounding reason | Agent redirect. No retry. |
-| Pass 2: `ethical_violation` reason | Reflexion retry. |
-| Pass 3: `low_alignment_score` | Reflexion retry, then system failure notice if unapproved. |
-| Pass 3: `ethical_violation` | Reflexion retry, then agent redirect. |
+| Pass 1: audit unavailable or coverage failure (fail-closed) | System failure notice. No retry. |
+| Pass 2: out-of-scope `scope_violation` | Agent redirect. No retry. |
+| Pass 2: `ethical_violation`, `grounding_violation`, or in-scope draft-failure `scope_violation` | Reflexion retry, then system failure notice if unapproved. |
+| Pass 3: `low_alignment_score` or `ethical_violation` | Reflexion retry, then system failure notice if unapproved. |
 
 ---
 
@@ -115,7 +113,9 @@ $$\text{safe} = \neg \exists\ p \in \text{blacklist} : p \subseteq \text{lower}(
 
 **2b. Sensitive identifier scan** is a regex-plus-checksum match against `pii_validators` (enabled per org); a hit returns `pii_detected`. Runs before the Intellect so the data never reaches the model.
 
-**3. Embedded-instruction blob heuristic** flags an encoded payload *attached to* an instruction marker. A windowed entropy scan alone cannot separate a payload from technical prose (300-char windows over this repo's own docs measure 5.28–5.46 bits/char, all above the retired 4.5 threshold, while a hex dump scores 3.97 and slips past it), so the discriminator is word structure: an encoded payload is one long unbroken non-whitespace run, prose is not. The test requires a minimum prompt length, at least one marker anywhere in the prompt, and a qualifying blob whose entropy floor holds *inside the blob*, with a marker within proximity of it:
+**3. Internals probe scan** checks for co-occurrence of any internal governance identifier in `SENSITIVE_INTERNALS` with a word-bounded disclosure cue in `INTERNALS_DISCLOSURE_CUES` within `INTERNALS_PROXIMITY_CHARS = 200` characters (`security_policy.py`). A hit returns `injection:governance_probing`.
+
+**4. Embedded-instruction blob heuristic** flags an encoded payload *attached to* an instruction marker. A windowed entropy scan alone cannot separate a payload from technical prose (300-char windows over this repo's own docs measure 5.28–5.46 bits/char, all above the retired 4.5 threshold, while a hex dump scores 3.97 and slips past it), so the discriminator is word structure: an encoded payload is one long unbroken non-whitespace run, prose is not. The test requires a minimum prompt length, at least one marker anywhere in the prompt, and a qualifying blob whose entropy floor holds *inside the blob*, with a marker within proximity of it:
 
 hit ⇔ |x_t| ≥ τ_len ∧ has-instr-marker(x_t) ∧ ∃ b ∈ blobs(x_t) : (|b| ≥ β_run ∧ H(b[0 : τ_sample]) ≥ β_H ∧ ∃ m ∈ markers(x_t) : start(b) − δ_prox ≤ m ≤ end(b) + δ_prox)
 
@@ -134,13 +134,15 @@ A hit returns gate reason `injection:embedded_instruction`. The legacy sliding-w
 **If any check fails** → `trigger_agent_redirect(violation_type=gate_reason)` and return.
 **If all pass** → proceed to Stage 0.5 (or Stage 1 if scope preflight is disabled).
 
+During agentic turns, Phase Zero also scans inbound tool outputs via `evaluate_tool_result()` before feeding them back to the Intellect to defend against indirect prompt injection.
+
 **Code Reference:** [`phase_zero.py`](../safi_app/core/faculties/phase_zero.py), [`security_policy.py`](../safi_app/security_policy.py), [`orchestrator.py#Phase0`](../safi_app/core/orchestrator.py)
 
 ---
 
 ## Stage 0.5: Antecedent Conscience (Prompt Scope Preflight Gate)
 
-Following the deterministic Phase Zero gate, SAFi optionally invokes the **Conscience** faculty in its classical antecedent office (*conscientia antecedens*, Aquinas *ST* I, q. 79, a. 13) when `preflight_prompt_scope` is enabled in the agent's policy:
+Following the deterministic Phase Zero gate, SAFi invokes the **Conscience** faculty in its classical antecedent office (*conscientia antecedens*, Aquinas *ST* I, q. 79, a. 13). Scope preflight is **enabled by default** (`SAFI_PREFLIGHT_PROMPT_SCOPE=1`) for any agent with a `scope_statement` (opt-out per policy or deployment config; skipped on client-owned continuation turns; fails open to Stage 1 if the preflight call raises or returns an empty ledger):
 
 $$s_{\text{scope}}, c_{\text{scope}}, \text{reason} = C_{\text{scope}}(x_t, \text{scope}, H_t)$$
 
@@ -201,9 +203,9 @@ Checks in order (`evaluate_draft_structure`):
 2. Sensitive identifier scan on the *output* ($a_t$) when `pii_validators` are enabled (`pii_detected`); the inbound half is Phase Zero 2b
 3. Code-fence policy: a non-empty `allowed_markdown_syntaxes` whitelist blocks any fence not explicitly permitted; otherwise a legacy `banned_markdown_syntaxes` blacklist applies.
 
-**Deterministic repair before violation:** a missing mandatory disclaimer is mechanically repairable. The orchestrator appends it ($a_t \leftarrow a_t \oplus \text{disclaimer}$) and the repaired draft re-runs the **full** audit path. Only structurally unrepairable drafts produce $D^1_t = \text{violation}$.
+**Deterministic repair before violation:** before Will Pass 1 runs, `_finalize_draft` deterministically redacts any operator-supplied secrets/passwords echoed in $a_t$. A missing mandatory disclaimer is likewise mechanically repairable: the orchestrator appends it ($a_t \leftarrow a_t \oplus \text{disclaimer}$) and the repaired draft re-runs the **full** audit path. Only structurally unrepairable drafts produce $D^1_t = \text{violation}$.
 
-**If $D^1_t = \text{violation}$** → ship a deterministic **system failure notice** (`_ship_system_failure_notice`): a structural failure is a fault of the system, not a verdict on the user's request, so it is *not* voiced as an agent redirect. There is **no reflexion retry at this pass.** The same routing applies to an audit-availability failure (Conscience unreachable or garbled: fail-closed).
+**If $D^1_t = \text{violation}$** → ship a deterministic **system failure notice** (`_ship_system_failure_notice`): a structural failure is a fault of the system, not a verdict on the user's request, so it is *not* voiced as an agent redirect. There is **no reflexion retry at this pass.** The same routing applies to an audit-availability or ledger-coverage failure (Conscience unreachable/garbled after one retry, or failing `_ledger_covers_values` which requires all hard gates plus a strict majority `matched * 2 > len(value_names)` of non-hard-gate values: fail-closed).
 **If $D^1_t = \text{approve}$** → proceed to Stage 3 (Conscience).
 
 ### Pass 2: Hard-Gate Check (after Conscience, before Spirit)
@@ -214,9 +216,9 @@ $$D^2_t, E^2_t = W_2(L_t, V)$$
 
 Any value flagged `hard_gate=true` with score $\leq -1$ triggers immediate violation. The check is **fail-closed**: if a hard-gate value is missing from the ledger (Conscience omitted it or returned a garbled ledger), that too is a violation (`hard_gate_unscored`). The violation reason is per-value data (`gate_reason`), stamped into the compiled profile by Synderesis and validated against {`scope_violation`, `grounding_violation`, `ethical_violation`}, defaulting to `hard_gate_violation`. The Will reads the reason from the failing value and never derives it from the value's name. Hard-gate values carry `weight = 0.0` and are excluded from the Spirit EMA.
 
-**If $D^2_t = \text{violation}$**, the exit depends on the mapped reason:
-- Scope/grounding-class reasons (a verdict on engaging the request at all) → call `trigger_agent_redirect()` directly, no retry.
-- `ethical_violation`-class reasons (a *correctable* content-quality gate: the request is fine, the draft is the problem) → route to **Stage 2.1 (Reflexion Retry)**.
+**If $D^2_t = \text{violation}$**, the exit depends on whether the failure is correctable (`_is_correctable_gate`):
+- Out-of-scope `scope_violation` (a verdict on engaging the request at all) → call `trigger_agent_redirect()` directly, no retry.
+- `ethical_violation`, `grounding_violation`, or an in-scope draft-failure `scope_violation` (where the request itself is in scope and the draft failed) → route to **Stage 2.1 (Reflexion Retry)**.
 
 **If $D^2_t = \text{approve}$** → proceed to Stage 4 (Spirit).
 
@@ -241,15 +243,13 @@ That override is itself the **stricter** of the two governance tiers, resolved a
 
 with an absent value on either side simply omitted from the max.
 
-**If $D^3_t = \text{violation}$** → run **Stage 2.1 (Reflexion Retry)** once. After the retry, the outcome depends on the residual reason:
-- `low_alignment_score` (or any unapproved residual state) → ship **deterministic system failure notice** via `_ship_system_failure_notice()`. In accordance with classical governance, a defective act is never willed; the system does not deliver low-alignment drafts.
-- `ethical_violation` (critical) → call `trigger_agent_redirect()`.
+**If $D^3_t = \text{violation}$** → run **Stage 2.1 (Reflexion Retry)** once. If the retry is still not approved (for any residual reason, including `low_alignment_score` or `ethical_violation`), ship a **deterministic system failure notice** via `_ship_system_failure_notice()`. In accordance with classical governance, a defective act is never willed; the system never releases an unapproved draft.
 
 **If $D^3_t = \text{approve}$** → return $a_t$ to user.
 
 ### Tool-Intent Gate (agentic turns only)
 
-When the Intellect proposes a tool call instead of a text draft, a fourth deterministic Will check runs **before any execution** (`evaluate_tool_intent`). Given a proposed tool name $\tau$ with parameters $\pi$ and the compiled profile's authorization list $T_{\text{allow}}$ (stamped by Synderesis as the intersection of the agent's advertised tools with each governance tier's `allowed_tools`; every layer narrows, none widens):
+When the Intellect proposes a tool call instead of a text draft, a fourth deterministic Will check runs **before any execution** (`evaluate_tool_intent`). Given a proposed tool name $\tau$ with parameters $\pi$, its risk class $\rho(\tau, \pi) \in \{R_0, R_1, R_2, R_3, R_4\}$ from `classify_tool_risk()`, the policy ceiling $\rho_{\max}$ (`max_tool_risk_class`, default `R3`), and the compiled profile's authorization list $T_{\text{allow}}$ (stamped by Synderesis as the intersection of the agent's advertised tools with each governance tier's `allowed_tools`; every layer narrows, none widens):
 
 ```math
 T_{\text{allow}} = T_{\text{advertised}} \cap T_{\text{charter}} \cap T_{\text{policy}}
@@ -258,10 +258,10 @@ T_{\text{allow}} = T_{\text{advertised}} \cap T_{\text{charter}} \cap T_{\text{p
 An absent or empty list at either governance tier means *that tier does not narrow* (it is dropped from the intersection), **not** deny-all. A Charter or Policy cannot grant a tool the agent was never given, so the advertised list is already the ceiling. Both sides are expanded from connector names to function names before intersecting, so authorizing a connector authorizes every function under it.
 
 ```math
-W_{\text{tool}}(\tau, \pi) = \begin{cases} \text{violation} & \tau \notin T_{\text{allow}} \\ \text{approve} & \tau \in T_{\text{allow}} \cap T_{\text{read-only}} \\ \text{violation} & \exists\, k : \pi_k \notin \text{constraints}(\tau, k) \ \vee\ \pi_k\ \text{omitted while constrained} \\ \text{approve} & \text{otherwise} \end{cases}
+W_{\text{tool}}(\tau, \pi) = \begin{cases} \text{violation} & \tau \notin T_{\text{allow}} \\ \text{violation} & \rho(\tau, \pi) = R_4 \ \vee\ \rho(\tau, \pi) > \rho_{\max} \\ \text{violation} & \exists\, k : \pi_k \notin \text{constraints}(\tau, k) \ \vee\ \pi_k\ \text{omitted while constrained} \\ \text{approve} & \text{otherwise} \end{cases}
 ```
 
-A **resulting** $T_{\text{allow}} = \varnothing$ is **deny-all**, not skip. An agent offered no tools has no legitimate tool intents. Parameter constraints are default-deny: an omitted constrained parameter is a violation (the tool's server-side default is unvetted). A blocked intent feeds the block reason back to the Intellect for a governed text response; it never redirects the whole turn. Conscience and Spirit score only the final text output; the tool-use process is gated here, not scored.
+A **resulting** $T_{\text{allow}} = \varnothing$ is **deny-all**, not skip. There is **no read-only bypass**: even a read tool is classified into $R_4$ and blocked if it targets a forbidden path or violates parameter constraints. Parameter constraints are default-deny: an omitted constrained parameter is a violation (the tool's server-side default is unvetted). In the orchestrator's agentic loop, tool execution is additionally guarded by repeat/same-file-read circuit breakers and an optional Conscience tool preflight (`audit_tool_intents=True`). By default, a blocked intent feeds the block reason back to the Intellect for a governed text response; policies may opt into redirecting the entire turn via `will_rules.redirect_on_tool_block = True`.
 
 **Code Reference:** [`will.py`](../safi_app/core/faculties/will.py), [`orchestrator.py#Phase5`](../safi_app/core/orchestrator.py)
 
@@ -269,7 +269,7 @@ A **resulting** $T_{\text{allow}} = \varnothing$ is **deny-all**, not skip. An a
 
 ## Stage 2.1: Reflexion Retry
 
-Triggered by **Will Pass 3** (Spirit alignment violation, `ethical_violation` or `low_alignment_score`) and by a **correctable Pass 2 hard-gate failure** (mapped reason `ethical_violation`; see Pass 2). The system attempts self-correction exactly once. Structural (Pass 1) failures and scope/grounding hard-gate failures do **not** reach this stage.
+Triggered by **Will Pass 3** (Spirit alignment violation, `ethical_violation` or `low_alignment_score`) and by a **correctable Pass 2 hard-gate failure** (`ethical_violation`, `grounding_violation`, or an in-scope draft-failure `scope_violation`; see Pass 2). The system attempts self-correction exactly once. Structural (Pass 1) failures and out-of-scope hard-gate failures do **not** reach this stage.
 
 **Step 1:** Construct reflexion prompt embedding the original draft and the agent's rephrase directive for the violation reason (`internal_rephrase_directives[E_t]`, falling back to `ethical_violation`):
 
@@ -290,9 +290,8 @@ D'^1_t = W_1(a'_t), \quad L'_t = C(a'_t, x_t, R), \quad D'^2_t = W_2(L'_t, V), \
   $a_t \leftarrow a'_t,\ L_t \leftarrow L'_t$
 - Continue to the Spirit memory update (Stage 4 `compute`).
 
-**If $D'^3_t = \text{violation}$:**
-- `low_alignment_score` (or unapproved retry) → ship deterministic system failure notice (`_ship_system_failure_notice()`). A defective draft is never released to the user.
-- `ethical_violation` → call `trigger_agent_redirect()`.
+**If $D'^3_t = \text{violation}$ (any residual failure):**
+- Ship deterministic system failure notice (`_ship_system_failure_notice()`). A defective or unapproved draft is never released to the user.
 
 **Code Reference:** [`orchestrator.py#_finalize_draft`](../safi_app/core/orchestrator.py)
 
@@ -371,7 +370,7 @@ $$M_{t+1} = U(M_t, L_t, S_t, \mu_t, d_t)$$
 
 ### Feedback to Intellect & Redirect Gating
 
-A natural-language coaching note $f_t$ is generated from $S_t$ and $d_t$ to steer the next turn.
+A natural-language coaching note $f_t$ is generated from $\mu_t$, $d_t$, and the reconstructed current-turn profile vector $p_t$ (qualitative guidance only, naming at most one value — never emitting scores, weights, or rubrics) to steer the next turn.
 
 Redirect turns invoke Conscience via `evaluate_redirect()` and compute quality via `compute_redirect()` without updating the Spirit EMA (keeping memory free from non-content scores). Conscience actively gates the redirect output: if redirect quality is deficient ($S_t < 6$ or any redirect rubric scores negative), the dynamic draft is vetoed and replaced with an immutable, deterministic policy statement (`_deterministic_redirect_fallback`).
 
@@ -405,8 +404,8 @@ The formal model above is substrate-neutral: each stage is a function with a fix
 
 | Stage | Intelligent component? | Reference realization |
 |---------|------------------------|------------------------|
-| Phase Zero | No | Deterministic: zero model calls (regex signatures, embedded-instruction blob heuristic, PII scan) |
-| Conscience (antecedent) | Optional | LLM call (`evaluate_prompt_scope`) if `preflight_prompt_scope=True` |
+| Phase Zero | No | Deterministic: zero model calls (regex signatures, agent blacklist, PII checksums, internals probe, embedded-instruction blob heuristic, and tool-output scanning) |
+| Conscience (antecedent) | Default-on (opt-out) | LLM call (`evaluate_prompt_scope`) when `SAFI_PREFLIGHT_PROMPT_SCOPE=1` (default) and agent has a `scope_statement` |
 | Synderesis | No | Deterministic: weight normalization, policy merge, rubric assembly |
 | Intellect | **Yes** | LLM call (`run_intellect`), provider-routed |
 | Will ($W_1$–$W_3$) | No | Deterministic: zero model calls (rule / threshold enforcement) |
