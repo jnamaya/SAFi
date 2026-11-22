@@ -309,6 +309,10 @@ async def bot_process_prompt_endpoint():
             db.update_user_org_and_role(user_id, org_id, "member")
             user_details = db.get_user_details(user_id)
 
+        token_limit_resp = _check_daily_token_limit(user_details, org_id)
+        if token_limit_resp is not None:
+            return token_limit_resp
+
         user_role = (user_details.get("role") if user_details else None) or "member"
         from ..persistence import sharing_store
         if not sharing_store.can_use_built_in_or_custom_agent(user_id, user_role, org_id, agent_key, ROLE_CONFIG):
@@ -657,6 +661,39 @@ async def public_process_prompt_endpoint():
     return provenance.mark_json_response(jsonify(result))
 
 
+def _check_daily_token_limit(user_details, org_id):
+    """Enforce SAFI_DAILY_TOKEN_LIMIT (tokens_in + tokens_out per UTC day)
+    unless org_id is in SAFI_UNLIMITED_ORGS or the user is in SAFI_UNLIMITED_USERS."""
+    token_limit = getattr(Config, "DAILY_TOKEN_LIMIT", 0) or 0
+    if token_limit <= 0 or not org_id:
+        return None
+    unlimited_orgs = set(getattr(Config, "UNLIMITED_ORGS", ()) or ())
+    if str(org_id) in unlimited_orgs:
+        return None
+    unlimited_users = set(u.lower() for u in (getattr(Config, "UNLIMITED_USERS", ()) or ()))
+    uid = str((user_details or {}).get("id") or "").strip().lower()
+    email = str((user_details or {}).get("email") or "").strip().lower()
+    if (uid and uid in unlimited_users) or (email and email in unlimited_users):
+        return None
+    try:
+        used = db.get_todays_org_token_usage(org_id)
+    except Exception as exc:
+        current_app.logger.error(f"Daily token limit check failed: {exc}")
+        return None
+    if used >= token_limit:
+        return (
+            jsonify({
+                "error": (
+                    f"Daily token limit reached ({used:,} / {token_limit:,} tokens used today). "
+                    "Deploy SAFi locally or get an appliance at https://runsafi.com to continue."
+                ),
+                "code": "DEMO_LIMIT_REACHED",
+            }),
+            429,
+        )
+    return None
+
+
 @conversations_bp.route('/process_prompt', methods=['POST'])
 async def process_prompt_endpoint():
     """Process a prompt under the caller's selected profile and models, after
@@ -696,6 +733,10 @@ async def process_prompt_endpoint():
     user_details = db.get_user_details(user_id)
     if not user_details:
          return jsonify({"error": "User not found."}), 404
+
+    token_limit_resp = _check_daily_token_limit(user_details, user_details.get('org_id'))
+    if token_limit_resp is not None:
+        return token_limit_resp
 
     # --- SECURITY: Verify Ownership (and Auto-Create for External Bots), or a
     # backlog-56 contributor grant. A brand-new conversation_id has no row yet
@@ -1947,6 +1988,10 @@ async def agentic_process_prompt_endpoint():
         if org_id and (not user_details or not user_details.get("org_id")):
             db.update_user_org_and_role(user_id, org_id, "member")
             user_details = db.get_user_details(user_id)
+
+        token_limit_resp = _check_daily_token_limit(user_details, org_id)
+        if token_limit_resp is not None:
+            return token_limit_resp
 
         user_role = (user_details.get("role") if user_details else None) or "member"
         from ..persistence import sharing_store

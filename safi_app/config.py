@@ -394,6 +394,12 @@ class Config:
     # Optional per-IP daily turn cap for public CLI demos (/api/cli/turn).
     # 0 disables the cap (default for self-hosted/appliance deployments).
     CLI_DEMO_TURN_LIMIT = int(os.environ.get("SAFI_CLI_DEMO_TURN_LIMIT", "0"))
+    # Optional per-org daily token cap (tokens_in + tokens_out in llm_usage).
+    # 0 disables the cap. Orgs in SAFI_UNLIMITED_ORGS and users (by email or id)
+    # in SAFI_UNLIMITED_USERS are exempt.
+    DAILY_TOKEN_LIMIT = int(os.environ.get("SAFI_DAILY_TOKEN_LIMIT", "0"))
+    UNLIMITED_ORGS = [o.strip() for o in os.environ.get("SAFI_UNLIMITED_ORGS", "").split(",") if o.strip()]
+    UNLIMITED_USERS = [u.strip().lower() for u in os.environ.get("SAFI_UNLIMITED_USERS", "").split(",") if u.strip()]
 
     # --- Internal-key auth for public-facing endpoints (P3 remediation) ----
     # Comma-separated shared secrets, injected server-side by the Apache

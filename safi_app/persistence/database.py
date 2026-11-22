@@ -4309,6 +4309,25 @@ def insert_llm_usage(org_id, agent, route, provider, model, tokens_in, tokens_ou
         cursor.close()
         conn.close()
 
+
+def get_todays_org_token_usage(org_id):
+    """Total tokens (tokens_in + tokens_out) consumed by org_id since midnight UTC today."""
+    if not org_id:
+        return 0
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT COALESCE(SUM(tokens_in + tokens_out), 0) FROM llm_usage "
+            "WHERE org_id=%s AND created_at >= CURDATE()",
+            (org_id,),
+        )
+        row = cursor.fetchone()
+        return int(row[0] or 0) if row else 0
+    finally:
+        cursor.close()
+        conn.close()
+
 def get_org_llm_usage(org_id, days=30):
     """Aggregated token usage for one org's Usage & Cost tab. Raw counts only;
     dollar estimates are computed at display time from the price map."""
