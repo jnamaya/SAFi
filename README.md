@@ -118,6 +118,13 @@ SAFi ships out of the box with **three production CLI agents**, each bound to an
 
 Governance in SAFi is not an afterthought or a filter, but the natural result of how the system works. Based on thousands of years of classical thinking, SAFi enforces a strict **separation of powers**: the **Intellect** proposes, the **Will** decides, the **Conscience** evaluates, and the **Spirit** tracks long-term alignment.
 
+### Policies, Charters & Client-Server Enforcement
+
+- **Client-Server Control Plane:** Workstations run the thin `safi-cli` harness with zero LLM API keys and zero local policy overrides. Identity (SSO/LDAP/SCIM), models, Charters, Policies, and audit logs live centrally on your SAFi gateway.
+- **Two-Tier Policy Compilation (Charter → Policy):** Every agent is bound to your **Organizational Charter**, a versioned **domain Policy** (such as `Software Policy`, `Security Engineer Policy`, or `Systems Admin Policy`), or both. Synderesis compiles them into weighted values, scope boundaries, and non-negotiable hard gates on every turn.
+- **Pre-Execution Tool & Draft Enforcement:** Before any command runs or any answer is delivered, the deterministic **Will** enforces tool allow-lists, risk classes (`R0–R4`), parameter constraints, and PII checksums, while the independent **Conscience** scores drafts value-by-value against the governing policy.
+- **Tamper-Evident Audit Trail:** Every turn, tool intent, Conscience ledger, enforcement decision, and exact policy version is written to a hash-chained audit trail — powering the **Audit Hub**, **Supervisory Review Queue**, and custody-logged exports.
+
 ### The Five Faculties & Seven-Phase Loop
 
 | Faculty | Module | Role |
