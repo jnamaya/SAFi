@@ -817,7 +817,7 @@ def cli_login():
 _CLI_SSO_TTL_SECONDS = 300
 
 
-def _cli_sso_file(device_code: str) -> Optional[str]:
+def _cli_sso_file(device_code: str):
     import re
     import tempfile
     if not device_code or not re.fullmatch(r"[A-Za-z0-9_-]{16,64}", device_code):
@@ -825,7 +825,7 @@ def _cli_sso_file(device_code: str) -> Optional[str]:
     return os.path.join(tempfile.gettempdir(), f"safi_cli_sso_{device_code}.json")
 
 
-def _cli_sso_load(device_code: str) -> Optional[dict]:
+def _cli_sso_load(device_code: str):
     import time
     path = _cli_sso_file(device_code)
     if not path or not os.path.exists(path):
