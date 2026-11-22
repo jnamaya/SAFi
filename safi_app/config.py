@@ -24,7 +24,7 @@ _FACULTY_DEFAULTS_BY_PROVIDER = {
     # resolved from the live model at startup instead; see active_local_model.
     "groq":      {"intellect": "openai/gpt-oss-20b",        "conscience": "openai/gpt-oss-120b",       "light": "openai/gpt-oss-20b"},
     "gemini":    {"intellect": "gemini-3.5-flash-lite",    "conscience": "gemini-3.8-flash",          "light": "gemini-3.5-flash-lite"},
-    "anthropic": {"intellect": "claude-haiku-4-5-20251001", "conscience": "claude-haiku-4-5-20251001", "light": "claude-haiku-4-5-20251001"},
+    "anthropic": {"intellect": "claude-haiku-5-5",          "conscience": "claude-haiku-5-5",          "light": "claude-haiku-5-5"},
     "openai":    {"intellect": "gpt-6-luna",                "conscience": "gpt-5-mini",                "light": "gpt-5-nano"},
     # Conscience keeps Medium while Intellect and the background tier drop to
     # Small: auditing is the one role where a weaker model changes what the
@@ -785,7 +785,6 @@ class Config:
         {"id": "gpt-6-luna", "label": "GPT Luna"},
 
         # Anthropic (Claude) Models
-        {"id": "claude-haiku-4-5-20251001", "label": "Claude Haiku"},
         {"id": "claude-haiku-5-5", "label": "Claude Haiku 5.5"},
 
         # Google Models. "Flash Lite" and "Flash" stay distinct on the tier
