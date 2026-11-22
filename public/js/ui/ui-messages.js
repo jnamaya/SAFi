@@ -1263,6 +1263,16 @@ export function displayEmptyState(activeProfile, promptClickHandler, firstName =
            </p>`
         : '';
 
+    const metadataBlockHtml = isCliAgent ? '' : `
+        ${governanceHtml}
+        ${scopeHtml}
+        ${kbHtml}
+        <div class="flex flex-wrap justify-center gap-2 my-4 max-w-2xl mx-auto">${valuesHtml}</div>
+        ${modelHtml}
+        <p class="text-xs text-neutral-400 dark:text-neutral-500 mt-2 mb-8">
+          Switch agents anytime from the <span class="font-semibold">+</span> menu in the message bar.
+        </p>`;
+
     container.innerHTML = `
       <div class="text-center pt-8 pb-4">
         ${greetingHtml}
@@ -1274,14 +1284,7 @@ export function displayEmptyState(activeProfile, promptClickHandler, firstName =
           </div>
         </div>
         ${descriptionHtml}
-        ${governanceHtml}
-        ${scopeHtml}
-        ${kbHtml}
-        <div class="flex flex-wrap justify-center gap-2 my-4 max-w-2xl mx-auto">${valuesHtml}</div>
-        ${modelHtml}
-        <p class="text-xs text-neutral-400 dark:text-neutral-500 mt-2 mb-8">
-          Switch agents anytime from the <span class="font-semibold">+</span> menu in the message bar.
-        </p>
+        ${metadataBlockHtml}
         ${promptsSectionHtml}
       </div>`;
 
