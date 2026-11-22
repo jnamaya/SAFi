@@ -1190,10 +1190,6 @@ export function displayEmptyState(activeProfile, promptClickHandler, firstName =
       <div class="cli-onboard-card">
         <div class="cli-onboard-header">
           <div>
-            <span class="cli-onboard-badge">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
-              Desktop CLI Onboarding
-            </span>
             <h3 class="cli-onboard-title">Run ${escapeHtml(activeProfile.name || 'this Agent')} from Your Terminal</h3>
             <p class="cli-onboard-subtitle">
               This agent executes commands, inspects files, and operates on your workstation or infrastructure via <strong>safi-cli</strong> while every action is governed by this SAFi server.
