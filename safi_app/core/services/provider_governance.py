@@ -318,12 +318,16 @@ def list_models_for_org(org_id, allow=None) -> List[dict]:
                for r in custom_models()
                if str(r.get("org_id") or "") in ("", str(org_id or ""))]
     out = []
+    seen_ids = set()
     for m in merged:
+        if m["id"] in seen_ids:
+            continue
         prov = detect_provider(m["id"])
         if prov not in configured:
             continue
         if allow is not None and prov not in allow:
             continue
+        seen_ids.add(m["id"])
         meta = PROVIDER_METADATA.get(prov, {})
         out.append({
             **m,
