@@ -120,7 +120,7 @@ def _mistral_tts_bytes(text: str, model: str, voice_id: str) -> bytes:
     import requests
     resp = requests.post(
         "https://api.mistral.ai/v1/audio/speech",
-        headers={"Authorization": f"Bearer {Config.MISTRAL_API_KEY}"},
+        headers={"Authorization": f"Bearer {Config.MISTRAL_TTS_API_KEY or Config.MISTRAL_API_KEY}"},
         json={"model": model, "input": text, "voice_id": voice_id,
               "response_format": "mp3"},
         timeout=120,

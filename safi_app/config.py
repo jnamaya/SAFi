@@ -658,6 +658,7 @@ class Config:
     # Mistral preset voice slug — GET https://api.mistral.ai/v1/audio/voices
     # lists them (en_paul_*, gb_jane_*, gb_oliver_*, fr_marie_*).
     MISTRAL_TTS_VOICE = os.environ.get("SAFI_MISTRAL_TTS_VOICE", "en_paul_neutral")
+    MISTRAL_TTS_API_KEY = os.environ.get("SAFI_MISTRAL_TTS_API_KEY") or MISTRAL_API_KEY
     TTS_CACHE_DIR = os.path.join(project_root, "tts_cache")
     # TTS audio is derived from (possibly sensitive) AI responses, so cached
     # MP3s must not persist on disk indefinitely: files older than the TTL
@@ -674,7 +675,7 @@ class Config:
         if not model or model in ("none", "off", "false", "disabled"):
             return False
         if model.startswith(("voxtral-", "mistral-")):
-            return bool(cls.MISTRAL_API_KEY)
+            return bool(cls.MISTRAL_TTS_API_KEY or cls.MISTRAL_API_KEY)
         if model.startswith("gpt-"):
             return bool(cls.OPENAI_API_KEY)
         if model.startswith("gemini"):
