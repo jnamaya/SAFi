@@ -32,6 +32,9 @@ def _visible_policy(policy, user_id, org_id):
         return False
     if policy.get('is_demo'):
         return True
+    from safi_app.core.policies.demo import get_current_demo_policy_ids
+    if policy.get('id') in get_current_demo_policy_ids():
+        return True
     if policy.get('created_by') and policy.get('created_by') == user_id:
         return True
     pol_org = policy.get('org_id')

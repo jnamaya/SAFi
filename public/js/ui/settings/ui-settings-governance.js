@@ -44,17 +44,20 @@ export async function renderSettingsGovernanceTab() {
 
         const allPolicies = res.policies || []; // Ensure array
 
-        // Split Policies
-        const demoPolicies = allPolicies.filter(p => p.is_demo);
-        const myPolicies = allPolicies.filter(p => !p.is_demo);
+        // All policies returned by /api/policies (org policies + active built-in
+        // agent policies) are active policies; retired demo examples are already
+        // excluded server-side by db.list_policies.
+        const demoPolicies = [];
+        const myPolicies = allPolicies;
 
-        const renderPolicyCard = (p, isReadOnly) => `
+        const renderPolicyCard = (p, isReadOnly) => {
+            const readOnlyCard = Boolean(isReadOnly || (p.is_demo && (!p.org_id || p.org_id !== user.org_id)));
+            return `
             <div class="bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 rounded-xl p-5 hover:shadow-md transition-shadow mb-3">
                 <div class="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3">
                      <div class="min-w-0 sm:flex-1">
                          <div class="flex items-center flex-wrap gap-2">
                             <h4 class="font-bold text-lg text-gray-900 dark:text-white break-words min-w-0">${p.name}</h4>
-                            ${isReadOnly ? '<span class="px-2 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 text-xs rounded-full font-bold shrink-0">EXAMPLE</span>' : ''}
                          </div>
                          <p class="text-xs text-gray-500 font-mono mt-1 mb-3 break-all">ID: ${p.id}</p>
                          <div class="flex gap-2">
@@ -71,7 +74,7 @@ export async function renderSettingsGovernanceTab() {
                          <button class="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white history-policy-btn" data-id="${p.id}" data-name="${p.name}">History</button>
                          ${canEditPolicy ? `<button class="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white dup-policy-btn" data-id="${p.id}">Duplicate</button>` : ''}
                          ${canGenerateKey ? `<button class="text-sm text-green-600 hover:underline manage-keys-btn" data-id="${p.id}" data-name="${escapeHtml(p.name)}">API Keys</button>` : ''}
-                         ${!isReadOnly && canEditPolicy ? `
+                         ${!readOnlyCard && canEditPolicy ? `
                          <button class="text-sm text-gray-600 hover:text-green-600 edit-policy-btn" data-id="${p.id}">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                          </button>
@@ -82,6 +85,7 @@ export async function renderSettingsGovernanceTab() {
                 </div>
             </div>
         `;
+        };
 
         container.innerHTML = `
             <div class="settings-page-header">

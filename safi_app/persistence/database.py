@@ -3685,14 +3685,16 @@ def list_policies(user_id=None, org_id=None):
         # but do not include them in the list shown to users.
         from safi_app.core.policies.demo import get_current_demo_policy_ids
 
-        current_demo_ids = get_current_demo_policy_ids()
-        cursor.execute("""
+        current_demo_ids = list(get_current_demo_policy_ids())
+        id_placeholders = ",".join(["%s"] * len(current_demo_ids)) if current_demo_ids else "''"
+        cursor.execute(f"""
             SELECT * FROM policies
             WHERE (is_demo=TRUE AND org_id IS NULL)
+            OR id IN ({id_placeholders})
             OR created_by=%s
             OR (org_id IS NOT NULL AND org_id=%s)
             ORDER BY created_at DESC
-        """, (user_id, org_id))
+        """, (*current_demo_ids, user_id, org_id))
 
         rows = cursor.fetchall()
         rows = [
