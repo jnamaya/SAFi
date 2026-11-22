@@ -3766,6 +3766,8 @@ def get_or_create_policy_key_for_user(user, label="safi-cli"):
     if user.get('org_id'):
         org = get_organization(user['org_id'])
         pid = (org or {}).get('global_policy_id')
+        if pid and not get_policy(pid):
+            pid = None
     if not pid:
         conn = get_db_connection()
         cursor = conn.cursor()
