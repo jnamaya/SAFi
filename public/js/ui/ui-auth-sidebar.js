@@ -120,7 +120,8 @@ export function setKnownProfiles(profiles) {
 export function updateUIForAuthState(user) {
   ui._ensureElements();
 
-  const pic = user?.picture || user?.avatar || `https://placehold.co/40x40/16a34a/FFFFFF?text=${user?.name ? user.name.charAt(0) : 'U'}`;
+  const init = encodeURIComponent((user?.name ? user.name.charAt(0) : 'U').toUpperCase());
+  const pic = user?.picture || user?.avatar || `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40"><rect width="40" height="40" fill="%2316a34a"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="%23FFFFFF" font-family="sans-serif" font-size="18" font-weight="600">${init}</text></svg>`;
   const name = user?.name || 'Guest';
   const identity = user?.email || user?.username || user?.name || 'Local account';
 

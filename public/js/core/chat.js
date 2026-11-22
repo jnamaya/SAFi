@@ -856,7 +856,8 @@ function renderHistory(history, user, showModal, activeProfileData) {
         } : null;
 
         if (turn.role === 'user' && user) {
-            options.avatarUrl = user.picture || user.avatar || `https://placehold.co/40x40/16a34a/FFFFFF?text=${user.name ? user.name.charAt(0) : 'U'}`;
+            const init = encodeURIComponent((user.name ? user.name.charAt(0) : 'U').toUpperCase());
+            options.avatarUrl = user.picture || user.avatar || `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40"><rect width="40" height="40" fill="%2316a34a"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="%23FFFFFF" font-family="sans-serif" font-size="18" font-weight="600">${init}</text></svg>`;
             if (resend) options.onRetry = resend;
         }
 
@@ -1107,7 +1108,8 @@ export async function sendMessage(activeProfileData, user) {
     currentAbortController = new AbortController();
 
     const now = new Date();
-    const pic = user && (user.picture || user.avatar) || `https://placehold.co/40x40/16a34a/FFFFFF?text=${user && user.name ? user.name.charAt(0) : 'U'}`;
+    const init = encodeURIComponent((user && user.name ? user.name.charAt(0) : 'U').toUpperCase());
+    const pic = user && (user.picture || user.avatar) || `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40"><rect width="40" height="40" fill="%2316a34a"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="%23FFFFFF" font-family="sans-serif" font-size="18" font-weight="600">${init}</text></svg>`;
     // generateUUID(), never crypto.randomUUID() directly: the Web Crypto API is
     // only exposed in a secure context, so on a self-hosted instance reached
     // over plain HTTP by IP or hostname (http://192.168.1.218:5000) this throws
