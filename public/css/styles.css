@@ -3442,6 +3442,17 @@ html {
   color: #4ade80;
 }
 
+.cli-url-block {
+  margin-top: 0.55rem;
+  border-color: rgba(34, 197, 94, 0.45);
+  background: rgba(22, 163, 74, 0.16);
+}
+
+.cli-url-block code {
+  color: #86efac;
+  font-weight: 600;
+}
+
 .cli-step-hint {
   font-size: 0.76rem;
   color: #64748b;

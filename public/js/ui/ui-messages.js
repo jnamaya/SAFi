@@ -1230,8 +1230,12 @@ export function displayEmptyState(activeProfile, promptClickHandler, firstName =
             <code>safi-cli --setup</code>
             <button type="button" class="cli-copy-btn" data-copy="safi-cli --setup">${copyIconSvg}<span>Copy</span></button>
           </div>
+          <div class="cli-code-block cli-url-block">
+            <code>${serverOrigin}</code>
+            <button type="button" class="cli-copy-btn" data-copy="${serverOrigin}">${copyIconSvg}<span>Copy</span></button>
+          </div>
           <p class="cli-step-hint">
-            Enter <code class="cli-inline-code">${serverOrigin}</code> as the server URL, then authenticate with a local account, type <code class="cli-inline-code">sso</code> for Google/Microsoft browser login, or press Enter to use a Policy API key.
+            Enter the URL above as the server URL, then authenticate with a local account, type <code class="cli-inline-code">sso</code> for Google/Microsoft browser login, or press Enter to use a Policy API key.
           </p>
         </div>
 
