@@ -1182,10 +1182,6 @@ export function displayEmptyState(activeProfile, promptClickHandler, firstName =
     const copyIconSvg = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
     const checkIconSvg = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
 
-    const cliExamplesHtml = (activeProfile.example_prompts || [])
-        .map(p => `<li class="cli-example-pill"><span class="cli-example-prompt-char">&gt;</span><span>${escapeHtml(p)}</span></li>`)
-        .join('');
-
     const cliOnboardingHtml = `
       <div class="cli-onboard-card">
         <div class="cli-onboard-header">
@@ -1238,15 +1234,6 @@ export function displayEmptyState(activeProfile, promptClickHandler, firstName =
             Enter the URL above as the server URL, then authenticate with a local account, type <code class="cli-inline-code">sso</code> for Google/Microsoft browser login, or press Enter to use a Policy API key.
           </p>
         </div>
-
-        ${cliExamplesHtml ? `
-        <div class="cli-examples-section">
-          <div class="cli-examples-heading">
-            <span class="cli-step-num">3</span>
-            <span>Example tasks to run inside <code class="cli-inline-code">safi-cli</code>:</span>
-          </div>
-          <ul class="cli-examples-grid">${cliExamplesHtml}</ul>
-        </div>` : ''}
 
         <div class="cli-promo-banner">
           <p class="cli-promo-text">
