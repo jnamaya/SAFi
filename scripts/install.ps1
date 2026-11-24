@@ -74,24 +74,47 @@ try {
 }
 
 # 4. Pre-install all Linux operational dependencies using WSL root bridge (no sudo password needed)
-# Note: In Windows PowerShell 5.1, $ErrorActionPreference="Stop" turns any native stderr line
-# (such as Ubuntu WSL's harmless snapd advise-snap apt hook) into a terminating NativeCommandError.
+# Note: Ubuntu WSL ships /etc/apt/apt.conf.d/20snapd.conf whose JSON hook (advise-snap) aborts
+# apt-get when snapd is not installed. Passing -o Dir::Etc::Parts=/tmp/safi-empty-apt bypasses
+# broken apt.conf.d hooks cleanly without modifying system files.
 Write-Host "Ensuring core operational utilities (ssh, sshpass, nmap, jq, curl, rsync, python3) in WSL..." -ForegroundColor Cyan
 $prevEap = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
-wsl.exe -u root -e sh -c "apt-get update -qq -o APT::Update::Post-Invoke-Success::= >/dev/null 2>&1 || true; DEBIAN_FRONTEND=noninteractive apt-get install -y -qq -o APT::Update::Post-Invoke-Success::= python3 python3-pip python3-venv ssh sshpass nmap jq curl iputils-ping dnsutils rsync git >/dev/null 2>&1 || true"
+wsl.exe -u root -e sh -c 'mkdir -p /tmp/safi-empty-apt && apt-get -o Dir::Etc::Parts=/tmp/safi-empty-apt update -qq && DEBIAN_FRONTEND=noninteractive apt-get -o Dir::Etc::Parts=/tmp/safi-empty-apt install -y -qq python3 python3-pip python3-venv openssh-client sshpass nmap jq curl iputils-ping dnsutils rsync git; rc=$?; rmdir /tmp/safi-empty-apt 2>/dev/null || true; exit $rc'
+$aptExit = $LASTEXITCODE
 $ErrorActionPreference = $prevEap
+if ($aptExit -ne 0) {
+    Write-Host "Warning: WSL package pre-install returned exit code $aptExit; continuing with CLI install..." -ForegroundColor Yellow
+}
 
-# 5. Run the SAFi CLI installer inside WSL
+# 5. Fetch the Linux installer on Windows (does not require curl inside WSL) and run it inside WSL
 Write-Host "Installing SAFi CLI in WSL..." -ForegroundColor Cyan
+$installSh = $null
+try {
+    $installSh = Invoke-RestMethod -Uri "https://runsafi.com/install.sh" -UseBasicParsing
+} catch {
+    $installSh = Invoke-RestMethod -Uri "https://raw.githubusercontent.com/jnamaya/SAFi/main/scripts/install_cli.sh" -UseBasicParsing
+}
+$installShLf = ($installSh -replace "`r`n", "`n")
 $prevEap = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
-wsl.exe -e bash -c "(curl -sSL https://runsafi.com/install.sh 2>/dev/null || curl -sSL https://raw.githubusercontent.com/jnamaya/SAFi/main/scripts/install_cli.sh) | bash"
+$installShLf | wsl.exe -e bash -s
 $wslInstallExit = $LASTEXITCODE
 $ErrorActionPreference = $prevEap
 if ($wslInstallExit -ne 0) {
     Write-Error "SAFi CLI installation inside WSL failed (exit code $wslInstallExit)."
     exit $wslInstallExit
+}
+
+# Verify saficli binary is actually present in WSL before claiming success
+$prevEap = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+wsl.exe -e bash -lic "command -v saficli >/dev/null 2>&1"
+$verifyExit = $LASTEXITCODE
+$ErrorActionPreference = $prevEap
+if ($verifyExit -ne 0) {
+    Write-Error "SAFi CLI binary 'saficli' was not found in WSL PATH after install. Please check the output above."
+    exit 1
 }
 
 # 6. Configure Windows Bridges (PowerShell & CMD wrappers)
