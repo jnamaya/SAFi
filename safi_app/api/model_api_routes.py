@@ -12,30 +12,10 @@ from ..core.services.model_routing import (
 
 model_api_bp = Blueprint('model_api', __name__)
 
-# Provider ids are ours; model ids are the provider's spelling — letters,
-# digits, and the separators seen in the wild (openai/gpt-oss-120b, gpt-5.6).
 _MODEL_ID_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._/:-]{0,127}$')
 
 
 def _is_deployment_operator():
-    """A named deployment operator (SAFI_SUPER_ADMINS), or the box's own local
-    admin. Never an org role.
-
-    Deployment-wide catalog rows (org_id '') belong to the deployment, not to a
-    tenant, so scoping deletes to the caller's org left them unmanageable by
-    ANYONE holding an org: every org-scoped delete misses them. Operators are who
-    the deployment-wide catalog was always for, so they are who can remove from
-    it. Blank SAFI_SUPER_ADMINS = nobody, the same safe default the usage
-    rollup uses.
-
-    The local admin is admitted by ID and not by email, because it is created
-    without one (see database.ensure_local_admin) and so could never match an
-    email list. Matching on "has no email" instead would be far broader than
-    intended — any half-registered account would qualify. It is the box owner,
-    which is exactly the role the appliance path already trusts when it has no
-    organizations, and it already holds full org/policy authority, so this
-    widens nothing an operator could not already do.
-    """
     user = session.get('user') or {}
     user_id = user.get('sub') or user.get('id')
     if user_id == 'local_admin':
@@ -47,33 +27,6 @@ def _is_deployment_operator():
 
 
 def _deployment_keys_forbidden():
-    """Shared guard for the deployment-wide provider-key endpoints.
-
-    A deployment key changes what every org on this install dispatches against,
-    so on a multi-tenant install only a named operator may set one. Gating on
-    the operator alone, though, would lock the appliance out entirely:
-    SAFI_SUPER_ADMINS defaults to blank (nobody), and an appliance with no
-    organizations has no other tenant to protect — the admin there IS the
-    deployment. So the operator always qualifies, and a plain admin qualifies
-    only on a genuinely single-tenant deployment.
-
-    "Genuinely single-tenant" is BOTH signals agreeing, not either one:
-
-      SAFI_TENANCY_MODE == 'single'   the deployment's declared shape
-      at most one organization          the shape it actually has
-
-    Reading only the org count is what made this wrong for the commonest
-    install there is. Single-tenant mode still CREATES one org on first login —
-    that org is the whole deployment — so a default install has exactly one
-    row, not zero, and a count-only test called it multi-tenant and locked the
-    ordinary admin out of the very pane built for them. Reading only the
-    declared mode is the mirror-image bug: an install left on 'single' after
-    several orgs were created would let any one of those orgs retarget
-    everyone else's dispatch.
-
-    Deliberately fails closed: if the org count cannot be read, this returns
-    403 rather than assuming single-tenant.
-    """
     if _is_deployment_operator():
         return None
     try:
@@ -87,14 +40,6 @@ def _deployment_keys_forbidden():
 
 @model_api_bp.route('/models', methods=['GET'], strict_slashes=False)
 def list_models():
-    """Canonical model list: Config.AVAILABLE_MODELS enriched with provider
-    metadata (provider, baa_capable, eu_hostable) and filtered by the caller
-    org's provider allow-list — so a model on a blocked provider is never
-    even offered in a picker.
-
-    Also carries public_demo_ui, which tells the front end whether to show the
-    showcase framing around model choice. It rides along here because the model
-    picker is the surface that framing is about."""
     user = session.get('user')
     org_id = None
     user_id = None
@@ -119,7 +64,6 @@ def list_models():
         else:
             return jsonify({"error": "Unauthorized"}), 401
 
-    # Explicit client override (e.g. from safi-cli forwarding authenticated user_id)
     x_user_id = request.headers.get("X-User-ID") or request.args.get("user_id")
     if x_user_id:
         u_det = db.get_user_details(x_user_id)
@@ -139,13 +83,6 @@ def list_models():
 @model_api_bp.route('/models/local', methods=['GET'])
 @require_role('admin')
 def list_local_models():
-    """The appliance catalogue: available, installed, and what is being served.
-
-    Backs the Local side of the Model Catalog. Distinct from /models, which
-    answers "what may this org dispatch right now" and so returns only the live
-    model -- here an admin needs to see the whole choice, including models that
-    are absent (to download) or present but not currently served.
-    """
     from ..core.services.provider_governance import local_catalog_payload
     return jsonify(local_catalog_payload())
 
@@ -186,20 +123,9 @@ def download_local_model():
 @model_api_bp.route('/models/custom', methods=['GET'])
 @require_role('admin')
 def list_custom():
-    """The operator-added rows plus the provider options for the add form
-    (backlog 63). Reads the DB directly, NOT the 60s custom_models() cache:
-    that cache is per gunicorn worker, so right after an add the worker
-    serving this list may still hold the pre-add copy — the management view
-    must always show what is actually stored. Only providers that can actually
-    dispatch are offered (.env key, a deployment key, or the caller's own org
-    key): a model that cannot dispatch must not be addable."""
     from ..core.services.model_routing import effective_configured_providers
     configured = effective_configured_providers(Config, get_current_org_id())
 
-    # Scoped to the caller's org plus the deployment-wide rows (backlog 77).
-    # This used to list every org's entries to every admin. A deployment
-    # operator sees everything, because they are the only one who can manage
-    # the deployment-wide rows and cannot curate what they cannot see.
     is_operator = _is_deployment_operator()
     rows = (db.list_custom_models() if is_operator
             else db.list_custom_models(visible_to_org=get_current_org_id() or ''))
@@ -207,9 +133,6 @@ def list_custom():
         "ok": True,
         "models": [
             {"id": r["model_id"], "label": r["label"], "provider": r["provider"],
-             # Deployment-wide rows are not a tenant's to remove, so the UI can
-             # render them read-only instead of offering a Remove that 404s.
-             # An operator can remove them, so for them nothing is read-only.
              "deployment_wide": bool(not (r.get("org_id") or "") and not is_operator)}
             for r in rows
         ],
@@ -238,33 +161,19 @@ def add_custom():
 
     if any(m["id"].lower() == model_id.lower() for m in Config.AVAILABLE_MODELS):
         return jsonify({"error": "That model is already in the built-in catalog."}), 409
-    # Same check against the appliance's installed local models. Without this an
-    # operator could add a shadow row for an id the catalogue already supplies,
-    # and the picker would list it twice.
     from ..core.services.provider_governance import installed_local_models
     if any(m["id"].lower() == model_id.lower() for m in installed_local_models()):
         return jsonify({"error": "That model is already provided by the appliance."}), 409
-    # Fresh read, not the worker-local cache: a stale cache here would let a
-    # duplicate through to the primary-key constraint as a raw 500.
-    #
-    # Checked UNSCOPED on purpose, because model_id is unique per deployment
-    # (see the schema comment: detect_provider resolves an id to a provider with
-    # no org in scope). The wording says only that the id is taken, never which
-    # org holds it, its label or its provider.
     if any(r["model_id"].lower() == model_id.lower() for r in db.list_custom_models()):
         return jsonify({"error": "That model id is already registered on this deployment."}), 409
 
     user = session.get('user') or {}
     user_id = user.get('sub') or user.get('id')
-    # Owned by the caller's org, so only that org sees it and only that org can
-    # remove it. An org-less caller (an operator on a deployment with no org)
-    # publishes deployment-wide, which is the original operator-catalog intent.
     org_id = get_current_org_id()
     db.add_custom_model(model_id, label[:120], provider,
                         created_by=user_id, org_id=org_id or '')
     invalidate_custom_models_cache()
 
-    # A catalog change alters what this org can be offered, so evidence it.
     if org_id:
         try:
             db.append_compliance_log(org_id, 'model_catalog_change', f"user:{user_id}",
@@ -278,20 +187,9 @@ def add_custom():
 @model_api_bp.route('/models/custom', methods=['DELETE'])
 @require_role('admin')
 def delete_custom():
-    # Query param, not a path segment: model ids contain '/' (e.g.
-    # openai/gpt-oss-120b) and encoded slashes are unreliable behind Apache.
     model_id = (request.args.get('model_id') or '').strip()
     if not model_id:
         return jsonify({"error": "Missing model_id."}), 400
-    # Restricted to the caller's own org (backlog 77): any tenant admin used to
-    # be able to delete another org's model, or a deployment-wide one, and the
-    # affected org's users would silently fall back to the default model. A row
-    # this org does not own is reported as not found, which is both true from
-    # the caller's scope and free of information about other tenants.
-    #
-    # A deployment operator is unrestricted, because deployment-wide rows
-    # (org_id '') belong to no org: without this they were deletable by nobody
-    # holding an org, which is every admin on a normal install.
     org_id = get_current_org_id()
     scope = None if _is_deployment_operator() else (org_id or '')
     if not db.delete_custom_model(model_id, org_id=scope):
@@ -310,26 +208,13 @@ def delete_custom():
     return jsonify({"ok": True})
 
 
-# deployment-wide provider keys
-# The org-scoped equivalents live in api/organizations.py. These exist because
-# an appliance has no organization: without them the Cloud pane's key table was
-# org-gated, so the only way to give an org-less deployment a cloud provider
-# was to edit .env over SSH. Layering is org key > deployment key > .env, so a
-# tenant key still wins over anything stored here.
-
 @model_api_bp.route('/providers/keys', methods=['GET'])
 @require_role('admin')
 def list_deployment_keys():
-    """Display shape only (provider, last 4, updated). The key is write-only
-    from the UI's point of view and is never returned by any endpoint."""
     from ..core.services.model_routing import configured_providers
     denied = _deployment_keys_forbidden()
     if denied:
         return denied
-    # .env-only on purpose. This flag answers "do I need to add a fallback to
-    # .env for this?", and it must stay true after a key is stored in the DB —
-    # reading the effective set instead made a stored key immediately report
-    # itself as .env-configured, which is the one thing it isn't.
     env_configured = configured_providers(Config)
     try:
         return jsonify({
@@ -353,9 +238,6 @@ def list_deployment_keys():
 @model_api_bp.route('/providers/keys', methods=['PUT'])
 @require_role('admin')
 def set_deployment_key():
-    """Stores the deployment's own key for one provider, encrypted. It
-    overlays the .env default for every call that has no org key, within a
-    minute. Never echoed back, never logged."""
     from ..core.services.deployment_keys import invalidate_deployment_keys_cache
     denied = _deployment_keys_forbidden()
     if denied:
@@ -372,8 +254,6 @@ def set_deployment_key():
     try:
         db.set_deployment_provider_key(provider, key, updated_by=user_id)
         invalidate_deployment_keys_cache()
-        # The custom-model list is cached per worker too, and a new key changes
-        # which providers it offers; drop it so the new provider appears now.
         invalidate_custom_models_cache()
         return jsonify({"ok": True, "provider": provider, "last4": key[-4:]})
     except Exception as e:
@@ -384,7 +264,6 @@ def set_deployment_key():
 @model_api_bp.route('/providers/keys', methods=['DELETE'])
 @require_role('admin')
 def delete_deployment_key():
-    """Removes the deployment key; calls fall back to the .env default."""
     from ..core.services.deployment_keys import invalidate_deployment_keys_cache
     denied = _deployment_keys_forbidden()
     if denied:

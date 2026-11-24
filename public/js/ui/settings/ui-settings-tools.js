@@ -1,21 +1,3 @@
-/**
- * Tools Catalog: what the operator installed, and what it offers (backlog 48d).
- *
- * This screen installs nothing. An earlier version let an admin browse the
- * official registry and install a hosted server here; it was removed, because
- * installation belongs on the host, where the person doing it already holds the
- * rights that installing implies.
- *
- * The job left for this screen is the one the pipeline actually needs: show that
- * a server exists and is talking, list the tools it advertises, and be
- * unambiguous that none of it is doing anything yet. A tool becomes usable only
- * when a policy enables it and an agent is assigned it, so the copy says so
- * rather than leaving an admin to wonder whether an install "took".
- *
- * Layout: one compact card per server (thumbnail, name, connection, counts),
- * two or three abreast. The full tool list, which can run long, lives behind
- * the card's "View tools" button in a modal, so ten servers stay one screen.
- */
 import * as api from '../../core/api.js';
 
 let state = { servers: [], toolCount: 0, error: '' };
@@ -81,10 +63,6 @@ async function refresh() {
     paint();
 }
 
-/* ── thumbnails ──────────────────────────────────────────────────────────────
-   No server ships an image, so the thumbnail is a brand mark for vendors we
-   can recognize from the key/label, and a monogram tile for everything else.
-   Recognition is presentation only; nothing behavioural keys off it. */
 
 const BRAND_ICONS = {
     google: `<svg class="w-5 h-5" viewBox="0 0 24 24"><path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.4c-.3 1.6-1.2 2.9-2.5 3.8v3h4c2.4-2.2 3.6-5.4 3.6-9z"/><path fill="#34A853" d="M12 24c3.2 0 6-1.1 8-2.9l-4-3c-1.1.7-2.5 1.2-4 1.2-3.1 0-5.7-2.1-6.6-4.9H1.3v3.1C3.3 21.4 7.3 24 12 24z"/><path fill="#FBBC05" d="M5.4 14.4c-.2-.7-.4-1.5-.4-2.4s.1-1.7.4-2.4V6.5H1.3C.5 8.2 0 10 0 12s.5 3.8 1.3 5.5l4.1-3.1z"/><path fill="#EA4335" d="M12 4.7c1.8 0 3.3.6 4.6 1.8L20.1 3C18 1.1 15.2 0 12 0 7.3 0 3.3 2.6 1.3 6.5l4.1 3.1C6.3 6.8 8.9 4.7 12 4.7z"/></svg>`,
@@ -92,9 +70,6 @@ const BRAND_ICONS = {
     github: `<svg class="w-5 h-5 text-gray-900 dark:text-white" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>`,
 };
 
-// One NEUTRAL monogram style, not a categorical set: the palette is green,
-// the black->white axis, and semantic red/amber only (enforced by
-// tests/test_brand_palette.py). Telling servers apart is the label's job.
 const MONO_TILE = 'bg-gray-100 text-gray-700 dark:bg-neutral-800 dark:text-neutral-300';
 
 function thumbnail(s) {
@@ -110,15 +85,6 @@ function thumbnail(s) {
     return `<div class="w-9 h-9 shrink-0 rounded-lg ${MONO_TILE} flex items-center justify-center text-sm font-bold">${letter}</div>`;
 }
 
-/**
- * One tool, with its real status — rendered inside the modal.
- *
- * "Enabled" here means a policy lists it, which is the ceiling the Will
- * enforces; "assigned" means an agent carries it. Both are shown because they
- * answer different questions, and because a tool enabled by a policy that no
- * agent uses is a common and perfectly reasonable state that should not read as
- * either on or off.
- */
 function toolRow(t) {
     const enabled = t.policies && t.policies.length;
     const assigned = t.agents && t.agents.length;
@@ -140,12 +106,6 @@ function toolRow(t) {
       </div>`;
 }
 
-/**
- * OAuth servers are connected per PERSON, not per process: "connected" on their
- * card means "you are", and the button connects or disconnects your own
- * account. The token it stores is audience-bound to this one server — it is
- * not a Google (or other upstream) credential and works nowhere else.
- */
 function statusBadge(s) {
     if (s.auth === 'oauth') {
         return s.user_connected

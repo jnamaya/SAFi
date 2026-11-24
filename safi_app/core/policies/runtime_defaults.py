@@ -1,8 +1,3 @@
-"""Default policy content applied by the application profile adapter.
-
-These values are configuration content, not Synderesis implementation. A
-deployment may replace them without editing a TCB file.
-"""
 from __future__ import annotations
 
 from copy import deepcopy
@@ -37,7 +32,6 @@ DEFAULT_REPHRASE_DIRECTIVES: Dict[str, str] = {
 
 
 def scope_compliance_value(scope_statement: str) -> Dict[str, Any]:
-    """Return the default scope gate as policy data for a profile."""
     return {
         "value": "Scope Compliance",
         "weight": 0.0,
@@ -93,7 +87,6 @@ def scope_compliance_value(scope_statement: str) -> Dict[str, Any]:
 
 
 def inject_scope_compliance(profile: Dict[str, Any]) -> Dict[str, Any]:
-    """Apply the default scope value and directive as profile data."""
     scope = profile.get("scope_statement")
     if not scope:
         return profile
@@ -114,7 +107,6 @@ def inject_scope_compliance(profile: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def inject_tool_risk_rules(profile: Dict[str, Any]) -> Dict[str, Any]:
-    """Populate policy-level tool risk rules on `will_rules` using the policy baseline."""
     from ... import security_policy
 
     out = deepcopy(profile)
@@ -125,4 +117,3 @@ def inject_tool_risk_rules(profile: Dict[str, Any]) -> Dict[str, Any]:
         merged.update({k: v for k, v in raw_rules.items() if v is not None})
         out["will_rules"] = merged
     return out
-

@@ -1,10 +1,15 @@
-"""Pure governance-profile compiler.
+"""Synderesis — The Habitual Grasp of First Practical Principles.
 
-Synderesis accepts plain profile and governance data and returns a compiled
-profile. Catalog discovery, persistence, environment configuration, and
-connector registration belong to the application adapter and are never loaded
-from this module.
+In Thomas Aquinas's Summa Theologiae (I, q. 79, a. 12), synderesis is the
+natural habit of the practical intellect that holds the first, foundational
+principles of right action — principles that cannot be erased by a passing
+impulse or error in particular reasoning.
+
+In SAFi, this module anchors the agent's immutable charter, worldview, and
+governing policies, supplying the fixed normative standard against which every
+subsequent turn and tool proposal is measured.
 """
+
 from __future__ import annotations
 
 import copy
@@ -18,7 +23,6 @@ log = logging.getLogger(__name__)
 
 
 def _normalize_weights(values: List[Dict[str, Any]], target_sum: float = 1.0) -> List[Dict[str, Any]]:
-    """Normalize relative weights, distributing an all-zero set evenly."""
     if not values:
         return []
     normalized = copy.deepcopy(values)
@@ -48,7 +52,6 @@ def _has_usable_rubric(value: Dict[str, Any]) -> bool:
 
 
 def _validate_value_rubrics(profile: Dict[str, Any], profile_label: str = "profile") -> Dict[str, Any]:
-    """Fail on unscorable hard gates and discard unscorable ordinary values."""
     values = profile.get("values", [])
     bad_gates = [
         value.get("value") or value.get("name") or "<unnamed>"
@@ -80,7 +83,6 @@ def assemble_agent(
     governance: Dict[str, Any],
     governance_weight: float = 0.60,
 ) -> Dict[str, Any]:
-    """Combine supplied role and policy data using the standard precedence."""
     profile = copy.deepcopy(base_profile)
     governance = governance or {}
     profile["worldview"] = (
@@ -205,7 +207,6 @@ def apply_charter(
     ai_standards: Optional[Dict[str, Any]] = None,
     tool_catalog: Optional[Mapping[str, Iterable[str]]] = None,
 ) -> Dict[str, Any]:
-    """Apply supplied organization values and standards to a profile."""
     profile = copy.deepcopy(profile)
     charter = charter or {}
     policy_values = policy_values or []
@@ -267,7 +268,6 @@ def apply_charter(
 
 
 def _expand_declared_tools(names: Iterable[str], catalog: Optional[Mapping[str, Iterable[str]]]) -> List[str]:
-    """Expand opaque connector identifiers using caller-supplied catalog data."""
     expanded: List[str] = []
     seen = set()
     catalog = catalog or {}
@@ -352,7 +352,6 @@ def compile_profile(
     scope_value: Optional[Dict[str, Any]] = None,
     scope_directive: str = "",
 ) -> Dict[str, Any]:
-    """Compile supplied data; catalog and persistence resolution stay in host code."""
     if governance:
         profile = assemble_agent(agent, governance)
     else:

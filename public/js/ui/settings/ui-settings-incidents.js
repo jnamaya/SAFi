@@ -1,12 +1,3 @@
-// Security Incidents section of the Compliance tab (admin-only). Multi-regime
-// incident registry: each incident is tagged with the notification regimes it
-// is reportable under (SEC Reg S-P, EU AI Act Art. 73, HIPAA breach rule) and
-// every applicable clock is computed server-side and shown live. List view
-// with clock badges, create/edit form with per-regime inputs, detail view
-// with event timeline and JSON/CSV export. SAFi records and tracks; the firm
-// sends actual notices via its own channels and logs the *_notified event,
-// which stamps that clock's stop timestamp.
-// Rendered by ui-settings-compliance.js into #compliance-incidents.
 import * as ui from '../ui.js';
 import * as api from '../../core/api.js';
 
@@ -20,7 +11,6 @@ const REGIME_LABELS = { reg_sp: 'SEC Reg S-P', eu_ai_act: 'EU AI Act', hipaa: 'H
 const EU_CLASS_OPTIONS = ['general', 'death_or_serious_harm', 'widespread'];
 const HIPAA_ROLE_OPTIONS = ['covered_entity', 'business_associate'];
 
-// Short badge prefixes per clock key (full labels come from the server).
 const CLOCK_SHORT = {
     customer_notice: 'Reg S-P', eu_authority: 'EU Art. 73',
     hipaa_individuals: 'HIPAA ind.', hipaa_hhs: 'HIPAA HHS',
@@ -49,7 +39,6 @@ function fmtDate(v) {
     return isNaN(d) ? esc(v) : d.toLocaleString();
 }
 
-// datetime-local expects "YYYY-MM-DDTHH:MM" in local time
 function toInputValue(v) {
     if (!v) return '';
     const d = new Date(v);
@@ -71,7 +60,6 @@ function clockBadge(clock) {
         case 'overdue':
             return `<span class="${base} bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">${prefix}OVERDUE ${Math.abs(clock.days_remaining)}d</span>`;
         default: {
-            // Short statutory windows (EU 2/10/15d) go amber sooner than 30/60d ones.
             const amberAt = clock.window_days && clock.window_days <= 15 ? 2 : 7;
             const amber = clock.days_remaining !== null && clock.days_remaining <= amberAt;
             const cls = amber ? 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200'
@@ -111,9 +99,6 @@ export async function renderIncidentsSection(container, org) {
     }
 }
 
-// The incidents section shares the Compliance tab with the other cards. The
-// form and detail sub-views take over the tab (cards hidden, scrolled to top)
-// so they read as their own page instead of dangling under the whole tab.
 function enterSubview(container, on) {
     document.getElementById('compliance-cards')?.classList.toggle('hidden', on);
     if (on) container.closest('.overflow-y-auto')?.scrollTo(0, 0);
@@ -194,10 +179,6 @@ function formField(label, inner, help = '') {
         ${help ? `<span class="block text-xs text-gray-400 mb-1">${help}</span>` : ''}${inner}</label>`;
 }
 
-// Text color is EXPLICIT, not inherited: this class forces a background, and
-// forcing a background while inheriting the foreground is how the
-// 'Individuals affected' field once rendered white-on-white (backlog 58).
-// Any class that sets bg must set text.
 const INPUT_CLS = 'mt-1 w-full rounded-lg border border-gray-300 dark:border-neutral-600 '
     + 'bg-white dark:bg-neutral-800 text-gray-900 dark:text-white '
     + 'placeholder-gray-400 dark:placeholder-neutral-500 px-3 py-2 text-sm '

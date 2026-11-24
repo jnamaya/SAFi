@@ -1,48 +1,3 @@
-"""
-The MCP client runtime: persistent sessions to operator-installed MCP servers.
-
-Everything here is transport and lifecycle. Governance lives where it already
-lived before this module existed: an MCP server becomes a CONNECTOR
-(tool_connectors.py), an organization allows it (connector_governance.py), a
-policy grants it, and the Will authorizes each call by exact name. Discovery
-adds catalogue entries and nothing else. See GOVERNANCE_BACKLOG 47b.
-
-WHY A DEDICATED THREAD AND ITS OWN EVENT LOOP
----------------------------------------------
-Flask[async] runs each async view through asgiref, so a request's event loop
-does not outlive the request. An MCP session cannot survive that: its streams,
-its task group and (for stdio) its subprocess transport are bound to the loop
-that created them, and awaiting them from a different loop is an error. Holding
-sessions open therefore needs a loop this process owns for its whole lifetime,
-which is what start() creates: one daemon thread running one loop, with every
-session living on it. Request-side code never touches that loop directly. It
-submits a coroutine with run_coroutine_threadsafe and awaits the result on its
-own loop through wrap_future, so nothing blocks a worker thread.
-
-WHY EACH SERVER PARKS ON AN EVENT
----------------------------------
-The SDK exposes transports and sessions as async context managers, so the only
-way to hold one open is to stay inside the `async with` body. Each server gets
-one supervisor task that enters the transport, initializes the session,
-publishes its tools, and then waits on a shutdown event. Setting that event
-unwinds the context managers in the correct order.
-
-TRUST, STATED PLAINLY
----------------------
-A stdio server is an arbitrary command this process executes. The server list
-comes from a file on disk, so only whoever controls the deployment can add one:
-no request path can define, edit or reach a server definition, and no
-organization admin can install one through the browser. This is the same trust
-level as SAFI_EXTENSIONS_DIR, where the developer guide already says installing
-an extension equals installing the package.
-
-FAILURE IS ALWAYS "TOOL ABSENT"
--------------------------------
-A server that will not start, will not initialize, or answers nothing is logged
-and skipped. It never degrades to "present but unguarded": a tool that is not
-discovered is not in the catalogue, is not expanded into any profile, and is
-therefore blocked by the Will's allow-list if a model names it anyway.
-"""
 from __future__ import annotations
 
 import asyncio
@@ -55,18 +10,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 log = logging.getLogger(__name__)
 
-# How long to wait for a server to connect and answer tools/list at boot, and
-# how long a single tool call may run. Both are per server and overridable in
-# the server definition, via `connect_timeout` and `call_timeout`.
-#
-# The call ceiling was a hardcoded 60s until 2026-08-30. It was raised to an
-# env var because a real tool sat on the cliff: the WordPress image tool takes
-# 49-53s on every observed call (it waits on an image generation, then uploads
-# the result), so an ordinarily slow run died at 60s with no way to tune it
-# short of editing this file. Raise the global for a deployment whose tools are
-# all slow; prefer `call_timeout` on the one slow server otherwise, because a
-# high global also lets a genuinely hung tool hold a worker thread that much
-# longer.
 DEFAULT_CONNECT_TIMEOUT = 20.0
 DEFAULT_CALL_TIMEOUT = float(os.environ.get("SAFI_MCP_CALL_TIMEOUT", "60"))
 
@@ -74,12 +17,6 @@ _ENV_REF = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
 
 def _positive_float(raw: Any, fallback: float, server_name: str) -> float:
-    """Read an optional positive timeout from a server definition.
-
-    Falls back rather than raising. A typo in one server's timeout should cost
-    that server its override, not stop the whole runtime from connecting the
-    other servers alongside it.
-    """
     if raw is None or raw == "":
         return fallback
     try:
@@ -96,14 +33,6 @@ def _positive_float(raw: Any, fallback: float, server_name: str) -> float:
 
 
 def _expand(value: Any) -> Any:
-    """Substitute ${VAR} from the process environment.
-
-    Secrets belong in the environment, not in the server file: the file is
-    committed or copied often enough that a token in it will eventually end up
-    somewhere it should not be. An unset variable expands to empty rather than
-    raising, and the server then fails its own auth loudly, which is a better
-    error than a KeyError at boot with no context.
-    """
     if isinstance(value, str):
         return _ENV_REF.sub(lambda m: os.environ.get(m.group(1), ""), value)
     if isinstance(value, dict):
@@ -114,21 +43,6 @@ def _expand(value: Any) -> Any:
 
 
 def describe_exception(exc: BaseException, transport: str = "") -> str:
-    """Flatten an ExceptionGroup into something a person can act on.
-
-    The SDK's transports run inside anyio task groups, so almost every
-    connection failure arrives as `ExceptionGroup: unhandled errors in a
-    TaskGroup (1 sub-exception)`, sometimes nested two deep. `str(e)` on that
-    tells an admin nothing at all, while the leaf underneath is invariably the
-    actual answer: a 404 on the wrong path, DNS that does not resolve, or an
-    auth challenge.
-
-    Leaves are collected in order and de-duplicated, then a hint is appended for
-    the three failures that are common and opaque: an auth challenge (what an
-    anonymous connection to a server wanting OAuth looks like), a 404, and a
-    stdio server whose command died on startup. `transport` is optional and only
-    selects the last of those.
-    """
     leaves: List[str] = []
 
     def walk(e: BaseException) -> None:
@@ -157,11 +71,6 @@ def describe_exception(exc: BaseException, transport: str = "") -> str:
     elif "not found" in lowered or "404" in lowered:
         message += ". The endpoint may be wrong or the server may no longer be hosted."
     elif transport == "stdio" and "closed" in lowered:
-        # What a stdio server that died on startup looks like. The SDK reports
-        # the pipe closing and says nothing about why, which is useless to an
-        # operator: the usual cause is that the command is not there at all, or
-        # exited immediately. A file the definition points at can disappear
-        # without the definition changing, which is exactly how this is met.
         message += (
             ". The command exited immediately. Check that the file or binary it "
             "names still exists on this host and runs on its own; a server "
@@ -172,8 +81,6 @@ def describe_exception(exc: BaseException, transport: str = "") -> str:
 
 
 def _render_result(result: Any) -> str:
-    """Flatten an MCP CallToolResult into the plain string the orchestrator
-    feeds back to the Intellect as a tool observation."""
     if result is None:
         return "Tool returned no result."
 
@@ -183,8 +90,6 @@ def _render_result(result: Any) -> str:
         if text:
             parts.append(text)
             continue
-        # Non-text blocks (images, audio, embedded resources) are described
-        # rather than dropped: the model needs to know something came back.
         parts.append(f"[{getattr(block, 'type', 'content')} block omitted]")
 
     structured = getattr(result, "structured_content", None)
@@ -201,13 +106,6 @@ def _render_result(result: Any) -> str:
 
 
 class _Runtime:
-    """Process-wide owner of the MCP loop, sessions and discovered tools.
-
-    One instance, module-level. Not a per-request object: SAFi orchestrator
-    instances are cached per (agent, models, policy) and built lazily per
-    request (api/conversations.py), so anything owning sessions per instance
-    would spawn a duplicate set of subprocesses for every cached agent.
-    """
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -215,16 +113,11 @@ class _Runtime:
         self._thread: Optional[threading.Thread] = None
         self._stops: Dict[str, asyncio.Event] = {}
         self._sessions: Dict[str, Any] = {}
-        # tool name -> {"server", "name", "title", "description", "input_schema"}
         self._tools: Dict[str, Dict[str, Any]] = {}
-        # server key -> {"label", "tools": [names], "error": str | None}
         self._servers: Dict[str, Dict[str, Any]] = {}
-        # server key -> "file" | "db". Only db-sourced servers are subject to
-        # sync_db_servers; the operator's file always wins and is never dropped.
         self._origins: Dict[str, str] = {}
         self._started = False
 
-    # ---------- lifecycle ----------
 
     def _run_loop(self) -> None:
         assert self._loop is not None
@@ -232,12 +125,6 @@ class _Runtime:
         self._loop.run_forever()
 
     def _ensure_loop(self) -> None:
-        """Create the thread and loop if they do not exist yet.
-
-        Separate from start() because servers can now arrive after boot: an
-        install through the GUI must connect on a deployment where the file was
-        empty and no loop was ever needed.
-        """
         if self._loop is not None:
             return
         self._loop = asyncio.new_event_loop()
@@ -247,7 +134,6 @@ class _Runtime:
     def _connect_one(
         self, name: str, params: Dict[str, Any], reserved_tool_names, origin: str
     ) -> Dict[str, Any]:
-        """Connect a single server and wait for it to publish. Never raises."""
         self._ensure_loop()
         ready = threading.Event()
         timeout = float(params.get("connect_timeout") or DEFAULT_CONNECT_TIMEOUT)
@@ -266,24 +152,10 @@ class _Runtime:
 
     def register_offline(self, name: str, params: Dict[str, Any],
                          reserved_tool_names=(), origin: str = "file") -> Dict[str, Any]:
-        """Publish a server whose tools are known but whose calls are per-user.
-
-        An OAuth-protected server (MCP authorization spec) cannot have ONE
-        process-wide session, because there is no process-wide identity: every
-        call carries the calling user's token and runs on an ephemeral
-        connection instead. What the runtime holds for such a server is its
-        catalog — the tool list captured when a user last connected, passed in
-        as params["cached_tools"] — so policy authoring and the Will's
-        expansion work identically to a live server.
-        """
         with self._lock:
             return self._register_offline_locked(name, params, reserved_tool_names, origin)
 
     def _register_offline_locked(self, name, params, reserved_tool_names=(), origin="file"):
-        """Body of register_offline. Split out because sync_origin calls this
-        while already holding self._lock, which is not reentrant — taking it
-        again from inside was a deadlock that froze every request on the
-        worker, found by a stack dump rather than by any error."""
         if True:
             if name in self._stops or name in self._servers:
                 self._drop(name)
@@ -323,18 +195,6 @@ class _Runtime:
         return (self._servers.get(server) or {}).get("url") or ""
 
     def probe(self, params: Dict[str, Any], timeout: float = 15.0) -> Dict[str, Any]:
-        """Connect, list tools, disconnect. Registers nothing.
-
-        Exists so an admin finds out at install time whether a server actually
-        answers, instead of after an approval round-trip. Roughly half of the
-        public registry's hosted entries do not connect anonymously (auth
-        required, moved endpoint, dead host), so discovering that immediately is
-        most of the usability of the feature.
-
-        This contacts an unapproved server, which is deliberate and harmless:
-        approval gates whether agents may USE a server, and a probe sends only
-        an initialize and a tools/list. Nothing of the publisher's runs here.
-        """
         self._ensure_loop()
 
         async def _run() -> Dict[str, Any]:
@@ -367,13 +227,6 @@ class _Runtime:
     def probe_many(
         self, specs: Dict[str, Dict[str, Any]], timeout: float = 12.0
     ) -> Dict[str, Dict[str, Any]]:
-        """Probe many servers at once, concurrently, on the runtime loop.
-
-        Sequential probing is unusable for this: measured against the public
-        registry, most hosted entries do not answer, and each failure costs the
-        full timeout. Thirty servers one after another is minutes; gathered on
-        one loop it is the slowest single probe.
-        """
         if not specs:
             return {}
         self._ensure_loop()
@@ -422,14 +275,12 @@ class _Runtime:
     def add_server(
         self, name: str, params: Dict[str, Any], reserved_tool_names=(), origin: str = "db"
     ) -> Dict[str, Any]:
-        """Connect a server that arrived after boot. Replaces one of the same name."""
         with self._lock:
             if name in self._stops:
                 self._drop(name)
             return self._connect_one(name, params, reserved_tool_names, origin)
 
     def _drop(self, name: str) -> None:
-        """Unwind one server and forget its tools. Caller holds the lock."""
         stop = self._stops.get(name)
         if stop is not None and self._loop is not None:
             self._loop.call_soon_threadsafe(stop.set)
@@ -450,15 +301,6 @@ class _Runtime:
     def sync_origin(
         self, desired: Dict[str, Dict[str, Any]], reserved_tool_names=(), origin: str = "db"
     ) -> None:
-        """Make the servers from one origin match `desired`, leaving the other
-        origin alone.
-
-        The two origins are independent on purpose. A row in a table must not be
-        able to unplug something the operator put in the deployment's own file,
-        and re-reading the file must not drop what an organization installed
-        through the GUI. Syncing them separately is what keeps that true without
-        either side needing to know about the other.
-        """
         with self._lock:
             current = {n for n, o in self._origins.items() if o == origin}
             for name in current - set(desired):
@@ -476,12 +318,6 @@ class _Runtime:
                 self._connect_one(name, params, reserved_tool_names, origin)
 
     def start(self, servers: Dict[str, Dict[str, Any]], reserved_tool_names) -> Dict[str, Any]:
-        """Connect every enabled server and return a discovery summary.
-
-        Called once at boot from create_app(). Idempotent: a second call is a
-        no-op returning the existing summary, so an import-order surprise or a
-        test that calls it twice cannot spawn a second set of subprocesses.
-        """
         with self._lock:
             if self._started:
                 return self.summary()
@@ -502,14 +338,6 @@ class _Runtime:
                     log.info("MCP server '%s': disabled in config, skipped.", name)
                     continue
                 if (params.get("auth") or "").lower() == "oauth":
-                    # _locked, not the public method: start() already holds
-                    # self._lock, which is not reentrant. The same mistake was
-                    # made and fixed in sync_origin first; this was the second
-                    # copy, and it deadlocked every BOOT with an OAuth server
-                    # in the file, while resyncs (the fixed path) worked. A
-                    # worker that happened to boot before the file existed
-                    # served fine until recycled, which is why it passed local
-                    # verification and failed on the demo host.
                     self._register_offline_locked(name, params, reserved_tool_names, "file")
                     entry = self._servers.get(name, {})
                     log.info(
@@ -527,9 +355,6 @@ class _Runtime:
 
             for name, ready, timeout in waits:
                 if not ready.wait(timeout):
-                    # Not fatal and not retried here: the supervisor may still
-                    # come up, and if it does its tools simply appear late. What
-                    # must not happen is boot blocking on a wedged server.
                     log.error(
                         "MCP server '%s' did not become ready within %.0fs; "
                         "its tools are absent from this boot.", name, timeout
@@ -542,20 +367,13 @@ class _Runtime:
     async def _supervise(
         self, name: str, params: Dict[str, Any], ready: threading.Event, reserved_tool_names
     ) -> None:
-        """Own one server for the life of the process: connect, publish, park."""
         stop = asyncio.Event()
         self._stops[name] = stop
         entry: Dict[str, Any] = {
             "label": params.get("label") or name,
             "tools": [],
             "error": None,
-            # Optional org restriction from the definition. Kept here so the
-            # dispatch check reads the same source as the catalogue.
             "orgs": [str(o) for o in (params.get("orgs") or []) if o],
-            # Per-server call ceiling, resolved once here rather than on every
-            # call so a malformed value fails at connect time, where the log
-            # says which server, instead of mid-turn on a tool the user is
-            # waiting for.
             "call_timeout": _positive_float(
                 params.get("call_timeout"), DEFAULT_CALL_TIMEOUT, name
             ),
@@ -580,10 +398,6 @@ class _Runtime:
                     ready.set()
                     await stop.wait()
         except BaseException as e:
-            # BaseException, not Exception: an ExceptionGroup raised by the
-            # SDK's task groups is not always an Exception subclass, and
-            # catching too narrowly here would let a connection failure escape
-            # into the runtime loop instead of being reported on the server.
             entry["error"] = describe_exception(e, (params.get("transport") or "stdio").lower())
             log.error("MCP server '%s' failed: %s", name, entry["error"])
         finally:
@@ -617,9 +431,6 @@ class _Runtime:
         command = params.get("command")
         if not command:
             raise ValueError("stdio transport requires 'command'")
-        # The child inherits nothing sensitive by default. An MCP server that needs a
-        # token gets it named explicitly in `env`, so reading the file tells you
-        # exactly what the subprocess can see.
         clean_env = {
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
             "HOME": os.environ.get("HOME", "/tmp"),
@@ -646,14 +457,6 @@ class _Runtime:
         )
 
     def _publish(self, server: str, entry: Dict[str, Any], listed: Any, reserved_tool_names) -> None:
-        """Record discovered tools, refusing any name that is already spoken for.
-
-        Precedence is built-ins, then first server to claim a name. A third
-        party must never be able to redefine `web_search` or take over another
-        server's tool: the model would call the same name and reach different
-        code, which is the one failure mode nobody would spot in an audit
-        record.
-        """
         reserved = set(reserved_tool_names or ())
         for tool in getattr(listed, "tools", None) or []:
             tool_name = getattr(tool, "name", None)
@@ -685,8 +488,6 @@ class _Runtime:
             entry["tools"].append(tool_name)
 
     def shutdown(self) -> None:
-        """Unwind every session and stop the loop. Tests use this; the process
-        exiting is the normal path."""
         with self._lock:
             loop = self._loop
             if loop is None:
@@ -710,7 +511,6 @@ class _Runtime:
             self._origins.clear()
             self._started = False
 
-    # ---------- read side ----------
 
     def is_running(self) -> bool:
         return self._loop is not None and bool(self._sessions)
@@ -722,15 +522,12 @@ class _Runtime:
         return list((self._servers.get(server) or {}).get("tools") or [])
 
     def orgs_for(self, server: str) -> List[str]:
-        """Organizations a server is restricted to. Empty means unrestricted."""
         return list((self._servers.get(server) or {}).get("orgs") or [])
 
     def origin_of(self, server: str) -> str:
-        """"file" (the operator's), "db" (installed through the GUI), or ""."""
         return self._origins.get(server, "")
 
     def connectors(self) -> Dict[str, Tuple[str, ...]]:
-        """server key -> its tool names, the connector-bundle shape."""
         return {
             name: tuple(entry.get("tools") or ())
             for name, entry in self._servers.items()
@@ -738,10 +535,6 @@ class _Runtime:
         }
 
     def summary(self) -> Dict[str, Any]:
-        # auth and orgs ride along because the API layer renders from THIS
-        # view. Their absence here is exactly how the Sign in button failed to
-        # appear on a correctly registered OAuth server: the runtime knew, the
-        # summary did not say, and the browser drew a card with no way in.
         return {
             "servers": {
                 name: {
@@ -756,19 +549,11 @@ class _Runtime:
             "tool_count": len(self._tools),
         }
 
-    # ---------- call side ----------
 
     def owns(self, tool_name: str) -> bool:
         return tool_name in self._tools
 
     async def call(self, tool_name: str, arguments: Dict[str, Any]) -> str:
-        """Execute a discovered tool and return its result as text.
-
-        Reached only after the Will approved the call by exact name. The bridge
-        across loops is the two lines below: submit to the loop that owns the
-        session, then await the result on the caller's own loop so no worker
-        thread blocks.
-        """
         spec = self._tools.get(tool_name)
         if spec is None:
             return f"ERROR: tool '{tool_name}' is not provided by any connected MCP server."
@@ -831,7 +616,6 @@ def orgs_for(server: str) -> List[str]:
 
 
 def server_of(tool_name: str) -> str:
-    """Which server advertises a tool, or "" if none does."""
     return (_runtime.tools().get(tool_name) or {}).get("server", "")
 
 
@@ -853,14 +637,6 @@ def url_of(server: str) -> str:
 
 async def call_with_token(url: str, tool_name: str, arguments: Dict[str, Any],
                           token: str, timeout: float = DEFAULT_CALL_TIMEOUT) -> str:
-    """One tool call as one user, on an ephemeral connection.
-
-    OAuth servers get no persistent session because there is no single identity
-    to hold one as: the Bearer token names the person the call runs for, so the
-    connection is opened with that token and closed with the result. Runs on
-    the CALLER's event loop — nothing outlives the request, so the dedicated
-    runtime loop that persistent sessions need is unnecessary here.
-    """
     from mcp import ClientSession
     from mcp.client.streamable_http import create_mcp_http_client, streamable_http_client
 
@@ -877,12 +653,6 @@ async def call_with_token(url: str, tool_name: str, arguments: Dict[str, Any],
         return f"ERROR: tool '{tool_name}' timed out after {timeout:.0f}s."
     except BaseException as e:
         message = describe_exception(e, "http")
-        # The SDK flattens every non-2xx tool response to one string, so a 401
-        # (token dead), a 403 (token fine, scope insufficient) and a 400 (bad
-        # arguments) are indistinguishable here. An earlier version claimed
-        # "reconnect" for all of them, and a member whose sign-in lacked a
-        # scope was sent to re-consent to the same scopes forever. Say what is
-        # actually known and every cause a person can act on.
         lowered = message.lower()
         if "401" in lowered or "unauthorized" in lowered or "server returned an error response" in lowered:
             return (
@@ -896,8 +666,6 @@ async def call_with_token(url: str, tool_name: str, arguments: Dict[str, Any],
 
 
 async def list_tools_with_token(url: str, token: str, timeout: float = 20.0):
-    """tools/list as a specific user. Used once after a sign-in to capture the
-    catalog an OAuth server will not show anonymously."""
     from mcp import ClientSession
     from mcp.client.streamable_http import create_mcp_http_client, streamable_http_client
 

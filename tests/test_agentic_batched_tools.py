@@ -1,13 +1,4 @@
 #!/usr/bin/env python3
-"""Regression tests for batched client tool calls.
-
-One Intellect turn may propose several independent tools (read four files, or
-list+grep+read). The provider already parses the whole tool_calls array; these
-tests pin that the intent carries every call, that the orchestrator batches them
-ONLY when all are approved, and that each still gets its own structured receipt
-and the same deterministic WillGate. Any blocked call must fall back to the
-single-proposal path with no side effects.
-"""
 import asyncio
 import sys
 from pathlib import Path
@@ -109,16 +100,13 @@ def _run_batch(orch, proposed, client_tool_results=None, server_tool_names=None)
     return payload, tool_audit
 
 
-# ---------------------------------------------------------------------------
-# Provider/Intellect normalisation
-# ---------------------------------------------------------------------------
 def test_normalize_keeps_every_call_and_coerces_args():
     calls = normalize_tool_calls([
         {"name": "read", "arguments": {"path": "a.py"}},
         {"tool_name": "glob", "parameters": '{"pattern": "*.py"}'},
-        {"name": "grep"},  # missing args -> {}
-        {"arguments": {"x": 1}},  # no name -> dropped
-        "not-a-dict",  # dropped
+        {"name": "grep"},
+        {"arguments": {"x": 1}},
+        "not-a-dict",
     ])
     assert calls == [
         {"tool_name": "read", "parameters": {"path": "a.py"}},
@@ -132,9 +120,6 @@ def test_normalize_handles_non_list():
     assert normalize_tool_calls({"name": "read"}) == []
 
 
-# ---------------------------------------------------------------------------
-# Orchestrator batch path
-# ---------------------------------------------------------------------------
 def test_batch_all_approved_returns_multiple_proposals():
     orch, store, conscience, _ = _make_orch([])
     proposed = [
@@ -147,10 +132,8 @@ def test_batch_all_approved_returns_multiple_proposals():
     assert payload["type"] == "tool_call"
     assert payload["willDecision"] == "approve"
     assert [e["tool_name"] for e in payload["tool_calls"]] == ["read", "glob"]
-    # One structured receipt per call.
     assert [e["tool_name"] for e in tool_audit] == ["read", "glob"]
     assert all(e["decision"] == "approve" for e in tool_audit)
-    # Audit is written once for the batch, never per-step Conscience.
     store.update_audit_results.assert_called_once()
     store.update_message_content.assert_called_once()
     conscience.evaluate.assert_not_called()
@@ -166,7 +149,6 @@ def test_batch_falls_back_when_any_call_is_blocked():
     payload, tool_audit = _run_batch(orch, proposed)
 
     assert payload is None
-    # No side effects: the single-proposal path below owns the blocked handling.
     assert tool_audit == []
     store.update_audit_results.assert_not_called()
     store.update_message_content.assert_not_called()
@@ -192,19 +174,7 @@ def test_batch_env_toggle(monkeypatch):
     assert SAFi._batch_tools_enabled() is False
 
 
-# ---------------------------------------------------------------------------
-# End-to-end through process_prompt
-# ---------------------------------------------------------------------------
 def test_blocked_antiloop_tool_continues_instead_of_forcing_an_answer():
-    """A harness anti-loop refusal must not abandon the task.
-
-    The same-file/repeat circuit breakers refuse a REPEATING call, not an
-    unauthorized tool. If that refusal drops into the toolless reflexion it
-    strips the tool catalogue, so the agent can only emit prose and the client
-    ends its loop — a coding agent stuck re-reading can never reach 'edit'. The
-    refusal must instead be handed back as a tool_call so the owning client
-    records it and lets the agent switch tools.
-    """
     intent = {"type": "tool_call", "tool_name": "read",
               "parameters": {"path": "/repo/a.py"}}
     orch, store, conscience, _ = _make_orch([(intent, "reading", "ctx")])
@@ -225,7 +195,6 @@ def test_blocked_antiloop_tool_continues_instead_of_forcing_an_answer():
     assert res.get("type") == "tool_call"
     assert res.get("willDecision") == "violation"
     assert "already been read" in res.get("willReason", "")
-    # The turn must not terminate as a prose final answer.
     assert "finalOutput" not in res
     assert res.get("tool_name") == "read"
 

@@ -1,16 +1,3 @@
-"""
-Concurrency test for db.update_spirit_memory_atomic (Phase 4).
-
-Hammers the atomic read-modify-write from many threads on a scratch profile
-row. compute_fn deliberately sleeps between read and write to widen the race
-window — with the old load-then-save pattern most increments were lost to
-last-write-wins; under the row lock every one must land and the turn counter
-must equal the thread count.
-
-Requires the local MySQL instance (uses a throwaway profile row, cleaned up).
-
-Run:  venv/bin/python tests/test_spirit_memory_atomic.py
-"""
 import sys
 import time
 import uuid
@@ -39,7 +26,7 @@ class TestSpiritMemoryAtomic(unittest.TestCase):
         def one_turn():
             def compute_fn(fresh_memory):
                 mu = dict(fresh_memory.get("mu") or {})
-                time.sleep(0.05)  # widen the read-modify-write race window
+                time.sleep(0.05)
                 mu["counter"] = float(mu.get("counter", 0.0)) + 1.0
                 return mu, None
 

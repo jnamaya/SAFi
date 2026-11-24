@@ -1,18 +1,3 @@
-/**
- * Voice input (backlog 74), press-and-hold.
- *
- * Governed by transcribe-then-govern: we record audio, send it to
- * /api/audio/transcribe, and the returned TEXT flows through the normal pipeline
- * exactly like a typed prompt. Raw audio never reaches a model.
- *
- * UX: when voice is enabled and the composer is empty, the mic occupies the send
- * button's slot. Hold it to record, release to transcribe. The transcript lands
- * in the composer for review, not sent automatically — a misheard word should be
- * fixable before it becomes a governed turn, not after. The moment the user types
- * anything (including editing a transcript), the send button takes the slot back,
- * so typing always beats voice. When the deployment has voice off, none of this
- * runs and the send button behaves exactly as before.
- */
 import * as api from '../core/api.js';
 import * as ui from './ui.js';
 
@@ -24,18 +9,12 @@ let _working = false;
 let _stream = null;
 let _startedAt = 0;
 
-const MIN_MS = 350;   // ignore an accidental tap that records almost nothing
+const MIN_MS = 350;
 
 const micBtn = () => document.getElementById('composer-mic-btn');
 const sendBtn = () => document.getElementById('send-button');
 const input = () => document.getElementById('message-input');
 
-/** Show the mic in the send slot when the composer is empty; show send when the
- * user has typed. No-op unless voice is enabled. Left alone while recording or
- * transcribing so the button does not flip out from under the user's finger. */
-// styles.css carries `#send-button { display: flex !important }`, and an
-// !important author rule beats a plain inline style, so hiding the send button
-// needs inline !important too. Anything less silently leaves both buttons up.
 function _hide(el) { el.style.setProperty('display', 'none', 'important'); }
 function _show(el) { el.style.setProperty('display', 'flex', 'important'); }
 
@@ -55,11 +34,8 @@ export function updateComposerButtons() {
 }
 
 function _setMicState(state) {
-    // 'idle' | 'recording' | 'working'
     const mic = micBtn();
     if (!mic) return;
-    // The mic sits in the send button's green circle, so state is carried by
-    // background classes (styles.css), not a text colour that would be invisible.
     mic.classList.remove('is-recording', 'is-working');
     if (state === 'recording') {
         mic.classList.add('is-recording');
@@ -80,7 +56,6 @@ function _stopStream() {
 }
 
 async function _press(e) {
-    // Only the primary button / a touch, and never while transcribing.
     if (_working || _recording) return;
     if (e.button && e.button !== 0) return;
     e.preventDefault();
@@ -95,7 +70,6 @@ async function _press(e) {
         ui.showToast('Microphone access was denied.', 'error');
         return;
     }
-    // The user may have released before permission resolved.
     if (!_pressHeld) { _stopStream(); return; }
 
     _chunks = [];
@@ -116,8 +90,8 @@ async function _press(e) {
 
 function _release() {
     if (_recording && _recorder) {
-        _recording = false;           // stop() is async; block re-entry now
-        try { _recorder.stop(); } catch (e) { /* onstop still fires */ }
+        _recording = false;
+        try { _recorder.stop(); } catch (e) {   }
     }
 }
 
@@ -150,12 +124,6 @@ async function _onStop() {
     }
 }
 
-/** Put the transcript into the composer for review — never sends it. The
- * dispatched 'input' event runs the same listener a keystroke would (registered
- * in initVoiceInput below), which enables the composer and swaps the mic for
- * the send button; nothing here needs to duplicate that swap or the send path
- * itself. The user reviews, edits if needed, and sends the same way they
- * always would. */
 function _fillComposer(text) {
     const el = input();
     if (!el) return;
@@ -163,30 +131,25 @@ function _fillComposer(text) {
     el.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
-// Track hold state across the async getUserMedia gap.
 let _pressHeld = false;
 
-/** Wire the mic button and the mic/send swap. Only runs where voice is enabled. */
 export async function initVoiceInput() {
     const mic = micBtn();
     if (!mic) return;
 
     let cfg = {};
     try { cfg = await api.getAppConfig(); } catch (e) { cfg = {}; }
-    if (!cfg.voice_input_enabled) return;   // feature off: mic stays hidden, send as usual
+    if (!cfg.voice_input_enabled) return;
 
     _enabled = true;
-    mic.classList.remove('hidden');   // visibility is driven by inline display now
+    mic.classList.remove('hidden');
 
-    // Press and hold to talk. pointerdown starts; a pointerup anywhere ends it,
-    // so releasing off the button still stops cleanly.
     mic.addEventListener('pointerdown', (e) => { _pressHeld = true; _press(e); });
     window.addEventListener('pointerup', () => { if (_pressHeld) { _pressHeld = false; _release(); } });
     mic.addEventListener('pointercancel', () => { _pressHeld = false; _release(); });
-    mic.addEventListener('contextmenu', (e) => e.preventDefault());   // no long-press menu
+    mic.addEventListener('contextmenu', (e) => e.preventDefault());
 
-    // Typing beats voice: swap to send as soon as there is text.
     input()?.addEventListener('input', updateComposerButtons);
 
-    updateComposerButtons();   // initial: empty composer shows the mic
+    updateComposerButtons();
 }

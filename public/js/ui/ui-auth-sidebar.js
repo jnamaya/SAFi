@@ -1,5 +1,3 @@
-// ui-auth-sidebar.js
-
 import * as ui from './ui.js';
 import { escapeHtml } from '../core/utils.js';
 import { iconMenuDots } from './ui-render-constants.js';
@@ -7,17 +5,12 @@ import { updateAgentLabel, closeComposerMenu } from './ui-composer-menu.js';
 import { agentMark, normalizeAgentName } from './ui-agent-mark.js';
 import { initAttentionBadge } from './ui-attention.js';
 
-/**
- * Icons (for pin feature)
- */
 const iconPin = `<svg class="w-4 h-4 text-current" fill="currentColor" viewBox="0 0 24 24"><path d="M17 11.5c.34-.14.65-.3.94-.48l-2.61-2.61c-.18.29-.34.6-.48.94L17 11.5zM14 17.5V21h-2v-3.5L8.5 14H5v-2h3.5L12 8.5V5h2v3.5l3.5 3.5H21v2h-3.5L14 17.5zM14 3c0-1.1-.9-2-2-2s-2 .9-2 2 .9 2 2 2 2-.9 2-2zM4 22c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>`;
 const iconUnpin = `<svg class="w-4 h-4 text-current" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 4v1m0 5v1m0 5v1m0 5v1M7 4h10a2 2 0 012 2v10a2 2 0 01-2 2H7a2 2 0 01-2-2V6a2 2 0 012-2z"/></svg>`;
 const iconPinFilled = `<svg class="w-4 h-4 text-current" fill="currentColor" viewBox="0 0 24 24"><path d="M17 11.5c.34-.14.65-.3.94-.48l-2.61-2.61c-.18.29-.34.6-.48.94L17 11.5zM14 17.5V21h-2v-3.5L8.5 14H5v-2h3.5L12 8.5V5h2v3.5l3.5 3.5H21v2h-3.5L14 17.5zM14 3c0-1.1-.9-2-2-2s-2 .9-2 2 .9 2 2 2 2-.9 2-2zM4 22c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>`;
 
-// --- NEW: Search Icon ---
 const iconSearch = `<svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>`;
 
-// --- App logo mark: rosetta dots (no shield; matches the login view) ---
 const iconLogo = (cls) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="29 29 42 42" class="${cls}">
   <circle cx="50" cy="36" r="7" fill="#16a34a"/>
   <circle cx="64" cy="46" r="7" fill="#16a34a"/>
@@ -27,11 +20,6 @@ const iconLogo = (cls) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="29 2
   <circle cx="50" cy="52" r="6" fill="#4ade80"/>
 </svg>`;
 
-// --- Collapsed-rail "recent conversations" popup ---
-// The collapsed rail has no room for the conversation list, so this floats a
-// small menu built from the (still-in-DOM, off-screen) #convo-list links.
-// Clicking an item forwards to the real link, so it runs the exact same
-// switch-conversation path as the expanded list — no duplicated load logic.
 let _recentPopupEl = null;
 
 function _closeRecentPopup() {
@@ -52,9 +40,6 @@ function _onRecentEsc(e) {
 
 function _openRecentConvoPopup(anchorBtn) {
     _closeRecentPopup();
-    // Most-recent first. The sidebar DOM is ordered by group (pinned, project
-    // folders, date buckets), not by pure recency, so sort by the timestamp
-    // each link carries before taking the top 15.
     const links = Array.from(document.querySelectorAll('#convo-list a[data-id]'))
         .sort((a, b) => (b.dataset.updated || '').localeCompare(a.dataset.updated || ''))
         .slice(0, 15);
@@ -89,7 +74,6 @@ function _openRecentConvoPopup(anchorBtn) {
 
     document.body.appendChild(pop);
 
-    // Position beside the rail button, clamped to the viewport.
     const r = anchorBtn.getBoundingClientRect();
     pop.style.left = (r.right + 8) + 'px';
     pop.style.top = r.top + 'px';
@@ -98,25 +82,18 @@ function _openRecentConvoPopup(anchorBtn) {
         pop.style.top = Math.max(8, window.innerHeight - 8 - pr.height) + 'px';
     }
 
-    // Defer binding so this same click doesn't immediately close it.
     setTimeout(() => {
         document.addEventListener('click', _onRecentOutside, true);
         document.addEventListener('keydown', _onRecentEsc);
     }, 0);
 }
 
-// --- NEW: Profile Cache ---
-// Allows us to look up avatars for custom profiles by name
 let _knownProfiles = [];
 
 export function setKnownProfiles(profiles) {
   _knownProfiles = profiles || [];
 }
 
-/**
- * Updates the entire sidebar UI based on the user's login status.
- * @param {object | null} user - The user object, or null if logged out.
- */
 export function updateUIForAuthState(user) {
   ui._ensureElements();
 
@@ -127,10 +104,6 @@ export function updateUIForAuthState(user) {
 
   if (user) {
     ui.elements.loginView.classList.add('hidden');
-    // The chat's left offset is CSS's job now (--sidebar-w in styles.css), so
-    // this only has to say "a sidebar exists". It used to add the matching
-    // md:ml-* utility, which put the width in a second place and then a third
-    // and a fourth as handlers copied the line.
     document.documentElement.classList.add('has-sidebar');
 
     ui.elements.sidebarContainer.innerHTML = `
@@ -248,15 +221,9 @@ export function updateUIForAuthState(user) {
         </div>
     `;
 
-    // Rail wiring: forward to the real controls rather than re-implementing
-    // them. If new-chat or the control panel ever changes behaviour, the rail
-    // follows for free.
     document.getElementById('rail-new-chat')?.addEventListener('click', () =>
         document.getElementById('new-chat-button')?.click());
     document.getElementById('rail-account')?.addEventListener('click', () => {
-        // The avatar goes to YOUR profile; the gear goes to the panel's default
-        // tab. Same two-step pattern the profile chip already uses: open the
-        // panel, then click the profile tab's nav button.
         document.getElementById('control-panel-btn')?.click();
         document.getElementById('nav-profile')?.click();
     });
@@ -268,21 +235,17 @@ export function updateUIForAuthState(user) {
         _openRecentConvoPopup(e.currentTarget);
     });
 
-    // Inbox count pill on the Control Panel nav (backlog 57): starts polling
-    // once a user is signed in. The tab itself renders on entry.
     initAttentionBadge();
 
-    // --- Search Logic ---
     const searchInput = document.getElementById('convo-search-input');
     if (searchInput) {
       searchInput.addEventListener('input', (e) => {
         const term = e.target.value.toLowerCase();
-        const links = document.querySelectorAll('#convo-list a[data-id]'); // Loose + project-folder links
+        const links = document.querySelectorAll('#convo-list a[data-id]');
 
         links.forEach(link => {
           const titleEl = link.querySelector('.convo-title');
           const title = titleEl ? titleEl.textContent.toLowerCase() : '';
-          // Simple filter: toggle hidden class
           if (title.includes(term)) {
             link.classList.remove('hidden');
           } else {
@@ -290,7 +253,6 @@ export function updateUIForAuthState(user) {
           }
         });
 
-        // Optional: Hide headers if all their children are hidden
         const headers = document.querySelectorAll('#convo-list h3');
         headers.forEach(header => {
           let next = header.nextElementSibling;
@@ -307,7 +269,6 @@ export function updateUIForAuthState(user) {
       });
     }
 
-    // Event Listeners
     const closeBtn = document.getElementById('sidebar-close-btn');
     if (closeBtn) {
       closeBtn.addEventListener('click', ui.closeSidebar);
@@ -320,8 +281,6 @@ export function updateUIForAuthState(user) {
 
   } else {
     ui.elements.sidebarContainer.innerHTML = '';
-    // No sidebar when logged out — drop the reserved margin so the login view
-    // centers on the actual viewport instead of sitting 128px right of center.
     document.documentElement.classList.remove('has-sidebar');
     ui.elements.loginView.classList.remove('hidden');
     ui.elements.chatView.classList.add('hidden');
@@ -329,7 +288,6 @@ export function updateUIForAuthState(user) {
   }
 }
 
-// --- Shared menu primitives (used by conversation + project dropdowns) ---
 
 const iconPinMenu = `<svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 4h6l-1 6 3 3v2H7v-2l3-3-1-6z M12 15v5"></path></svg>`;
 const iconRenameMenu = `<svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L15.232 5.232z"></path></svg>`;
@@ -348,9 +306,6 @@ function buildMenuContainer(menuId) {
   return menu;
 }
 
-/**
- * Builds one menu row. `label` is rendered as text (safe for user-supplied names).
- */
 function menuItem({ icon = '', label, danger = false, trailing = '', onClick }) {
   const btn = document.createElement('button');
   btn.type = 'button';
@@ -400,9 +355,6 @@ function menuHeader(label, onBack) {
   return row;
 }
 
-/**
- * Renders the main conversation menu into an (existing) container element.
- */
 function populateConvoMenu(menu, convoId, isPinned, handlers, currentProjectId) {
   menu.innerHTML = '';
 
@@ -443,8 +395,6 @@ function populateConvoMenu(menu, convoId, isPinned, handlers, currentProjectId) 
     }));
   }
 
-  // Grantee-side: for a conversation shared WITH the current user, the
-  // destructive action removes their own grant, not the owner's data.
   if (typeof handlers.unshareHandler === 'function') {
     menu.appendChild(menuItem({
       icon: iconSharedMark,
@@ -467,18 +417,12 @@ function populateConvoMenu(menu, convoId, isPinned, handlers, currentProjectId) 
   }
 }
 
-/**
- * Creates the dropdown menu for conversation actions (Pin / Rename / Move / Delete).
- */
 function createDropdownMenu(convoId, isPinned, handlers, currentProjectId = null) {
   const menu = buildMenuContainer(convoId);
   populateConvoMenu(menu, convoId, isPinned, handlers, currentProjectId);
   return menu;
 }
 
-/**
- * Swaps the menu contents for a project picker (with a back arrow to the main menu).
- */
 function renderMoveSubmenu(menu, convoId, isPinned, currentProjectId, handlers) {
   const projects = Array.isArray(handlers.projects) ? handlers.projects : [];
   menu.innerHTML = '';
@@ -510,36 +454,22 @@ function renderMoveSubmenu(menu, convoId, isPinned, currentProjectId, handlers) 
   }
 }
 
-/**
- * Positions the dropdown menu relative to the conversation button.
- */
 function positionDropdown(menu, button) {
   const rect = button.getBoundingClientRect();
   menu.style.top = 'auto';
-  // Position menu above the button, with a small gap
   menu.style.bottom = `${window.innerHeight - rect.top + 4}px`;
   menu.style.left = 'auto';
-  // Align right edges
   menu.style.right = `${window.innerWidth - rect.right - (rect.width / 2)}px`;
 }
 
 
-/**
- * Icons for project folders.
- */
 const iconChevronRight = `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>`;
 const iconChevronDown = `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>`;
 const iconFolder = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"></path></svg>`;
-// Other people's things, not a folder of the user's own.
 const iconPeople = `<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>`;
-// The mark on the owner's own rows that already carry a grant. Same glyph as
-// the Share menu item, so the mark and the way to manage it read as one thing.
 const iconSharedMark = `<svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8.684 13.342a3 3 0 100-2.684m0 2.684a3 3 0 100 2.684m0-2.684l6.632 3.316m0-9L8.684 10.658M18 6a3 3 0 11-6 0 3 3 0 016 0zm0 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>`;
 const iconPlusSmall = `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>`;
 
-/**
- * Dropdown menu for a project folder (Rename / Delete).
- */
 function createProjectMenu(project, projectHandlers) {
   const menu = buildMenuContainer(`project-${project.id}`);
 
@@ -571,15 +501,6 @@ function createProjectMenu(project, projectHandlers) {
   return menu;
 }
 
-/**
- * A collapsible sidebar section that looks like a folder but is not one.
- * "Shared with me" holds other people's folders and conversations: nothing
- * can be moved into it, it has no owner actions, and it is not a project,
- * so it gets this instead of renderProjectFolder. Returns { wrap, body };
- * the caller appends the section's contents into `body`, which is only
- * present when expanded. Collapsed by default, so what other people share
- * never pushes the user's own history down the list.
- */
 export function renderSidebarSection(label, count, isExpanded, onToggle, opts = {}) {
   ui._ensureElements();
 
@@ -618,15 +539,6 @@ export function renderSidebarSection(label, count, isExpanded, onToggle, opts = 
   return { wrap, body };
 }
 
-/**
- * Renders a collapsible project folder containing its conversation links.
- * opts.readOnly (backlog 56): a folder shared with this user, not owned —
- * no new-conversation button, no folder menu (rename/delete/share are all
- * owner-only, and re-sharing a grant is never allowed), just expand/collapse
- * and its conversations. opts.ownerName renders as a small hint.
- * opts.shared is the other direction: a folder the owner has shared with
- * someone else, marked so they can see what they are sharing.
- */
 export function renderProjectFolder(project, convos, isExpanded, projectHandlers, convoHandlers, opts = {}) {
   ui._ensureElements();
 
@@ -637,7 +549,6 @@ export function renderProjectFolder(project, convos, isExpanded, projectHandlers
   const header = document.createElement('div');
   header.className = 'project-folder-header group relative flex items-center justify-between px-2 py-1.5 rounded-md hover:bg-black/[0.05] dark:hover:bg-white/[0.06] transition-colors';
 
-  // Toggle (chevron + folder + name + count)
   const toggle = document.createElement('button');
   toggle.type = 'button';
   toggle.className = 'flex items-center gap-2 min-w-0 flex-1 text-left text-neutral-700 dark:text-neutral-300';
@@ -648,7 +559,6 @@ export function renderProjectFolder(project, convos, isExpanded, projectHandlers
     ${opts.shared ? `<span class="shrink-0 text-neutral-400" title="Shared with others">${iconSharedMark}</span>` : ''}
     <span class="shrink-0 text-xs text-neutral-400">${convos.length || ''}</span>
   `;
-  // User-controlled name: set as text to avoid HTML injection.
   const nameSpan = toggle.querySelector('.project-folder-name');
   nameSpan.textContent = project.name || 'Untitled';
   if (opts.readOnly) {
@@ -698,8 +608,6 @@ export function renderProjectFolder(project, convos, isExpanded, projectHandlers
     actions.appendChild(menuBtn);
     header.appendChild(actions);
   } else if (typeof projectHandlers.unshareHandler === 'function') {
-    // Read-only shared folder: the only action a grantee has is dropping
-    // their own grant. Rendered inline (no menu) because there is exactly one.
     const removeBtn = document.createElement('button');
     removeBtn.type = 'button';
     removeBtn.title = 'Remove from shared with me';
@@ -731,23 +639,14 @@ export function renderProjectFolder(project, convos, isExpanded, projectHandlers
   return wrap;
 }
 
-/**
- * Renders a single conversation link element.
- */
 export function renderConversationLink(convo, handlers) {
   ui._ensureElements();
   const { switchHandler, renameHandler, deleteHandler, pinHandler } = handlers;
-  // Owner-side sharing mark. handlers.sharedConvoIds carries the ids the
-  // owner has granted on, so the mark reaches conversations rendered loose
-  // and conversations rendered inside a folder by the same route. A grantee
-  // never gets this set, so a shared item is never marked in their sidebar.
   const isShared = !!(handlers.sharedConvoIds && handlers.sharedConvoIds.has(convo.id));
 
   const link = document.createElement('a');
   link.href = '#';
   link.dataset.id = convo.id;
-  // Recency, for the collapsed-rail "Recent" popup to sort by. ISO 8601 sorts
-  // lexically in time order, so a string compare is enough.
   link.dataset.updated = convo.last_updated || convo.created_at || '';
 
   const innerContent = document.createElement('div');
@@ -755,12 +654,6 @@ export function renderConversationLink(convo, handlers) {
 
   const pinHtml = convo.is_pinned ? `<span class="convo-pin-icon text-sm">${iconPinFilled}</span>` : '';
 
-  // Which agent this conversation was with — the one fact that makes a
-  // multi-agent product's history different from a chat app's. Reuses the
-  // same avatar chain as the rest of the sidebar (org avatar -> builtin ->
-  // generated monogram), so custom and unknown agents both render something.
-  // Older rows with no audited turn have no profile_name; they get no mark
-  // rather than a misleading placeholder.
   const markHtml = convo.profile_name
     ? `<img src="${getAvatarForProfile(convo.profile_name)}" alt="" aria-hidden="true" class="w-4 h-4 rounded-md object-cover shrink-0 mr-2">`
     : '';
@@ -783,29 +676,24 @@ export function renderConversationLink(convo, handlers) {
   `;
   link.appendChild(innerContent);
 
-  // --- Mobile Long Press & Tap Logic ---
   let longPressTimer = null;
   let isLongPress = false;
-  const longPressDuration = 500; // 500ms for long press
+  const longPressDuration = 500;
 
   const handleTouchStart = (e) => {
     isLongPress = false;
-    // Start a timer to check for long press
     longPressTimer = setTimeout(() => {
       isLongPress = true;
       const actionButton = innerContent.querySelector('button[data-action="menu"]');
       if (!actionButton) return;
 
-      // Prevent default scroll/tap behavior
       e.preventDefault();
       e.stopPropagation();
 
-      // Haptic feedback for mobile (assuming available)
       if (window.navigator && window.navigator.vibrate) {
         window.navigator.vibrate(50);
       }
 
-      // Toggle menu
       if (document.querySelector('.convo-menu-dropdown')) {
         ui.closeAllConvoMenus();
         return;
@@ -823,35 +711,29 @@ export function renderConversationLink(convo, handlers) {
     }
 
     if (isLongPress) {
-      // If it was a long press, prevent the click/navigation
       e.preventDefault();
       e.stopPropagation();
     }
   };
 
   const handleTouchMove = () => {
-    // If user starts scrolling, cancel the long press
     if (longPressTimer) {
       clearTimeout(longPressTimer);
       longPressTimer = null;
     }
   };
 
-  // Add touch event listeners for mobile on the inner content (long press/tap)
   innerContent.addEventListener('touchstart', handleTouchStart, { passive: false });
   innerContent.addEventListener('touchend', handleTouchEnd);
   innerContent.addEventListener('touchcancel', handleTouchMove);
   innerContent.addEventListener('touchmove', handleTouchMove);
 
-  // Prevent desktop right-click menu
   link.addEventListener('contextmenu', (e) => {
     e.preventDefault();
   });
 
-  // Standard click event for navigation or desktop menu
   link.addEventListener('click', (e) => {
     if (isLongPress) {
-      // Prevent click if long press just happened
       e.preventDefault();
       e.stopPropagation();
       return;
@@ -860,7 +742,6 @@ export function renderConversationLink(convo, handlers) {
     const actionButton = e.target.closest('button[data-action="menu"]');
 
     if (actionButton) {
-      // Click was on the menu button (desktop)
       e.preventDefault();
       e.stopPropagation();
 
@@ -874,22 +755,17 @@ export function renderConversationLink(convo, handlers) {
       ui.setOpenDropdown(menu);
 
     } else {
-      // Click was on the link itself (navigation)
       e.preventDefault();
       ui.closeAllConvoMenus();
-      if (window.innerWidth < 768) ui.closeSidebar(); // Close sidebar on mobile nav
+      if (window.innerWidth < 768) ui.closeSidebar();
       switchHandler(convo.id);
     }
   });
   return link;
 }
 
-/**
- * Highlights the currently active conversation link.
- */
 export function setActiveConvoLink(id) {
   ui._ensureElements();
-  // Target the top-level <a> elements
   document.querySelectorAll('#convo-list > a').forEach(link => {
     const inner = link.querySelector('.convo-item-inner');
     if (!link || !inner) return;
@@ -898,13 +774,10 @@ export function setActiveConvoLink(id) {
     const title = link.querySelector('.convo-title');
     const timestamp = link.querySelector('.convo-timestamp');
 
-    // -- Active State --
     if (isActive) {
-      // Active row: subtle raised fill + green left accent (styled in CSS via .is-active)
       inner.className = 'convo-item-inner is-active group relative flex items-center justify-between px-3 py-1.5 rounded-md transition-all duration-200 text-neutral-900 dark:text-neutral-100 font-bold my-0.5';
 
       if (timestamp) {
-        // Timestamp text made slightly lighter than main text
         timestamp.className = "convo-timestamp truncate block text-xs text-neutral-500 dark:text-neutral-500";
       }
     } else {
@@ -913,16 +786,12 @@ export function setActiveConvoLink(id) {
       if (title) title.className = `convo-title truncate block text-sm ${isActive ? 'font-semibold' : 'font-medium'}`;
     }
 
-    // Timestamp color is consistent now (neutral grey)
     if (timestamp) {
       timestamp.className = "convo-timestamp truncate block text-xs text-neutral-500 dark:text-neutral-400";
     }
   });
 }
 
-/**
- * Updates the chat window title (mobile and desktop).
- */
 export function updateChatTitle(title) {
   const mobileTitle = document.getElementById('chat-title');
   const desktopTitle = document.getElementById('chat-title-desktop');
@@ -937,13 +806,6 @@ export function updateChatTitle(title) {
   setBrowserTabTitle(newTitle);
 }
 
-/**
- * Mirrors the conversation title into the browser tab (and the PWA app
- * switcher). Plain string assignment: no injection path. Control characters
- * are stripped and the result capped, so a crafted message cannot garble the
- * tab; the text shown is the same conversation title already visible in the
- * sidebar, and never message content beyond it.
- */
 function setBrowserTabTitle(title) {
   const clean = String(title || '').replace(/[\x00-\x1F\x7F]/g, '').trim();
   if (!clean || clean === 'Untitled' || clean === 'SAFi') {
@@ -953,9 +815,6 @@ function setBrowserTabTitle(title) {
   document.title = ('SAFi \u00B7 ' + clean).slice(0, 120);
 }
 
-/**
- * Updates the chip displaying the currently active profile/agent.
- */
 export function updateActiveProfileChip(profileNameOrObject) {
   ui._ensureElements();
 
@@ -978,7 +837,6 @@ export function updateActiveProfileChip(profileNameOrObject) {
     return;
   }
 
-  // Handle both string and object input
   let profileNameText = 'Default';
   let avatarUrl = '';
 
@@ -987,14 +845,11 @@ export function updateActiveProfileChip(profileNameOrObject) {
     avatarUrl = getAvatarForProfile(profileNameText);
   } else if (profileNameOrObject && typeof profileNameOrObject === 'object') {
     profileNameText = profileNameOrObject.name || 'Default';
-    // Use the object's avatar if present, otherwise look up by name
     avatarUrl = profileNameOrObject.avatar || getAvatarForProfile(profileNameText);
   }
 
-  // --- CHANGED: "Agent:" to "Agent:" ---
   const textLabel = "Agent:";
 
-  // Desktop chip
   if (ui.elements.activeProfileChip) {
     ui.elements.activeProfileChip.classList.add('flex', 'items-center', 'gap-2');
     ui.elements.activeProfileChip.innerHTML = `
@@ -1004,7 +859,6 @@ export function updateActiveProfileChip(profileNameOrObject) {
     `;
   }
 
-  // Mobile chip
   if (ui.elements.activeProfileChipMobile) {
     ui.elements.activeProfileChipMobile.classList.add('flex', 'items-center', 'gap-2', 'mx-auto', 'justify-center');
     ui.elements.activeProfileChipMobile.innerHTML = `
@@ -1013,61 +867,31 @@ export function updateActiveProfileChip(profileNameOrObject) {
     `;
   }
 
-  // Update the main chat input placeholder
   if (ui.elements.messageInput) {
     ui.elements.messageInput.placeholder = `Message ${profileNameText}`;
   }
 }
 
-/**
- * Helper function to get the correct avatar for a given profile name.
- * @param {string | null} profileName - The name of the profile.
- * @returns {string} - The URL to the avatar image.
- */
 export function getAvatarForProfile(profileName) {
   const cleanName = profileName ? profileName.trim().toLowerCase() : null;
 
-  // Accept the agent's storage KEY as well as its display name. Conversation
-  // rows carry the key (chat_history.profile_name is set from the profile key,
-  // e.g. org_xxxx_policy_officer) while this lookup matched display names only
-  // — so an org's uploaded avatar never showed in the conversation list, and
-  // the fallback monogram was generated from the ugly key instead of the name.
   const customProfile = _knownProfiles.find(p =>
     (p.name && p.name.trim().toLowerCase() === cleanName) ||
     (p.key && String(p.key).trim().toLowerCase() === cleanName));
 
-  // 1. An avatar the org supplied for its own agent always wins.
   if (customProfile && customProfile.avatar) {
     return customProfile.avatar;
   }
 
-  // Everything below reasons about the DISPLAY name, whichever form came in.
   const displayName = (customProfile && customProfile.name) || profileName;
 
-  // 2. The one real mark. It is not a agent portrait, which is why it
-  //    survives: safi.svg is the product wordmark, which The SAFi Guide is
-  //    entitled to wear.
-  //
-  //    Every other agent gets a generated monogram — see ui-agent-mark.js for
-  //    why the illustrated faces were removed. Note that unknown agents now get
-  //    a monogram rather than falling through to safi.svg: an org's custom agent
-  //    should not appear wearing the vendor's logo.
   const key = normalizeAgentName(displayName);
   if (key === 'safi guide' || !key) return 'assets/safi.svg';
 
   return agentMark(displayName);
 }
 
-/**
- * --- NEW: Agent Selector Logic (Bottom Input) ---
- */
 
-/**
- * Initializes the agent selector in the chat input area.
- * @param {Array} profiles - List of available profiles.
- * @param {string} activeProfileKey - The key of the currently active profile.
- * @param {Function} onSelect - Callback when a profile is selected (key) => void.
- */
 export function initAgentSelector(profiles, activeProfileKey, onSelect) {
   ui._ensureElements();
   const { agentSelectorDropdown } = ui.elements;
@@ -1080,14 +904,9 @@ export function initAgentSelector(profiles, activeProfileKey, onSelect) {
 }
 
 function hideAgentSelector() {
-  // The list no longer hides itself - it is a section of the + panel, so
-  // choosing an agent dismisses the panel around it.
   closeComposerMenu();
 }
 
-/**
- * Updates the text and icon of the selector button.
- */
 export function updateAgentSelectorButton(profile) {
   if (!profile) {
     updateAgentLabel('None');
@@ -1097,9 +916,6 @@ export function updateAgentSelectorButton(profile) {
   updateAgentLabel(profile.name, avatarUrl);
 }
 
-/**
- * Renders the list of agents in the dropdown.
- */
 function renderAgentSelectorOptions(profiles, activeProfileKey, onSelect) {
   ui._ensureElements();
   const { agentSelectorDropdown, agentSelectorBtn } = ui.elements;
@@ -1112,8 +928,6 @@ function renderAgentSelectorOptions(profiles, activeProfileKey, onSelect) {
     return;
   }
 
-  // No header here any more: this list is a section of the + panel, and the
-  // panel prints "Agents" above it. Two labels for one list read as two lists.
 
   profiles.forEach(profile => {
     const avatarUrl = profile.avatar || getAvatarForProfile(profile.name);
@@ -1125,20 +939,13 @@ function renderAgentSelectorOptions(profiles, activeProfileKey, onSelect) {
     btn.setAttribute('aria-checked', String(isActive));
     btn.className = `w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-3 transition-colors ${isActive ? 'bg-neutral-50 dark:bg-neutral-800 font-medium text-green-600 dark:text-green-500' : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800'}`;
 
-    // Second line: the governing policy when there is one — the single most
-    // useful fact when choosing between agents — else a trimmed description,
-    // else the tier. Keeps the row honest about what governs the pick.
     const hasPolicy = profile.policy_id && profile.policy_id !== 'standalone';
     let subtitleRaw = (hasPolicy && profile.policy_name)
         ? profile.policy_name
         : (profile.description || '').trim()
           || (profile.is_custom === false ? 'Built-in agent' : 'Standalone agent');
-    // An agent reaching this user through a grant rather than the visibility
-    // tier says so: the reader should know it was shared with them.
     if (profile.shared_via_grant) subtitleRaw = `Shared with you · ${subtitleRaw}`;
 
-    // Agent names are org-authored free text and land in an attribute and in
-    // markup; the avatar URL and subtitle are org-supplied too.
     const safeName = escapeHtml(profile.name || '');
     const safeSub = escapeHtml(subtitleRaw);
     btn.innerHTML = `
@@ -1151,14 +958,11 @@ function renderAgentSelectorOptions(profiles, activeProfileKey, onSelect) {
     `;
 
     btn.onclick = () => {
-      // Optimistic update
       updateAgentSelectorButton(profile);
       hideAgentSelector();
 
-      // Re-render options to update checkmarks
       renderAgentSelectorOptions(profiles, profile.key, onSelect);
 
-      // Trigger callback
       if (onSelect) onSelect(profile.key);
     };
 

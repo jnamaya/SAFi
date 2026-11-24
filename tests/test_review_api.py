@@ -1,12 +1,3 @@
-"""
-API tests for the human review queue (Phase E2, review_api.py), via the Flask
-test client with forged sessions. Covers the reviewer set-check (admin|auditor,
-editor excluded), approve/override dispositions riding the chat_audit_trail
-hash chain, mandatory override reason, config evidence-logging, the coverage
-report, and the alerts surface.
-
-Requires local MySQL. Run:  venv/bin/python tests/test_review_api.py
-"""
 import csv
 import hashlib
 import io
@@ -52,10 +43,6 @@ class TestReviewApi(unittest.TestCase):
         cls.app.config["TESTING"] = True
         cls.org_id = str(uuid.uuid4())
         cls.uid = f"revapi_{uuid.uuid4().hex[:8]}"
-        # A DISTINCT reviewer. The turns below belong to cls.uid's conversation,
-        # and separation of duties forbids disposing of your own turn, so a
-        # fixture that reviewed as cls.uid would be testing self-approval — the
-        # exact thing the guard exists to prevent.
         cls.reviewer = f"revapi_rev_{uuid.uuid4().hex[:8]}"
         _exec("INSERT INTO organizations (id, name) VALUES (%s, 'Review API Test Org')", (cls.org_id,))
         for uid, name in ((cls.uid, 'Rev Test'), (cls.reviewer, 'Rev Reviewer')):
@@ -65,8 +52,6 @@ class TestReviewApi(unittest.TestCase):
                                  f"{cls.uid}@example.test")
         provider_governance.activate_org(cls.org_id)
 
-        # Three governed turns: low-alignment (sampled), hard-gate redirect
-        # (sampled), clean (not sampled).
         cls.cid = str(uuid.uuid4())
         _exec("INSERT INTO conversations (id, user_id, title) VALUES (%s, %s, 'review api test')",
               (cls.cid, cls.uid))
@@ -109,8 +94,6 @@ class TestReviewApi(unittest.TestCase):
             _exec(sql, params)
 
     def client(self, role="auditor", org_id=None, as_author=False):
-        """Authenticated as the REVIEWER by default. as_author=True logs in as
-        the user who owns the turns, for asserting the self-review refusal."""
         c = self.app.test_client()
         uid = self.uid if as_author else self.reviewer
         login_as(c, uid, role, org_id or self.org_id)
@@ -123,7 +106,6 @@ class TestReviewApi(unittest.TestCase):
                 return item["id"]
         return None
 
-    # -- access control ------------------------------------------------------
 
     def test_01_reviewer_set_check(self):
         url = f"/api/organizations/{self.org_id}/review/queue"
@@ -132,7 +114,6 @@ class TestReviewApi(unittest.TestCase):
                          "editor outranks auditor in the hierarchy but must NOT review")
         self.assertEqual(self.client(role="auditor").get(url).status_code, 200)
         self.assertEqual(self.client(role="admin").get(url).status_code, 200)
-        # cross-org: session org differs from the path org
         other = self.client(role="admin", org_id=str(uuid.uuid4()))
         self.assertEqual(other.get(url).status_code, 403)
 
@@ -150,7 +131,6 @@ class TestReviewApi(unittest.TestCase):
         self.assertEqual(c.get(f"{base}?status=bogus").status_code, 400)
         self.assertEqual(c.get(f"{base}?trigger=bogus").status_code, 400)
 
-    # -- detail ---------------------------------------------------------------
 
     def test_03_detail_decrypts_turn_and_verifies_chain(self):
         qid = self._queue_id(self.mid_low)
@@ -165,17 +145,11 @@ class TestReviewApi(unittest.TestCase):
         self.assertTrue(doc["chain"]["valid"])
         self.assertEqual(doc["review_history"], [])
         self.assertIn("low_alignment", doc["queue"]["triggers"])
-        # unknown id in this org → 404
         res = self.client().get(f"/api/organizations/{self.org_id}/review/queue/999999999")
         self.assertEqual(res.status_code, 404)
 
-    # -- dispositions ---------------------------------------------------------
 
     def test_03b_author_cannot_dispose_of_own_turn(self):
-        """Separation of duties at the API layer: 403, and the item stays
-        pending so another reviewer can still act on it."""
-        # mid_gate stays pending here (the refusal must not consume it) so
-        # test_06 can still override it.
         qid = self._queue_id(self.mid_gate)
         res = self.client(role="admin", as_author=True).post(
             f"/api/organizations/{self.org_id}/review/queue/{qid}/action",
@@ -206,7 +180,7 @@ class TestReviewApi(unittest.TestCase):
                         "review entry must extend the hash chain, not break it")
 
     def test_05_disposition_is_one_shot(self):
-        qid = self._queue_id(self.mid_low)  # approved in test_04
+        qid = self._queue_id(self.mid_low)
         res = self.client().post(
             f"/api/organizations/{self.org_id}/review/queue/{qid}/action",
             json={"action": "override", "reason": "second thoughts"})
@@ -222,14 +196,12 @@ class TestReviewApi(unittest.TestCase):
         res = self.client().post(url, json={"action": "override", "reason": reason})
         self.assertEqual(res.status_code, 200)
         self.assertEqual(json.loads(res.data)["item"]["status"], "overridden")
-        # reason decrypts in the detail view and in review_history
         doc = json.loads(self.client().get(
             f"/api/organizations/{self.org_id}/review/queue/{qid}").data)
         self.assertEqual(doc["queue"]["reason"], reason)
         self.assertEqual(doc["review_history"][0]["disposition"], "overridden")
         self.assertEqual(doc["review_history"][0]["reason"], reason)
         self.assertTrue(doc["chain"]["valid"])
-        # at rest the reason is ciphertext (when encryption is configured)
         if crypto.is_enabled():
             rows = _fetchall("SELECT reason_enc FROM review_queue WHERE id=%s", (qid,))
             self.assertNotIn(reason, rows[0]["reason_enc"])
@@ -244,7 +216,6 @@ class TestReviewApi(unittest.TestCase):
             json={"action": "approve"})
         self.assertEqual(res.status_code, 403)
 
-    # -- config ---------------------------------------------------------------
 
     def test_08_config_get_reviewer_put_admin_only(self):
         base = f"/api/organizations/{self.org_id}/review/config"
@@ -258,7 +229,6 @@ class TestReviewApi(unittest.TestCase):
         events = [e["event_type"] for e in db.list_compliance_log(self.org_id, 20)]
         self.assertIn("review_config_changed", events)
 
-    # -- coverage report ------------------------------------------------------
 
     def test_09_report_counts_and_csv_custody(self):
         res = self.client().get(f"/api/organizations/{self.org_id}/review/report")
@@ -274,7 +244,6 @@ class TestReviewApi(unittest.TestCase):
         self.assertIsNotNone(rep["median_review_latency_seconds"])
         self.assertEqual(rep["per_reviewer"][f"{self.reviewer}@example.test"], 2)
         self.assertEqual(rep["purged_message_rows"], 0)
-        # JSON read leaves no custody entry; CSV download logs one
         before = [e for e in db.list_compliance_log(self.org_id, 50)
                   if e["event_type"] == "review_report_exported"]
         self.assertEqual(before, [])
@@ -286,17 +255,11 @@ class TestReviewApi(unittest.TestCase):
         self.assertEqual(len(after), 1)
         self.assertEqual(after[0]["detail"]["counts"]["sampled"], 2)
 
-    # -- per-item export ------------------------------------------------------
 
     def test_09b_items_export_carries_rationale_and_digest(self):
-        """The aggregate report proves coverage; this proves the reviews happened.
-        Runs after test_04/test_06, so one item is approved (no reason) and one
-        overridden (with a reason) — the two dispositions an examiner cares about.
-        """
         base = f"/api/organizations/{self.org_id}/review/export"
         override_reason = "REVAPI gate fired correctly but the redirect copy needs work"
 
-        # Same reviewer set-check as the rest of the blueprint.
         self.assertEqual(self.client(role="editor").get(base).status_code, 403)
 
         doc = json.loads(self.client().get(f"{base}?format=json").data)
@@ -305,8 +268,6 @@ class TestReviewApi(unittest.TestCase):
         by_status = {it["status"]: it for it in doc["items"]}
         self.assertEqual(set(by_status), {"approved", "overridden"})
 
-        # The rationale is the point of this export: stored encrypted, decrypted
-        # here, and absent from every other export path.
         self.assertEqual(by_status["overridden"]["reason"], override_reason)
         self.assertFalse(by_status["approved"]["reason"],
                          "approve was recorded without a reason; it must not invent one")
@@ -322,13 +283,10 @@ class TestReviewApi(unittest.TestCase):
             self.assertIsNotNone(it["review_latency_seconds"])
             self.assertIsNotNone(it["message_id"])
 
-        # Cross-check against the aggregate report: two views of one dataset
-        # that disagree on counts would make both untrustworthy.
         rep = json.loads(self.client().get(
             f"/api/organizations/{self.org_id}/review/report").data)
         self.assertEqual(rep["sampled"], doc["count"])
 
-        # --- CSV: real tabular output, not JSON smuggled into cells ---
         res = self.client().get(f"{base}?format=csv")
         self.assertEqual(res.status_code, 200)
         self.assertIn("attachment", res.headers.get("Content-Disposition", ""))
@@ -336,18 +294,14 @@ class TestReviewApi(unittest.TestCase):
         rows = list(csv.DictReader(io.StringIO(body)))
         self.assertEqual(len(rows), 2)
         self.assertEqual(rows[0]["agent"], "test_agent")
-        # triggers is flat and pivotable, not a JSON blob
         triggers = {r["triggers"] for r in rows}
         self.assertEqual(triggers, {"low_alignment", "hard_gate_block"})
         for t in triggers:
             self.assertNotIn("[", t)
-        # trigger_detail keeps its own column and stays parseable JSON
         self.assertIsInstance(json.loads(rows[0]["trigger_detail"]), dict)
-        # the reason survives CSV quoting exactly
         reasons = {r["reason"] for r in rows}
         self.assertIn(override_reason, reasons)
 
-        # --- integrity + custody ---
         digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
         self.assertEqual(res.headers.get("X-SAFi-Export-SHA256"), digest,
                          "header digest must cover the exact bytes served")
@@ -361,8 +315,6 @@ class TestReviewApi(unittest.TestCase):
         self.assertEqual(csv_entry["detail"]["count"], 2)
         self.assertFalse(csv_entry["detail"]["truncated"])
 
-        # A window that predates the fixture returns nothing rather than
-        # falling back to a default range.
         empty = json.loads(self.client().get(
             f"{base}?format=json&from=2020-01-01&to=2020-02-01").data)
         self.assertEqual(empty["count"], 0)
@@ -370,7 +322,6 @@ class TestReviewApi(unittest.TestCase):
         self.assertEqual(self.client().get(f"{base}?from=2026-01-01&to=2020-01-01").status_code, 400)
         self.assertEqual(self.client().get(f"{base}?format=xml").status_code, 400)
 
-    # -- alerts ---------------------------------------------------------------
 
     def test_10_alerts_surface(self):
         base = f"/api/organizations/{self.org_id}/review/alerts"

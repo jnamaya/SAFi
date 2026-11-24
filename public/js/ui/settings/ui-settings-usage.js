@@ -2,24 +2,7 @@ import * as api from '../../core/api.js';
 import * as ui from '../ui.js';
 import { escapeHtml } from '../../core/utils.js';
 
-/**
- * Models & Usage tab (backlog 61). Admin-only.
- *
- * Shows the org's LLM token consumption aggregated by day, agent, faculty
- * route, and model. Raw token counts come from the llm_usage table; dollar
- * figures are computed HERE from the price map the API serves, so they are
- * estimates that track current prices rather than stored history.
- *
- * The model catalogue is rendered onto the same tab (renderModelCatalogSection),
- * which is why the tab is named for both rather than for cost alone.
- */
 
-// Longest-substring match against the price map, scoped by provider. Returns
-// [in, out] USD per 1M tokens, or null when no price is configured. Rows from
-// the local (self-hosted llama.cpp) provider have no per-token vendor bill, so
-// they are priced 0 explicitly — without this gate, a locally served model
-// whose name matches a cloud entry (e.g. "llama-3.3-70b") would inherit that
-// vendor's rate and show a false cost.
 function priceFor(model, prices, provider) {
     if (provider === 'local') return [0, 0];
     let best = null;
@@ -45,7 +28,6 @@ function fmtTokens(n) {
     return String(n);
 }
 
-// Model sizes and RAM floors are byte counts from the catalogue.
 function fmtBytes(n) {
     if (!n || n <= 0) return '—';
     const gb = n / 1e9;
@@ -58,10 +40,6 @@ function fmtUsd(v) {
     return '$' + v.toFixed(2);
 }
 
-// Columns from `numericFrom` onward are treated as numbers: right-aligned and
-// tabular so digits line up down the column and are easy to compare. Column 0
-// is always the row label. Anything between (e.g. a Provider name) stays a
-// plain left-aligned text column.
 function usageTable(title, note, headers, rows, numericFrom = 1) {
     const isNum = (i) => i >= numericFrom;
     return `
@@ -97,19 +75,11 @@ export async function renderSettingsUsageTab(days = 30) {
         </div>
     `;
 
-    // No organization is a legitimate state on a single-tenant appliance, and
-    // it must not cost this tab its whole body: the Model Catalog is where a
-    // box with no org would go configure a local model. Only the per-org usage
-    // rollup is genuinely unavailable, so that is the only thing that is
-    // skipped. An error loading usage, by contrast, still replaces the page --
-    // that is a real failure, not a missing precondition.
     let org = null, res = null;
     try {
         const orgRes = await api.getMyOrganization();
         org = orgRes ? orgRes.organization : null;
     } catch (e) {
-        // Treat an org lookup failure as "no org" rather than aborting: the
-        // catalog is still reachable, and cloud keys simply cannot be edited.
         org = null;
     }
     if (org) {
@@ -124,8 +94,6 @@ export async function renderSettingsUsageTab(days = 30) {
     const usage = (res && res.usage) || { by_day: [], by_model: [], by_route: [], by_agent: [] };
     const prices = (res && res.prices) || {};
 
-    // Totals and the estimated spend come from the by-model split, the only
-    // grouping where a price can be matched.
     let totIn = 0, totOut = 0, totCalls = 0, totCost = 0, unpriced = false;
     for (const r of usage.by_model) {
         totIn += r.tokens_in; totOut += r.tokens_out; totCalls += r.calls;
@@ -263,12 +231,6 @@ export async function renderSettingsUsageTab(days = 30) {
     renderModelCatalogSection(org ? org.id : null);
 }
 
-// Model Catalog (backlog 63/64): one card, two sources of models. "Local" is
-// the model on this box, chosen from the appliance catalogue. "Cloud" is
-// bring-your-own provider keys plus operator-added model ids. They used to be
-// two separate cards, which implied they were two unrelated things, when in
-// fact the answer to "which models can SAFi use here" is one question with two
-// possible homes.
 async function renderModelCatalogSection(orgId) {
     const host = document.getElementById('usage-model-catalog-section');
     if (!host) return;
@@ -299,8 +261,6 @@ async function renderModelCatalogSection(orgId) {
         cloud: document.getElementById('catalog-pane-cloud'),
     };
 
-    // Default to whichever side can actually offer something. On an appliance
-    // with a model already served, Local is the answer; otherwise Cloud.
     let local = null;
     try {
         local = await api.getLocalModels();
@@ -330,9 +290,6 @@ async function renderModelCatalogSection(orgId) {
     show(prevSelected || (localHas ? 'local' : 'cloud'));
 }
 
-// Local: what this box has. Hardware fit matters here because the download has
-// to happen on the operator's own machine, so a model too big for the RAM is
-// listed as not runnable rather than offered and then failing at load time.
 async function renderLocalPane(host, res, orgId) {
     if (!host) return;
 
@@ -391,7 +348,6 @@ async function renderLocalPane(host, res, orgId) {
                 : 'No local model is being served, so no local model is offered in the composer.'}
         </p>`;
 
-    // If any model is currently downloading or loading into memory, start/resume watching progress
     const busyModel = models.find(m => m.downloading || m.loading);
     if (busyModel) {
         watchLocalFetch(host, orgId, busyModel.id);
@@ -406,7 +362,7 @@ async function renderLocalPane(host, res, orgId) {
             try {
                 const result = await api.downloadLocalModel(modelId, activate);
                 if (!result || !result.ok) throw new Error((result && result.error) || (activate ? 'Unable to load model' : 'Unable to start download'));
-                _localFetchPolling = false; // ensure new poll cycle runs
+                _localFetchPolling = false;
                 await renderModelCatalogSection(orgId);
             } catch (e) {
                 btn.disabled = false;
@@ -433,7 +389,6 @@ function watchLocalFetch(host, orgId, targetModelId = null) {
             const result = await api.getLocalModelStatus();
             const status = (result && result.status) || {};
 
-            // If we are waiting for a specific model, ignore stale status from other models
             if (targetModelId && status.model && status.model !== targetModelId && status.state === 'done') {
                 setTimeout(poll, 1500);
                 return;
@@ -468,36 +423,26 @@ function watchLocalFetch(host, orgId, targetModelId = null) {
     poll();
 }
 
-// Cloud: BYOK provider keys (write-only) plus operator-added model ids. Same
-// two widgets as the old Provider API Keys and Model Catalog cards, now sharing
-// one card with Local.
 async function renderCloudPane(host, orgId) {
     if (!host) return;
 
     let keys = null, catalog = null;
-    // With an org, the table manages THIS org's own keys. Without one — the
-    // normal case on an appliance — there is no org to scope a key to, so it
-    // manages the deployment's keys instead. Previously the no-org case rendered
-    // no table at all, which left "add a cloud model" with an empty provider
-    // list and no way to fix it from the UI.
     if (orgId) {
         try {
             keys = await api.getOrgProviderKeys(orgId);
-        } catch (e) { /* rendered as empty below */ }
+        } catch (e) {   }
     } else {
         try {
             keys = await api.getDeploymentProviderKeys();
-        } catch (e) { /* rendered as empty below */ }
+        } catch (e) {   }
     }
     try {
         catalog = await api.getCustomModels();
-    } catch (e) { /* rendered as empty below */ }
+    } catch (e) {   }
 
     const providers = (keys && keys.ok && keys.providers) || [];
     const own = new Map(((keys && keys.keys) || []).map(k => [k.provider, k]));
     const custom = (catalog && catalog.ok && catalog.models) || [];
-    // The two endpoints flag the underlying .env key differently, and the copy
-    // below has to describe the right fallback for the scope being edited.
     const hasEnvKey = orgId ? 'deployment_configured' : 'env_configured';
     const scopeWord = orgId ? "your org's" : "this appliance's";
     const fallbackWord = orgId ? 'the deployment default' : 'the .env key';
@@ -658,10 +603,6 @@ async function renderCloudPane(host, orgId) {
     });
 }
 
-// Operator-only (backlog 65): usage across every org on this deployment,
-// so the operator can separate their org's spend from everyone riding the
-// shared .env keys. Anyone not named in SAFI_SUPER_ADMINS gets a 403
-// from the endpoint and never sees the section.
 async function renderDeploymentSection(days, prices) {
     const host = document.getElementById('usage-deployment-section');
     if (!host) return;
@@ -669,12 +610,10 @@ async function renderDeploymentSection(days, prices) {
     try {
         res = await api.getDeploymentUsage(days);
     } catch (e) {
-        return; // not an operator, or endpoint unavailable — skip silently
+        return;
     }
     if (!res || !res.ok) return;
 
-    // Roll the per-org-per-model rows up to one line per org, pricing each
-    // model row before it loses its identity.
     const orgs = new Map();
     for (const r of res.usage.by_org_model) {
         const key = r.org_id || null;

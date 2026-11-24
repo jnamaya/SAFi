@@ -1,12 +1,3 @@
-"""
-Pure unit tests for the regime-keyed notification clocks (Phase D — no DB).
-
-Covers the rule table itself (reg_sp / eu_ai_act / hipaa), regime tagging
-defaults for legacy rows, and multi-regime composition. The original Reg S-P
-clock keeps its own suite in test_incident_clock.py.
-
-Run:  venv/bin/python tests/test_regime_clocks.py
-"""
 import sys
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -45,7 +36,7 @@ class TestRegimeTagging(unittest.TestCase):
 
     def test_json_string_regimes_parsed(self):
         self.assertEqual(incident_regimes(incident(regimes='["hipaa", "eu_ai_act"]')),
-                         ["eu_ai_act", "hipaa"])  # canonical order
+                         ["eu_ai_act", "hipaa"])
 
     def test_unknown_keys_dropped(self):
         self.assertEqual(incident_regimes(incident(regimes=["hipaa", "gdpr"])), ["hipaa"])
@@ -118,8 +109,6 @@ class TestEUAIActClock(unittest.TestCase):
         self.assertEqual((c["state"], c["days_taken"]), ("notified", 7))
 
     def test_harm_determination_does_not_except_eu(self):
-        # The Reg S-P no-substantial-harm exception is regime-specific:
-        # a non-reportable EU incident is untagged instead.
         c = self._clock(firm_aware_at=NOW - timedelta(days=20),
                         harm_determination="no_substantial_harm")
         self.assertEqual(c["state"], "overdue")
@@ -137,7 +126,6 @@ class TestHIPAAClocks(unittest.TestCase):
         ind = by_key(clocks, "hipaa_individuals")
         self.assertEqual((ind["window_days"], ind["days_remaining"], ind["state"]),
                          (60, 50, "running"))
-        # <500: HHS annual log — due 60d after the calendar year of discovery
         hhs = by_key(clocks, "hipaa_hhs")
         self.assertIsNone(hhs["window_days"])
         self.assertIn("2027-03-01", hhs["due_at"])

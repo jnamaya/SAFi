@@ -1,34 +1,4 @@
 #!/usr/bin/env python3
-"""
-Interactive setup wizard — writes a working .env so nobody has to hand-edit a
-57-variable template to answer three questions.
-
-    python scripts/setup.py              # interactive
-    python scripts/setup.py --defaults   # non-interactive (CI / scripted installs)
-    python scripts/setup.py --force      # overwrite an existing .env (backed up first)
-
-WHY THIS IS A CLI SCRIPT AND NOT A PAGE IN THE APP
---------------------------------------------------
-docker-compose.yml interpolates DB_USER, DB_PASSWORD, DB_NAME,
-MYSQL_ROOT_PASSWORD and APP_PORT *before either container exists*. Those values
-have to be on disk in .env before anything can serve a page, so a browser-based
-first-run wizard is structurally impossible for exactly the variables that
-matter most. .env remains the artifact; this is a generator for it.
-
-WHY IT ONLY IMPORTS THE STANDARD LIBRARY
-----------------------------------------
-It runs on the host, before `docker compose up`, in whatever Python happens to
-be installed. It cannot assume requirements.txt has ever been installed — so no
-`requests`, and no `cryptography` (see gen_fernet_key for how the encryption key
-is produced without it).
-
-WHY IT REWRITES THE TEMPLATE INSTEAD OF PRINTING KEY=VALUE LINES
-----------------------------------------------------------------
-The output is .env.example with values substituted in place, comments and all.
-That keeps one source of truth: a variable added to the template flows through
-here for free, the generated .env stays self-documenting, and
-test_setup_wizard.py asserts every key this writes still exists upstream.
-"""
 from __future__ import annotations
 
 import argparse
@@ -48,17 +18,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE = REPO_ROOT / ".env.example"
 TARGET = REPO_ROOT / ".env"
 
-VERIFY_TIMEOUT = 8  # seconds — a slow provider must not hang the install
+VERIFY_TIMEOUT = 8
 
-# Providers sit behind WAFs that block urllib's default "Python-urllib/3.x"
-# outright. Groq answers such a request with HTTP 403 and a Cloudflare body
-# ("error code: 1010") whatever key you send, so without this header the check
-# below rejected every key, valid ones included.
 USER_AGENT = "SAFi-setup/1.0 (+https://github.com/jnamaya/SAFi)"
 
-# Providers in the order they are offered. `verify` is (url, headers-builder);
-# None means the provider has no stable, cheap listing endpoint to check against,
-# so the key is accepted without a round trip rather than guessed at.
 PROVIDERS: List[dict] = [
     {
         "key": "GROQ_API_KEY", "name": "Groq",
@@ -72,7 +35,7 @@ PROVIDERS: List[dict] = [
         "note": "free tier",
         "signup": "https://aistudio.google.com",
         "verify": ("https://generativelanguage.googleapis.com/v1beta/models",
-                   None),  # key goes in the query string; handled in verify_key
+                   None),
     },
     {
         "key": "OPENAI_API_KEY", "name": "OpenAI",
@@ -118,10 +81,7 @@ PROVIDERS: List[dict] = [
 ]
 
 
-# ── terminal helpers ─────────────────────────────────────────────────────────
-
 def _c(code: str, s: str) -> str:
-    """Colour only when stdout is a real terminal, so piped output stays clean."""
     return f"\033[{code}m{s}\033[0m" if sys.stdout.isatty() else s
 
 
@@ -138,10 +98,6 @@ def heading(n: int, total: int, text: str) -> None:
 
 
 def _read(prompt: str) -> str:
-    """
-    Single entry point for every prompt, so a closed stdin produces one clear
-    message instead of a traceback from whichever question came first.
-    """
     try:
         return input(prompt).strip()
     except EOFError:
@@ -165,7 +121,6 @@ def ask(prompt: str, default: str = "", secret_hint: bool = False) -> str:
 
 
 def ask_choice(prompt: str, options: List[Tuple[str, str, str]], default: int = 0) -> str:
-    """options: (value, label, help). Returns the chosen value."""
     print(f"  {prompt}")
     for i, (_, label, help_text) in enumerate(options, 1):
         marker = dim(" (default)") if i - 1 == default else ""
@@ -194,42 +149,22 @@ def ask_yes_no(prompt: str, default: bool = False) -> bool:
         print(red("  Answer y or n."))
 
 
-# ── secret generation ────────────────────────────────────────────────────────
-
 def gen_secret() -> str:
     return secrets.token_hex(32)
 
 
 def gen_password() -> str:
-    """URL-safe so it survives a MySQL connection string without escaping."""
     return secrets.token_urlsafe(24)
 
 
 def gen_fernet_key() -> str:
-    """
-    A Fernet key is exactly urlsafe_b64encode(32 random bytes) — which is what
-    cryptography.fernet.Fernet.generate_key() returns. Reproducing it from the
-    standard library keeps this script runnable before requirements.txt is
-    installed. Verified against Fernet(key) in tests/test_setup_wizard.py, so
-    this stays honest if the upstream format ever changes.
-    """
     return base64.urlsafe_b64encode(secrets.token_bytes(32)).decode()
 
-
-# ── template parsing ─────────────────────────────────────────────────────────
 
 ASSIGNMENT = re.compile(r"^([A-Z][A-Z0-9_]*)=(.*)$")
 
 
 def parse_template(path: Path) -> Tuple[List[str], Dict[str, int]]:
-    """
-    Returns the template's lines and a map of KEY -> line index.
-
-    Only uncommented assignments at the start of a line count. The template
-    deliberately ships commented-out examples (#SAFI_INTELLECT_MODEL=...) that
-    exist to be read, not set; treating those as settable would uncomment them
-    and pin models the user never chose.
-    """
     if not path.exists():
         raise SystemExit(red(f"Cannot find {path} — run this from a full checkout."))
     lines = path.read_text(encoding="utf-8").splitlines()
@@ -242,12 +177,9 @@ def parse_template(path: Path) -> Tuple[List[str], Dict[str, int]]:
 
 
 def render(lines: List[str], index: Dict[str, int], values: Dict[str, str]) -> str:
-    """Substitute values into the template in place, keeping every comment."""
     out = list(lines)
     unknown = [k for k in values if k not in index]
     if unknown:
-        # A key we write that the template does not define would silently vanish
-        # from the generated .env. Fail loudly instead.
         raise SystemExit(red(
             "Internal error: these keys are not defined in .env.example: "
             + ", ".join(sorted(unknown))))
@@ -256,10 +188,7 @@ def render(lines: List[str], index: Dict[str, int], values: Dict[str, str]) -> s
     return "\n".join(out) + "\n"
 
 
-# ── environment checks ───────────────────────────────────────────────────────
-
 def port_is_free(port: int) -> bool:
-    """Best-effort: a port already bound would make `docker compose up` fail late."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
@@ -270,11 +199,6 @@ def port_is_free(port: int) -> bool:
 
 
 def verify_key(provider: dict, key: str) -> Tuple[bool, str]:
-    """
-    Best-effort liveness check. Returns (ok, message). A network failure is
-    never fatal — plenty of people set up behind a proxy or offline and paste a
-    key they know is good.
-    """
     if not provider.get("verify"):
         return True, "not checked (provider has no listing endpoint)"
     url, headers_fn = provider["verify"]
@@ -289,28 +213,17 @@ def verify_key(provider: dict, key: str) -> Tuple[bool, str]:
                 return True, "key accepted by the provider"
             return True, f"unexpected status {resp.status} — accepting anyway"
     except urllib.error.HTTPError as e:
-        # 401 is the only status that means "this key is wrong". 403 does not:
-        # every provider here sits behind a WAF that returns it for reasons
-        # having nothing to do with the key — bot heuristics, a datacentre IP,
-        # a geo rule. Treating it as a rejection told people their working key
-        # was invalid, which is worse than not checking at all.
         if e.code == 401:
             return False, "provider rejected the key (HTTP 401 — key is not valid)"
         if e.code == 403:
             return True, ("could not check — the provider blocked the request "
                           "before looking at the key (HTTP 403)")
         return True, f"could not check (HTTP {e.code}) — accepting"
-    except Exception as e:  # DNS, TLS, proxy, timeout, offline
+    except Exception as e:
         return True, f"could not reach the provider ({type(e).__name__}) — accepting"
 
 
-# ── the wizard ───────────────────────────────────────────────────────────────
-
 def _local_tcb_fingerprint() -> str:
-    """Measure THIS tree, for the install-time honesty check only. The wizard
-    never offers this value as the pin: pinning a tree to itself would be
-    self-attestation, the exact loophole the pin exists to close. The pin is
-    only meaningful copied from an official release's published line."""
     try:
         import importlib.util
         checker = Path(__file__).resolve().parent / "verify_integrity.py"
@@ -330,7 +243,6 @@ def _local_tcb_fingerprint() -> str:
 
 
 def ask_fingerprint_pin() -> str:
-    """Optional TCB Fingerprint pin for production installs. Returns "" to skip."""
     print()
     print(dim("  Optional: if you installed from an official release, you can pin\n"
               "  this deployment to it. Copy the 'TCB Fingerprint:' line from the\n"
@@ -365,10 +277,6 @@ def collect_interactive() -> Dict[str, str]:
     values: Dict[str, str] = {}
     total = 4
 
-    # ── 1. What is this instance? ────────────────────────────────────────────
-    # FLASK_ENV and SAFI_DEPLOYMENT_MODE both take the word "production" and mean
-    # different things (strictness vs audience). Asking once in plain language and
-    # setting both is the single biggest reason this wizard exists.
     heading(1, total, "What is this instance for?")
     kind = ask_choice("This sets both the startup strictness and the audience.", [
         ("trial", "Trying SAFi out locally",
@@ -383,7 +291,6 @@ def collect_interactive() -> Dict[str, str]:
     values["FLASK_ENV"] = "production" if is_prod else "development"
     values["SAFI_DEPLOYMENT_MODE"] = kind
 
-    # ── 2. LLM provider ──────────────────────────────────────────────────────
     heading(2, total, "AI provider (optional)")
     print(dim("  SAFi can connect to Groq, Gemini, OpenAI, Anthropic, and more.\n"
               "  An API key is optional during setup — you can provide one now, or\n"
@@ -421,7 +328,6 @@ def collect_interactive() -> Dict[str, str]:
             if api_key:
                 values[provider["key"]] = api_key
 
-    # ── 3. Where it will be reachable ────────────────────────────────────────
     heading(3, total, "Network")
     port = 5000
     if not port_is_free(port):
@@ -448,11 +354,8 @@ def collect_interactive() -> Dict[str, str]:
 
     values["WEB_BASE_URL"] = base_url
     values["ALLOWED_ORIGINS"] = base_url
-    # Secure cookies over plain HTTP are simply never sent, which presents as
-    # "login does nothing" — derive it from the scheme rather than asking.
     values["SESSION_COOKIE_SECURE"] = "True" if base_url.startswith("https://") else "False"
 
-    # ── 4. Login ─────────────────────────────────────────────────────────────
     heading(4, total, "Login")
     if is_prod:
         print(dim("  Production needs at least one way in. A local admin account\n"
@@ -500,25 +403,17 @@ def collect_interactive() -> Dict[str, str]:
     else:
         values["SAFI_SSO_ENABLED"] = "false"
 
-    # Optional TCB Fingerprint pin — production-grade installs only. Trial
-    # installs run from a cloned branch, where a pin can only mismatch.
     if is_prod:
         pin = ask_fingerprint_pin()
         if pin:
             values["SAFI_EXPECTED_FINGERPRINT"] = pin
 
     values.update(generated_secrets())
-    values["_admin_password"] = admin_password  # stripped before render; shown at the end
+    values["_admin_password"] = admin_password
     return values
 
 
 def generated_secrets() -> Dict[str, str]:
-    """
-    Never prompted for. A human inventing a session secret produces a worse one
-    than os.urandom, and a template that ships `change-me-*` placeholders is the
-    mechanism by which those placeholders reach production — Config.validate()
-    already carries a check for exactly that (safi_app/config.py:461).
-    """
     return {
         "FLASK_SECRET_KEY": gen_secret(),
         "SAFI_ENCRYPTION_KEY": gen_fernet_key(),
@@ -529,11 +424,6 @@ def generated_secrets() -> Dict[str, str]:
 
 
 def collect_defaults() -> Dict[str, str]:
-    """
-    Non-interactive path for CI and scripted installs. Everything is generated
-    except the provider key, which is read from the real environment — the one
-    value no script can invent.
-    """
     values: Dict[str, str] = {
         "FLASK_ENV": "development",
         "SAFI_DEPLOYMENT_MODE": "trial",
@@ -558,10 +448,7 @@ def collect_defaults() -> Dict[str, str]:
     return values
 
 
-# ── writing ──────────────────────────────────────────────────────────────────
-
 def backup_path(target: Path) -> Path:
-    """Never overwrite an existing backup — find the first free name."""
     candidate = target.with_suffix(target.suffix + ".bak")
     n = 1
     while candidate.exists():
@@ -580,7 +467,6 @@ def write_env(content: str, force: bool) -> None:
         backup.write_text(TARGET.read_text(encoding="utf-8"), encoding="utf-8")
         print(yellow(f"  Existing .env backed up to {backup.name}"))
     TARGET.write_text(content, encoding="utf-8")
-    # It holds a database password, a session secret and an encryption key.
     os.chmod(TARGET, 0o600)
 
 

@@ -1,9 +1,3 @@
-"""FAISS index loading and hybrid (keyword + semantic) search.
-
-Owns the on-disk contract for a knowledge base: the `.index` file, the metadata
-file, and the shape of the metadata dicts callers interpolate. Bible citations
-("John 3:16") route to keyword matching; everything else to vector search.
-"""
 import faiss
 import json
 import pickle
@@ -15,9 +9,6 @@ import threading
 from fastembed import TextEmbedding
 from typing import List, Dict, Any, Optional
 
-# Env overrides exist so production can point off-disk; defaults are anchored
-# to the app root so imports work no matter the caller's CWD (systemd, the safi
-# CLI run from $HOME, cron, tests).
 _APP_DIR = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), *([".."] * 3)))
 VECTOR_STORE_PATH = os.environ.get("SAFI_VECTOR_STORE_PATH", os.path.join(_APP_DIR, "vector_store"))
 CACHE_DIR = os.environ.get("SAFI_MODEL_CACHE_DIR", os.path.join(_APP_DIR, "cache"))
@@ -25,9 +16,6 @@ EMBEDDING_MODEL = os.environ.get("SAFI_EMBEDDING_MODEL", 'all-MiniLM-L6-v2')
 
 
 def _hub_model_name(name: str) -> str:
-    """fastembed wants the fully-qualified hub id; sentence-transformers
-    accepted the bare one. Accept either so an existing SAFI_EMBEDDING_MODEL
-    keeps working after the ONNX swap."""
     return name if "/" in name else f"sentence-transformers/{name}"
 
 os.environ["NLTK_DATA"] = CACHE_DIR
@@ -35,10 +23,7 @@ os.environ["SENTENCE_TRANSFORMERS_HOME"] = CACHE_DIR
 os.environ["HF_HUB_CACHE"] = CACHE_DIR
 os.makedirs(CACHE_DIR, exist_ok=True)
 
-# --- shared embedding model ---------------------------------------------------
 
-# Loaded once and shared across every session; a second copy costs hundreds of
-# MB of RSS per process for identical weights.
 _SHARED_MODEL = None
 _MODEL_LOCK = threading.Lock()
 
@@ -52,66 +37,27 @@ def get_shared_embedding_model():
     return _SHARED_MODEL
 
 
-# --- DEFAULT CHUNK RENDERING ---------------------------------------------
-# How a retrieved metadata dict becomes prompt text when the agent defines no
-# rag_format_string of its own. Lives here because this module owns the shape
-# of those dicts ("source", "text_chunk", …), so the default rendering of them
-# belongs with the contract that produces them.
-#
-# Every built-in agent sets its own template, so this default is what custom
-# (wizard-built) agents get — and it names the source file, because an agent
-# grounded in uploaded documents that cannot say WHICH document it used is a
-# citation promise the UI makes and the prompt cannot keep. Callers already
-# fall back to bare text_chunk on KeyError, so a corpus without "source"
-# degrades rather than breaking.
 DEFAULT_RAG_FORMAT_STRING = "SOURCE: {source}\nCONTENT:\n{text_chunk}\n---"
 
 
 def resolve_rag_format_string(configured) -> str:
-    """The template to render retrieved chunks with.
-
-    Treats empty and whitespace-only as "not configured", which a plain
-    `profile.get(key, default)` does NOT: the agent wizard stores
-    `rag_format_string: ""` for every custom agent, so the dict HAS the key and
-    the default never applied. The visible symptom was retrieval working
-    perfectly and then formatting every chunk to an empty string — five chunks
-    found, five empty strings injected, and an agent that behaved as though its
-    knowledge base were empty.
-    """
     if isinstance(configured, str) and configured.strip():
-        return configured          # returned unstripped: trailing "\n---" matters
+        return configured
     return DEFAULT_RAG_FORMAT_STRING
 
 
 def embed_texts(model, texts: List[str]) -> np.ndarray:
-    """fastembed returns a generator of vectors; FAISS needs a float32 matrix.
-
-    Vectors are unit-normalised by the model, exactly as sentence-transformers'
-    all-MiniLM-L6-v2 was — verified identical to 5 decimal places — so indexes
-    built before the ONNX swap remain valid and IndexFlatIP is still cosine.
-    """
     return np.array(list(model.embed(texts)), dtype="float32")
 
 
-# --- path safety -------------------------------------------------------------
-# A KB name reaches this module from agents.rag_knowledge_base, which since
-# 2026-08-07 can be a user-created KB, and is interpolated straight into a
-# filename — without this check a name of "../../etc/passwd" reads outside the
-# vector store. Built-in corpora ("safi", "bible_bsb_v1") and UUID user KBs
-# both pass; everything else is refused.
 _SAFE_KB_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 
 
 class UnsafeKnowledgeBaseName(ValueError):
-    """The KB name could escape VECTOR_STORE_PATH. Refused rather than
-    stripped: a sanitiser silently maps two distinct names onto one file,
-    which is its own class of bug."""
+    pass
 
 
 def _kb_index_path(knowledge_base_name: str) -> str:
-    """Resolves a KB name to its index path, refusing anything that is not a
-    plain filename component. The realpath check is belt-and-braces against a
-    name that passes the regex but resolves outside the store via a symlink."""
     if not isinstance(knowledge_base_name, str) or not _SAFE_KB_NAME.match(knowledge_base_name):
         raise UnsafeKnowledgeBaseName(f"unsafe knowledge base name: {knowledge_base_name!r}")
     path = os.path.join(VECTOR_STORE_PATH, f"{knowledge_base_name}.index")
@@ -121,24 +67,12 @@ def _kb_index_path(knowledge_base_name: str) -> str:
     return path
 
 
-# --- RETRIEVER CACHE -----------------------------------------------------
-# Retriever was constructed per turn (orchestrator.py builds a RAGService each
-# time), which meant a FAISS read plus a metadata load on every request. That
-# was tolerable with three built-in indexes and is not once every user can
-# create their own. Cached per KB name, invalidated by index mtime so a
-# rebuild is picked up without a restart, and bounded so a few hundred KBs
-# cannot pin every index in memory in all four gunicorn workers.
-_RETRIEVER_CACHE: "OrderedDict[str, Any]" = None  # type: ignore[assignment]
+_RETRIEVER_CACHE: "OrderedDict[str, Any]" = None
 _RETRIEVER_CACHE_LOCK = threading.Lock()
 RETRIEVER_CACHE_SIZE = int(os.environ.get("SAFI_RETRIEVER_CACHE_SIZE", "8"))
 
 
 def get_cached_retriever(knowledge_base_name: str):
-    """Returns a shared Retriever, rebuilding it when the index file changed.
-
-    Retriever.search() is read-only over faiss + a list, so sharing one
-    instance across threads is safe; faiss releases the GIL during search.
-    """
     global _RETRIEVER_CACHE
     from collections import OrderedDict
     with _RETRIEVER_CACHE_LOCK:
@@ -164,18 +98,12 @@ def get_cached_retriever(knowledge_base_name: str):
 
 
 def invalidate_cached_retriever(knowledge_base_name: str) -> None:
-    """Drops a KB from this process's cache. Only helps the process that
-    rebuilt the index — the indexer runs in its own container — which is why
-    the mtime check above, not this call, is what actually keeps the gunicorn
-    workers current. Kept because tests and any in-process build need it."""
     with _RETRIEVER_CACHE_LOCK:
         if _RETRIEVER_CACHE:
             _RETRIEVER_CACHE.pop(knowledge_base_name, None)
 
 
 class Retriever:
-    """One knowledge base's index plus its metadata; search() is the interface
-    and returns raw metadata dicts, unrendered."""
     def __init__(self, knowledge_base_name: str):
         self.kb_name = knowledge_base_name
         self.model = None
@@ -189,10 +117,6 @@ class Retriever:
             json_meta_path = os.path.join(VECTOR_STORE_PATH, f"{knowledge_base_name}_metadata.json")
             pkl_meta_path = os.path.join(VECTOR_STORE_PATH, f"{knowledge_base_name}_metadata.pkl")
 
-            # JSON first: user-created KBs (kb_indexer) write JSON precisely so
-            # that a file whose write path is reachable from an upload endpoint
-            # is never fed to pickle.load. The built-in indexes shipped by
-            # rag/build_index_v2.py are still .pkl, hence the fallback.
             metadata_path = json_meta_path if os.path.exists(json_meta_path) else pkl_meta_path
 
             if not os.path.exists(index_path) or not os.path.exists(metadata_path):
@@ -206,17 +130,9 @@ class Retriever:
                 with open(metadata_path, "r", encoding="utf-8") as f:
                     metadata = json.load(f)
             else:
-                # Legacy path, built-in corpora only. pickle.load is unsafe on
-                # attacker-controlled files; these are produced offline by the
-                # CLI builder and shipped with the image.
                 with open(metadata_path, "rb") as f:
                     metadata = pickle.load(f)
 
-            # The index and its metadata are two files, so a rebuild cannot
-            # swap them in one atomic step. A mismatch means we caught the
-            # rename window — refuse rather than serve chunk texts that belong
-            # to different vectors, which would be silent mis-citation. The
-            # next turn re-reads and finds a consistent pair.
             if index.ntotal != len(metadata):
                 self.log.warning(
                     f"Index/metadata mismatch for '{knowledge_base_name}' "
@@ -252,15 +168,6 @@ class Retriever:
         for match in matches:
             book = match.group(1).strip().lower()
             chapter = int(match.group(2).strip())
-            # Everything after "book chapter" that is still a citation narrows
-            # the request: a single verse ("Psalm 119:105") or, far more often
-            # for a lectionary, a RANGE ("Luke 9:57-62").
-            #
-            # The range is the whole span, not just its first verse. Matching
-            # only "57" returned one chunk — verses 55-59 — for the day's
-            # reading of 57-62, so verses 60-62 were absent and the agent
-            # completed the passage from memory, which is precisely what the
-            # Textual Fidelity value exists to catch.
             verse_lo = verse_hi = None
             tail = query[match.end():]
             span = re.match(r'[\s:;]*([\d\s,;:–—\-]+)', tail)
@@ -276,13 +183,11 @@ class Retriever:
                 start_verse = end_verse = None
 
                 if 'metadata' in meta and isinstance(meta.get('metadata'), dict):
-                    # nested shape (bsb_chunks.json)
                     book_to_check = meta['metadata'].get('book', '').lower()
                     chapter_to_check = meta['metadata'].get('chapter')
                     start_verse = meta['metadata'].get('start_verse')
                     end_verse = meta['metadata'].get('end_verse')
                 else:
-                    # flat shape (SAFi, old bible_asv)
                     book_to_check = meta.get('book', '').lower()
                     chapter_to_check = meta.get('chapter')
                     start_verse = meta.get('start_verse')
@@ -290,10 +195,6 @@ class Retriever:
 
                 if book_to_check != book or chapter_to_check != chapter:
                     continue
-                # Chunks overlap (~4 verses each), so every chunk that touches
-                # ANY verse of the span is kept. Chunks without verse metadata
-                # cannot be placed, so they are kept rather than dropped —
-                # better the whole chapter than a gap the model cannot see.
                 if verse_lo is not None and start_verse is not None and end_verse is not None:
                     if end_verse < verse_lo or start_verse > verse_hi:
                         continue
@@ -302,13 +203,6 @@ class Retriever:
             all_indices.update(candidate_indices)
 
         ordered = sorted(all_indices)
-        # k is a backstop for a caller that asks for one, NOT a bound on a
-        # citation. Slicing a chapter by k silently returns its opening: at
-        # k=50 "Psalm 119" lost verses 148-176, and at k=5 "Psalm 119:105"
-        # answered from verses 1-20 and never reached verse 105 at all. A
-        # chapter is bounded anyway (the longest is 176 verses), and the
-        # character budget that used to trim here is now operator-set and
-        # unlimited by default, so an uncapped citation arrives whole.
         return ordered if k is None else ordered[:k]
 
     def search(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
@@ -318,19 +212,10 @@ class Retriever:
 
         indices_to_return = []
         
-        # Citation queries skip the vector path entirely: "John 3:16" has no
-        # useful embedding neighbourhood, so an exact book/chapter match beats
-        # the nearest neighbours.
-        #
-        # k is deliberately NOT passed on: a citation is a precise request, and
-        # slicing it would answer with the opening of the chapter rather than
-        # the verse asked for (see _keyword_search). It used to be pinned to 50
-        # here, which also silently discarded the caller's k.
         if self.kb_name.lower().startswith("bible") and self._is_citation_query(query):
             self.log.info("Bible citation detected, using keyword search.")
             indices_to_return = self._keyword_search(query)
         
-        # Fall through to semantic search when the citation matched nothing.
         if not indices_to_return:
             self.log.info("Performing semantic vector search.")
             query_embedding = embed_texts(self.model, [query])

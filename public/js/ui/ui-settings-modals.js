@@ -1,7 +1,3 @@
-// ui-settings-modals.js
-// Aggregator for the modularized settings components.
-// This maintains backward compatibility for app.js which imports * as uiSettingsModals.
-
 export * from './settings/ui-settings-core.js';
 export * from './settings/ui-settings-agents.js';
 export * from './settings/ui-settings-org.js';

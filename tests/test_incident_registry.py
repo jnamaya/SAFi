@@ -1,11 +1,3 @@
-"""
-DB integration tests for the security-incident registry (Reg S-P 248.30).
-
-Requires local MySQL. Uses a throwaway org, cleaned up in tearDownClass via
-raw SQL (there is deliberately no delete helper for incidents).
-
-Run:  venv/bin/python tests/test_incident_registry.py
-"""
 import sys
 import uuid
 import unittest
@@ -68,7 +60,7 @@ class TestIncidentRegistry(unittest.TestCase):
         self.assertEqual(diff["severity"]["from"], "high")
         self.assertEqual(diff["severity"]["to"], "critical")
         self.assertEqual(diff["containment_notes"]["to"], "isolated host")
-        self.assertNotIn("title", diff)  # unchanged fields not in diff
+        self.assertNotIn("title", diff)
 
     def test_noop_update_writes_no_event(self):
         iid = self._create()
@@ -99,7 +91,6 @@ class TestIncidentRegistry(unittest.TestCase):
         row = incident_store.get_security_incident(self.org_id, iid)
         first_stamp = row["customers_notified_at"]
         self.assertIsNotNone(first_stamp)
-        # Second notification event does not move the first-notice timestamp
         incident_store.append_incident_event(self.org_id, iid, "notification_sent", "Follow-up batch", *ACTOR)
         row2 = incident_store.get_security_incident(self.org_id, iid)
         self.assertEqual(row2["customers_notified_at"], first_stamp)
@@ -130,7 +121,6 @@ class TestIncidentRegistry(unittest.TestCase):
         ids = [e["id"] for e in events]
         self.assertEqual(ids, sorted(ids))
 
-    # --- Phase D: regime tags + per-regime notice stamps -------------------
 
     def test_regime_fields_round_trip(self):
         iid = self._create(regimes=["reg_sp", "hipaa"], hipaa_role="business_associate",
@@ -162,7 +152,6 @@ class TestIncidentRegistry(unittest.TestCase):
         row = incident_store.get_security_incident(self.org_id, iid)
         self.assertIsNotNone(row["hhs_notified_at"])
         first = row["authority_notified_at"]
-        # Re-notifying does not move the first stamp
         incident_store.append_incident_event(self.org_id, iid, "authority_notified", "follow-up", *ACTOR)
         self.assertEqual(incident_store.get_security_incident(self.org_id, iid)["authority_notified_at"], first)
 
@@ -177,7 +166,6 @@ class TestIncidentRegistry(unittest.TestCase):
 
 
 class TestOrgIncidentRegimes(unittest.TestCase):
-    """Org-level default regime set (organizations.settings.incident_regimes)."""
 
     @classmethod
     def setUpClass(cls):
@@ -205,7 +193,7 @@ class TestOrgIncidentRegimes(unittest.TestCase):
 
     def test_set_canonicalizes_and_evidence_logs(self):
         out = incident_store.set_org_incident_regimes(self.org_id, ["hipaa", "reg_sp"], ACTOR[1])
-        self.assertEqual(out["regimes"], ["reg_sp", "hipaa"])  # canonical order
+        self.assertEqual(out["regimes"], ["reg_sp", "hipaa"])
         self.assertEqual(incident_store.get_org_incident_regimes(self.org_id), ["reg_sp", "hipaa"])
         conn = db.get_db_connection()
         cur = conn.cursor(dictionary=True)

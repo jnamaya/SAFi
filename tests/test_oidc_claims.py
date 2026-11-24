@@ -1,10 +1,3 @@
-"""
-Tests for per-tenant OIDC claim enforcement (enterprise identity Phase 2):
-org config validation, the claim gate, SSO auth_context evidence, and the
-dashboard JWT expiry.
-
-Run:  venv/bin/python tests/test_oidc_claims.py
-"""
 import os
 import sys
 import time
@@ -50,7 +43,7 @@ class TestOrgClaimConfig(unittest.TestCase):
     def test_validation_and_roundtrip(self):
         cfg = db.set_org_identity_config(
             self.org_id, {"ms_tenant_id": TID.upper(), "google_hd": "Example.COM"}, "test:oidc")
-        self.assertEqual(cfg["ms_tenant_id"], TID)          # normalized lowercase
+        self.assertEqual(cfg["ms_tenant_id"], TID)
         self.assertEqual(cfg["google_hd"], "example.com")
 
         with self.assertRaises(ValueError):
@@ -107,10 +100,8 @@ class TestClaimGate(unittest.TestCase):
         self.assertIsNone(self.gate("google", {"hd": "example.com"}))
         self.assertIsNone(self.gate("google", {"hd": "EXAMPLE.com"}))
         self.assertEqual(self.gate("google", {"hd": "evil.com"}), "hd_mismatch")
-        # consumer accounts carry no hd → rejected
         self.assertEqual(self.gate("google", {}), "hd_mismatch")
         self.assertEqual(self.gate("google_mobile", {"hd": "evil.com"}), "hd_mismatch")
-        # a Google restriction never blocks Microsoft logins
         self.assertIsNone(self.gate("microsoft", {"tid": "whatever"}))
         self.configure({"google_hd": None})
 
@@ -120,7 +111,6 @@ class TestClaimGate(unittest.TestCase):
         self.assertIsNone(self.gate("microsoft", {"tid": TID.upper()}))
         self.assertEqual(self.gate("microsoft", {"tid": str(uuid.uuid4())}), "tid_mismatch")
         self.assertEqual(self.gate("microsoft", {}), "tid_mismatch")
-        # a Microsoft restriction never blocks Google logins
         self.assertIsNone(self.gate("google", {"hd": "whatever.com"}))
         self.configure({"ms_tenant_id": None})
 
@@ -130,7 +120,6 @@ class TestClaimGate(unittest.TestCase):
         self.assertIsNone(self.gate("microsoft", {"amr": ["ngcmfa"]}))
         self.assertEqual(self.gate("microsoft", {"amr": ["pwd"]}), "mfa_evidence_missing")
         self.assertEqual(self.gate("microsoft", {}), "mfa_evidence_missing")
-        # Google MFA is enforced at Workspace, attested by policy — no gate
         self.assertIsNone(self.gate("google", {"hd": "anything.com"}))
         self.configure({"require_mfa": False})
 
@@ -157,12 +146,7 @@ class TestClaimGate(unittest.TestCase):
         self.assertEqual(ev["amr"], ["pwd", "mfa"])
         ev = _sso_evidence("google", {"hd": "example.com"})
         self.assertEqual(ev["hd"], "example.com")
-        self.assertIsNone(ev["mfa"])  # no amr → unknown, not false
-
-
-# TestDashboardTokenExpiry was removed with the /auth/dashboard-token
-# endpoint itself: the Streamlit Audit Hub is decommissioned and the native
-# Hub uses server-side sessions, so there is no dashboard JWT to expire.
+        self.assertIsNone(ev["mfa"])
 
 
 if __name__ == "__main__":

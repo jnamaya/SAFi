@@ -1,12 +1,3 @@
-"""
-E2E tests for TOTP MFA (enterprise identity Phase 2): stdlib TOTP module,
-enrollment lifecycle, login challenge, org-mandated enrollment gate, and the
-auth_events journal.
-
-Run:  SAFI_LOCAL_ADMIN_EMAIL=mfa-test@test.local SAFI_LOCAL_ADMIN_PASSWORD=x \
-      venv/bin/python tests/test_mfa_totp.py
-(The env vars are set below if absent — the local-login endpoints 404 without them.)
-"""
 import base64
 import json
 import os
@@ -20,19 +11,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 EMAIL = "mfa-e2e-test@test.local"
 PASSWORD = "e2e-Test-Password-1"
-# Deliberately NOT set via the environment. config.py:9 calls
-# load_dotenv(override=True), so .env beats anything the process sets — the
-# previous os.environ.setdefault here was silently a no-op whenever a real
-# .env defined SAFI_LOCAL_ADMIN_EMAIL. create_app() then seeded the
-# developer's own admin instead, the lookup for EMAIL returned None, and the
-# failure surfaced as "'NoneType' object is not subscriptable".
-#
-# /api/login/local authenticates ANY user carrying a password_hash, not only
-# the seeded local admin, so the test creates and owns its own account. That
-# removes the .env dependency entirely — and avoids the trap in the old
-# teardown, which deleted "the user with this email" and would have deleted
-# the developer's real admin account the moment EMAIL resolved to theirs.
-# ENABLE_LOCAL_LOGIN must still be on, which any configured .env satisfies.
 
 from safi_app import create_app
 from safi_app.config import Config
@@ -46,7 +24,6 @@ def live_code(secret):
 
 
 class TestTotpModule(unittest.TestCase):
-    """RFC 6238 Appendix B vectors (SHA1, 6 digits)."""
 
     SECRET = base64.b32encode(b"12345678901234567890").decode()
 
@@ -89,10 +66,6 @@ class TestMfaLifecycle(unittest.TestCase):
     def tearDownClass(cls):
         conn = db.get_db_connection()
         cur = conn.cursor()
-        # Key on the id this test created, never on the email. Selecting by
-        # email would delete whichever account happened to hold it — which,
-        # before this test owned its own user, could have been the developer's
-        # real local admin.
         cur.execute("SELECT org_id FROM users WHERE id=%s", (cls.uid,))
         row = cur.fetchone()
         org = row[0] if row else None
@@ -106,8 +79,6 @@ class TestMfaLifecycle(unittest.TestCase):
 
     @staticmethod
     def _journal_counts(uid):
-        """auth_events is append-only and survives user deletion, so counts
-        must be read as deltas against a baseline, not absolutes."""
         conn = db.get_db_connection()
         cur = conn.cursor()
         cur.execute("SELECT event, COUNT(*) FROM auth_events WHERE user_id=%s "
@@ -123,7 +94,6 @@ class TestMfaLifecycle(unittest.TestCase):
         uid = self.uid
         baseline = self._journal_counts(uid)
 
-        # Plain password login while unenrolled
         r = c.post("/api/login/local", json={"email": EMAIL, "password": PASSWORD})
         self.assertTrue(r.get_json().get("ok"), r.get_data(as_text=True))
 
@@ -131,7 +101,6 @@ class TestMfaLifecycle(unittest.TestCase):
         self.assertTrue(j["local_account"])
         self.assertFalse(j["totp_enabled"])
 
-        # Enrollment: wrong code rejected, right code enables
         j = c.post("/api/me/mfa/totp/setup").get_json()
         secret = j["secret"]
         self.assertTrue(j["otpauth_uri"].startswith("otpauth://"))
@@ -139,7 +108,6 @@ class TestMfaLifecycle(unittest.TestCase):
         r = c.post("/api/me/mfa/totp/verify", json={"code": live_code(secret)})
         self.assertTrue(r.get_json().get("totp_enabled"), r.get_data(as_text=True))
 
-        # Login now challenges; bad code fails; good code carries amr pwd+otp
         c.post("/api/logout")
         j = c.post("/api/login/local", json={"email": EMAIL, "password": PASSWORD}).get_json()
         self.assertTrue(j.get("mfa_required"))
@@ -165,8 +133,6 @@ class TestMfaLifecycle(unittest.TestCase):
         self.assertEqual(set(ctx["amr"]), {"pwd", "otp"})
         self.assertTrue(ctx["mfa"])
 
-        # Org-mandated MFA: unenrolled user gets a session restricted to
-        # /me + /me/mfa/* + logout until verification upgrades it in place
         org_id = db.create_organization("MFA E2E Org")
         db.update_user_org_and_role(uid, org_id, "admin")
         db.set_org_identity_config(org_id, {"require_mfa": True}, "test:e2e")
@@ -185,7 +151,6 @@ class TestMfaLifecycle(unittest.TestCase):
         self.assertTrue(r.get_json().get("totp_enabled"))
         self.assertEqual(c2.get("/api/conversations").status_code, 200)
 
-        # Journal carries the lifecycle (delta vs baseline — journal is append-only)
         events = self._journal_counts(uid)
         delta = {k: events.get(k, 0) - baseline.get(k, 0)
                  for k in ("mfa_enrolled", "mfa_failed", "mfa_disabled")}
@@ -193,7 +158,6 @@ class TestMfaLifecycle(unittest.TestCase):
         self.assertEqual(delta["mfa_failed"], 2, delta)
         self.assertEqual(delta["mfa_disabled"], 1, delta)
 
-        # Self-service disable requires a live code
         self.assertEqual(c2.delete("/api/me/mfa/totp", json={"code": "999999"}).status_code, 401)
         r = c2.delete("/api/me/mfa/totp", json={"code": live_code(secret2)})
         self.assertFalse(r.get_json().get("totp_enabled"))

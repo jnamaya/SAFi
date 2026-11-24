@@ -1,10 +1,6 @@
 import * as api from '../../core/api.js';
 import * as ui from '../ui.js';
 
-// NOTE: version query strings are cache busting. The browser caches these
-// unversioned ES modules by ETag, which once shipped a stale step5 to a
-// user and reproduced "the Add button does nothing" for a full session.
-// Bump all of these together (and app.js in index.html) when shipping UI changes.
 import { renderDefinitionStep, validateDefinitionStep }       from './ui-policy-wizard-step1.js?v=20261117.1';
 import { renderConstitutionStep, validateConstitutionStep }   from './ui-policy-wizard-step2.js?v=20260928.1';
 import { renderScopeStep, validateScopeStep }                 from './ui-policy-wizard-step3.js?v=20260928.1';
@@ -13,7 +9,6 @@ import { renderWillStep, validateWillStep }                   from './ui-policy-
 import { renderGovernanceStep, validateGovernanceStep }       from './ui-policy-wizard-governance.js?v=20260928.1';
 import { renderSuccessStep }                                  from './ui-policy-wizard-success.js?v=20260928.1';
 
-// --- STATE ---
 let currentStep = 1;
 const TOTAL_STEPS = 6;
 const STORAGE_KEY = 'safi_policy_wizard_draft';
@@ -30,46 +25,34 @@ function getInitialState() {
         worldview:        "",
         scope_statement:  "",
 
-        // Phase Zero (per-policy deterministic injection block)
         early_prompt_blacklist: [],
 
-        // Values now carry hard_gate flag (W2)
-        // shape: { name, description, weight, hard_gate, rubric:{scoring_guide:[]} }
         values: [],
 
-        // Will Pass 1 (structural) — replaces flat will_rules list
         structural_requirements: {
             require_disclaimer:            false,
             mandatory_disclaimer_substring: "",
             banned_markdown_syntaxes:      [],
-            // alignment_score_threshold is set from alignment_threshold on save
         },
 
-        // Will tool-gate allowlist
         allowed_tools: [],
 
-        // Will path-gate denylist (forbidden_paths)
         forbidden_paths: [],
 
-        // Will command-gate denylists (forbidden_executables / forbidden_shell_patterns)
         forbidden_executables: [],
         forbidden_shell_patterns: [],
 
-        // Legacy free-text rules (engine still reads these as fallback)
         will_rules: [],
 
-        // Will Pass 3 + Spirit
         alignment_threshold: 0.5,
         ethical_memory:      0.90,
     };
 }
 
-// --- MAIN API ---
 export function openPolicyWizard(existingPolicy = null) {
     currentStep = 1;
     generatedCredentials = null;
 
-    // Draft Logic
     const savedDraft = localStorage.getItem(STORAGE_KEY);
     let useDraft = false;
 
@@ -100,7 +83,6 @@ export function openPolicyWizard(existingPolicy = null) {
 
     ensureWizardInlineExists();
 
-    // Store active tab
     const activeTab = document.querySelector('.tab-content:not(.hidden):not(#policy-wizard-view)');
     if (activeTab) {
         document.body.dataset.pwPreviousTab = activeTab.id;
@@ -138,11 +120,6 @@ export function closeWizard(skipReload = false) {
     }
 }
 
-// --- HYDRATION: map a DB policy (possibly legacy shape) to wizard state ---
-// A standard's label and explanation are stored under `value`/`definition` by
-// the demo seeder and the policy API, but every reader in this wizard expects
-// `name`/`description`. Without this mapping a seeded policy renders the label
-// field as the literal string "undefined" — JS stringifying the missing key.
 function normalizeStandard(v) {
     if (!v || typeof v !== 'object') return v;
     const out = { ...v };
@@ -153,19 +130,12 @@ function normalizeStandard(v) {
 
 function hydratePolicy(existingPolicy) {
     const init = getInitialState();
-    // Tolerate policy_config arriving as a JSON string. The server is supposed to
-    // decode it (db.list_policies / db.get_policy both do now), but a string here
-    // fails SILENTLY and expensively: every cfg.<key> becomes undefined, so
-    // alignment_threshold and ethical_memory fall back to wizard defaults and a
-    // plain edit-and-save rewrites the Will's blocking threshold. Worth a guard
-    // when the cost of being wrong is an enforcement parameter.
     let cfg = existingPolicy.policy_config || {};
     if (typeof cfg === 'string') {
         try { cfg = JSON.parse(cfg) || {}; } catch (e) { cfg = {}; }
     }
     const wr   = existingPolicy.will_rules;
 
-    // will_rules may be a list (legacy) or a structured dict (new shape)
     let structural = init.structural_requirements;
     let blacklist  = [];
     let allowed    = [];
@@ -173,8 +143,6 @@ function hydratePolicy(existingPolicy) {
     let forbiddenPaths = [];
     let forbiddenExecutables = [];
     let forbiddenShellPatterns = [];
-    // undefined = the policy does not narrow knowledge; an array = exactly
-    // these (possibly none). The distinction is load-bearing — see below.
     let allowedKnowledge;
 
     if (Array.isArray(wr)) {
@@ -187,9 +155,6 @@ function hydratePolicy(existingPolicy) {
         forbiddenPaths = wr.forbidden_paths || [];
         forbiddenExecutables = wr.forbidden_executables || [];
         forbiddenShellPatterns = wr.forbidden_shell_patterns || [];
-        // Only carried when the stored policy actually has it. Coercing an
-        // absent key to [] here would turn "does not narrow" into "authorize
-        // nothing" the first time anyone opens an older policy.
         if (Array.isArray(wr.allowed_knowledge_bases)) {
             allowedKnowledge = wr.allowed_knowledge_bases;
         }
@@ -202,9 +167,6 @@ function hydratePolicy(existingPolicy) {
         policy_id:       existingPolicy.id,
         name:            existingPolicy.name,
         business_unit:   cfg.business_unit  || "",
-        // policy_config.context is the stored description. The extract is a
-        // legacy fallback: older builds embedded the description in worldview
-        // as an HTML comment instead of storing it.
         context:         cfg.context || extractContext(existingPolicy.worldview) || "",
         worldview:       cleanWorldview(existingPolicy.worldview),
         scope_statement: cfg.scope_statement || "",
@@ -223,13 +185,6 @@ function hydratePolicy(existingPolicy) {
     };
 }
 
-// Legacy readers. Older builds embedded the description in worldview as
-// `<!-- CONTEXT: ... -->`; the description now lives in policy_config.context
-// and nothing writes the comment anymore. [\s\S] because a multi-line
-// description broke the old dot-based patterns, which is exactly the bug that
-// silently "lost" descriptions and left comment fragments in the Purpose box.
-// cleanWorldview strips globally because repeated saves under the old code
-// could stack several comments; opening and saving once now repairs the row.
 function extractContext(wv) {
     const match = wv && wv.match(/<!-- CONTEXT: ([\s\S]*?) -->/);
     return match ? match[1].trim() : "";
@@ -245,7 +200,6 @@ function saveDraft() {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(draft)); } catch (e) { }
 }
 
-// --- NAV ---
 function renderStep(step) {
     updateProgress();
     const container = document.getElementById('pw-content');
@@ -294,15 +248,12 @@ function validateCurrentStep() {
     }
 }
 
-// --- SUBMIT ---
 async function submitPolicy(btn = null) {
     btn = btn || document.getElementById('pw-next-btn');
     btn.innerHTML = `<span class="thinking-spinner w-4 h-4 inline-block"></span> Saving...`;
     btn.disabled = true;
 
     try {
-        // Assemble the structured will_rules the engine expects, embedding the W3
-        // alignment threshold so WillGate.evaluate_spirit_score picks it up.
         const structuredWillRules = {
             structural_requirements: {
                 ...policyData.structural_requirements,
@@ -314,10 +265,6 @@ async function submitPolicy(btn = null) {
             forbidden_paths:        policyData.forbidden_paths || [],
             forbidden_executables: policyData.forbidden_executables || [],
             forbidden_shell_patterns: policyData.forbidden_shell_patterns || [],
-            // Written ONLY when the admin ticked "Restrict" on the Knowledge
-            // card. `|| []` here would be a bug, not a tidy-up: it would make
-            // every save of an unrestricted policy authorize no knowledge and
-            // silently un-ground every agent under it.
             ...(Array.isArray(policyData.allowed_knowledge_bases)
                 ? { allowed_knowledge_bases: policyData.allowed_knowledge_bases }
                 : {}),
@@ -326,30 +273,21 @@ async function submitPolicy(btn = null) {
         const payload = {
             name:            policyData.name,
             business_unit:   policyData.business_unit,
-            // Description travels as its own field (policy_config.context).
-            // It used to be embedded in worldview as an HTML comment, which
-            // corrupted the round-trip whenever it contained a newline.
             context:         policyData.context,
             worldview:       policyData.worldview,
             scope_statement: policyData.scope_statement,
             values:          policyData.values,
             will_rules:      structuredWillRules,
 
-            // Persisted into policy_config server-side
             alignment_threshold: policyData.alignment_threshold,
             ethical_memory:      policyData.ethical_memory,
 
-            // Pass through id for updates
             policy_id:       policyData.policy_id,
         };
 
         const res = await api.savePolicy(payload);
         if (res.ok) {
             localStorage.removeItem(STORAGE_KEY);
-            // Held work must be announced, or the author reads the missing
-            // changes as a lost save: tool widenings wait for the tool
-            // approvers (57d), content changes wait for the policy
-            // approvers (57f).
             const pendingTools = Array.isArray(res.tools_pending_approval) ? res.tools_pending_approval : [];
             if (res.pending_approval) {
                 const what = (res.changed || []).join(', ') || 'changes';
@@ -368,20 +306,17 @@ async function submitPolicy(btn = null) {
         }
     } catch (e) {
         console.error(e);
-        // 4xx errors arrive with the raw JSON response body as the message;
-        // unwrap it so the user sees the friendly text (e.g. duplicate-name).
         let msg = e.message || "Failed to save policy";
         try {
             const parsed = JSON.parse(msg);
             if (parsed && parsed.error) msg = parsed.error;
-        } catch (_) { /* not JSON, use message as-is */ }
+        } catch (_) {   }
         ui.showToast(msg, "error");
         btn.innerHTML = policyData.policy_id ? 'Save Changes' : 'Create Policy';
         btn.disabled = false;
     }
 }
 
-// --- DOM SKELETON ---
 function ensureWizardInlineExists() {
     if (document.getElementById('pw-progress')) return;
 
@@ -437,8 +372,6 @@ function ensureWizardInlineExists() {
         await submitPolicy(document.getElementById('pw-save-btn'));
     });
 
-    // Step labels navigate BACK to any earlier step. Forward stays gated
-    // behind Next so per-step validation can't be skipped.
     document.querySelectorAll('#policy-wizard-view [data-step]').forEach((el) => {
         el.addEventListener('click', () => {
             const idx = parseInt(el.dataset.step, 10);
@@ -458,17 +391,10 @@ function updateProgress() {
     document.getElementById('pw-back-btn').disabled = currentStep === 1 || currentStep > TOTAL_STEPS;
 
     const nextBtn = document.getElementById('pw-next-btn');
-    // Label only — see the identical note in ui-wizard-core.js: the per-step
-    // color swap died with the second primary color, and its collapsed remains
-    // stripped the green off Next (white-on-white in the light theme). The
-    // markup's bg-green-600 is permanent; nothing here may touch color classes.
     nextBtn.innerText = currentStep === TOTAL_STEPS
         ? (policyData.policy_id ? 'Save Changes' : 'Create Policy')
         : 'Next';
 
-    // Save-from-any-step, edit mode only (a policy_id exists only on edits;
-    // a half-built create must not be saveable). Hidden on the last step,
-    // where Next IS the save, and on the success screen.
     const saveBtn = document.getElementById('pw-save-btn');
     if (saveBtn) {
         if (policyData.policy_id && currentStep < TOTAL_STEPS) saveBtn.classList.remove('hidden');
@@ -488,7 +414,6 @@ function updateProgress() {
         const idx = parseInt(el.dataset.step, 10);
         if (idx <= currentStep) el.classList.add('text-green-600');
         else el.classList.remove('text-green-600');
-        // Visited steps are click-to-return targets (see ensureWizardInlineExists)
         const clickable = idx < currentStep && currentStep <= TOTAL_STEPS;
         el.classList.toggle('cursor-pointer', clickable);
         el.classList.toggle('hover:underline', clickable);

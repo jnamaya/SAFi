@@ -1,9 +1,3 @@
-"""Local task scheduling and prompt queuing for the SAFi CLI.
-
-Runs completely client-side inside safi-cli. Tools execute locally in the CLI
-environment, so tasks and queues are managed here without server dependencies.
-"""
-
 from __future__ import annotations
 
 import json
@@ -24,22 +18,16 @@ SCHEDULES_FILE = Path.home() / ".config" / "safi" / "schedules.json"
 
 
 def parse_time_offset(time_str: str) -> Optional[float]:
-    """Parse human duration string into seconds (e.g. '30s', '5m', '2h', '1d', '90').
-
-    Returns seconds as a float, or None if invalid.
-    """
     s = time_str.strip().lower()
     if not s:
         return None
 
-    # Plain integer or float seconds
     try:
         val = float(s)
         return max(1.0, val)
     except ValueError:
         pass
 
-    # Multi-unit parsing (e.g. '1h30m' or '5m')
     pattern = re.compile(r"(\d+(?:\.\d+)?)\s*([smhd])")
     matches = pattern.findall(s)
     if not matches:
@@ -63,7 +51,6 @@ def parse_time_offset(time_str: str) -> Optional[float]:
 
 
 def format_remaining_time(seconds: float) -> str:
-    """Format seconds remaining into concise human string (e.g. '45s', '12m', '1h 20m')."""
     if seconds <= 0:
         return "due now"
     secs = int(round(seconds))
@@ -84,10 +71,9 @@ def format_remaining_time(seconds: float) -> str:
 
 @dataclass
 class QueuedPrompt:
-    """A prompt waiting to be executed by the CLI agent loop."""
     id: str
     prompt: str
-    source: str = "user"  # "user" | "scheduled" | "cron"
+    source: str = "user"
     created_at: float = field(default_factory=time.time)
     agent: Optional[str] = None
     task_id: Optional[str] = None
@@ -95,7 +81,6 @@ class QueuedPrompt:
 
 @dataclass
 class ScheduledTask:
-    """A scheduled task managed locally in safi-cli."""
     id: str
     prompt: str
     run_at: float
@@ -103,7 +88,7 @@ class ScheduledTask:
     interval_seconds: Optional[float] = None
     agent: Optional[str] = None
     label: str = ""
-    status: str = "pending"  # "pending" | "running" | "completed" | "cancelled"
+    status: str = "pending"
     repeat: bool = False
 
     @property
@@ -129,7 +114,6 @@ class ScheduledTask:
 
 
 class PromptQueue:
-    """Thread-safe FIFO queue for prompts awaiting agent turn execution."""
 
     def __init__(self) -> None:
         self._queue: queue.Queue[QueuedPrompt] = queue.Queue()
@@ -183,7 +167,6 @@ class PromptQueue:
 
 
 class TaskScheduler:
-    """Background scheduler managing local timers and recurring tasks."""
 
     def __init__(self, prompt_queue: PromptQueue) -> None:
         self.prompt_queue = prompt_queue
@@ -196,7 +179,6 @@ class TaskScheduler:
         self._start_worker()
 
     def set_wakeup_callback(self, cb: Callable[[], Any]) -> None:
-        """Register callback invoked when a scheduled task is triggered and queued."""
         self._wakeup_callback = cb
 
     def _start_worker(self) -> None:
@@ -312,7 +294,6 @@ class TaskScheduler:
         try:
             SCHEDULES_FILE.parent.mkdir(parents=True, exist_ok=True)
             with self._lock:
-                # Only persist recurring tasks or pending future one-shot tasks
                 to_save = [
                     t.to_dict()
                     for t in self._tasks.values()
@@ -336,10 +317,8 @@ class TaskScheduler:
                 for item in data:
                     task = ScheduledTask.from_dict(item)
                     if task.status == "pending":
-                        # If a one-shot task expired while CLI was closed, skip it
                         if not task.repeat and task.run_at <= now:
                             continue
-                        # If a repeating task expired, schedule next from now
                         if task.repeat and task.run_at <= now and task.interval_seconds:
                             task.run_at = now + task.interval_seconds
                         self._tasks[task.id] = task
@@ -361,13 +340,11 @@ _CURRENT_START_TIME: Optional[float] = None
 
 
 def set_turn_status(status: str) -> None:
-    """Set the human-readable live status string of the current turn."""
     global _CURRENT_TURN_STATUS
     _CURRENT_TURN_STATUS = status
 
 
 def get_turn_status() -> str:
-    """Get the human-readable live status string of the current turn."""
     return _CURRENT_TURN_STATUS or "Thinking"
 
 
@@ -380,7 +357,6 @@ def get_agent_status_text() -> str:
 
 
 def set_agent_busy(busy: bool, prompt: str = "") -> None:
-    """Update whether an agent turn is actively executing."""
     global _CURRENT_RUNNING_PROMPT, _CURRENT_TURN_STATUS, _CURRENT_START_TIME
     _CURRENT_RUNNING_PROMPT = prompt if busy else ""
     if busy:
@@ -393,19 +369,16 @@ def set_agent_busy(busy: bool, prompt: str = "") -> None:
 
 
 def get_agent_elapsed_time() -> Optional[float]:
-    """Get elapsed seconds since the current turn began."""
     if _CURRENT_START_TIME:
         return time.time() - _CURRENT_START_TIME
     return None
 
 
 def is_agent_busy() -> bool:
-    """Check if an agent turn is actively executing."""
     return _AGENT_BUSY_EVENT.is_set()
 
 
 def get_running_prompt() -> str:
-    """Get the prompt text of the currently executing agent turn."""
     return _CURRENT_RUNNING_PROMPT
 
 

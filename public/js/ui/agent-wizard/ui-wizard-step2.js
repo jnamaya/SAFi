@@ -37,15 +37,8 @@ export async function renderToolsStep(container, agentData) {
 
     if (!agentData.tools) agentData.tools = [];
 
-    // Resolve the governing policy ONCE — both the tool grid and the knowledge
-    // base picker are filtered by it.
     const governance = await resolvePolicyGovernance(agentData);
 
-    // Two independent awaits, not one block. They used to share a function
-    // whose early returns ("policy authorizes no tools", "failed to load
-    // tools") skipped everything after them — including the knowledge base
-    // picker, which then sat on its loading spinner forever. Any future
-    // section added here gets its own call for the same reason.
     await renderTools(agentData, governance);
     await renderKnowledgeBasePicker(agentData, governance);
 }
@@ -62,31 +55,13 @@ async function renderTools(agentData, governance) {
             return;
         }
 
-        // The policy's authorized-tool universe.
-        //   null  -> no governing policy (or legacy policy) -> full catalog
-        //   []    -> policy authorizes no tools
-        //   [...] -> policy authorizes exactly these tools
-        //
-        // Resolved here for the note below, but it is no longer the only thing
-        // standing between a policy and an agent: /api/agents/tools marks each
-        // tool with allowed_by_policy, and the save path refuses anything the
-        // policy does not authorize. This filter is a courtesy so the picker
-        // does not offer what the save would reject.
         const allow = governance.tools;
 
-        // Prefer the backend's per-tool marks. The old path built a Set from the
-        // policy's raw list and matched card names against it, which silently
-        // hid every tool of a server the policy authorized by CONNECTOR name:
-        // the policy said `demo_server`, the cards were `demo_echo` and
-        // `demo_add`, nothing matched, and the agent was offered none of them.
-        // The backend expands exactly as the compiler does, so it is the only
-        // place this question should be answered.
         let filter = policyFilterFrom(categories);
         if (filter === null && allow !== null) {
             filter = new Set(allow);
         }
         if (filter !== null) {
-            // Drop any previously-selected tools the policy no longer authorizes.
             agentData.tools = agentData.tools.filter(t => filter.has(t));
 
             const note = document.getElementById('wiz-policy-note');
@@ -122,18 +97,6 @@ async function renderTools(agentData, governance) {
     }
 }
 
-/**
- * Offers only knowledge bases that have a built index.
- *
- * A KB with no vectors would look configured on the agent and answer nothing —
- * the "allowed is not the same as useful" failure the connector settings tab
- * already had to fix. /knowledge-bases/available applies that filter server
- * side, so the picker cannot drift from what the retriever can actually load.
- *
- * A built-in agent's knowledge base (the Steward's `safi`, the Bible Scholar's
- * `bible_bsb_v1`) is not a row in that table, so it is preserved as an
- * explicit option rather than silently cleared when such an agent is edited.
- */
 async function renderKnowledgeBasePicker(agentData, governance) {
     const el = document.getElementById('wiz-kb-container');
     if (!el) return;
@@ -148,16 +111,10 @@ async function renderKnowledgeBasePicker(agentData, governance) {
         return;
     }
 
-    // Narrow to what the governing policy authorizes — the same contract the
-    // tool grid follows. This filter is presentation; the enforcement is
-    // synderesis._stamp_knowledge_authorization, which strips an unauthorized
-    // knowledge base out of the compiled profile at runtime.
     const allowed = governance ? governance.knowledgeBases : null;
     if (Array.isArray(allowed)) {
         const permitted = new Set(allowed);
         bases = bases.filter(kb => permitted.has(kb.id));
-        // Drop a previously-chosen knowledge base the policy no longer allows,
-        // so saving the agent does not silently re-assert it.
         if (agentData.rag_knowledge_base &&
             !permitted.has(agentData.rag_knowledge_base)) {
             agentData.rag_knowledge_base = "";
@@ -213,35 +170,20 @@ async function renderKnowledgeBasePicker(agentData, governance) {
     });
 }
 
-/**
- * What the governing policy authorizes for the agent being edited.
- *
- * Returns { tools, knowledgeBases }, each either null ("this policy does not
- * narrow — offer everything") or an array ("exactly these, and [] means
- * none"). One lookup serves both pickers.
- */
 async function resolvePolicyGovernance(agentData) {
     const wr = await resolvePolicyWillRules(agentData);
     if (!wr) return { tools: null, knowledgeBases: null };
     return {
         tools: Array.isArray(wr.allowed_tools) ? wr.allowed_tools : [],
-        // Absent is NOT the same as empty here: a policy written before
-        // knowledge authorization existed must keep working (null), while a
-        // policy that explicitly authorizes none must mean none ([]).
         knowledgeBases: Array.isArray(wr.allowed_knowledge_bases)
             ? wr.allowed_knowledge_bases : null,
     };
 }
 
-// Resolve the governing policy's structured will_rules for the agent being
-// edited. Returns null when there is no governing policy, or when the policy
-// predates the structured shape (legacy list-form will_rules never declared
-// tools or knowledge bases, so they should not narrow anything).
 async function resolvePolicyWillRules(agentData) {
     const pid = agentData.policy_id;
     if (!pid || pid === 'standalone') return null;
 
-    // Step 1 stores the selected policy object here; fall back to a lookup.
     let policy = (agentData._policyData && agentData._policyData.id === pid)
         ? agentData._policyData
         : null;
@@ -257,8 +199,6 @@ async function resolvePolicyWillRules(agentData) {
     if (!policy) return null;
 
     const wr = policy.will_rules;
-    // Only structured (dict) will_rules carry an allowlist. Legacy list-shaped
-    // policies never declared tools, so leave them unrestricted.
     if (wr && typeof wr === 'object' && !Array.isArray(wr)) {
         return Array.isArray(wr.allowed_tools) ? wr.allowed_tools : [];
     }
@@ -266,6 +206,5 @@ async function resolvePolicyWillRules(agentData) {
 }
 
 export function validateToolsStep(agentData) {
-    // Tools are optional
     return true;
 }

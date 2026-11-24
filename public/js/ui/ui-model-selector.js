@@ -4,10 +4,6 @@ import { escapeHtml } from '../core/utils.js';
 let _models = [];
 let _activeModelId = null;
 let _onModelChange = null;
-// True only on the public demo. It used to gate a paragraph of showcase copy
-// inside this dropdown (removed 2026-08-11 — the menu explains itself); its
-// remaining consumer is ui-messages.js, which stamps the model name onto demo
-// messages. Inside a customer deployment both are noise.
 let _publicDemoUi = false;
 
 function _resolveModel(modelId) {
@@ -71,15 +67,6 @@ function _label(model) {
 function _renderDropdown() {
     const dropdown = document.getElementById('model-selector-dropdown');
     if (!dropdown) return;
-    // No header: this list is a section of the + panel, which prints
-    // "AI Models" above it. Rows are grouped under small provider captions
-    // (the /models endpoint ships provider_label), because a flat list of
-    // eleven ids from seven vendors reads as soup. With a single provider
-    // configured the caption is skipped — one group needs no label.
-    // Group by provider by LABEL, not by consecutive run: the /models list
-    // puts built-ins first and appends operator-added models at the end, so a
-    // custom model (e.g. a new Gemini) would otherwise open a second group
-    // with the same caption. Merge into the provider's first-seen group.
     const groups = [];
     const byLabel = new Map();
     for (const m of _models) {

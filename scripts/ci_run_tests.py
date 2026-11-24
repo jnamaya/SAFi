@@ -44,15 +44,6 @@ def parse_args():
 
 
 def bootstrap_schema(env) -> int:
-    """Create the schema once, before any test runs.
-
-    A fresh database has no tables. Files that go through create_app() would
-    build the schema themselves via init_db(), but several talk straight to the
-    database in setUpClass and would hit "Table ... doesn't exist" depending on
-    alphabetical order — a failure that looks like a broken test and is really
-    an empty database. Doing it once up front also keeps ~30 redundant DDL
-    passes out of every run.
-    """
     print("bootstrapping schema ... ", end="", flush=True)
     proc = subprocess.run(
         [sys.executable, "-c",
@@ -112,11 +103,10 @@ def main() -> int:
             passed.append(label)
             print(f"ok    ({elapsed:.1f}s)")
             if not args.quiet and proc.stderr.strip():
-                pass  # unittest chatter on success is noise
+                pass
         else:
             failed.append(label)
             print(f"FAIL  ({elapsed:.1f}s)")
-            # unittest writes results to stderr; stdout carries app logging.
             sys.stdout.write(_indent(proc.stderr.strip() or proc.stdout.strip()))
             sys.stdout.write("\n")
 

@@ -1,22 +1,3 @@
-"""
-Operator-added models and the deployment usage rollup (backlog 63 + 65).
-
-The contract, pinned here:
-
-- A custom model carries an EXPLICIT provider, and detect_provider honors it
-  by exact id match before any prefix heuristic. This matters because the
-  heuristics default to groq: without the override, an unrecognized id would
-  silently dispatch to the wrong provider with the wrong key.
-- The 60s catalog cache can be invalidated so an add/remove takes effect in
-  the process that made it.
-- list_models_for_org offers custom rows alongside built-ins, marked
-  custom, and still filters both by configured providers.
-- get_deployment_llm_usage groups usage by org across the whole install,
-  including NULL-org (public bot) rows — the operator's who-spends-what.
-
-Needs the disposable stack (it writes and deletes rows):
-    docker compose -f docker-compose.test.yml run --rm tests -k custom_models
-"""
 import sys
 import unittest
 import uuid
@@ -33,7 +14,6 @@ from safi_app.core.services import provider_governance as pg
 class CustomModelRouting(unittest.TestCase):
 
     def setUp(self):
-        # An id no prefix heuristic recognizes: the default would be groq.
         self.model_id = f"custom-tune-{uuid.uuid4().hex[:8]}"
         db.add_custom_model(self.model_id, "My Fine-Tune", "anthropic")
         mr.invalidate_custom_models_cache()
@@ -72,8 +52,6 @@ class CustomModelRouting(unittest.TestCase):
         self.assertIsNotNone(builtin, "built-ins must survive the merge")
 
     def test_unconfigured_provider_hides_the_model(self):
-        """A model that cannot dispatch is never offered — same rule as
-        built-ins."""
         with mock.patch.object(pg, "configured_providers",
                                return_value=frozenset({"groq"})):
             models = pg.list_models_for_org(None)
@@ -122,9 +100,6 @@ class DeploymentUsageRollup(unittest.TestCase):
 class OperatorGateIsDeploymentConfig(unittest.TestCase):
 
     def test_operator_emails_come_from_config_not_roles(self):
-        """The gate reads Config.SUPER_ADMIN_EMAILS (deployment config, its
-        first real consumer); the source check pins that the endpoint compares
-        the session email against it and 403s."""
         src = (Path(__file__).resolve().parent.parent /
                "safi_app" / "api" / "organizations.py").read_text(encoding="utf-8")
         self.assertIn("SUPER_ADMIN_EMAILS", src)

@@ -1,4 +1,3 @@
-"""Architecture guards for the neutral enforcement/data boundary."""
 import json
 import sys
 import unittest

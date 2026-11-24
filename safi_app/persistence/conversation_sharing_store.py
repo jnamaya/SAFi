@@ -1,27 +1,3 @@
-"""
-Org sharing for conversations and folders (backlog 56): grants that let a
-conversation or project be seen, and (at 'contributor') continued, by other
-members of the same org.
-
-WHY IT IS NOT IN database.py
------------------------------
-Same boundary as sharing_store.py (backlog 55): who may see or continue
-someone else's conversation is Section III org configuration, not part of
-the hash-chained audit ledger. database.py stays untouched by this feature.
-
-THE RESOLVER
-------------
-get_conversation_role()/get_project_role() are the single authorization
-answer for "can this user see or continue this conversation/project".
-Order: owner, then a direct grant, then (conversations only) a grant on the
-conversation's current project — checked live against the conversation's
-CURRENT project_id, never denormalized onto the conversation itself, so
-moving a conversation in or out of a shared folder changes its access
-immediately, with no separate grant to maintain. No org-admin bypass:
-oversight of every conversation already exists via the Audit Hub, a
-separate mechanism for a separate purpose (compliance review, not peer
-collaboration).
-"""
 from __future__ import annotations
 
 import logging
@@ -38,10 +14,6 @@ ROLES = ('viewer', 'contributor')
 
 
 def _target_collation(cursor) -> str:
-    """Copies conversations' collation — see sharing_store._target_collation
-    for why: CREATE TABLE with only a charset takes the server default,
-    which can differ from a table that has lived since MySQL 5.7, and the
-    first JOIN then throws 1267 ("illegal mix of collations")."""
     cursor.execute(
         "SELECT TABLE_COLLATION FROM information_schema.TABLES "
         "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'conversations'")
@@ -51,11 +23,6 @@ def _target_collation(cursor) -> str:
 
 
 def init_schema() -> None:
-    """Create the sharing tables if absent. Called once at boot, after
-    db.init_db(). No foreign keys (house style, matching
-    agent_visibility_grants); delete paths clean up dependent rows
-    explicitly instead — see delete_grants_for_conversation/_project/_group
-    below and their call sites."""
     conn = db.get_db_connection()
     cursor = conn.cursor()
     try:
@@ -87,8 +54,6 @@ def init_schema() -> None:
                 INDEX idx_project_grants_grantee (grantee_id)
             ) ENGINE=InnoDB DEFAULT CHARSET={charset} COLLATE={coll}
         """)
-        # Converge tables that already exist at a different collation (same
-        # guard as sharing_store.init_schema, for the same reason).
         cursor.execute(
             "SELECT TABLE_NAME, TABLE_COLLATION FROM information_schema.TABLES "
             "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN "
@@ -105,14 +70,7 @@ def init_schema() -> None:
         conn.close()
 
 
-# ---------------------------------------------------------------------------
-# The resolver
-# ---------------------------------------------------------------------------
-
 def _grant_role_query(table, id_col, resource_id, user_id, org_id):
-    """Best role (contributor beats viewer) reaching this user directly or
-    via a group they belong to, scoped to org_id on both the grant and the
-    group. None when nothing matches."""
     conn = db.get_db_connection()
     cursor = conn.cursor()
     try:
@@ -142,13 +100,6 @@ def _grant_role_query(table, id_col, resource_id, user_id, org_id):
 
 
 def get_conversation_role(user_id, org_id, conversation_id, owner_id, project_id=None):
-    """'owner' | 'contributor' | 'viewer' | None.
-
-    owner_id/project_id are the conversation's own current column values —
-    this module has no dependency on the conversations table's shape;
-    callers pass what they already fetched. Fails CLOSED: a storage error
-    denies grant-based access (and is logged loudly) rather than crashing
-    the caller; ownership is decided before this is consulted either way."""
     if not user_id or not conversation_id:
         return None
     if str(owner_id) == str(user_id):
@@ -171,9 +122,6 @@ def get_conversation_role(user_id, org_id, conversation_id, owner_id, project_id
 
 
 def get_project_role(user_id, org_id, project_id, owner_id):
-    """'owner' | 'contributor' | 'viewer' | None, for the folder itself
-    (listing/renaming its membership), independent of any one conversation
-    inside it. Fails CLOSED, same reasoning as get_conversation_role."""
     if not user_id or not project_id:
         return None
     if str(owner_id) == str(user_id):
@@ -188,10 +136,6 @@ def get_project_role(user_id, org_id, project_id, owner_id):
                    project_id, e)
         return None
 
-
-# ---------------------------------------------------------------------------
-# Grants
-# ---------------------------------------------------------------------------
 
 def _set_grant(table, id_col, resource_id, grantee_type, grantee_id, role, org_id, granted_by):
     if role not in ROLES:
@@ -234,7 +178,6 @@ def _revoke_grant(table, id_col, resource_id, grantee_type, grantee_id) -> bool:
 
 
 def _list_grants(table, id_col, resource_id):
-    """Grants on one resource, with display names resolved for the dialog."""
     conn = db.get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
@@ -277,7 +220,6 @@ def list_conversation_grants(conversation_id):
 
 
 def delete_grants_for_conversation(conversation_id) -> None:
-    """Called when a conversation is deleted, so grants cannot outlive it."""
     conn = db.get_db_connection()
     cursor = conn.cursor()
     try:
@@ -305,11 +247,6 @@ def list_project_grants(project_id):
 
 
 def delete_grants_for_project(project_id) -> None:
-    """Called when a project (folder) is deleted, so grants cannot outlive
-    it. Conversations that were inside it are unaffected here: they fall
-    back to the loose History list (see database.delete_project), and any
-    DIRECT grant on one of them is untouched — only the folder-level grant
-    disappears."""
     conn = db.get_db_connection()
     cursor = conn.cursor()
     try:
@@ -323,10 +260,6 @@ def delete_grants_for_project(project_id) -> None:
 
 
 def delete_grants_for_group(group_id) -> None:
-    """Called when a custom_group is deleted (mirrors sharing_store's own
-    cleanup of agent_visibility_grants for the same event), so a deleted
-    group cannot keep conferring conversation/folder access through an
-    orphaned grant row."""
     conn = db.get_db_connection()
     cursor = conn.cursor()
     try:
@@ -342,18 +275,7 @@ def delete_grants_for_group(group_id) -> None:
         conn.close()
 
 
-# ---------------------------------------------------------------------------
-# Shared-with-me listings
-# ---------------------------------------------------------------------------
-# These JOIN the grant tables directly against `conversations`/`projects`,
-# same as sharing_store.granted_agents() JOINs against `agents` — the query
-# needs both tiers at once, and only one of them is manifest-covered. Fail
-# EMPTY, not loud: a shared-with-me list is additive, never a security
-# boundary, so a broken query should read as "nothing shared", not a 500.
-
 def list_shared_with_me(user_id, org_id):
-    """Conversations reachable through a direct or folder-level grant (not
-    owned), deduplicated to the single best role per conversation."""
     if not user_id or not org_id:
         return []
     try:
@@ -412,9 +334,6 @@ def _list_shared_with_me_query(user_id, org_id):
 
 
 def list_projects_shared_with_me(user_id, org_id):
-    """Folders reachable through a direct grant on the folder itself (not
-    owned). A grant on a conversation INSIDE a folder does not surface the
-    folder here — that access is per-conversation, not per-folder."""
     if not user_id or not org_id:
         return []
     try:
@@ -454,19 +373,7 @@ def _list_projects_shared_with_me_query(user_id, org_id):
         conn.close()
 
 
-# ---------------------------------------------------------------------------
-# Shared-by-me indicator
-# ---------------------------------------------------------------------------
-# Not a "Shared by me" listing: everything the owner shared already appears
-# in their own folders and history, so a second copy would put one
-# conversation in the sidebar twice. This returns only the ids that carry a
-# grant, so the sidebar can mark the row where it already lives. Fail EMPTY
-# for the same reason as the listings above, and more so — a missing mark is
-# a missing decoration, never a missing access check.
-
 def list_shared_by_me(user_id, org_id):
-    """Ids of conversations and folders THIS user owns that have at least one
-    grant on them. {'conversations': [...], 'projects': [...]}."""
     empty = {"conversations": [], "projects": []}
     if not user_id or not org_id:
         return empty
@@ -508,19 +415,7 @@ def _list_shared_by_me_query(user_id, org_id):
         conn.close()
 
 
-# ---------------------------------------------------------------------------
-# Self-removal ("remove from shared with me")
-# ---------------------------------------------------------------------------
-# A grantee may drop their OWN access to something shared with them. Only
-# direct user grants are removable this way: a group grant belongs to the
-# group (removing it would unshare for every member), and a project grant
-# belongs to the folder, not this conversation. In those cases the caller is
-# told the access remains and why, instead of silently succeeding.
-
 def _still_reaches(table, id_col, resource_id, user_id, org_id) -> str | None:
-    """If any grant other than the caller's direct one still reaches the
-    caller, return how ('group' for a group grant, 'direct' otherwise);
-    None when nothing remains."""
     conn = db.get_db_connection()
     cursor = conn.cursor()
     try:
@@ -549,10 +444,6 @@ def _still_reaches(table, id_col, resource_id, user_id, org_id) -> str | None:
 
 
 def remove_conversation_share_with_me(user_id, org_id, conversation_id):
-    """Drop the caller's direct grant on a conversation shared with them.
-    Returns {'removed': bool, 'still_shared': 'group'|'project'|None}.
-    Access arriving through a shared folder is detected live so the caller
-    can be told removal is not theirs to make."""
     if not user_id or not org_id:
         return {"removed": False, "still_shared": None}
     removed = _revoke_grant('conversation_visibility_grants', 'conversation_id',
@@ -560,7 +451,6 @@ def remove_conversation_share_with_me(user_id, org_id, conversation_id):
     still = _still_reaches('conversation_visibility_grants', 'conversation_id',
                            conversation_id, user_id, org_id)
     if not still:
-        # Access may also arrive via the conversation's current folder.
         conn = db.get_db_connection()
         cursor = conn.cursor()
         try:
@@ -578,8 +468,6 @@ def remove_conversation_share_with_me(user_id, org_id, conversation_id):
 
 
 def remove_project_share_with_me(user_id, org_id, project_id):
-    """Drop the caller's direct grant on a folder shared with them.
-    Same contract as remove_conversation_share_with_me."""
     if not user_id or not org_id:
         return {"removed": False, "still_shared": None}
     removed = _revoke_grant('project_visibility_grants', 'project_id',
@@ -590,10 +478,6 @@ def remove_project_share_with_me(user_id, org_id, project_id):
 
 
 def remove_user_from_org_sharing(user_id, org_id) -> None:
-    """Off-boarding: drop this user's direct grants (both tables) in this
-    org. Mirrors sharing_store.remove_user_from_org_sharing; group
-    memberships themselves are cleaned up there since groups are shared
-    infrastructure, not owned per-feature."""
     conn = db.get_db_connection()
     cursor = conn.cursor()
     try:

@@ -1,5 +1,3 @@
-// tts-audio.js
-
 import * as api from '../core/api.js';
 import { iconPlay, iconLoading } from '../ui/ui-render-constants.js';
 import * as ui from '../ui/ui.js';
@@ -9,9 +7,8 @@ const MSE_SUPPORTED = (() => {
     catch { return false; }
 })();
 
-const CIRCUMFERENCE = 439.8; // 2π × 70
+const CIRCUMFERENCE = 439.8;
 
-// --- DOM refs (lazy) ---
 let _player, _loading, _controls, _playpause, _playIcon, _pauseIcon;
 let _ring, _current, _duration, _closeBtn, _closeLoadingBtn;
 
@@ -34,13 +31,11 @@ function els() {
     _closeLoadingBtn.addEventListener('click', closePlayer);
 }
 
-// --- State ---
 let audio = null;
 let mediaSource = null;
 let currentTriggerBtn = null;
 let rafId = null;
 
-// --- Visibility (scale/fade pop) ---
 function showPlayer(loadingState) {
     els();
     _loading.classList.toggle('hidden', !loadingState);
@@ -55,14 +50,12 @@ function hidePlayer() {
     _player.classList.add('scale-75', 'opacity-0', 'pointer-events-none');
 }
 
-// --- Time formatting ---
 function fmt(s) {
     if (!isFinite(s) || isNaN(s)) return '--:--';
     const m = Math.floor(s / 60);
     return `${m}:${Math.floor(s % 60).toString().padStart(2, '0')}`;
 }
 
-// --- Progress ring ---
 function startProgressLoop() {
     cancelAnimationFrame(rafId);
     function tick() {
@@ -84,7 +77,6 @@ function updateProgress() {
     _duration.textContent = known ? fmt(dur) : '--:--';
 }
 
-// --- Controls ---
 function togglePlayPause() {
     if (!audio) return;
     if (audio.paused) { audio.play(); setPauseIcon(); startProgressLoop(); }
@@ -125,7 +117,6 @@ function onAudioError() {
     closePlayer();
 }
 
-// --- MSE streaming ---
 async function loadStreaming(text) {
     mediaSource = new MediaSource();
     audio = new Audio(URL.createObjectURL(mediaSource));
@@ -154,7 +145,6 @@ async function loadStreaming(text) {
     }
 }
 
-// --- Blob fallback ---
 async function loadBlob(text) {
     const blob = await api.fetchTTSAudio(text);
     if (audio) URL.revokeObjectURL(audio.src);
@@ -164,7 +154,6 @@ async function loadBlob(text) {
     audio.addEventListener('canplaythrough', startPlayback, { once: true });
 }
 
-// --- Public ---
 export async function playSpeech(text, buttonElement) {
     els();
 
@@ -177,9 +166,6 @@ export async function playSpeech(text, buttonElement) {
     showPlayer(true);
 
     try {
-        // Mistral TTS returns the complete MP3 in one response (Content-Length set),
-        // so MSE streaming adds nothing and some browsers fail playing audio/mpeg MSE.
-        // Always use the blob path: fetch full clip, createObjectURL, play.
         await loadBlob(text);
     } catch (err) {
         console.error('TTS failed:', err);

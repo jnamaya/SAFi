@@ -1,12 +1,8 @@
-"""Fiduciary MCP server — market data tools backed by yfinance. Each tool
-returns a JSON string; failures are returned as {"error": ...} rather than
-raised, so the model sees the failure as tool output."""
 import yfinance as yf
 import json
 import logging
 from typing import Dict, Any
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("fiduciary_mcp")
 
@@ -16,8 +12,6 @@ async def get_stock_price(ticker: str) -> str:
         t = yf.Ticker(ticker)
         info = t.info
         
-        # regularMarketPrice is absent for some symbols; fall back to the last
-        # close rather than returning a null price.
         current_price = info.get("regularMarketPrice")
         if current_price is None:
             hist = t.history(period="1d")
@@ -44,17 +38,11 @@ async def get_company_news(ticker: str) -> str:
     try:
         t = yf.Ticker(ticker)
         news = t.news
-        return json.dumps(news[:5])  # top 5 only: bounded context per call
+        return json.dumps(news[:5])
     except Exception as e:
         return json.dumps({"error": str(e)})
 
 def _jsonable(value: Any) -> Any:
-    """Last-resort coercion for json.dumps(default=...).
-
-    pandas and yfinance hand back Timestamp, date, datetime and numpy scalars.
-    Everything reaching here is display data for the model, so str() is the right
-    fallback — the alternative is the whole tool returning an error string.
-    """
     return str(value)
 
 
@@ -62,28 +50,16 @@ async def get_earnings_history(ticker: str) -> str:
     logger.info(f"Fiduciary MCP: Fetching earnings for {ticker}")
     try:
         t = yf.Ticker(ticker)
-        # yfinance methods vary by version, so both halves are defensive:
         cal = t.calendar
         earnings = t.earnings_dates
 
         data = {}
         if earnings is not None and not earnings.empty:
-            # Last 4 entries only, to bound the context this tool spends.
-            #
-            # The index MUST be stringified before to_dict(). astype(str) casts
-            # the VALUES; the index stays a DatetimeIndex, so to_dict() produces
-            # {column: {Timestamp: value}} and json.dumps fails with "keys must be
-            # str, int, float, bool or None, not Timestamp" — the whole tool then
-            # returned that error instead of any earnings data.
             recent = earnings.head(4).astype(str)
             recent.index = recent.index.astype(str)
             data["earnings_dates"] = recent.to_dict()
 
         if cal:
-            # t.calendar is a dict whose values include datetime.date and a list
-            # of dates. Fixing only the index above would move the failure here
-            # ("Object of type date is not JSON serializable") rather than remove
-            # it, so the dump below coerces whatever is left.
             data["calendar"] = cal
 
         return json.dumps(data, default=_jsonable)
@@ -97,8 +73,6 @@ async def get_analyst_recommendations(ticker: str) -> str:
         t = yf.Ticker(ticker)
         recs = t.recommendations
         if recs is not None and not recs.empty:
-            # A dataframe in the installed yfinance version; orient="index" keeps
-            # the period labels, which are the informative part.
             return recs.tail(5).to_json(orient="index")
         return json.dumps({"message": "No specific recommendations found."})
     except Exception as e:

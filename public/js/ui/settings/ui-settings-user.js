@@ -2,16 +2,11 @@ import * as ui from '../ui.js';
 import * as api from '../../core/api.js';
 import { escapeHtml } from '../../core/utils.js';
 
-// Store the profile data in memory
 let userProfileData = {};
 let isProfileFetched = false;
 
-// The signed-in identity, for the header. Set once at boot rather than passed
-// through both call sites (app.js on open, ui-settings-core.js on tab click),
-// mirroring uiAuthSidebar.setKnownProfiles.
 let _identity = null;
 
-/** Roles are stored as bare keys; only this map is shown to a person. */
 const ROLE_LABELS = {
     admin: 'Administrator',
     editor: 'Editor',
@@ -23,20 +18,6 @@ export function setProfileIdentity(user) {
     _identity = user || null;
 }
 
-/**
- * Who you are signed in as, and — the part available nowhere else in the UI —
- * which organization and in what role.
- *
- * The tabs a member can see are already role-dependent (Knowledge is hidden
- * from members, renaming a KB is owner-only), but nothing on screen ever said
- * what your role IS, so a missing tab was indistinguishable from a bug. Role
- * changes are written to the compliance log; the person they happened to
- * should be able to see the result.
- *
- * Deliberately read-only and visually separate from the editable sections
- * below: this tab is what SAFi remembers about you, not where you edit your
- * account, and form-like styling here would promise an edit that does not exist.
- */
 function _buildIdentityHeader() {
     if (!_identity) return '';
 
@@ -45,32 +26,20 @@ function _buildIdentityHeader() {
     const pic = _identity.picture || _identity.avatar || '';
     const initial = (_identity.name || 'U').trim().charAt(0).toUpperCase();
 
-    // Owner outranks the role column: an owner is always an admin, and "Owner"
-    // is the answer to "why can I rename this and my colleague cannot".
     const roleLabel = _identity.is_org_owner
         ? 'Owner'
         : (ROLE_LABELS[_identity.role] || ROLE_LABELS.member);
 
-    // "Personal account" is a claim about governance membership, so it is keyed
-    // off org_id — the field that actually decides it — not off org_name. A
-    // member whose org name fails to resolve (a stale backend that predates
-    // org_name in /me, a deleted org row, a null name) must not be told they
-    // belong to no organization; they get their role alone, which is true.
     const affiliation = _identity.org_id
         ? (_identity.org_name
             ? `${escapeHtml(_identity.org_name)} <span class="opacity-40">\u00b7</span> ${roleLabel}`
             : roleLabel)
         : 'Personal account';
 
-    // No remote placeholder service: a monogram renders offline and on mobile,
-    // where an external image request is the one that fails.
     const avatar = pic
         ? `<img src="${escapeHtml(pic)}" alt="" class="w-14 h-14 rounded-full object-cover bg-neutral-200 dark:bg-neutral-800 shrink-0">`
         : `<div class="w-14 h-14 rounded-full bg-neutral-200 dark:bg-neutral-800 shrink-0 flex items-center justify-center text-xl font-semibold text-neutral-600 dark:text-neutral-300">${escapeHtml(initial)}</div>`;
 
-    // Local (password) accounts get their self-service password change folded
-    // into this same card: one card for "this is who you are and this is the
-    // credential you sign in with". OAuth/SCIM identities see no password UI.
     const passwordBlock = _identity.username ? _buildPasswordFields() : '';
 
     return `
@@ -88,7 +57,6 @@ function _buildIdentityHeader() {
     `;
 }
 
-// All chip-based sections (order = display order in the 2-col grid)
 const CHIP_SECTIONS = [
     {
         key: 'profession',
@@ -122,7 +90,6 @@ const CHIP_SECTIONS = [
     },
 ];
 
-// Quick-add suggestions per section
 const SUGGESTIONS = {
     profession: [
         'Software Engineer', 'Teacher', 'Entrepreneur', 'Designer',
@@ -151,13 +118,8 @@ const SUGGESTIONS = {
     ],
 };
 
-// Sections counted toward completeness (about_me counts as one)
 const COMPLETENESS_KEYS = ['about_me', ...CHIP_SECTIONS.map(s => s.key)];
 
-/**
- * Renders the "My Profile" tab.
- * Fetches data from the API on first open; subsequent opens use cached data.
- */
 export async function renderSettingsMyProfileTab() {
     ui._ensureElements();
     const container = ui.elements.cpTabMyProfile;
@@ -175,18 +137,15 @@ export async function renderSettingsMyProfileTab() {
 
         userProfileData = raw || {};
 
-        // Migrate legacy key: family_status → key_facts
         if (!userProfileData.key_facts && userProfileData.family_status) {
             userProfileData.key_facts = userProfileData.family_status;
             delete userProfileData.family_status;
         }
 
-        // Ensure all chip arrays exist
         CHIP_SECTIONS.forEach(({ key }) => {
             userProfileData[key] = Array.isArray(userProfileData[key]) ? userProfileData[key] : [];
         });
 
-        // Ensure about_me is a string
         if (typeof userProfileData.about_me !== 'string') {
             userProfileData.about_me = '';
         }
@@ -198,9 +157,6 @@ export async function renderSettingsMyProfileTab() {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Completeness
-// ---------------------------------------------------------------------------
 
 function _computeCompleteness() {
     let filled = 0;
@@ -241,9 +197,6 @@ function _buildCompletenessBar() {
     `;
 }
 
-// ---------------------------------------------------------------------------
-// Main UI builder
-// ---------------------------------------------------------------------------
 
 function _buildProfileUI(container) {
     const gridSections   = CHIP_SECTIONS.filter(s => !s.fullWidth);
@@ -307,15 +260,6 @@ function _buildProfileUI(container) {
     _renderAgentMemorySection(container.querySelector('#agent-memory-section'));
 }
 
-// ---------------------------------------------------------------------------
-// Agent work-context memory: view + delete (backlog 50b)
-//
-// View and delete only, deliberately no editing: every stored entry traces to
-// a governed turn via its src stamp, and a user-typed fact would have no
-// audited origin. Deletion is forward-looking; the copy of the memory each
-// past turn saw stays inside that turn's governance record — that is the
-// record's purpose.
-// ---------------------------------------------------------------------------
 
 const MEMORY_CATEGORIES = [
     { key: 'projects',   title: 'Projects',       main: 'name',     extra: (i) => [i.status, i.target_date].filter(Boolean).join(' · ') },
@@ -446,9 +390,6 @@ async function _loadAgentMemoryInto(body, agentId, host) {
     });
 }
 
-// ---------------------------------------------------------------------------
-// About Me textarea section
-// ---------------------------------------------------------------------------
 
 function _buildAboutMeSection() {
     const val = userProfileData.about_me || '';
@@ -472,9 +413,6 @@ function _buildAboutMeSection() {
     `;
 }
 
-// ---------------------------------------------------------------------------
-// Chip section builder
-// ---------------------------------------------------------------------------
 
 function _buildProfileSection(key, title, subtitle) {
     const items = userProfileData[key] || [];
@@ -537,17 +475,12 @@ function _buildProfileSection(key, title, subtitle) {
     `;
 }
 
-// ---------------------------------------------------------------------------
-// Event listeners
-// ---------------------------------------------------------------------------
 
 function _attachProfileEventListeners(container) {
-    // 1. "Add" button
     container.querySelectorAll('.add-profile-item-btn').forEach(btn => {
         btn.addEventListener('click', () => _handleAddItem(btn.dataset.key, container));
     });
 
-    // 2. Enter key in chip inputs
     container.querySelectorAll('input[id^="profile-input-"]').forEach(input => {
         input.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
@@ -557,7 +490,6 @@ function _attachProfileEventListeners(container) {
         });
     });
 
-    // 3. Delete chip
     container.querySelectorAll('.chip-container').forEach(list => {
         list.addEventListener('click', (e) => {
             const deleteBtn = e.target.closest('.chip-delete-btn');
@@ -570,7 +502,6 @@ function _attachProfileEventListeners(container) {
         });
     });
 
-    // 4. Suggestion pill
     container.querySelectorAll('.suggestion-pill').forEach(pill => {
         pill.addEventListener('click', () => {
             const { key, val } = pill.dataset;
@@ -580,7 +511,6 @@ function _attachProfileEventListeners(container) {
         });
     });
 
-    // 5. About Me character counter
     const aboutMeTextarea = document.getElementById('profile-about-me');
     const charCount = document.getElementById('about-me-char-count');
     if (aboutMeTextarea && charCount) {
@@ -589,11 +519,9 @@ function _attachProfileEventListeners(container) {
         });
     }
 
-    // 6. Save
     const saveBtn = document.getElementById('save-my-profile-btn');
     if (saveBtn) {
         saveBtn.addEventListener('click', async () => {
-            // Capture About Me textarea value before saving
             const aboutMeEl = document.getElementById('profile-about-me');
             if (aboutMeEl) userProfileData.about_me = aboutMeEl.value.trim();
 
@@ -602,7 +530,6 @@ function _attachProfileEventListeners(container) {
             saveBtn.disabled = true;
 
             try {
-                // Clean chip arrays (remove empty strings)
                 for (const key in userProfileData) {
                     if (Array.isArray(userProfileData[key])) {
                         userProfileData[key] = userProfileData[key]
@@ -613,7 +540,6 @@ function _attachProfileEventListeners(container) {
                 await api.updateUserProfileMemory(userProfileData);
                 ui.showToast('Profile saved!', 'success');
 
-                // Re-render to update the completeness bar
                 _buildProfileUI(container);
             } catch (error) {
                 ui.showToast(`Error saving: ${error.message}`, 'error');
@@ -625,9 +551,6 @@ function _attachProfileEventListeners(container) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Add item helper
-// ---------------------------------------------------------------------------
 
 function _handleAddItem(key, container) {
     const input = document.getElementById(`profile-input-${key}`);
@@ -642,17 +565,13 @@ function _handleAddItem(key, container) {
     input.value = '';
     _buildProfileUI(container);
 
-    // Refocus the same input after re-render for rapid entry
     setTimeout(() => {
         document.getElementById(`profile-input-${key}`)?.focus();
     }, 0);
 }
 
-// --- Self-service password change (local/password accounts only) ---
 
 function _buildPasswordFields() {
-    // Inner block of the identity card (no card chrome of its own) — rendered
-    // only for local accounts, where _identity.username is set.
     return `
         <div class="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-700">
             <p class="text-sm text-neutral-500 dark:text-neutral-400 mb-3">

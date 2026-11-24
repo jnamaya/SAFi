@@ -1,42 +1,6 @@
-"""Model -> provider routing.
-
-Single source of truth for mapping a model name to its LLM provider, used by the
-orchestrator, the background note-taker, and the agent/policy save endpoints.
-Dependency-free so it can be imported anywhere without circular-import risk.
-Two resolvers exist on purpose: the pure `resolve_faculty_model_pair` (no DB,
-no Config) and `resolve_effective_faculty_models` (keys + org policy) layered on
-top of it.
-"""
 from __future__ import annotations
 
 
-# Provider governance metadata. baa_capable = the provider offers a HIPAA
-# Business Associate Agreement on an enterprise/API tier (OpenAI, Anthropic,
-# Google via Vertex, Mistral enterprise — verified July 2026); eu_hostable =
-# an EU/EEA-resident hosting option exists. zdr = zero-data-retention posture,
-# verified against official provider docs July 2026:
-#   "default"   — prompts/completions not retained by default
-#   "available" — ZDR offered on an enterprise/request basis (not automatic;
-#                 default is typically ~30-day abuse-monitoring retention)
-#   False       — no ZDR option, or only an unverifiable policy assertion
-#                 (Zhipu claims real-time processing but publishes no
-#                 contractual ZDR program or training-use statement, so it is
-#                 deliberately NOT badged; DeepSeek retains indefinitely in
-#                 China and trains on API data).
-# zdr_note is surfaced verbatim as the badge tooltip in the org-settings UI.
-# Consumed by the per-org provider allow-list (provider_governance.py), the
-# /models endpoint, and the org-settings UI badges. Keys MUST match
-# build_providers_config below.
-#
-# tier (backlog: core/extended curation):
-#   core     — OpenAI, Anthropic, Google Gemini, Local. Recommended and
-#              documented defaults; every SAFi release is tested against the
-#              latest models of these families before shipping.
-#   extended — everything else. Supported via OpenAI-compatible passthrough
-#              and org allow-list opt-in, but not part of the tested core.
-#              The tier is backend-only metadata (not serialized to the UI)
-#              and is NOT an enforcement mechanism — the org allow-list in
-#              provider_governance.py remains the security boundary.
 PROVIDER_METADATA = {
     "local":     {"label": "Local model (this appliance)", "baa_capable": False, "eu_hostable": False,
                    "tier": "core",
@@ -77,22 +41,11 @@ PROVIDER_METADATA = {
 }
 
 
-# Operator-added models (backlog 63): id -> provider, cached from the
-# custom_models table. Consulted by detect_provider BEFORE the prefix
-# heuristics, because those default to groq and a custom id must never
-# depend on guessable spelling. 60s TTL like the org allow-list cache;
-# fails open to the last known map so a DB hiccup cannot change routing.
 _CUSTOM_MODELS_TTL = 60.0
 _custom_models_cache = {"at": None, "rows": [], "map": {}}
 
 
 def custom_models() -> list:
-    """Rows from custom_models, cached. Each: model_id, label, provider, org_id.
-
-    Deliberately EVERY row, unscoped: detect_provider below must resolve any
-    registered id to its provider and has no org in scope. Callers that show
-    models to a user filter by org_id themselves (see list_models_for_org).
-    """
     import time
     now = time.monotonic()
     cache = _custom_models_cache
@@ -103,7 +56,7 @@ def custom_models() -> list:
             cache["rows"] = rows
             cache["map"] = {r["model_id"].lower(): r["provider"] for r in rows}
         except Exception:
-            pass  # keep the last known catalog
+            pass
         cache["at"] = now
     return cache["rows"]
 
@@ -113,23 +66,10 @@ def invalidate_custom_models_cache() -> None:
 
 
 class UnknownModelProviderError(ValueError):
-    """A model id resolved to no provider.
-
-    Raised (fail-closed) instead of silently falling back to a default
-    provider. Silently routing an unrecognised id to Groq would publish a
-    false HIPAA/ZDR badge, so a miss must surface loudly.
-    """
+    pass
 
 
 def detect_provider(model_name: str) -> str:
-    """Map a model name to its provider key.
-
-    Precedence: an exact match against an operator-registered id, then the
-    prefix heuristics below. An id that matches NO rule raises
-    UnknownModelProviderError — the historical silent 'groq' fallback let an
-    unrecognised id render with Groq's baa_capable=False / zdr="default"
-    badge, publishing a false HIPAA/ZDR claim, so a miss now fails loudly.
-    """
     if not model_name:
         raise UnknownModelProviderError(
             "empty model id: no provider can be resolved")
@@ -140,18 +80,8 @@ def detect_provider(model_name: str) -> str:
         return custom
     if m.startswith("models/"):
         m = m[7:]
-    # The gpt-oss line is served by TWO providers with distinct id spellings,
-    # so the vendor prefix decides: Groq lists it as "openai/gpt-oss-*" (vendor
-    # prefix), Cerebras serves the BARE "gpt-oss-*". The vendor-prefixed id must
-    # resolve to Groq BEFORE the bare cerebras rule can swallow it, and first-
-    # party OpenAI ids are listed bare ("gpt-6-luna"), never as "openai/gpt-*".
     if m.startswith("openai/gpt-oss") or m.startswith("groq/"):
         return "groq"
-    # Cerebras serves gpt-oss WITHOUT the vendor prefix (Groq's id is
-    # "openai/gpt-oss-*"), so this must precede the bare "gpt-" rule.
-    # "qwen-" belongs here for a different reason: Qwen is not a Cerebras
-    # product, but Cerebras is what serves it, and nothing else in this file
-    # claims the prefix.
     if (m.startswith("gpt-oss") or m.startswith("zai-")
             or m.startswith("qwen-")):
         return "cerebras"
@@ -167,26 +97,14 @@ def detect_provider(model_name: str) -> str:
         return "mistral"
     if m.startswith("glm-") or m.startswith("codegeex-"):
         return "zhipu"
-    # Appliance-selected local models all carry a "safi-" alias (safi-qwen3-8b,
-    # safi-qwen3-32b, ...), so match the reserved prefix rather than one literal
-    # name. Also recognize sentinel "local" and "@serving" aliases.
     if m.startswith("safi-") or m in ("local", "@local", "serving", "@serving"):
         return "local"
-    # Fail closed: an id matching no rule is unrecognised. Silently routing it
-    # to Groq would publish a false HIPAA/ZDR badge, so surface it as an error
-    # instead of guessing a provider.
     raise UnknownModelProviderError(
         f"model id {model_name!r} matched no known provider; "
         "register it explicitly in the custom_models table to resolve it")
 
 
 def build_providers_config(config) -> dict:
-    """The standard "providers" block for LLMProvider, built from app Config.
-
-    Every place that instantiates LLMProvider (orchestrator, agent/policy
-    wizard endpoints) must use this so new providers only need to be added
-    here — the previously hand-copied dicts had already drifted out of sync.
-    """
     return {
         "openai": {
             "type": "openai",
@@ -234,7 +152,6 @@ def build_providers_config(config) -> dict:
 
 
 def configured_providers(config) -> frozenset:
-    """Provider keys that can actually reach a backend in the running config."""
     return frozenset(
         name
         for name, p in build_providers_config(config).items()
@@ -243,14 +160,6 @@ def configured_providers(config) -> frozenset:
 
 
 def effective_configured_providers(config, org_id=None) -> frozenset:
-    """Providers that can actually dispatch a call right now.
-
-    The .env keys are only the *default* layer. A deployment key stored from
-    the UI, and an org's own key, both make a provider usable without any .env
-    entry — which is the whole point on an appliance, where there is no org and
-    the .env is not editable from the UI. Returns the union so a model picker
-    never hides a model that would work.
-    """
     from .deployment_keys import deployment_key_providers
     from .org_keys import org_key_providers
     try:
@@ -260,7 +169,6 @@ def effective_configured_providers(config, org_id=None) -> frozenset:
             | org_key_providers(org_id)
         )
     except Exception:
-        # Never let a DB hiccup hide every provider; .env alone is a safe floor.
         return configured_providers(config)
 
 
@@ -272,11 +180,6 @@ def resolve_faculty_model_pair(
     conscience_explicit: bool = False,
     intellect_explicit: bool = False,
 ) -> tuple[str, str]:
-    """Resolve usable faculty models and keep Intellect distinct when possible.
-
-    `available_models` are catalogue entries (dicts) or, in tests, model-id
-    strings. An explicit user/agent Conscience choice always stays in force.
-    """
     entries = []
     for entry in available_models or []:
         model_id = entry.get("id") if isinstance(entry, dict) else entry
@@ -289,7 +192,6 @@ def resolve_faculty_model_pair(
 
     by_id = {model_id.casefold(): (model_id, provider) for model_id, provider in entries}
     llm_models = [model_id for model_id, provider in entries]
-    # Keep catalogue ordering stable while removing duplicate ids.
     llm_models = list(dict.fromkeys(llm_models))
 
     intellect = intellect_model or ""
@@ -297,7 +199,6 @@ def resolve_faculty_model_pair(
     configured_conscience = by_id.get(conscience.casefold()) if conscience else None
 
     if not conscience_explicit and configured_conscience is None and llm_models:
-        # Automatic defaults may name a model whose provider is not configured.
         conscience = llm_models[0]
 
     if not intellect_explicit and intellect.casefold() not in by_id and llm_models:
@@ -335,8 +236,6 @@ def resolve_effective_faculty_models(
             conscience_model = live
 
     effective_allowlist = allowlist if allowlist is not None else get_org_allowlist(org_id)
-    # Do not silently route around a deliberately blocked provider. The chat
-    # endpoint will return its normal provider-policy error for these choices.
     if effective_allowlist is not None and any(
         not model_allowed(model, effective_allowlist)
         for model in (intellect_model, conscience_model)
@@ -355,10 +254,4 @@ def resolve_effective_faculty_models(
 
 
 def model_provider_configured(model_name: str, config, org_id=None) -> bool:
-    """True when this install holds a usable API key for the model's provider.
-
-    Guards places that would STORE a model selection on a user's behalf
-    (demo/guest defaults): a stored model whose provider has no key fails
-    every turn with an unreachable-client error, so refuse the write instead.
-    """
     return detect_provider(model_name) in effective_configured_providers(config, org_id)

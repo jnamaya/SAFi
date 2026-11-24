@@ -1,10 +1,3 @@
-"""Tests for synthesizing the appliance's local models into the model picker.
-
-The wizard picks a model on the appliance; the picker has to offer it without
-anyone writing a DB row. These cover the read, the on-disk presence check that
-keeps a picker entry from 404ing, and the filtering the rest of
-list_models_for_org applies.
-"""
 import json
 import pathlib
 
@@ -29,7 +22,6 @@ CATALOGUE = {
 
 @pytest.fixture
 def served(monkeypatch):
-    """Pretend safi-model-fetch has activated a given alias."""
     def set_active(alias):
         import safi_app.config as cm
         monkeypatch.setattr(cm, "active_local_model", lambda: alias, raising=False)
@@ -39,7 +31,6 @@ def served(monkeypatch):
 
 @pytest.fixture
 def catalogue(tmp_path, monkeypatch):
-    """A catalogue plus a model_root we can populate to fake a download."""
     path = tmp_path / "local-models.json"
     root = tmp_path / "models"
     payload = dict(CATALOGUE, model_root=str(root))
@@ -51,7 +42,6 @@ def catalogue(tmp_path, monkeypatch):
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(b"x" * 1)
         target.chmod(0o644)
-        # Only the size is compared, so a sparse file is enough.
         with open(target, "r+b") as handle:
             handle.truncate(size)
 
@@ -59,10 +49,6 @@ def catalogue(tmp_path, monkeypatch):
     install.root = root
     return install
 
-
-# --------------------------------------------------------------------------
-# installed_local_models
-# --------------------------------------------------------------------------
 
 def test_nothing_is_offered_before_anything_is_downloaded(catalogue):
     assert pg.installed_local_models() == []
@@ -87,11 +73,9 @@ def test_only_the_downloaded_one_of_two_is_offered(catalogue, served):
 
 
 def test_a_downloaded_but_unserved_model_is_offered_for_on_demand_serving(catalogue, served):
-    # A downloaded model is offered in the picker because SAFi swaps it on demand when selected.
     catalogue.populate("qwen3-8b", "Qwen3-8B-Q4_K_M.gguf", 5027783488)
     served("safi-qwen3-32b")
     assert [m["id"] for m in pg.installed_local_models()] == ["safi-qwen3-8b"]
-    # ...and the catalog UI shows it as installed but not currently active.
     entry = next(m for m in pg.local_model_inventory() if m["id"] == "qwen3-8b")
     assert entry["installed"] is True
     assert entry["active"] is False
@@ -112,8 +96,6 @@ def test_the_inventory_lists_the_whole_catalogue_when_nothing_is_downloaded(cata
 
 
 def test_a_truncated_download_is_not_offered(catalogue, served):
-    # A resumed transfer that was interrupted leaves a short file. Offering it
-    # would put a model in the picker that fails on first use.
     catalogue.populate("qwen3-8b", "Qwen3-8B-Q4_K_M.gguf", 5027783488)
     with open(catalogue.root / "qwen3-8b" / "Qwen3-8B-Q4_K_M.gguf", "r+b") as handle:
         handle.truncate(1024)
@@ -121,16 +103,12 @@ def test_a_truncated_download_is_not_offered(catalogue, served):
 
 
 def test_the_url_is_not_used_to_derive_the_filename(catalogue, served):
-    # The catalogue states 'file'. If a model were listed under a different url
-    # basename, the downloader and this reader must still agree.
     catalogue.populate("qwen3-8b", "Qwen3-8B-Q4_K_M.gguf", 5027783488)
     served("safi-qwen3-8b")
     assert pg.installed_local_models()
 
 
 def test_one_malformed_entry_costs_only_itself(catalogue, served):
-    # A blank whole catalog reads as "this box has no models" and hides the very
-    # model the operator is looking at, so a bad entry must be skipped alone.
     served("safi-qwen3-8b")
     catalogue.populate("qwen3-8b", "Qwen3-8B-Q4_K_M.gguf", 5027783488)
     path = pathlib.Path(pg.LOCAL_CATALOGUE_PATH)
@@ -141,8 +119,6 @@ def test_one_malformed_entry_costs_only_itself(catalogue, served):
 
 
 def test_a_missing_catalogue_is_not_an_error():
-    # Normal deployments have no appliance catalogue at all, and the model list
-    # must not depend on it existing.
     assert pg.installed_local_models("/nonexistent/local-models.json") == []
 
 
@@ -153,8 +129,6 @@ def test_a_corrupt_catalogue_is_not_an_error(tmp_path):
 
 
 def test_a_future_schema_version_is_refused(tmp_path):
-    # Refusing is the safe direction: an unknown schema may mean the layout
-    # changed, and guessing would report a model as installed when it is not.
     path = tmp_path / "local-models.json"
     path.write_text(json.dumps(dict(CATALOGUE, schema=2)))
     assert pg.installed_local_models(str(path)) == []
@@ -167,10 +141,6 @@ def test_a_catalogue_without_model_root_is_refused(tmp_path):
     path.write_text(json.dumps(payload))
     assert pg.installed_local_models(str(path)) == []
 
-
-# --------------------------------------------------------------------------
-# list_models_for_org
-# --------------------------------------------------------------------------
 
 class FakeConfig:
     AVAILABLE_MODELS = [{"id": "gpt-oss-120b", "label": "GPT OSS 120B"}]
@@ -187,17 +157,8 @@ class FakeConfig:
 
 @pytest.fixture
 def wired(monkeypatch, catalogue, served):
-    """list_models_for_org with Config, org keys and custom rows stubbed out."""
     monkeypatch.setattr("safi_app.config.Config", FakeConfig, raising=False)
     monkeypatch.setattr(pg, "get_org_allowlist", lambda org_id: None)
-    # Every known provider, so these tests turn on the local synthesis and not
-    # on which provider a particular built-in id happens to route to.
-    #
-    # Patched on model_routing, not on pg: list_models_for_org now asks
-    # effective_configured_providers(), which resolves the .env layer through
-    # model_routing.configured_providers. Patching pg.configured_providers left
-    # the real one running, so "every provider" silently became "whatever this
-    # machine's .env happens to hold" and the built-in models vanished.
     monkeypatch.setattr("safi_app.core.services.model_routing.configured_providers",
                         lambda config: frozenset(pg.PROVIDER_METADATA))
     monkeypatch.setattr("safi_app.core.services.deployment_keys.deployment_key_providers",
@@ -229,8 +190,6 @@ def test_the_local_entry_carries_provider_metadata(wired, served):
     entry = next(m for m in pg.list_models_for_org(None) if m["id"] == "safi-qwen3-8b")
     assert entry["provider"] == "local"
     assert entry["provider_label"]
-    # The provider must be local, never groq: an unset local key would send the
-    # prompt to Groq with a placeholder.
     assert entry["provider"] != "groq"
 
 
@@ -256,12 +215,9 @@ def test_a_local_model_respects_the_org_allowlist(wired, monkeypatch, served):
 
 
 def test_swapping_the_model_needs_no_write(wired, served):
-    # The point of synthesizing: the operator downloads a different model and
-    # the picker follows, with nothing to insert or update anywhere.
     served("safi-qwen3-8b")
     wired.populate("qwen3-8b", "Qwen3-8B-Q4_K_M.gguf", 5027783488)
     assert "safi-qwen3-8b" in _ids()
-    # The operator downloads the bigger one and the fetcher re-points the server.
     (wired.root / "qwen3-8b" / "Qwen3-8B-Q4_K_M.gguf").unlink()
     wired.populate("qwen3-32b", "Qwen3-32B-Q4_K_M.gguf", 19762149024)
     served("safi-qwen3-32b")
@@ -269,15 +225,6 @@ def test_swapping_the_model_needs_no_write(wired, served):
     assert "safi-qwen3-32b" in ids
     assert "safi-qwen3-8b" not in ids
 
-
-# --------------------------------------------------------------------------
-# the safi-demo phantom
-# --------------------------------------------------------------------------
-#
-# The ISO no longer ships a model, and llama-server serves exactly one --alias,
-# so a hardcoded "safi-demo" entry is an id nothing answers to. It was offered
-# in every picker on any install with the local key set -- which is every
-# appliance -- and selecting it 404'd.
 
 def test_safi_demo_is_not_in_the_shipped_catalog():
     from safi_app.config import Config
@@ -294,18 +241,6 @@ def test_the_local_provider_is_no_longer_labelled_the_demo_model():
 
 
 def test_built_in_labels_are_unique():
-    """Labels are versionless by design, so uniqueness is not automatic.
-
-    The picker renders one row per entry and falls back to `model.id` only when
-    `label` is falsy — which it never is — so two identical labels are two
-    indistinguishable rows, not a fallback to the id. The switch toast in
-    app.js says the same thing twice for two different models.
-
-    This is not hypothetical: the catalogue carried both "Gemini 3.6 Flash" and
-    "Gemini 3.7 Flash" (-> "Gemini Flash"), and both a Zhipu and a Cerebras GLM
-    (-> "GLM"). Nothing else caught it. Case-insensitive, because the picker
-    groups and compares by the label string it receives.
-    """
     from collections import Counter
     from safi_app.config import Config
 
@@ -339,8 +274,6 @@ def test_no_faculty_default_names_a_model_the_server_never_serves():
 
 
 def test_the_local_key_alone_does_not_pick_a_phantom_model(monkeypatch, tmp_path):
-    # A deferred install sets the local key and nothing else. Detection walks
-    # local first, so it must decline rather than return a stale default.
     from safi_app import config as cm
     monkeypatch.setenv("SAFI_LOCAL_MODEL_API_KEY", "local")
     for name in ("GROQ_API_KEY", "GEMINI_API_KEY", "ANTHROPIC_API_KEY",
@@ -388,17 +321,12 @@ def test_active_local_model_reads_the_served_alias_from_the_unit(tmp_path, monke
         "qwen3-32b/m.gguf --host 127.0.0.1 --port 8081 --alias safi-qwen3-32b\n")
     assert cm.active_local_model() == "safi-qwen3-32b"
 
-    # A unit that has been written but points elsewhere is what the server is
-    # actually serving; the status file must not override it.
     status = tmp_path / "model-fetch.json"
     monkeypatch.setattr(cm, "LOCAL_MODEL_STATUS_PATH", str(status))
     status.write_text(json.dumps({"state": "done", "alias": "safi-phi4-mini",
                                   "activated": False}))
     assert cm.active_local_model() == "safi-qwen3-32b"
 
-    # A verified download that was never activated has no unit, so nothing is
-    # being served. Reporting the download here is what made the catalog claim
-    # "Serving" for a model the server was not running.
     unit.unlink()
     assert cm.active_local_model() == ""
 
@@ -406,13 +334,7 @@ def test_active_local_model_reads_the_served_alias_from_the_unit(tmp_path, monke
     assert cm.active_local_model() == ""
 
 
-# --------------------------------------------------------------------------
-# GET /api/models/local
-# --------------------------------------------------------------------------
-
 def test_the_payload_reports_off_appliance_rather_than_erroring(tmp_path, monkeypatch):
-    # Most SAFi deployments are not appliances and have no catalogue file. That
-    # is an ordinary state, so it must not surface as a failure.
     monkeypatch.setattr(pg, "LOCAL_CATALOGUE_PATH", str(tmp_path / "absent.json"))
     payload = pg.local_catalog_payload()
     assert payload["ok"] is True
@@ -442,13 +364,10 @@ def test_the_payload_has_no_active_model_when_none_is_served(catalogue, served):
     assert payload["active"] is None
     by_id = {m["id"]: m for m in payload["models"]}
     assert by_id["qwen3-32b"]["installed"] is True
-    # Installed but not being served: the server still points at the old alias.
     assert by_id["qwen3-32b"]["active"] is False
 
 
 def test_the_payload_carries_what_the_catalog_table_renders(catalogue, served):
-    # The table prints label, size_human and min_ram; a missing key would render
-    # "undefined" straight into the page.
     served("")
     for m in pg.local_catalog_payload()["models"]:
         assert m["label"] and isinstance(m["label"], str)

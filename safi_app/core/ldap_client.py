@@ -1,23 +1,7 @@
-"""LDAP / Active Directory bind client (enterprise identity LDAP Phase 1).
-
-A thin, deliberately small wrapper around ldap3: bind with a service
-account, search for the user by sAMAccountName (or a configured filter),
-then a direct bind as that user to verify the AD password. The password is
-never stored, logged, or hashed locally — AD is the sole authority.
-
-AD returns rich failure detail inside LDAP error 49 (invalid credentials)
-as a "data 775" style subcode; mapping those subcodes lets /login/ldap
-surface actionable messages (expired / locked / must-change) instead of a
-generic failure.
-
-Imports ldap3 lazily so a deployment without the dependency (and without
-SAFI_LDAP_URL set) is completely unaffected.
-"""
 import re
 
 from ..config import Config
 
-# AD error-49 data subcodes (RFC/MS-ADTS): the reason a bind was refused.
 _AD_SUBCODES = {
     "525": ("user_not_found", "Account not found in the directory."),
     "52e": ("invalid_credentials", "Invalid username or password."),
@@ -35,12 +19,8 @@ _SUBCODE_RE = re.compile(r"data\s+([0-9a-fA-F]{3})", re.IGNORECASE)
 
 
 def _parse_bind_error(exc) -> dict:
-    """Turn an ldap3 bind exception into {ok: False, code, message}."""
     text = str(exc)
     low = text.lower()
-    # 0000208D / strongerAuthRequired: the DC refuses unsigned simple binds.
-    # This is a server-side policy/certificate issue, NOT a bad password —
-    # reporting it as "invalid credentials" sends users down the wrong path.
     if "strongerauthrequired" in low or "signing" in low:
         return {"ok": False, "code": "ldap_signing_required",
                 "message": "The domain controller rejects unsigned LDAP binds. "
@@ -64,27 +44,17 @@ def _parse_bind_error(exc) -> dict:
 
 
 def split_domain_identifier(identifier: str):
-    """Accept 'DOMAIN\\user', 'user@domain.example', or bare 'user' and
-    return (username, domain_hint). The domain hint is advisory only — the
-    authoritative directory is the one SAFi is configured against."""
     identifier = (identifier or "").strip()
     if "\\" in identifier:
         dom, _, user = identifier.rpartition("\\")
         return user.strip(), dom.strip().lower() or None
     if "@" in identifier and identifier.count("@") == 1:
         user, _, dom = identifier.partition("@")
-        # user@domain: keep the full UPN suffix as hint, username is local part
         return user.strip(), dom.strip().lower() or None
     return identifier, None
 
 
 def _make_server():
-    """Build the ldap3 Server honoring ldaps:// / StartTLS / TLS verification.
-
-    Modern AD DCs commonly reject unsigned simple binds on 389 with
-    LDAP_STRONG_AUTH_REQUIRED ("strongerAuthRequired"); StartTLS (or
-    ldaps://) satisfies them without NTLM's MD4 dependency.
-    """
     from ldap3 import Server, Tls
     import ssl as _ssl
 
@@ -103,14 +73,6 @@ def _needs_starttls() -> bool:
 
 
 def authenticate(username: str, password: str) -> dict:
-    """Verify an AD password by direct bind.
-
-    Returns {"ok": True, "dn", "email", "name"} on success, or
-    {"ok": False, "code", "message"} on failure. Never raises for
-    authentication outcomes; unreachable directories come back as
-    code='directory_unreachable' so the route can return 503-ish signals
-    without a traceback.
-    """
     if not Config.ldap_configured():
         return {"ok": False, "code": "ldap_not_configured", "message": "LDAP sign-in is not configured."}
     if not username or not password:
@@ -128,16 +90,10 @@ def authenticate(username: str, password: str) -> dict:
     user_dn = None
     email = name = None
     try:
-        # 1) Service-account search to resolve the account's DN + attributes.
         if Config.LDAP_BIND_DN:
-            # TLS must wrap the socket BEFORE the simple bind, or the DC
-            # rejects it with strongerAuthRequired. So: open → start_tls → bind.
             svc = Connection(server, user=Config.LDAP_BIND_DN,
                              password=Config.LDAP_BIND_PASSWORD,
                              receive_timeout=Config.LDAP_TIMEOUT)
-            # open() may return None on some ldap3/LDAPS paths even on
-            # success, so it must not be treated as a boolean; failures
-            # either raise or surface as a failed bind() below.
             svc.open()
             if _needs_starttls() and not svc.start_tls():
                 raise Exception(f"service TLS failed: {svc.last_error or svc.result}")
@@ -157,30 +113,20 @@ def authenticate(username: str, password: str) -> dict:
             finally:
                 svc.unbind()
         else:
-            # Anonymous resolution is not possible on AD; require the DN
-            # filter to produce a full DN ({username} placeholder position).
             user_dn = Config.LDAP_USER_FILTER.format(username=_escape_dn(username))
             if "=" not in user_dn:
                 return {"ok": False, "code": "ldap_not_configured",
                         "message": "SAFI_LDAP_BIND_DN is required to resolve accounts."}
 
-        # 2) Direct bind as the located DN — the actual password check.
-        # Same open → start_tls → bind ordering: the DC requires a signed
-        # channel before it will accept any simple bind on 389.
         conn = Connection(server, user=user_dn, password=password,
                           receive_timeout=Config.LDAP_TIMEOUT)
-        # Do NOT pre-open the socket: with this ldap3/LDAPS path an explicit
-        # open() before bind() yields a silent None-result failure (no
-        # last_error, no result), indistinguishable from a bad password.
-        # bind() opens the socket itself, applying TLS per the server config;
-        # start_tls is still issued explicitly for the StartTLS-on-389 case.
         if _needs_starttls():
             if not conn.open() or not conn.start_tls():
                 raise Exception(f"user TLS failed: {conn.last_error or conn.result}")
         if not conn.bind():
             raise Exception(f"user bind failed: {conn.last_error or conn.result}")
         conn.unbind()
-    except Exception as exc:  # noqa: BLE001 — every failure maps to a code
+    except Exception as exc:
         return _parse_bind_error(exc)
 
     return {"ok": True, "dn": user_dn, "email": (email or "").strip().lower() or None,
@@ -188,14 +134,6 @@ def authenticate(username: str, password: str) -> dict:
 
 
 def get_groups(user_dn: str):
-    """Read the user's memberOf attribute via the service account.
-
-    Returns a list of group DNs, [] when the user is in no groups, or None
-    when the directory could not answer (misconfig / transient failure).
-    Callers must treat None as "skip role mapping": a directory outage must
-    never silently demote admins to member. Never raises — a group lookup
-    failure must not block login.
-    """
     if not Config.ldap_configured() or not Config.LDAP_BIND_DN or not user_dn:
         return None
     try:
@@ -206,9 +144,6 @@ def get_groups(user_dn: str):
         svc = Connection(server, user=Config.LDAP_BIND_DN,
                          password=Config.LDAP_BIND_PASSWORD,
                          receive_timeout=Config.LDAP_TIMEOUT)
-        # open() may return None on success (see authenticate); treat only a
-        # failed bind() as failure so a group lookup never spuriously returns
-        # None (which would skip role mapping).
         svc.open()
         if _needs_starttls() and not svc.start_tls():
             return None
@@ -228,17 +163,15 @@ def get_groups(user_dn: str):
                 svc.unbind()
             except Exception:
                 pass
-    except Exception:  # noqa: BLE001 — directory unreachable: caller keeps current role
+    except Exception:
         return None
 
 
 def _escape_filter(value: str) -> str:
-    """RFC 4515 filter escaping — the username goes into the search filter."""
     return re.sub(r"([\\\*\(\)\x00-\x1f])", lambda m: "\\" + format(ord(m.group(1)), "02x"), value)
 
 
 def dn_to_domain(dn: str):
-    """'DC=safi,DC=local' -> 'safi.local'; None if the DN has no DC parts."""
     parts = []
     for comp in (dn or "").split(","):
         attr, _, val = comp.strip().partition("=")
@@ -248,18 +181,6 @@ def dn_to_domain(dn: str):
 
 
 def directory_owns_domain(domain: str):
-    """Prove a domain is a naming context of the configured directory.
-
-    Reads the rootDSE with the service account and checks the domain against
-    namingContexts / rootDomainNamingContext. This is the ownership proof for
-    domains that have no public DNS (internal namespaces like safi.local):
-    whoever controls the directory the deployment binds against controls who
-    holds identities on that domain — which is the same claim DNS TXT
-    verification makes for public domains.
-
-    Returns {"ok": bool, "contexts": [..]} or None when the directory could
-    not answer (never treat an outage as a failed proof).
-    """
     if not Config.ldap_configured() or not Config.LDAP_BIND_DN or not domain:
         return None
     domain = domain.strip().lower()
@@ -294,11 +215,10 @@ def directory_owns_domain(domain: str):
                 conn.unbind()
             except Exception:
                 pass
-    except Exception:  # noqa: BLE001 — directory outage is "no answer", not "no"
+    except Exception:
         return None
 
 
 def _escape_dn(value: str) -> str:
-    """RFC 4514 DN escaping for the no-service-account DN template path."""
     specials = '\\,+"\'<>;=#'
     return "".join("\\" + ch if ch in specials or ord(ch) < 32 else ch for ch in value)

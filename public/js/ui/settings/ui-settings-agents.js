@@ -1,27 +1,17 @@
 import * as ui from '../ui.js';
 import * as api from '../../core/api.js';
-import { getAvatarForProfile } from '../ui-auth-sidebar.js'; // Need to check path adjustment? Yes, one level deeper.
+import { getAvatarForProfile } from '../ui-auth-sidebar.js';
 import { openAgentWizard } from '../ui-agent-wizard.js';
-import { ensureProfileModalExists } from './ui-settings-core.js'; // Circular dependency risk? Core depends on this for render? No, core imports render. This imports generic helper.
+import { ensureProfileModalExists } from './ui-settings-core.js';
 
-/**
- * Renders the Profile selection tab in the Control Panel.
- * @param {Array} profiles - List of available profile objects
- * @param {string} activeProfileKey - The key of the currently active profile
- * @param {Function} onProfileChange - Callback function when a profile is selected
- * @param {Object} currentUser - The current user object
- */
 export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileChange, currentUser) {
     ui._ensureElements();
     const container = ui.elements.cpTabProfile;
     if (!container) return;
 
-    // Handler to open the profile details modal
     const viewDetailsHandler = (key) => {
-        // Double check modal exists before trying to render
         ensureProfileModalExists();
 
-        // FIX: Use String() conversion to ensure we match "1" with 1 if types differ
         const profile = profiles.find(p => String(p.key) === String(key));
         if (profile) {
             renderProfileDetailsModal(profile);
@@ -31,7 +21,6 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
         }
     };
 
-    // Generate the HTML for the profile list
     container.innerHTML = `
         <div class="settings-page-header">
             <h1>Agents</h1>
@@ -65,8 +54,6 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
         const description = profile.description_short || profile.description || '';
         const isActive = profile.key === activeProfileKey;
 
-        // Card Styling
-        // Active: Green border, slight green tint
         const activeClasses = `border-green-500 bg-green-50/50 dark:bg-green-900/10 ring-2 ring-green-500 ring-offset-2 dark:ring-offset-neutral-900`;
         const inactiveClasses = `border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-800 hover:border-green-300 dark:hover:border-green-700 hover:shadow-md`;
 
@@ -116,8 +103,6 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
         </div>
     `;
 
-    // Attach event listeners for radio buttons
-    // Note: We listen on the container for capture or change events bubbling up
     container.querySelectorAll('input[name="ethical-profile"]').forEach(radio => {
         radio.addEventListener('change', (e) => {
             const newProfileKey = e.target.value;
@@ -125,7 +110,6 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
         });
     });
 
-    // Attach event listeners for "View Details" buttons
     container.querySelectorAll('.view-profile-details-btn').forEach(btn => {
         btn.onclick = (e) => {
             e.preventDefault();
@@ -134,14 +118,12 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
         };
     });
 
-    // --- NEW: Attach listeners for "Edit Agent" buttons ---
     container.querySelectorAll('.edit-agent-btn').forEach(btn => {
         btn.onclick = async (e) => {
             e.preventDefault();
             e.stopPropagation();
             const key = btn.dataset.key;
 
-            // Show loading state on button
             const originalText = btn.innerHTML;
             btn.innerHTML = 'Loading...';
             btn.disabled = true;
@@ -162,7 +144,6 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
         };
     });
 
-    // --- Attach listeners for "Duplicate Agent" buttons ---
     container.querySelectorAll('.dup-agent-btn').forEach(btn => {
         btn.onclick = async (e) => {
             e.preventDefault();
@@ -188,7 +169,6 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
         };
     });
 
-    // --- NEW: Attach listeners for "Delete Agent" buttons ---
     container.querySelectorAll('.delete-agent-btn').forEach(btn => {
         btn.onclick = async (e) => {
             e.preventDefault();
@@ -213,7 +193,6 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
         };
     });
 
-    // --- Attach listeners for "Share Agent" buttons ---
     container.querySelectorAll('.share-agent-btn').forEach(btn => {
         btn.onclick = (e) => {
             e.preventDefault();
@@ -222,7 +201,6 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
         };
     });
 
-    // --- NEW: Attach Event Listener for "Create New Agent" ---
     const createBtn = document.getElementById('btn-create-agent');
     if (createBtn) {
         createBtn.addEventListener('click', (e) => {
@@ -231,13 +209,9 @@ export function renderSettingsProfileTab(profiles, activeProfileKey, onProfileCh
         });
     }
 
-    // --- Tool-grant approvals: the server decides who is a reviewer
-    // (designated approver group, or the admin|auditor fallback), so this
-    // renders for everyone and quietly shows nothing to non-reviewers.
     renderToolApprovals();
 }
 
-// --- TOOL-GRANT APPROVALS PANEL ---
 
 async function renderToolApprovals() {
     const host = document.getElementById('tool-approvals-host');
@@ -247,7 +221,7 @@ async function renderToolApprovals() {
         const res = await api.listToolRequests('pending');
         requests = res.requests || [];
     } catch (e) {
-        return; // reviewers without an org, or a transient failure: no panel
+        return;
     }
     if (!requests.length) {
         host.innerHTML = '';
@@ -302,7 +276,6 @@ async function renderToolApprovals() {
     }));
 }
 
-// --- AGENT SHARE DIALOG ---
 
 function escSh(s) {
     const div = document.createElement('div');
@@ -310,11 +283,6 @@ function escSh(s) {
     return div.innerHTML;
 }
 
-/**
- * Self-contained share dialog: grants can_use access to org members and
- * groups on top of the visibility tier. Owner or org admin only (the button
- * is gated the same way, and the backend enforces it regardless).
- */
 async function openShareDialog(key, agentName) {
     document.getElementById('agent-share-modal')?.remove();
     const modal = document.createElement('div');
@@ -409,13 +377,7 @@ async function renderShareBody(modal, key) {
     });
 }
 
-// --- PROFILE DETAILS MODAL HELPERS ---
 
-/**
- * Helper to create a formatted HTML section for the profile details modal.
- * @param {string} title - The section title
- * @param {string | Array} content - The content (markdown string or list of strings)
- */
 function createModalSection(title, content) {
     if (!content) return '';
 
@@ -425,8 +387,6 @@ function createModalSection(title, content) {
         if (content.length === 0) return '';
         contentHtml = '<ul class="space-y-1">' + content.map(item => `<li class="flex gap-2"><span class="opacity-60">»</span><span class="flex-1">${item}</span></li>`).join('') + '</ul>';
     } else {
-        // Use marked to parse markdown content
-        // Assuming marked and DOMPurify are global as per original file comments
         contentHtml = DOMPurify.sanitize(marked.parse(String(content ?? '')));
     }
 
@@ -440,10 +400,6 @@ function createModalSection(title, content) {
     `;
 }
 
-/**
- * Creates the HTML for the "Values" section, including rubrics.
- * @param {Array} values - The list of value objects
- */
 function renderValuesSection(values, title = 'Values &amp; Standards') {
     if (!values || values.length === 0) return '';
 
@@ -451,16 +407,13 @@ function renderValuesSection(values, title = 'Values &amp; Standards') {
         let rubricHtml = '';
         if (v.rubric) {
 
-            // Handle both Object (standard) and Limit (custom) rubric formats
             let scoringGuide = [];
             let description = 'N/A';
 
             if (Array.isArray(v.rubric)) {
-                // Custom Agent Format: rubric is the list, description is on the value
                 scoringGuide = v.rubric;
                 description = v.description || 'N/A';
             } else {
-                // Standard Format: rubric is object
                 scoringGuide = v.rubric.scoring_guide || [];
                 description = v.rubric.description || 'N/A';
             }
@@ -482,7 +435,6 @@ function renderValuesSection(values, title = 'Values &amp; Standards') {
 
                 const scoreChipHtml = `<span class="inline-block text-xs font-mono font-bold px-1.5 py-0.5 rounded ${scoreClasses}">${scoreText}</span>`;
 
-                // Handle both 'descriptor' (built-in) and 'criteria' (custom wizard) keys
                 const text = g.descriptor || g.criteria || '';
 
                 return `<li class="mb-1.5 flex items-start gap-2">
@@ -505,8 +457,6 @@ function renderValuesSection(values, title = 'Values &amp; Standards') {
             `;
         }
 
-        // Use v.value (ID) or fallback to v.name if value is missing (custom agent quirks)
-        // Also use v.description as definition fallback for custom agents
         const valName = v.value || v.name || 'Unknown Value';
         const valDef = v.definition || v.description || 'No definition provided.';
 
@@ -529,15 +479,10 @@ function renderValuesSection(values, title = 'Values &amp; Standards') {
     `;
 }
 
-/**
- * Populates the Profile Details modal with the given profile data.
- * @param {object} profile - The full profile object
- */
 export function renderProfileDetailsModal(profile, options = {}) {
     const isPolicy = !!options.isPolicy;
     ui._ensureElements();
 
-    // FIX: Ensure modal exists in DOM before grabbing reference
     ensureProfileModalExists();
 
     const container = ui.elements.profileModalContent;
@@ -553,7 +498,6 @@ export function renderProfileDetailsModal(profile, options = {}) {
 
     container.insertAdjacentHTML('beforeend', createModalSection('Description', profile.description));
     container.insertAdjacentHTML('beforeend', createModalSection('Purpose', profile.worldview));
-    // Policies don't enforce style; only show Style for agents that set one.
     if (profile.style && !String(profile.style).startsWith('N/A')) {
         container.insertAdjacentHTML('beforeend', createModalSection('Style', profile.style));
     }

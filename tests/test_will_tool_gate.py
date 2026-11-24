@@ -1,18 +1,3 @@
-"""
-Unit tests for WillGate.evaluate_tool_intent (Phase 6):
-
-- Allow-list block, read-only fast pass, deterministic approve.
-- Empty allowed_tools is deny-all; only an absent key (a profile not built
-  by the profile adapter) skips the check.
-- Parameter constraints default-deny: an omitted constrained parameter is a
-  violation (a tool's server-side default is unvetted), not a bypass.
-- _stamp_tool_authorization: advertised tools are the baseline, a policy's
-  will_rules.allowed_tools can only narrow, never grant. Both lists are
-  expanded from connector names to function names first, which is why
-  "web_search" produces ["web_search", "web_news"] below.
-
-Run:  venv/bin/python tests/test_will_tool_gate.py
-"""
 import sys
 import asyncio
 import unittest
@@ -61,8 +46,6 @@ class TestToolGate(unittest.TestCase):
         self.assertIn("not permitted", reason)
 
     def test_omitted_constrained_param_is_default_deny(self):
-        # Previously an omitted param skipped the check entirely, letting the
-        # tool's server-side default through unvetted.
         decision, reason = evaluate("send_email", {"subject": "hi"})
         self.assertEqual(decision, "violation")
         self.assertIn("must be provided explicitly", reason)
@@ -77,15 +60,11 @@ class TestToolGate(unittest.TestCase):
         self.assertEqual(decision, "approve")
 
     def test_empty_allowlist_denies_all(self):
-        # An agent offered no tools has no legitimate tool intents — even
-        # read-only ones (the allow-list check runs before the fast pass).
         decision, reason = evaluate("web_search", {}, {"allowed_tools": []})
         self.assertEqual(decision, "violation")
         self.assertIn("not authorized", reason)
 
     def test_absent_allowlist_skips_check(self):
-        # A profile with no allowed_tools key at all wasn't built by the
-        # governance compiler — legacy behavior is preserved for that case.
         decision, _ = evaluate("some_write_tool", {}, {})
         self.assertEqual(decision, "approve")
 
@@ -93,9 +72,6 @@ class TestToolGate(unittest.TestCase):
 class TestToolAuthorizationCompile(unittest.TestCase):
 
     def test_advertised_tools_become_allowed_tools(self):
-        # "web_search" is a CONNECTOR that expands to two functions. The wizard is
-        # connector-level; the Will matches function names exactly; so the compiler
-        # expands. See tool_connectors.py and test_tool_connector_expansion.py.
         p = _stamp_tool_authorization({"tools": ["web_search", "send_email"]}, CONNECTOR_TOOLS)
         self.assertEqual(p["allowed_tools"], ["web_search", "web_news", "send_email"])
 
@@ -108,12 +84,9 @@ class TestToolAuthorizationCompile(unittest.TestCase):
             "tools": ["web_search", "send_email"],
             "will_rules": {"allowed_tools": ["web_search"]},
         }, CONNECTOR_TOOLS)
-        # send_email is dropped; web_search expands on both sides of the intersection.
         self.assertEqual(p["allowed_tools"], ["web_search", "web_news"])
 
     def test_policy_narrows_to_one_function_within_a_connector(self):
-        # Expansion must not cost the ability to narrow: a policy naming a single
-        # function still wins over a connector-level grant.
         p = _stamp_tool_authorization({
             "tools": ["web_search"],
             "will_rules": {"allowed_tools": ["web_news"]},

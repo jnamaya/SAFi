@@ -3,18 +3,10 @@ import * as api from '../../core/api.js';
 import { loadToolCategories, renderToolGrid } from '../shared/tool-picker.js';
 import { escapeHtml } from '../../core/utils.js';
 
-/**
- * Renders the knowledge-base checklist inside the Restrict panel.
- *
- * Includes built-in corpora (the Steward's `safi`, the Bible Scholar's
- * `bible_bsb_v1`) alongside user-created ones. Without them a policy that
- * restricts knowledge would silently un-ground the built-in agents, and an
- * admin would have no way to authorize a corpus they can plainly see in use.
- */
 async function loadKnowledgeBaseChecklist(policyData) {
     const loading = document.getElementById('pw-kb-loading');
     const list = document.getElementById('pw-kb-list');
-    if (!list) return;   // step navigated away
+    if (!list) return;
 
     let bases = [];
     try {
@@ -66,7 +58,6 @@ async function loadKnowledgeBaseChecklist(policyData) {
 }
 
 export function renderWillStep(container, policyData) {
-    // Ensure shape
     if (!policyData.structural_requirements) {
         policyData.structural_requirements = {
             require_disclaimer: false,
@@ -86,8 +77,6 @@ export function renderWillStep(container, policyData) {
     if (!Array.isArray(policyData.early_prompt_blacklist)) {
         policyData.early_prompt_blacklist = [];
     }
-    // Without this, a stale localStorage draft restored without the key would
-    // make addForbidden() push onto undefined and fail silently.
     if (!Array.isArray(policyData.forbidden_paths)) {
         policyData.forbidden_paths = [];
     }
@@ -297,11 +286,10 @@ export function renderWillStep(container, policyData) {
         </div>
     `;
 
-    // --- AUTHORIZED TOOLS (checklist from backend registry) ---
     loadToolCategories(policyData.id || null).then(categories => {
         const loading = document.getElementById('pw-tools-loading');
         const grid = document.getElementById('pw-tools-grid');
-        if (!grid) return; // step navigated away
+        if (!grid) return;
         if (!categories) {
             if (loading) loading.innerText = 'Failed to load tools.';
             return;
@@ -322,11 +310,6 @@ export function renderWillStep(container, policyData) {
         });
     });
 
-    // --- AUTHORIZED KNOWLEDGE BASES ---
-    // `allowed_knowledge_bases` stays UNDEFINED until the admin ticks Restrict.
-    // Absent means "this policy does not narrow"; an empty array means "none".
-    // The two must not collapse, or saving an untouched legacy policy would
-    // revoke retrieval from every agent under it.
     const kbRestrict = document.getElementById('pw-kb-restrict');
     const kbPanel = document.getElementById('pw-kb-panel');
 
@@ -347,7 +330,6 @@ export function renderWillStep(container, policyData) {
         loadKnowledgeBaseChecklist(policyData);
     }
 
-    // --- DISCLAIMER ---
     const reqEl = document.getElementById('pw-require-disclaimer');
     const subEl = document.getElementById('pw-disclaimer-substring');
     reqEl.addEventListener('change', (e) => {
@@ -357,7 +339,6 @@ export function renderWillStep(container, policyData) {
     });
     subEl.addEventListener('input', (e) => { sr.mandatory_disclaimer_substring = e.target.value; });
 
-    // --- BANNED MARKDOWN ---
     renderList('pw-banned-list', sr.banned_markdown_syntaxes, 'red', (i) => {
         sr.banned_markdown_syntaxes.splice(i, 1);
     });
@@ -373,7 +354,6 @@ export function renderWillStep(container, policyData) {
     document.getElementById('pw-add-banned-btn').addEventListener('click', addBanned);
     document.getElementById('pw-banned-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') addBanned(); });
 
-    // --- BLOCKED PHRASES (Phase Zero) ---
     renderList('pw-blacklist-list', policyData.early_prompt_blacklist, 'amber', (i) => {
         policyData.early_prompt_blacklist.splice(i, 1);
     });
@@ -389,7 +369,6 @@ export function renderWillStep(container, policyData) {
     document.getElementById('pw-add-blacklist-btn').addEventListener('click', addBlacklist);
     document.getElementById('pw-blacklist-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') addBlacklist(); });
 
-    // --- RESTRICTED PATHS (Will path-gate denylist) ---
     renderList('pw-forbidden-list', policyData.forbidden_paths, 'purple', (i) => {
         policyData.forbidden_paths.splice(i, 1);
     });
@@ -407,7 +386,6 @@ export function renderWillStep(container, policyData) {
     document.getElementById('pw-add-forbidden-btn').addEventListener('click', addForbidden);
     document.getElementById('pw-forbidden-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') addForbidden(); });
 
-    // --- BLOCKED EXECUTABLES (command-gate: first-token denylist) ---
     renderList('pw-forbidden-exec-list', policyData.forbidden_executables, 'red', (i) => {
         policyData.forbidden_executables.splice(i, 1);
     });
@@ -425,7 +403,6 @@ export function renderWillStep(container, policyData) {
     document.getElementById('pw-add-forbidden-exec-btn').addEventListener('click', addForbiddenExec);
     document.getElementById('pw-forbidden-exec-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') addForbiddenExec(); });
 
-    // --- BLOCKED SHELL PATTERNS (command-gate: substring denylist) ---
     renderList('pw-forbidden-shell-list', policyData.forbidden_shell_patterns, 'red', (i) => {
         policyData.forbidden_shell_patterns.splice(i, 1);
     });
@@ -443,7 +420,6 @@ export function renderWillStep(container, policyData) {
     document.getElementById('pw-add-forbidden-shell-btn').addEventListener('click', addForbiddenShell);
     document.getElementById('pw-forbidden-shell-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') addForbiddenShell(); });
 
-    // --- LEGACY RULES ---
     renderList('pw-rules-list', policyData.will_rules, 'gray', (i) => {
         policyData.will_rules.splice(i, 1);
     });
@@ -462,18 +438,6 @@ export function renderWillStep(container, policyData) {
     bindRuleCompiler(policyData);
 }
 
-/**
- * Compiles the plain-language rules into hard-gate standards.
- *
- * Prose rules reach no enforcement path: the Will is deterministic and reads
- * structural requirements, hard-gate values and tool constraints only. A rule
- * governs nothing until it becomes a value with a rubric the Conscience can
- * score, so this is the step that makes a written rule real.
- *
- * Nothing is added without the author ticking it: each gate must be scored on
- * every request or the Will fails closed, so an unreviewed gate is a way to
- * block traffic by accident.
- */
 function bindRuleCompiler(policyData) {
     const btn = document.getElementById('pw-compile-rules-btn');
     const panel = document.getElementById('pw-compile-result');
@@ -583,9 +547,6 @@ function renderCompileResult(policyData, content) {
             const name = String(g.name || '').trim();
             if (!name || existing.has(name.toLowerCase())) return;
             existing.add(name.toLowerCase());
-            // weight 0 + hard_gate: scored by the Conscience, blocked by the
-            // Will, and excluded from the Spirit average — matching how
-            // Scope Compliance and Grounding Fidelity already behave.
             policyData.values.push({
                 name,
                 description: g.description || '',
@@ -594,9 +555,6 @@ function renderCompileResult(policyData, content) {
                 rubric: g.rubric || { scoring_guide: [] },
             });
             added++;
-            // Drop the source rule: it is now enforced as a standard, and
-            // leaving it in the prose list would imply a second, separate
-            // control that does not exist.
             const src = String(g.source_rule || '').trim();
             if (src) {
                 const at = (policyData.will_rules || []).findIndex(r => String(r).trim() === src);
@@ -611,8 +569,6 @@ function renderCompileResult(policyData, content) {
             added
                 ? `${added} standard${added > 1 ? 's' : ''} added — review them on the Standards step.`
                 : 'Those standards are already on this policy.',
-            // Not 'info' — showToast suppresses that type entirely, and a
-            // button that reports nothing reads as a broken button.
             added ? 'success' : 'warning'
         );
     });

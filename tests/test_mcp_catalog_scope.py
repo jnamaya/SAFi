@@ -1,28 +1,3 @@
-"""
-The Tools Catalog listing is scoped to the viewer's organization (backlog 87).
-
-`GET /api/mcp/servers` is `@require_role('admin')`, and that was doing all of
-the work: 'admin' is the TOP of the ladder in rbac.py and it is scoped to ONE
-organization, so an admin of org B was being shown every server installed for
-org A, including its tool names, tool descriptions and connection errors.
-
-Nothing was reachable through it. `known_connectors`, the OAuth login and
-callback, and dispatch all apply `server_allows_org` already. What crossed the
-boundary was the disclosure, which is what these tests pin.
-
-Three cases, and the third is the one that is easy to lose in a refactor:
-
-  * a server restricted to org A is absent for an admin of org B,
-  * it is present for an admin of org A,
-  * a GUEST sees nothing, because the public demo login makes a person admin of
-    a throwaway organization and therefore satisfies the role check.
-
-`tool_count` is asserted alongside the list every time: reporting the
-deployment-wide total next to a filtered list would leak the same fact one
-integer at a time.
-
-Run:  venv/bin/python tests/test_mcp_catalog_scope.py
-"""
 import json
 import os
 import sys
@@ -39,7 +14,6 @@ class CatalogScopeTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        # Written before create_app: config.py reads MCP_SERVERS_JSON at import.
         cls.tmp = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
         json.dump({
             "org_a_server": {
@@ -67,8 +41,6 @@ class CatalogScopeTests(unittest.TestCase):
         cls.org_b = str(uuid.uuid4())
         cls.admin_a = f"cat_a_{uuid.uuid4().hex[:8]}"
         cls.admin_b = f"cat_b_{uuid.uuid4().hex[:8]}"
-        # A guest id must look like one: is_guest() matches the 'demo_' prefix
-        # the public demo login uses.
         cls.guest = f"demo_{uuid.uuid4().hex[:8]}"
 
         cls._exec("INSERT INTO organizations (id, name) VALUES (%s, %s)",
@@ -83,11 +55,6 @@ class CatalogScopeTests(unittest.TestCase):
                 "VALUES (%s, %s, %s, %s, %s)",
                 (uid, f"{uid}@example.com", uid, org, "admin"))
 
-        # The runtime state the endpoint reads. register_offline publishes a
-        # server with a known tool list and no live session, which is what this
-        # test needs: the scoping question has nothing to do with transport.
-        # One server is restricted to org A, the other carries no `orgs` key,
-        # which is the single-tenant default and must keep working.
         from safi_app.core import mcp_runtime
         mcp_runtime.register_offline("org_a_server", {
             "label": "Org A Only",
@@ -143,7 +110,6 @@ class CatalogScopeTests(unittest.TestCase):
         body = self._get(self.admin_b, self.org_b)
         self.assertNotIn("org_a_server", self._keys(body))
         self.assertIn("everyone_server", self._keys(body))
-        # And the count must agree with the list it was sent with.
         self.assertEqual(body["tool_count"], 1)
 
     def test_restricted_server_is_visible_to_its_own_org(self):
@@ -152,12 +118,10 @@ class CatalogScopeTests(unittest.TestCase):
         self.assertEqual(body["tool_count"], 2)
 
     def test_no_orgs_key_means_every_organization(self):
-        """The single-tenant default, which must keep working."""
         body = self._get(self.admin_b, self.org_b)
         self.assertIn("everyone_server", self._keys(body))
 
     def test_guest_sees_no_installed_servers(self):
-        """A guest is an admin of a sandbox org, so the role check admits one."""
         body = self._get(self.guest, self.org_b)
         self.assertEqual(body["servers"], [])
         self.assertEqual(body["tool_count"], 0)

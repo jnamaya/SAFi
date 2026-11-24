@@ -1,22 +1,3 @@
-"""
-The attention inbox's data plane (backlog 57): everything currently waiting
-on a human, aggregated live from the tables that already hold the truth.
-
-DERIVED, NEVER STORED. There is no notifications table and none of these
-functions writes anything. A stored notification row can go stale, duplicate,
-or survive the work it announced; a derived row cannot. The price is a few
-indexed COUNT/MIN queries per open of the panel, which the existing indexes
-(status + org_id on every source table) make cheap.
-
-This module also grants nothing: it is read-only USB aggregation. Role
-filtering happens in the API layer; every function here just answers "what
-is pending in this org / for this user" and the caller decides who may see
-which answer.
-
-WHY IT IS NOT IN database.py: same boundary reasoning as mcp_store and
-sharing_store. database.py is manifest-covered; a read-only summary of
-pending work is not a record of what the system decided.
-"""
 from __future__ import annotations
 
 import logging
@@ -107,8 +88,6 @@ def open_incidents(org_id):
 
 
 def failed_schedules(user_id):
-    """The caller's own scheduled tasks whose last run errored. User-scoped:
-    a schedule is personal, so its failure is only its owner's business."""
     agg = _one(
         "SELECT COUNT(*) AS n FROM scheduled_tasks "
         "WHERE user_id = %s AND enabled = 1 AND last_status LIKE 'error%%'",

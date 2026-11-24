@@ -1,35 +1,4 @@
 #!/usr/bin/env python3
-"""Weekly restore-verification of SAFi MySQL backups (SEA 17a-4 evidence).
-
-A backup nobody has restored is a hope, not a backup. This script proves the
-latest nightly dump from scripts/mysql_backup.sh is actually restorable and
-that the restored data preserves the properties the compliance posture rests
-on:
-
-  1. The newest dump exists and is younger than MAX_DUMP_AGE_HOURS (an old
-     dump means safi-backup.timer is silently broken).
-  2. It restores cleanly into the scratch schema `safi_verify`.
-  3. Every base table in the live database exists in the restore.
-  4. Key tables are non-empty and their row counts are within tolerance of
-     live (live keeps moving between dump time and verify time; both the
-     empty-table and the count checks compare against the same noise floor,
-     so a table that was empty at dump time and gained a few rows since does
-     not fail the run — a dump that dropped a whole table's rows still does).
-  5. The chat_audit_trail hash chains verify inside the RESTORED copy —
-     every entry_hash recomputes from its payload and every chain links
-     prev_hash -> entry_hash with a NULL-rooted head. This is what makes the
-     run compliance evidence: the backup provably preserves tamper-evidence.
-
-The verdict is journaled to backup_verify_log in the LIVE database (append
-only), so "how do you know your backups work" is answerable with dated rows.
-The scratch schema is provisioned once at first boot and emptied per run by
-dropping its tables; on failure its contents are kept for forensics (the next
-run resets it). This uses only the per-table privileges the app's minimal
-`safi` DB account holds (ALL on safi_verify.*, no database-level CREATE/DROP).
-The exit code is non-zero on failure so safi-backup-verify.service lands failed.
-
-Usage: venv/bin/python scripts/backup_verify.py [--backup-dir DIR] [--keep]
-"""
 import argparse
 import glob
 import hashlib
@@ -49,14 +18,10 @@ import mysql.connector
 
 SCRATCH_DB = "safi_verify"
 MAX_DUMP_AGE_HOURS = 48
-# Non-empty in any real deployment; counts compared against live within
-# tolerance (live keeps moving between dump time and verify time).
 KEY_TABLES = ["users", "organizations", "conversations", "chat_history", "chat_audit_trail"]
 COUNT_TOLERANCE_PCT = 0.20
 COUNT_TOLERANCE_ABS = 200
 
-# Fields covered by entry_hash, exactly as _chat_trail_append writes them.
-# org_id and created_at are deliberately outside the hash.
 _HASHED_FIELDS = ("message_pk", "message_id", "conversation_id", "action",
                   "actor", "state", "event_at", "prev_hash")
 
@@ -70,20 +35,11 @@ def connect(database=None):
 
 def newest_dump(backup_dir):
     dumps = sorted(glob.glob(os.path.join(backup_dir, "safi-*.sql.gz")))
-    # Safety snapshots (safi-pre-restore-*) are rollback aids, not backups;
-    # they must never be picked as "the newest" by verify or an auto restore.
     dumps = [d for d in dumps if not os.path.basename(d).startswith("safi-pre-restore-")]
     return dumps[-1] if dumps else None
 
 
 def reset_scratch(cursor, schema=SCRATCH_DB):
-    """Empty a schema without dropping it.
-
-    The `safi` DB account is deliberately granted only per-table privileges
-    (ALL on the schema, no database-level CREATE/DROP), so re-creating the
-    schema each run would need privileges the minimal account should not hold.
-    The schema exists from first boot; drop its tables and let the restore
-    rebuild them."""
     cursor.execute("SET FOREIGN_KEY_CHECKS=0")
     for table in base_tables(cursor, schema):
         cursor.execute(f"DROP TABLE IF EXISTS `{schema}`.`{table}`")
@@ -91,7 +47,6 @@ def reset_scratch(cursor, schema=SCRATCH_DB):
 
 
 def restore_into_scratch(dump_path, schema=SCRATCH_DB):
-    """gunzip -c dump | mysql <schema>, without a shell in between."""
     with tempfile.NamedTemporaryFile("w", suffix=".cnf", delete=False) as cnf:
         os.chmod(cnf.name, 0o600)
         cnf.write(f'[client]\nuser={Config.DB_USER}\npassword="{Config.DB_PASSWORD}"\n'
@@ -103,11 +58,6 @@ def restore_into_scratch(dump_path, schema=SCRATCH_DB):
             stdin=gunzip.stdout, capture_output=True, text=True,
         )
         gunzip.stdout.close()
-        # Check mysql FIRST: the dump is piped into it, so when the restore
-        # fails (e.g. access denied on the scratch schema), gunzip dies of
-        # SIGPIPE (141/-13) and its exit code would otherwise mask the real
-        # cause. Only a gunzip failure while mysql itself succeeded is a real
-        # corruption report.
         if restore.returncode != 0:
             raise RuntimeError(f"mysql restore failed: {restore.stderr.strip()[:500]}")
         gunzip_rc = gunzip.wait()
@@ -130,8 +80,6 @@ def row_count(cursor, schema, table):
 
 
 def verify_audit_chains(cursor, schema=SCRATCH_DB):
-    """Recompute every entry_hash and every prev_hash link in the restored
-    chat_audit_trail. Returns (chains, entries); raises on the first break."""
     cursor.execute(
         "SELECT message_pk, message_id, conversation_id, action, actor, state, "
         "event_at, prev_hash, entry_hash, id FROM `%s`.chat_audit_trail "
@@ -172,8 +120,6 @@ def journal_result(status, detail):
             detail TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )""")
-    # Older tables on already-deployed appliances have status VARCHAR(8), which
-    # cannot hold 'restore-fail'; widen idempotently.
     cur.execute("ALTER TABLE backup_verify_log MODIFY status VARCHAR(16) NOT NULL")
     cur.execute(
         "INSERT INTO backup_verify_log (verified_at, dump_file, status, detail) "
@@ -216,8 +162,6 @@ def main():
 
         live = base_tables(cur, Config.DB_NAME)
         restored = base_tables(cur, SCRATCH_DB)
-        # backup_verify_log is written by this script after the dump was taken,
-        # so its absence from an older dump is expected, not a failure.
         missing = live - restored - {"backup_verify_log"}
         if missing:
             raise RuntimeError(f"tables missing from restore: {sorted(missing)}")
@@ -228,11 +172,6 @@ def main():
             live_n = row_count(cur, Config.DB_NAME, table)
             rest_n = row_count(cur, SCRATCH_DB, table)
             counts[table] = {"live": live_n, "restored": rest_n}
-            # A restored-but-empty key table is only suspicious when live has
-            # grown past the noise floor: the dump is a snapshot and the live
-            # database keeps moving between dump time and verify time, so a
-            # table that was empty at dump time and gained its first few rows
-            # since must not fail the verification.
             if rest_n == 0 and live_n > COUNT_TOLERANCE_ABS:
                 raise RuntimeError(f"{table}: restored copy is empty (live has {live_n})")
             tolerance = max(COUNT_TOLERANCE_ABS, int(live_n * COUNT_TOLERANCE_PCT))

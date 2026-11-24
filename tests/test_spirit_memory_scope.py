@@ -1,20 +1,3 @@
-"""
-spirit_memory is keyed on profile_name alone, so a built-in agent's baseline is
-shared by every org using it. That is intentional — with an identical agent and
-policy, "how this agent expresses its values" is a property of the agent, and
-pooling gives a better-estimated baseline.
-
-What was NOT intentional: reset_spirit_memory deleted that shared row
-unconditionally and returned a bare True/False, so an operator clearing "their"
-agent's baseline from a shell silently moved the Consistency figures of every
-other tenant, with nothing on screen to say so.
-
-These tests pin the guard. They also pin that the guard triggers on real blast
-radius rather than on the name, so a single-tenant built-in and a throwaway test
-fixture are not gratuitously blocked.
-
-Requires local MySQL. Run:  venv/bin/python tests/test_spirit_memory_scope.py
-"""
 import sys
 import unittest
 import uuid
@@ -39,11 +22,10 @@ class TestSpiritMemoryScope(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tag = uuid.uuid4().hex[:8]
-        cls.shared_agent = f"the_shared_{cls.tag}"          # built-in shape
-        cls.custom_agent = f"org_9999_custom_{cls.tag}"     # org-prefixed shape
-        cls.lonely_agent = f"the_lonely_{cls.tag}"          # built-in, one org
+        cls.shared_agent = f"the_shared_{cls.tag}"
+        cls.custom_agent = f"org_9999_custom_{cls.tag}"
+        cls.lonely_agent = f"the_lonely_{cls.tag}"
         cls.orgs = [str(uuid.uuid4()) for _ in range(2)]
-        # Two orgs' worth of records against the same built-in agent name.
         for i, org in enumerate(cls.orgs):
             _exec("INSERT INTO governance_records (org_id, user_id, profile_key, "
                   "conversation_id, message_pk, message_id, record_enc, created_at) "
@@ -81,7 +63,6 @@ class TestSpiritMemoryScope(unittest.TestCase):
         self.assertFalse(s["cross_tenant"])
 
     def test_03_refuses_to_reset_a_cross_tenant_baseline(self):
-        """The actual fix. Previously this deleted and returned True."""
         res = db.reset_spirit_memory(self.shared_agent)
         self.assertTrue(res["refused"], "must not silently reset 2 orgs' baseline")
         self.assertFalse(res["deleted"])
@@ -100,9 +81,6 @@ class TestSpiritMemoryScope(unittest.TestCase):
         self.assertFalse(res["refused"])
 
     def test_06_single_tenant_builtin_is_not_gratuitously_blocked(self):
-        """The guard keys on real blast radius, not on the name. A built-in used
-        by one org — or a throwaway fixture with no records — has no other tenant
-        to disturb, and refusing there would be friction with no safety value."""
         res = db.reset_spirit_memory(self.lonely_agent)
         self.assertTrue(res["deleted"])
         self.assertFalse(res["refused"])
@@ -116,7 +94,6 @@ class TestSpiritMemoryScope(unittest.TestCase):
         self.assertFalse(res["deleted"], "nothing to delete, but not a refusal either")
 
     def test_08_return_shape_is_never_a_bare_bool(self):
-        """A bare True/False is what let the blast radius go unnoticed."""
         res = db.reset_spirit_memory(f"shape_check_{self.tag}")
         self.assertIsInstance(res, dict)
         self.assertEqual(set(res), {"deleted", "refused", "scope"})

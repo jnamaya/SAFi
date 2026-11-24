@@ -1,13 +1,3 @@
-"""The single dispatch point for every outbound model call.
-
-One provider-agnostic surface — `_chat_completion` for prose, and
-`run_conscience_structured` for the typed-decision contract — so faculties call
-by route ('intellect', 'will', 'conscience') and never name a model or vendor.
-Supports OpenAI, Anthropic and Gemini natively plus any OpenAI-compatible
-provider (DeepSeek, Groq, Mistral, Zhipu, Cerebras, local llama.cpp) from
-config. Provider-specific quirks live in the dispatch branches below, never in
-the call sites.
-"""
 from __future__ import annotations
 import os
 import json
@@ -16,16 +6,6 @@ import asyncio
 from typing import List, Dict, Any, Tuple, Optional
 from contextvars import ContextVar
 
-# Sync SDK clients, invoked from async code through asyncio.to_thread in
-# _chat_completion. The async clients were structurally incompatible with this
-# deployment: Flask bridges each async view through asgiref, which runs the
-# request on a NEW event loop in a NEW thread and closes it when the request
-# ends. A cached AsyncOpenAI/AsyncAnthropic holds an httpx pool bound to the
-# loop of whichever request used it first, so every later request's model call
-# died with RuntimeError("Event loop is closed") — ~90% of Intellect attempts
-# failed instantly and the retry wrappers made each turn several times slower.
-# Sync clients own no event loop, so they are safe to cache and share across
-# the gthread worker's threads.
 from openai import OpenAI
 from anthropic import Anthropic
 from google import genai
@@ -41,71 +21,25 @@ from .parsing_utils import (
     salvage_tool_call_arguments,
 )
 
-# The Conscience's sampling temperature is a governance parameter, not a
-# transport one, so it is DEFINED in the Conscience faculty — a file covered by
-# the Core Loop integrity manifest — and only consumed here. This module stays
-# outside the manifest so organizations can add providers without a Section IV
-# review; that same openness must not extend to quietly changing how strictly
-# every agent in a deployment is audited. Full rationale at the definition.
-from ..faculties.conscience import CONSCIENCE_TEMPERATURE  # noqa: F401  (re-exported)
+from ..faculties.conscience import CONSCIENCE_TEMPERATURE
 
 
-# Per-call ceiling on any provider request. Without it the SDK defaults (~600s
-# for OpenAI/Anthropic) exceed gunicorn's --timeout (300s), so a provider that
-# stalls rides to the worker-kill, which takes the worker's in-flight siblings
-# with it (docker-entrypoint.sh) — one stuck call becomes a host-wide outage.
-# Kept under 300s so even a turn's two calls (intellect + conscience) stay inside
-# the request budget.
 LLM_TIMEOUT_SECONDS = int(os.environ.get("SAFI_LLM_TIMEOUT", "300"))
-# Conscience audits typically finish in ~12-15s; bound runaway/stalled
-# audit calls without capping max_tokens so large multi-value audits aren't
-# truncated while stuck generations fail fast.
 CONSCIENCE_TIMEOUT_SECONDS = float(os.environ.get("SAFI_CONSCIENCE_TIMEOUT", "45"))
 
 
-# Output-token ceiling for the Intellect. Was a hardcoded 8192 until 2026-08-27
-# (GOVERNANCE_BACKLOG 85), when three turns in one session stopped at exactly
-# that number and the answers reached the user cut off mid-sentence.
-#
-# The budget covers a thinking model's hidden reasoning as well as the visible
-# answer, so the answer can be far shorter than this number suggests: one of
-# those turns spent the whole 8192 to emit about 2,700 tokens of text.
-#
-# Raising it lengthens generations, so check SAFI_GUNICORN_TIMEOUT and the web
-# server's own Timeout before going much higher. LLM_TIMEOUT_SECONDS above is
-# the per-call ceiling that actually cuts a slow generation off.
 MAX_INTELLECT_TOKENS = int(os.environ.get("SAFI_MAX_INTELLECT_TOKENS", "65536"))
 
 
-# Ceiling for the on-box llama.cpp server, applied only when a route resolves to
-# the `local` provider. That server is CPU-bound on hardware the whole appliance
-# shares, so a cloud provider's token budget is not a meaningful request of it:
-# 8192 on a 3B model at ~11 tok/s is ~12 minutes of generation against
-# SAFI_LLM_TIMEOUT's 300 s, so the call is cut off and returns nothing at all.
-# Capping the request means the generation completes and whatever the model
-# produced is returned, which beats a guaranteed timeout. Set to 0 to disable.
-#
-# A capacity ceiling, not an audit policy: keyed on the provider, never on a
-# model-name substring, so it cannot change how strictly any agent is audited.
-# See run_conscience's docstring for why that distinction matters there.
 LOCAL_MAX_TOKENS = int(os.environ.get("SAFI_LOCAL_MAX_TOKENS", "1024"))
 
 
-# The answering route needs its own on-box ceiling. It used to share the judge's
-# 1024-token cap, which cut the Intellect off while it was still emitting a tool
-# call (a whole file body or diff is easily thousands of tokens) — the arguments
-# never closed and every edit appeared to fail. By default it tracks
-# SAFI_MAX_INTELLECT_TOKENS, so raising the answering budget is not silently
-# undone by the on-box cap; set SAFI_LOCAL_INTELLECT_MAX_TOKENS to impose a
-# lower ceiling (e.g. a CPU-only box) and 0 to remove it entirely. The judge
-# keeps LOCAL_MAX_TOKENS, so raising the answering budget never loosens an audit.
 LOCAL_INTELLECT_MAX_TOKENS = int(
     os.environ.get("SAFI_LOCAL_INTELLECT_MAX_TOKENS", str(MAX_INTELLECT_TOKENS))
 )
 
 
 class ProviderRequestError(RuntimeError):
-    """Safe, structured summary of a rejected provider API request."""
 
     def __init__(self, provider: str, endpoint: str, status_code=None, detail=""):
         self.provider = str(provider or "unknown")
@@ -119,20 +53,12 @@ class ProviderRequestError(RuntimeError):
         super().__init__(message)
 
 
-# Set when a provider reports that it stopped because the output budget ran out,
-# rather than because the model finished. A ContextVar, not an attribute: one
-# LLMProvider instance is shared by every concurrent request against the same
-# profile, so an attribute would let one request read another's flag.
 _TRUNCATED: ContextVar[bool] = ContextVar("safi_generation_truncated", default=False)
 
-# Per-request reasoning effort override ("low" | "medium" | "high"), set by the
-# API layer from the client's /reasoning selection. Empty string = no override,
-# so each provider keeps its tuned defaults (documented in the branches below).
 _REASONING_EFFORT: ContextVar[str] = ContextVar("safi_reasoning_effort", default="")
 
 
 def set_reasoning_effort(level: str) -> None:
-    """Set the per-request reasoning-effort override ("" clears it)."""
     _REASONING_EFFORT.set((level or "").strip().lower())
 
 
@@ -140,13 +66,6 @@ def current_reasoning_effort() -> str:
     return _REASONING_EFFORT.get()
 
 
-# Appended to an answer the provider cut short. Added to the DRAFT, before the
-# Will and the Conscience see it, so the governance record shows the answer was
-# incomplete rather than storing a partial answer as a whole one.
-#
-# Deliberately plain text: an org can ban markdown syntaxes through
-# `structural_requirements`, and a notice that trips its own deployment's style
-# gate would turn a truncated answer into a blocked one.
 TRUNCATION_NOTICE = (
     "\n\n(This answer is incomplete. It reached the output limit for a single "
     "turn and stopped here. Ask to continue and it will pick up from this point.)"
@@ -154,38 +73,15 @@ TRUNCATION_NOTICE = (
 
 
 def generation_was_truncated() -> bool:
-    """True if the most recent provider call in this context hit its output cap.
-
-    Must be read from the same task that made the call. A ContextVar set inside
-    a coroutine propagates to its awaiting caller, which is how `run_intellect`
-    sees it, but `asyncio.run`, `create_task` and `gather` each run their child
-    in a COPY of the context, so a read on the far side of one of those returns
-    the default and not the flag.
-    """
     return _TRUNCATED.get()
 
 
 def _is_openai_flagship(model_name: str) -> bool:
-    """True for OpenAI's own gpt line, which rejects max_tokens/top_p/temperature.
-
-    Deliberately not a version prefix. `provider_type == "openai"` is shared with
-    Groq, Cerebras, DeepSeek and Mistral, all of which still need `max_tokens`,
-    so the discriminator has to be the vendor's own naming and nothing else.
-
-    "gpt-oss" is OpenAI's open-weight family, served here by Cerebras under a
-    bare id and by Groq under an "openai/"-prefixed one. The bare form is the
-    only one this can be fooled by, and it is excluded explicitly: it is
-    temperature- and max_tokens-capable, so a gate that swept it up would cap
-    every gpt-oss answer at the provider default with no error anywhere.
-
-    A new major version must not need an edit here. That is the whole point.
-    """
     m = (model_name or "").lower()
     return m.startswith("gpt-") and not m.startswith("gpt-oss")
 
 
 def _provider_error_detail(response) -> str:
-    """Extract provider-supplied error text without echoing request contents."""
     try:
         payload = response.json()
     except Exception:
@@ -208,15 +104,7 @@ class LLMProvider:
         self.config = config
         self.log = logging.getLogger(self.__class__.__name__)
         self.clients = {}
-        # Clients bound to an org's own key (backlog 64), keyed
-        # (provider, key) so a rotated key gets a fresh client. Bounded in
-        # practice by providers x orgs that stored a key.
         self._org_clients: Dict[Any, Any] = {}
-        # Clients for routes whose provider is reached at a different base_url
-        # than the provider's own (SAFI_CONSCIENCE_BASE_URL: a second on-box
-        # llama-server serving the Conscience apart from the Intellect). Keyed
-        # (route, provider) so the override applies to one route only. Populated
-        # in _initialize_clients.
         self._route_override_clients: Dict[Any, Any] = {}
         self._initialize_clients()
 
@@ -235,8 +123,6 @@ class LLMProvider:
                 if p_type == "openai":
                     self.clients[name] = OpenAI(
                         api_key=api_key,
-                        # base_url is what makes Groq/DeepSeek/Mistral/Zhipu/
-                        # Cerebras/local-llama.cpp work through one SDK.
                         base_url=details.get("base_url"),
                         timeout=LLM_TIMEOUT_SECONDS,
                     )
@@ -245,7 +131,7 @@ class LLMProvider:
                 elif p_type == "gemini":
                     self.clients[name] = genai.Client(
                         api_key=api_key,
-                        http_options=types.HttpOptions(timeout=LLM_TIMEOUT_SECONDS * 1000),  # ms
+                        http_options=types.HttpOptions(timeout=LLM_TIMEOUT_SECONDS * 1000),
                     )
                 else:
                     self.log.error(f"Unknown provider type '{p_type}' for '{name}'")
@@ -254,16 +140,6 @@ class LLMProvider:
         self._init_route_override_clients(providers)
 
     def _init_route_override_clients(self, providers: Dict[str, Any]) -> None:
-        """Open a client for a route that reaches its provider at a different
-        base_url than the provider's own.
-
-        Currently this is the Conscience on a second on-box model server
-        (SAFI_CONSCIENCE_BASE_URL). The provider name stays the same — typically
-        `local` — so provider governance, org allow-lists and the on-box output
-        ceiling key on the same name as before, and only the transport address
-        moves. A route with no override, or one identical to the provider's own
-        endpoint, keeps sharing the cached provider client.
-        """
         for route_name, route in (self.config.get("routes") or {}).items():
             if not isinstance(route, dict):
                 continue
@@ -292,7 +168,6 @@ class LLMProvider:
 
     def tool_call_history_entry(self, tool_name: str, arguments: str,
                                 raw_turn: Optional[Dict[str, Any]] = None):
-        """Represent a proposed tool call in the routed model's history format."""
         route = self.config.get("routes", {}).get("intellect", {})
         provider = route.get("provider")
         details = self.config.get("providers", {}).get(provider, {})
@@ -305,7 +180,6 @@ class LLMProvider:
         )
 
     def tool_result_history_entry(self, tool_name: str, result: str):
-        """Represent a tool result in the routed model's history format."""
         route = self.config.get("routes", {}).get("intellect", {})
         provider = route.get("provider")
         details = self.config.get("providers", {}).get(provider, {})
@@ -316,20 +190,9 @@ class LLMProvider:
         return f"TOOL RESULT for {tool_name}:\n{result}"
 
     def _org_override_client(self, provider_name: str, provider_details: Dict[str, Any]):
-        """A client bound to a DB-stored key — the active org's own key, else
-        the deployment key — or None to use the .env deployment client. Mirrors
-        _initialize_clients per provider type; a construction failure falls back
-        to the deployment client rather than breaking the turn.
-
-        Keyed on the resolved key, not the org, so the org layer and the
-        deployment layer share one cache: a provider with only a deployment key
-        costs the same as one with only a .env key.
-        """
         from .deployment_keys import resolve_provider_key
         env_key = (provider_details or {}).get("api_key")
         key = resolve_provider_key(provider_name, env_key)
-        # No DB layer for this provider: the cached .env client is already
-        # correct, so don't build a second one.
         if not key or key == env_key:
             return None
         cache_key = (provider_name, key)
@@ -353,13 +216,6 @@ class LLMProvider:
         return client
 
     def _note_truncation(self, route, provider_name, model_name, marker):
-        """Record that the provider stopped because the output budget ran out.
-
-        Every provider signals this differently and two of the three branches
-        used to ignore it, so a truncated answer reached the user with nothing
-        in the log and nothing in the record (GOVERNANCE_BACKLOG 85). Detection
-        is per branch; what happens next is here, once.
-        """
         _TRUNCATED.set(True)
         self.log.warning(
             "Generation truncated: route=%s provider=%s model=%s stopped at the "
@@ -370,9 +226,6 @@ class LLMProvider:
         )
 
     def _capture_usage(self, route, provider_name, model_name, provider_type, resp):
-        """Record the call's token counts for the Usage & Cost tab (backlog 61).
-        Attribution (org, agent) comes from context vars; failures are logged
-        and swallowed inside usage_tracking — never a broken turn."""
         from .usage_tracking import capture_call_usage, extract_usage, record_usage
         usage = extract_usage(provider_type, resp)
         if usage:
@@ -391,18 +244,6 @@ class LLMProvider:
         top_p: Optional[float] = None,
         json_mode: bool = False,
     ) -> str:
-        """Dispatch one request to whichever provider the route names.
-
-        json_mode constrains decoding to valid JSON at the API level
-        (OpenAI-compatible response_format / Gemini response_mime_type). Callers
-        must still instruct the model to produce JSON in the prompt —
-        OpenAI-compatible providers reject json mode otherwise. Ignored when
-        tools are passed (the two are incompatible) and on providers with no
-        native support (Anthropic).
-
-        Returns the assistant text, or a JSON string carrying `tool_calls` when
-        the model called a tool — the agent loop parses both shapes.
-        """
         route_config = self.config.get("routes", {}).get(route)
         if not route_config:
             raise ValueError(f"No route configuration found for '{route}'")
@@ -410,9 +251,6 @@ class LLMProvider:
         provider_name = route_config["provider"]
         model_name = route_config["model"]
 
-        # Per-org provider governance — fail closed BEFORE any dispatch. No
-        # active org context = unrestricted; a disallowed provider raises,
-        # never reroutes (see provider_governance module docstring).
         from .provider_governance import assert_provider_allowed
         assert_provider_allowed(provider_name, context=f"route:{route}, model:{model_name}")
 
@@ -421,11 +259,6 @@ class LLMProvider:
              raise ValueError(f"Provider '{provider_name}' defined in route '{route}' not found in providers config.")
 
         provider_type = provider_details["type"]
-        # The on-box model server cannot serve a cloud-scale token budget inside
-        # the per-call timeout; see LOCAL_MAX_TOKENS. Applied here rather than at
-        # the call sites so no route has to know which provider it will reach.
-        # The answering route gets a larger, separate ceiling: the judge's cap
-        # truncated the Intellect's tool-call JSON mid-string.
         if provider_name == "local":
             ceiling = LOCAL_INTELLECT_MAX_TOKENS if route == "intellect" else LOCAL_MAX_TOKENS
             if ceiling > 0 and max_tokens > ceiling:
@@ -437,8 +270,6 @@ class LLMProvider:
                 )
                 max_tokens = ceiling
 
-            # On-demand model activation: if an installed local model is requested for Intellect,
-            # make sure llama-server on port 8081 is serving it.
             if route == "intellect" and (model_name.startswith("safi-") or model_name in ("local", "@local", "serving", "@serving")):
                 if model_name in ("local", "@local", "serving", "@serving"):
                     from ...config import active_local_model
@@ -453,15 +284,7 @@ class LLMProvider:
                         )
                 except Exception as exc:
                     self.log.error("Failed during on-demand model activation for %s: %s", model_name, exc)
-        # Cleared per call: the agent loop makes several, and only the one that
-        # produced the text the user sees should be able to flag it.
         _TRUNCATED.set(False)
-        # The active org's own key wins over the deployment client (backlog
-        # 64) — and makes a provider usable that has no .env key at all. A
-        # route-level base_url override (SAFI_CONSCIENCE_BASE_URL) wins over
-        # both: it pins this route to a specific endpoint, so it must come first
-        # or a cloud/org key client would carry the provider's default address.
-        # getattr keeps __new__-constructed stubs (tests) working untouched.
         route_override = getattr(self, "_route_override_clients", {}).get((route, provider_name))
         client = route_override \
             or self._org_override_client(provider_name, provider_details) \
@@ -470,8 +293,6 @@ class LLMProvider:
         if not client:
             raise RuntimeError(f"Client for provider '{provider_name}' is not initialized. Check API Key.")
 
-        # Gemini takes the history array as typed Content; every other provider
-        # needs a single string, so flatten it.
         user_prompt_str = user_prompt
         if isinstance(user_prompt, list) and provider_type != "gemini":
             str_parts = []
@@ -509,68 +330,17 @@ class LLMProvider:
                 params["tools"] = openai_tools
 
             if "o1" in model_name or "o3" in model_name:
-                # o1 models reject the 'system' role and 'temperature', and use
-                # max_completion_tokens. Tools are left as-is: the caller opted
-                # in, so an API error is better than a silent drop.
                 params["messages"] = [{"role": "user", "content": f"System Instruction: {system_prompt}\n\nUser Query: {user_prompt}"}]
                 params.pop("temperature", None)
                 params.pop("max_tokens", None)
                 params["max_completion_tokens"] = max_tokens
             elif _is_openai_flagship(model_name):
-                # OpenAI's first-party gpt line. The system role and
-                # `response_format: json_object` both work, but `max_tokens`,
-                # `top_p`, and ANY temperature other than the default all return
-                # a hard 400. Verified against the live API on 2026-07-30 with
-                # gpt-5.6-luna and again on 2026-09-30 with gpt-6-luna, which
-                # returns the identical four rejections — so this is a property
-                # of the line, not of one release.
-                #
-                # Gated on the "gpt-" prefix MINUS "gpt-oss", deliberately.
-                # provider_type "openai" is shared with Groq, Cerebras, DeepSeek
-                # and Mistral, and those must keep sending max_tokens. The
-                # exclusion is what keeps Cerebras' bare "gpt-oss-*" on the old
-                # parameter; Groq's "openai/gpt-oss-*" never reaches here at all.
-                # Widening this to "gpt" in model_name, as the obvious fix for a
-                # newly released major version looks, silently caps every
-                # gpt-oss answer at the provider default — see
-                # tests/test_gpt5_params.py, which pins that trap.
-                #
-                # A version prefix is the wrong shape for this gate, and it has
-                # now broken twice: gpt-5 was unreachable because the gate still
-                # read o1/o3, and gpt-6 was unreachable because the gate read
-                # "gpt-5". Both times the fix was to widen the gate, not to
-                # re-teach the dispatcher a new model.
-                #
-                # CAVEAT, deliberately not worked around: forcing the default
-                # temperature costs the Conscience its temperature=0.0
-                # determinism if an operator selects a gpt-5/6 model for that
-                # route. That is the model's constraint, not ours, but it is a
-                # governance-visible behaviour change.
                 params.pop("temperature", None)
                 params.pop("top_p", None)
                 params["max_completion_tokens"] = max_tokens
                 if params.get("tools"):
-                    # Function tools are rejected on /v1/chat/completions unless
-                    # reasoning is explicitly turned OFF. The error names
-                    # reasoning_effort even when the caller never sent one,
-                    # because the model applies a default. Probed 2026-07-30
-                    # against gpt-5.6-luna and 2026-09-30 against gpt-6-luna:
-                    # omitted / "low" / "medium" / "high" all 400; "minimal" is
-                    # not a valid value for this model; only "none" is accepted,
-                    # and it returns a proper tool_calls response.
-                    #
-                    # The trade-off is real: this buys tool calling by giving up
-                    # the model's reasoning for that turn. Keeping tools AND
-                    # reasoning requires the /v1/responses API, which is a port
-                    # rather than a parameter change. Only sent when tools are
-                    # present, so ordinary turns keep the model's reasoning.
                     params["reasoning_effort"] = "none"
             elif route == "intellect" and _REASONING_EFFORT.get():
-                # User-selected reasoning level (low/medium/high) from the CLI
-                # /reasoning command. Only honored for reasoning-capable OpenAI
-                # lines (o-series + flagship gpt); other OpenAI-compatible
-                # providers reject the parameter. Background and audit routes
-                # (e.g. conscience) never inherit user-selected reasoning.
                 params["reasoning_effort"] = _REASONING_EFFORT.get()
             else:
                  params["max_tokens"] = max_tokens
@@ -579,16 +349,12 @@ class LLMProvider:
                      and (provider_name == "zhipu" or model_name.lower().startswith("glm-"))
                      and os.environ.get("SAFI_ZHIPU_TOOL_THINKING", "0").strip().lower() not in ("1", "true", "yes", "on")
                  ):
-                     # Zhipu GLM-5 models enable deep thinking by default, generating 3,000-10,000
-                     # reasoning_content tokens (~60-120s latency) before emitting a simple tool_calls
-                     # proposal. Disabling thinking when tools are present drops tool-step latency to ~5-8s.
                      eb = dict(params.get("extra_body") or {})
                      if "thinking" not in eb:
                          eb["thinking"] = {"type": "disabled"}
                      params["extra_body"] = eb
 
             if provider_name == "local":
-                # Supply stop tokens for Gemma and specialized models on llama-server if not provided
                 if "gemma" in model_name.lower():
                     existing_stops = list(params.get("stop") or [])
                     for st in ("<end_of_turn>", "<start_of_turn>", "<|turn>", "<turn|>"):
@@ -596,17 +362,6 @@ class LLMProvider:
                             existing_stops.append(st)
                     params["stop"] = existing_stops
 
-                # User-selected reasoning level (CLI /reasoning) for the local
-                # llama.cpp appliance. llama-server has no token-budget knob;
-                # the closest native control is chat_template_kwargs, which the
-                # model's Jinja chat template consumes (Qwen3-family templates
-                # accept "enable_thinking"). Any level (low/medium/high) turns
-                # thinking ON, anything else (e.g. "off") turns it OFF.
-                # Scoped strictly to route == "intellect" so conscience audits
-                # and background runs never inherit user reasoning.
-                # route == "conscience" explicitly disables thinking so models
-                # like Qwen3.6-35B return fast JSON audits (~4s) instead of
-                # burning ~45s on hidden thought tokens.
                 if route == "intellect" and _REASONING_EFFORT.get():
                     local_effort = _REASONING_EFFORT.get()
                     eb = dict(params.get("extra_body") or {})
@@ -621,16 +376,9 @@ class LLMProvider:
                     eb["chat_template_kwargs"] = ctk
                     params["extra_body"] = eb
 
-            # Sync client off the event loop's thread pool. The blocking call
-            # must not run inline in the request coroutine; to_thread keeps the
-            # loop free and, because the client owns no loop, is safe however
-            # many per-request loops asgiref has opened and closed.
             resp = await asyncio.to_thread(client.chat.completions.create, **params)
             self._capture_usage(route, provider_name, model_name, provider_type, resp)
 
-            # finish_reason "length" means the response hit max_tokens. Standard
-            # across OpenAI-compatible providers; zhipu reports it too, and its
-            # reasoning tokens count toward the same budget.
             try:
                 if resp.choices and getattr(resp.choices[0], "finish_reason", None) == "length":
                     self._note_truncation(route, provider_name, model_name, "finish_reason=length")
@@ -642,13 +390,6 @@ class LLMProvider:
                 finish_reason = getattr(resp.choices[0], "finish_reason", None)
                 calls = []
                 for tc in msg.tool_calls:
-                    # Parse through the module's single JSON authority rather
-                    # than raw json.loads: a tool-call's arguments arrive as a
-                    # string the model may malform (LaTeX escapes, trailing
-                    # commas) or, when the output cap is hit, never close at all.
-                    # Raw json.loads turned that last case into an opaque
-                    # "Unterminated string" that read as an unreachable provider
-                    # (see explain_provider_error's tool-call branch).
                     raw_args_str = tc.function.arguments or ""
                     arguments = robust_json_parse(raw_args_str, self.log)
                     if "error" in arguments:
@@ -703,20 +444,11 @@ class LLMProvider:
                     })
                 kwargs["tools"] = anthropic_tools
 
-            # Control Anthropic thinking/reasoning effort.
-            # Default to turning thinking off so models (especially Haiku) respond immediately (2-7s)
-            # instead of burning thousands of hidden reasoning tokens and truncating.
-            # A user-selected level (CLI /reasoning) overrides the env default, but only
-            # for the answering route (Intellect); Conscience always disables thinking.
             effort_override = _REASONING_EFFORT.get() if route == "intellect" else None
             thinking_env = effort_override or os.environ.get("SAFI_ANTHROPIC_THINKING", "disabled").lower()
             if route == "conscience":
                 thinking_env = "disabled"
             if thinking_env == "disabled":
-                # Model-specific thinking deactivation based on Anthropic API requirements:
-                # - haiku supports {"type": "disabled"}
-                # - sonnet-5-5 requires {"type": "between_tools"} to skip pre-response reasoning
-                # - opus-5-5 requires {"type": "adaptive"} with effort "low"
                 if "sonnet" in model_name:
                     kwargs["thinking"] = {"type": "between_tools"}
                 elif "opus" in model_name:
@@ -725,16 +457,12 @@ class LLMProvider:
                 else:
                     kwargs["thinking"] = {"type": "disabled"}
             elif thinking_env in ("low", "medium", "high"):
-                # Map the user-facing reasoning level onto Anthropic's
-                # adaptive thinking + effort controls. "high" lets the model
-                # reason at full depth (most hidden tokens, slowest).
                 kwargs["thinking"] = {"type": "adaptive"}
                 kwargs["output_config"] = {"effort": thinking_env}
 
             try:
                 resp = await asyncio.to_thread(client.messages.create, **kwargs)
             except Exception as exc:
-                # If thinking param isn't supported for this model/tier, retry cleanly without it
                 if "thinking" in str(exc).lower() and "thinking" in kwargs:
                     kwargs.pop("thinking", None)
                     kwargs.pop("output_config", None)
@@ -763,12 +491,6 @@ class LLMProvider:
                         })
                 return json.dumps({"tool_calls": tool_calls})
 
-            # A safety refusal comes back as stop_reason "refusal" with no content
-            # blocks. Surface it as a distinct, accurate error instead of letting
-            # the empty content fall through to the generic "{}" / empty-response
-            # path, which tells the user to check an API key that is working fine.
-            # Some models (e.g. creative-writing models) refuse the Intellect's
-            # reflection format on every turn, which makes them unusable here.
             if getattr(resp, "stop_reason", None) == "refusal":
                 raise RuntimeError(
                     "the model refused to generate a response for this request "
@@ -776,9 +498,6 @@ class LLMProvider:
                     "governance prompt format"
                 )
 
-            # stop_reason "max_tokens" means the budget ran out mid-answer. The
-            # content blocks still hold the partial text, so without this check
-            # it reaches the user mid-sentence and looks like a finished answer.
             if getattr(resp, "stop_reason", None) == "max_tokens":
                 self._note_truncation(route, provider_name, model_name, "stop_reason=max_tokens")
 
@@ -830,11 +549,6 @@ class LLMProvider:
                 response_mime_type="application/json" if (json_mode and not gemini_tools) else None,
             )
 
-            # User-selected reasoning level (CLI /reasoning) mapped onto
-            # Gemini's thinkingConfig. thinking_budget is in thinking tokens:
-            # 0 disables thinking, -1 is "dynamic" (model decides, up to the
-            # model's max), a positive integer caps it. User level is scoped
-            # strictly to intellect; Conscience explicitly disables thinking.
             gemini_effort = _REASONING_EFFORT.get() if route == "intellect" else None
             if route == "conscience":
                 config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
@@ -847,8 +561,6 @@ class LLMProvider:
             config = types.GenerateContentConfig(**config_kwargs)
 
             try:
-                # The sync genai.Client off the loop thread (the async surface
-                # was client.aio; see the import note on the event-loop bug).
                 resp = await asyncio.to_thread(
                     client.models.generate_content,
                     model=model_name,
@@ -863,7 +575,6 @@ class LLMProvider:
             try:
                 if getattr(resp, 'function_calls', None):
                     fc = resp.function_calls[0]
-                    # args is a dict or mapping depending on SDK
                     args = fc.args if isinstance(fc.args, dict) else (dict(fc.args) if fc.args else {})
 
                     payload = {
@@ -876,9 +587,6 @@ class LLMProvider:
                     if resp.candidates and resp.candidates[0].content:
                         raw_content = resp.candidates[0].content
 
-                        # model_dump(mode="json") is preferred when available:
-                        # it keeps the payload free of Pydantic objects that
-                        # json.dumps would have to stringify via safe_serialize.
                         if hasattr(raw_content, "model_dump"):
                             try:
                                 payload["_gemini_raw_turn"] = raw_content.model_dump(mode="json")
@@ -894,10 +602,6 @@ class LLMProvider:
 
                     return json.dumps(payload, default=safe_serialize)
 
-                # Gemini stops with finish_reason=MAX_TOKENS when the output
-                # (including thinking tokens) exhausts max_output_tokens;
-                # resp.text still holds the partial answer. Compare on the name
-                # to stay robust across SDK enum/string representations.
                 try:
                     if resp.candidates:
                         finish_reason = getattr(resp.candidates[0], "finish_reason", None)
@@ -916,19 +620,10 @@ class LLMProvider:
             raise ValueError(f"Unsupported provider type '{provider_type}'")
 
 
-    # Times to re-ask the Intellect model when it returns a blank/contentless
-    # response. Fast models (e.g. *-flash) intermittently emit empty content,
-    # which the provider surfaces as the "{}" sentinel; each attempt resamples
-    # the model so a blank never reaches the user.
     _INTELLECT_MAX_ATTEMPTS = 3
 
     @staticmethod
     def _is_timeout_error(exc: Exception) -> bool:
-        """True if the exception is a provider stall (timeout / connection
-        failure). These must NEVER be retried: a retry just runs the same hang
-        again, and N attempts at the per-call timeout can add up past gunicorn's
-        request timeout, which turns one stuck provider into a killed worker.
-        A blank-but-fast response is a different case and is still retried."""
         text = f"{type(exc).__name__}: {exc}".lower()
         return any(k in text for k in (
             "timeout", "timed out", "connection", "connecterror",
@@ -937,37 +632,20 @@ class LLMProvider:
 
     @staticmethod
     def _is_refusal_error(exc: Exception) -> bool:
-        """True if the model refused the request (e.g. Anthropic stop_reason
-        'refusal'). Like a timeout, retrying is pointless: the same model given
-        the same prompt refuses again. Fail fast rather than burn the retries."""
         return "refus" in f"{exc}".lower()
 
     @staticmethod
     def _is_rate_limit_error(exc: Exception) -> bool:
-        """True when retrying would immediately amplify provider throttling."""
         text = f"{type(exc).__name__}: {exc}".lower()
         return any(k in text for k in ("429", "rate limit", "ratelimit", "resource_exhausted", "quota"))
 
     @staticmethod
     def _is_truncation_error(exc: Exception) -> bool:
-        """True when the model's generation ran out of tokens (output-token cap hit)
-        while producing tool call arguments or content. Retrying the identical prompt
-        would deterministically generate the exact same long output and fail again,
-        burning minutes of inference time."""
         text = f"{type(exc).__name__}: {exc}".lower()
         return "truncated at the output-token cap" in text or ("truncated" in text and "token cap" in text)
 
     @staticmethod
     def explain_provider_error(exc: Exception) -> str:
-        """Turn a provider exception into something an operator can act on.
-
-        The provider layer knows exactly why a call failed — a 401 with
-        'Invalid API Key' is unambiguous — but that detail used to be logged and
-        then discarded, leaving the user with "LLM provider returned an empty
-        response." True, and useless: it names a symptom and hides the cause.
-        A first-time deployer reads it as "SAFi is broken" rather than "my key
-        is wrong".
-        """
         text = f"{type(exc).__name__}: {exc}"
         low = text.lower()
         if "401" in text or "invalid_api_key" in low or "authenticationerror" in low:
@@ -1006,24 +684,12 @@ class LLMProvider:
 
     @staticmethod
     def _is_contentless_intellect_answer(answer: Optional[str]) -> bool:
-        """True if the Intellect produced no real text (empty, or only the
-        empty-content "{}" / "[]" sentinel)."""
         if not answer or not answer.strip():
             return True
         return answer.strip() in ("{}", "[]")
 
     async def run_intellect(self, system_prompt: str, user_prompt: Any, context_for_audit: str, tools: Optional[List[Dict[str, Any]]] = None) -> Tuple[str, str, str, Optional[Dict[str, Any]]]:
-        """Run the configured Intellect model and parse the result.
-
-        Returns (answer, reflection, context_for_audit, raw_turn). On a hard
-        error the answer is None and `last_intellect_error` holds an
-        operator-readable cause; after exhausted blank retries it is "" so the
-        caller's graceful empty-response path handles it instead of surfacing
-        the sentinel.
-        """
         last_exc: Optional[Exception] = None
-        # Cleared per call so a stale cause from an earlier turn is never
-        # reported against a later one.
         self.last_intellect_error: Optional[str] = None
         for attempt in range(1, self._INTELLECT_MAX_ATTEMPTS + 1):
             try:
@@ -1032,16 +698,11 @@ class LLMProvider:
                     system_prompt=system_prompt,
                     user_prompt=user_prompt,
                     temperature=1.0,
-                    # See MAX_INTELLECT_TOKENS at the top of this module for what
-                    # the budget covers and what raising it costs.
                     max_tokens=MAX_INTELLECT_TOKENS,
                     tools=tools
                 )
                 raw_content_stripped = raw_content.strip() if raw_content else ""
 
-                # A tool call is a valid (non-empty) response — return immediately,
-                # never retried. Extraction is by first '{'/last '}' because
-                # chatty models wrap the tool-call JSON in surrounding text.
                 if '"tool_calls"' in raw_content_stripped:
                     start = raw_content_stripped.find('{')
                     end = raw_content_stripped.rfind('}')
@@ -1080,10 +741,6 @@ class LLMProvider:
                 self.log.exception(
                     "Intellect execution failed (attempt %d/%d)", attempt, self._INTELLECT_MAX_ATTEMPTS
                 )
-                # A stalled provider must fail this turn now, not be re-run twice
-                # more: three attempts at the per-call timeout would exceed the
-                # request budget and kill the worker. Blanks and other transient
-                # errors still retry.
                 if self._is_timeout_error(e):
                     self.log.warning("Intellect call timed out; failing fast without retry.")
                     break
@@ -1098,23 +755,13 @@ class LLMProvider:
                     break
                 continue
 
-        # All attempts failed. On a hard error, preserve the legacy failure
-        # contract (None); on persistent blanks, return an empty answer so the
-        # caller shows its graceful empty-response message, never a literal "{}".
         if last_exc is not None:
-            # Preserve WHY, so the Intellect can report a cause rather than a
-            # symptom. Read by IntellectEngine when the answer comes back None.
             self.last_intellect_error = self.explain_provider_error(last_exc)
             return None, None, context_for_audit, None
         self.log.error("Intellect returned blank after %d attempts.", self._INTELLECT_MAX_ATTEMPTS)
         return "", "", context_for_audit, None
 
     async def run_will(self, system_prompt: str, user_prompt: str) -> Tuple[str, str]:
-        """Run the configured Will model and parse the result.
-
-        Never raises: any error becomes a "violation" decision, so a provider
-        outage fails the turn closed rather than skipping the Will entirely.
-        """
         try:
             raw_content = await self._chat_completion(
                 route="will",
@@ -1130,25 +777,9 @@ class LLMProvider:
             return "violation", f"System Error: {e}"
 
     async def run_conscience(self, system_prompt: str, user_prompt: str) -> List[Dict[str, Any]]:
-        """Run the configured Conscience model and parse the result.
-
-        Model-agnostic by design. The Conscience route is whatever the operator
-        configured, and this method must not know or care which model that is:
-        per-model tuning here silently changes how strictly every agent in the
-        deployment is audited, based on a substring match nobody reviewed. If a
-        model needs a different request *shape* to be callable at all, that
-        belongs in _chat_completion with the other provider adapters — it is an
-        API constraint, not an audit policy.
-
-        An empty list is the fail-closed signal: the Will then blocks, which is
-        the safe outcome when the auditor is unreachable.
-        """
         try:
             ledger: List[Dict[str, Any]] = []
             try:
-                # Constrain decoding to valid JSON at the API level: eliminates the
-                # markdown-fence/prose failure class that otherwise degrades the
-                # ledger and burns the orchestrator's re-audit retry.
                 raw_content = await asyncio.wait_for(
                     self._chat_completion(
                         route="conscience",
@@ -1163,13 +794,6 @@ class LLMProvider:
                 ledger = parse_conscience_response(raw_content, self.log)
                 if ledger:
                     return ledger
-                # An empty ledger from a successful json_mode call is the
-                # degenerate-output case (a bare "{}"), not a real audit — fall
-                # through to the unconstrained retry. This is the generic form of
-                # what used to be a "gemma" name check: the models that degenerate
-                # under json_mode are caught by observing the empty result rather
-                # than by guessing from the model id, at the cost of one wasted
-                # call on those models.
                 self.log.warning("Conscience json_mode returned an empty/unusable ledger; retrying without json_mode.")
             except asyncio.TimeoutError:
                 self.log.warning(
@@ -1177,19 +801,12 @@ class LLMProvider:
                     CONSCIENCE_TIMEOUT_SECONDS,
                 )
             except Exception as e:
-                # A stalled provider must not be re-run: a second call at the
-                # per-call timeout would push the turn past the request budget.
-                # Fail fast to the outer handler (empty ledger => Will fails
-                # closed), which is the safe outcome when the model is unreachable.
                 if self._is_timeout_error(e):
                     self.log.warning("Conscience call timed out; failing fast without retry.")
                     raise
                 if self._is_rate_limit_error(e):
                     self.log.warning("Conscience provider rate-limited the call; failing fast without retry.")
                     raise
-                # A provider that merely rejects json_mode would otherwise fail BOTH
-                # audit attempts and brick the agent into permanent fail-closed.
-                # Retry once without it; the text parser handles unconstrained output.
                 self.log.warning(f"Conscience json_mode call failed ({e}); retrying without json_mode.")
 
             raw_content = await asyncio.wait_for(

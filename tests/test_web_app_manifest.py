@@ -1,27 +1,3 @@
-"""
-The web app manifest: installable, and caching nothing.
-
-WHY. There was no manifest and no service worker, so the web app could not be
-installed at all — no dock icon, no standalone window, browser tab only. That
-is most of what people mean by "desktop app" for a chat product, and it costs
-one JSON file rather than an Electron shell (which, on the evidence of the
-Capacitor client, would arrive with its own origin model and its own class of
-bugs).
-
-The deliberate omission is the service worker. Chrome/Edge want a fetch handler
-before offering their install button, and we accept losing that, because:
-
-  * The org default is `offline_enabled: false` — no local copies of org
-    content on the device. A stock caching recipe would cache /api responses
-    and quietly break a guarantee the Compliance tab advertises.
-  * A badly versioned SW serves stale code that a refresh cannot fix.
-
-So this file pins the absence as much as the presence. If a service worker is
-ever added, these tests should be UPDATED deliberately, not deleted quietly —
-that is the point of them.
-
-Run:  venv/bin/python tests/test_web_app_manifest.py
-"""
 import json
 import sys
 import unittest
@@ -38,7 +14,6 @@ INDEX = (PUBLIC / "index.html").read_text(encoding="utf-8")
 
 
 def _resolve(src):
-    """Resolve a (possibly cache-busted) icon URL to the file it names."""
     return PUBLIC / urlsplit(src).path.lstrip("/")
 
 
@@ -49,12 +24,9 @@ class TheManifestIsInstallable(unittest.TestCase):
             self.assertIn(key, MANIFEST)
 
     def test_standalone_display(self):
-        """The whole point: its own window, no URL bar."""
         self.assertEqual(MANIFEST["display"], "standalone")
 
     def test_scope_and_start_url_match_how_flask_serves_public(self):
-        """`static_url_path='/'`, so the app lives at the domain root and
-        /manifest.json resolves with no new route."""
         self.assertEqual(MANIFEST["scope"], "/")
         self.assertTrue(MANIFEST["start_url"].startswith("/"))
 
@@ -67,8 +39,6 @@ class TheManifestIsInstallable(unittest.TestCase):
 
 
 def _chunk_offsets(raw, kind):
-    """Byte offsets of every chunk of `kind` in a PNG, for reading raw pixels
-    without pulling in an image library the test environment need not have."""
     from struct import unpack
     i = 8
     while i < len(raw) - 8:
@@ -79,9 +49,6 @@ def _chunk_offsets(raw, kind):
 
 
 def _unfiltered_rows(path):
-    """Decode the IDAT scanlines of an 8-bit grayscale/RGB/RGBA PNG, undoing
-    each row's filter byte. Pure stdlib, like the rest of this module. Returns
-    (width, height, color_type, rows) where each row is bytes of raw pixels."""
     import zlib
     from struct import unpack as _unpack
     raw = path.read_bytes()
@@ -113,7 +80,7 @@ def _unfiltered_rows(path):
                 p = (a + up) & 0xFF
             elif f == 3:
                 p = (a + ((left + up) >> 1)) & 0xFF
-            else:  # 4 = Paeth: closest of left/up/upper-left to left+up-ul
+            else:
                 pred = left + up - ul
                 pa, pb, pc = abs(pred - left), abs(pred - up), abs(pred - ul)
                 pr = left if pa <= pb and pa <= pc else (up if pb <= pc else ul)
@@ -137,8 +104,6 @@ def _transparent_pixel_count(path):
 
 
 class EveryIconItNamesExists(unittest.TestCase):
-    """A manifest naming a missing icon fails silently in the browser — the
-    install simply offers a blank tile, with nothing in the console."""
 
     def test_icon_files_are_present_and_the_right_size(self):
         from struct import unpack
@@ -147,7 +112,6 @@ class EveryIconItNamesExists(unittest.TestCase):
             path = PUBLIC / rel
             with self.subTest(icon=rel):
                 self.assertTrue(path.exists(), f"{rel} is declared but missing")
-                # PNG header: width/height are big-endian uint32 at byte 16.
                 head = path.read_bytes()[:24]
                 self.assertEqual(head[:8], b"\x89PNG\r\n\x1a\n", "not a PNG")
                 w, h = unpack(">II", head[16:24])
@@ -155,19 +119,6 @@ class EveryIconItNamesExists(unittest.TestCase):
                 self.assertEqual((w, h), (int(declared), int(declared)))
 
     def test_any_and_maskable_are_separate_files(self):
-        """Deprecates the single any+maskable PNG (2026-08-11) deliberately
-        (2026-09-06). Chrome splashes the highest-resolution `any` icon
-        UNMASKED, so a maskable-safe PNG declared "any maskable" blooms its
-        safe-zone padding on the launch card and the mark looks small — the
-        complaint that started this. web.dev says the same thing inverted:
-        reusing the maskable file as the `any` icon "adds unnecessary
-        padding, making the core icon content smaller". So three files, one
-        source art:
-
-          icon-192.png       any        small contexts / older launchers
-          icon-512-any.png   any        splash screen (full-bleed mark)
-          icon-512.png       maskable   launcher mask + iOS composite
-        """
         self.assertEqual(len(MANIFEST["icons"]), 3)
         purposes = [icon["purpose"].split() for icon in MANIFEST["icons"]]
         self.assertEqual(sum("any" in p for p in purposes), 2)
@@ -182,22 +133,14 @@ class EveryIconItNamesExists(unittest.TestCase):
                          "/assets/icon-512.png")
 
     def test_icon_urls_are_cache_busted(self):
-        """The srcs carry a version query so a changed mark is fetched, not
-        served stale from the browser's cache (CLAUDE.md bumps it on every
-        asset change)."""
         for icon in MANIFEST["icons"]:
             with self.subTest(icon=icon["src"]):
                 self.assertIn("v=", urlsplit(icon["src"]).query)
 
     def test_ios_gets_its_own_link(self):
-        """iOS ignores the manifest's icons for Add to Home Screen."""
         self.assertIn('rel="apple-touch-icon"', INDEX)
 
     def test_the_ios_icon_is_opaque(self):
-        """iOS composites apple-touch-icon onto WHITE and applies its own
-        rounding. The transparent circle would show white corners inside the
-        rounded tile, so iOS gets the padded opaque square — the maskable
-        file, same as before."""
         import re as _re
         m = _re.search(r'rel="apple-touch-icon"\s+href="([^"]+)"', INDEX)
         self.assertIsNotNone(m)
@@ -210,11 +153,6 @@ class EveryIconItNamesExists(unittest.TestCase):
                          "apple-touch-icon must have no transparent pixels")
 
     def test_the_maskable_icon_is_opaque(self):
-        """A mask crops the maskable icon to a shape, and iOS composites the
-        same file onto white, so every pixel of it must be opaque. The `any`
-        icons are favicon-derived and keep their transparency (2026-09-06) —
-        the launcher shows the mark through the splash — but the padded
-        maskable square cannot have a see-through corner."""
         for icon in MANIFEST["icons"]:
             if "maskable" not in icon["purpose"].split():
                 continue
@@ -224,31 +162,12 @@ class EveryIconItNamesExists(unittest.TestCase):
                                  f"{icon['src']} must have no transparent pixels")
 
     def test_the_splash_matches_the_mark(self):
-        """background_color paints the launch screen behind the icon, so a
-        mismatch flashes the wrong colour before the icon appears.
-
-        Read out of the icon itself rather than hard-coded. The literal used
-        to be "#333333" for the dark tile, went stale the moment the mark
-        changed to the four-petal wordmark on white (2026-08-25), and failed
-        as a stale assertion rather than as the real defect. Deriving it means
-        the next mark cannot drift from its own splash.
-
-        The corner is read from the maskable icon. With the transparent
-        favicon-derived `any` icons (2026-09-06) the splash field colour is
-        carried by the opaque padded square the maskable file ships, and every
-        launcher composites it over background_color.
-        """
         import zlib
         from struct import unpack
         field = next(i for i in MANIFEST["icons"]
                      if i["sizes"] == "512x512" and "maskable" in i["purpose"].split())
         raw = (PUBLIC / urlsplit(field["src"]).path.lstrip("/")).read_bytes()
         w, h = unpack(">II", raw[16:24])
-        # Decode enough of the PNG to read pixel (0, 0): the maskable icon is a
-        # padded opaque square, so its corner IS the field colour the splash
-        # has to match. For the very FIRST pixel every PNG filter
-        # (None/Sub/Up/Average/Paeth) has no left or upper neighbour, so each
-        # predicts zero and the stored bytes are the raw colour.
         idat = b"".join(
             raw[i + 8:i + 8 + unpack(">I", raw[i:i + 4])[0]]
             for i in _chunk_offsets(raw, b"IDAT")
@@ -263,8 +182,6 @@ class EveryIconItNamesExists(unittest.TestCase):
 class NothingIsCached(unittest.TestCase):
 
     def test_no_service_worker_is_registered(self):
-        """See the module docstring. If this fails because a SW was added
-        on purpose, update this file and item 35 together."""
         for f in PUBLIC.rglob("*.js"):
             if "node_modules" in f.parts or "lib" in f.parts:
                 continue
@@ -283,8 +200,6 @@ class NothingIsCached(unittest.TestCase):
 class ItIsThemeAware(unittest.TestCase):
 
     def test_both_theme_colors_are_declared(self):
-        """The UI is dark-capable (dark:bg-black); one light value leaves a
-        white title bar above a black app."""
         self.assertIn('media="(prefers-color-scheme: light)"', INDEX)
         self.assertIn('media="(prefers-color-scheme: dark)"', INDEX)
 

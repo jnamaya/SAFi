@@ -1,31 +1,3 @@
-"""Security-incident registry API — multi-regime notification clocks.
-
-Org-scoped, admin-only. SAFi records incidents, tracks the incident-response
-program elements (assessment, containment, notification), and computes every
-applicable notification clock on read from regime-keyed rule tables:
-
-  reg_sp    — SEC Reg S-P 17 CFR 248.30: 30-day customer notice, AG delay,
-              72h vendor notice, documented no-substantial-harm exception.
-  eu_ai_act — Art. 73 serious-incident report to the market surveillance
-              authority: 15d general / 10d death or serious harm / 2d
-              widespread infringement, from awareness.
-  hipaa     — Breach Notification Rule: 60d individual notices from
-              discovery; ≥500 affected adds contemporaneous HHS + media
-              notices; <500 goes in the HHS annual log (due 60d after
-              calendar-year end); business associates instead owe the
-              covered entity notice within 60d.
-
-Which regimes apply is a tag on the incident (defaulting from the org's
-incident_regimes setting). Tagging a regime means "reportable under this
-regime" — an incident determined non-reportable under a regime is untagged,
-which the field-diff event trail records. Rows created before regime tagging
-existed read as reg_sp. SAFi does NOT send notices — the firm sends them
-through its own channels and logs the matching *_notified event as evidence,
-which stamps the clock's stop timestamp.
-
-Auditor read access is a one-word change (require_role('auditor') on the GET
-routes) when that phase arrives — the role hierarchy already supports it.
-"""
 import csv
 import io
 import json
@@ -43,8 +15,6 @@ VALID_STATUS = ("open", "assessing", "notifying", "closed")
 VALID_SEVERITY = ("low", "medium", "high", "critical")
 VALID_SOURCE = ("internal", "vendor")
 VALID_HARM = ("notification_required", "no_substantial_harm")
-# The *_notified types stamp their clock's stop timestamp (first occurrence
-# only) — see _EVENT_STAMP_COLS in the persistence layer.
 VALID_EVENT_TYPES = ("assessment", "containment", "harm_determination",
                      "notification_sent", "ag_delay", "note",
                      "authority_notified", "individuals_notified",
@@ -57,12 +27,10 @@ EU_CLASSES = ("general", "death_or_serious_harm", "widespread")
 EU_WINDOW_DAYS = {"general": 15, "death_or_serious_harm": 10, "widespread": 2}
 HIPAA_ROLES = ("covered_entity", "business_associate")
 HIPAA_WINDOW_DAYS = 60
-HIPAA_LARGE_BREACH = 500  # ≥500 affected: media + contemporaneous HHS notice
+HIPAA_LARGE_BREACH = 500
 
 
 def _parse_dt(value):
-    """Accepts datetime, ISO string, or MySQL 'YYYY-MM-DD HH:MM:SS'. Returns
-    an aware UTC datetime or None."""
     if value is None or value == "":
         return None
     if isinstance(value, datetime):
@@ -76,13 +44,6 @@ def _parse_dt(value):
 
 
 def compute_notification_clock(incident, now=None):
-    """Pure 30-day-clock computation for one incident row.
-
-    States: 'excepted' (documented no-substantial-harm determination),
-    'notified' (customers_notified_at set), 'overdue', or 'running'.
-    The due date is firm_aware_at + 30 days, extended to ag_delay_until while
-    an Attorney-General delay is in effect and later than day 30.
-    """
     now = now or datetime.now(timezone.utc)
     clock = {"state": "running", "due_at": None, "days_remaining": None,
              "days_taken": None, "vendor_notice_hours": None, "vendor_notice_late": None}
@@ -124,9 +85,6 @@ def compute_notification_clock(incident, now=None):
 
 
 def _deadline_clock(key, label, regime, aware, notified, due, now, window_days):
-    """Shared running/overdue/notified state machine for the non-reg_sp
-    regimes (reg_sp keeps its own function above: AG-delay extension, vendor
-    72h check, and the harm-determination exception are specific to it)."""
     clock = {"key": key, "label": label, "regime": regime, "state": "running",
              "window_days": window_days, "due_at": due.isoformat() if due else None,
              "days_remaining": None, "days_taken": None,
@@ -183,8 +141,6 @@ def _hipaa_clocks(incident, now):
                                       "hipaa", aware, _parse_dt(incident.get("media_notified_at")),
                                       due60, now, HIPAA_WINDOW_DAYS))
     else:
-        # <500 affected (or count not yet established): HHS goes in the
-        # annual breach log, due 60 days after the calendar year of discovery.
         due = None
         if aware:
             due = datetime(aware.year, 12, 31, 23, 59, 59,
@@ -195,7 +151,6 @@ def _hipaa_clocks(incident, now):
     return clocks
 
 
-# The regime-keyed rule table. Key order is display/canonical order.
 REGIME_RULES = {
     "reg_sp": {"label": "SEC Reg S-P", "clocks": _reg_sp_clocks},
     "eu_ai_act": {"label": "EU AI Act", "clocks": _eu_ai_act_clocks},
@@ -204,8 +159,6 @@ REGIME_RULES = {
 
 
 def incident_regimes(incident):
-    """Canonically ordered regime tags for a row. Rows created before regime
-    tagging existed (regimes NULL) read as reg_sp; unknown keys are dropped."""
     tags = incident.get("regimes")
     if isinstance(tags, str):
         try:
@@ -218,7 +171,6 @@ def incident_regimes(incident):
 
 
 def compute_notification_clocks(incident, now=None):
-    """All live clocks for the incident's tagged regimes, in canonical order."""
     now = now or datetime.now(timezone.utc)
     clocks = []
     for key in incident_regimes(incident):
@@ -232,11 +184,6 @@ def _actor():
 
 
 def _mirror_to_compliance_log(org_id, event_type, actor_id, detail):
-    """Thin pointer event into org_compliance_log (backlog 58). The
-    incident's own append-only journal (incident_events) stays the
-    authoritative detail; this puts the lifecycle into the org-wide
-    evidence stream an auditor reads first. Best-effort: the authoritative
-    record is already written, so a mirror failure logs and never blocks."""
     try:
         db.append_compliance_log(org_id, event_type, f"user:{actor_id}", detail)
     except Exception as e:
@@ -276,7 +223,6 @@ def _decorated(incident):
     regimes = incident_regimes(incident)
     incident["regimes"] = regimes
     incident["clocks"] = compute_notification_clocks(incident)
-    # Back-compat single-clock key: the Reg S-P clock when that regime applies.
     incident["clock"] = next((c for c in incident["clocks"] if c["regime"] == "reg_sp"), None)
     return incident
 
@@ -349,9 +295,6 @@ def update_incident(org_id, incident_id):
         incident = incident_store.update_security_incident(org_id, incident_id, data, actor_id, actor_email)
         if not incident:
             return jsonify({"error": "Not found"}), 404
-        # Mirror the compliance-relevant transitions into the org-wide
-        # evidence stream (backlog 58). Field-level detail stays in the
-        # incident's own append-only journal; these are pointer events.
         if before:
             if str(before.get('status')) != str(incident.get('status')):
                 _mirror_to_compliance_log(org_id, 'incident_status_changed', actor_id, {
@@ -383,8 +326,6 @@ def log_incident_event(org_id, incident_id):
         actor_id, actor_email = _actor()
         if not incident_store.append_incident_event(org_id, incident_id, event_type, detail, actor_id, actor_email):
             return jsonify({"error": "Not found"}), 404
-        # Regime notices are the compliance ACTS (customers told, authority
-        # told); mirror them into the org-wide stream too (backlog 58).
         incident = incident_store.get_security_incident(org_id, incident_id)
         _mirror_to_compliance_log(org_id, 'incident_notice_recorded', actor_id, {
             "incident": incident_id, "title": (incident or {}).get("title"),
@@ -399,8 +340,6 @@ def log_incident_event(org_id, incident_id):
 @incidents_bp.route('/organizations/<org_id>/incident-regimes', methods=['GET'])
 @require_role('admin')
 def get_incident_regimes(org_id):
-    """The org's default regime set for new incidents, plus the full rule
-    catalog for the UI."""
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
     return jsonify({
@@ -412,8 +351,6 @@ def get_incident_regimes(org_id):
 @incidents_bp.route('/organizations/<org_id>/incident-regimes', methods=['PUT'])
 @require_role('admin')
 def update_incident_regimes(org_id):
-    """Set the org's default regime set. Evidence-logged to org_compliance_log
-    in the same transaction — same contract as the provider allow-list."""
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
     data = request.json or {}
@@ -444,7 +381,6 @@ def export_incident(org_id, incident_id):
             return jsonify({"error": "Not found"}), 404
         events = incident_store.list_incident_events(org_id, incident_id)
         actor_id, actor_email = _actor()
-        # Chain of custody: examiner productions are themselves events.
         incident_store.append_incident_event(
             org_id, incident_id, "exported", f"Record exported as {fmt.upper()}",
             actor_id, actor_email)

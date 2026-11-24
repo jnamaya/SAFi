@@ -1,11 +1,3 @@
-"""
-Tests for Art. 72 monitoring alerts (Phase E4, review_alerts.py): per-turn
-drift_spike, rolling-mean alignment_degradation, queue_backlog, the 24h
-dedup cooldown, HMAC webhook signing + delivery journaling, and the
-retention-purge sweep of orphaned pending queue rows.
-
-Requires local MySQL. Run:  venv/bin/python tests/test_review_alerts.py
-"""
 import hashlib
 import hmac
 import json
@@ -96,7 +88,6 @@ class ReviewAlertsTest(unittest.TestCase):
         provider_governance.activate_org(None)
         return mid
 
-    # -- drift spike -----------------------------------------------------------
 
     def test_01_drift_spike_fires_and_dedups(self):
         review_alerts.evaluate_turn_alerts(PROFILE, 8, 0.55, "approve", org_id=self.org_id)
@@ -107,10 +98,8 @@ class ReviewAlertsTest(unittest.TestCase):
         self.assertEqual(detail["drift"], 0.55)
         self.assertEqual(detail["threshold"], 0.4)
         self.assertEqual(json.loads(rows[0]["delivered"]), {"webhook": "unconfigured"})
-        # same (org, type, profile) within cooldown → suppressed
         review_alerts.evaluate_turn_alerts(PROFILE, 8, 0.9, "approve", org_id=self.org_id)
         self.assertEqual(len(self._alerts("drift_spike")), 1)
-        # a DIFFERENT profile is its own cooldown bucket
         review_alerts.evaluate_turn_alerts("other_agent", 8, 0.9, "approve", org_id=self.org_id)
         self.assertEqual(len(self._alerts("drift_spike")), 2)
 
@@ -122,12 +111,10 @@ class ReviewAlertsTest(unittest.TestCase):
         self.assertEqual(self._alerts(), [])
         db.set_org_review_config(self.org_id, {"enabled": True}, ACTOR)
 
-    # -- alignment degradation -------------------------------------------------
 
     def test_03_degradation_needs_full_window_then_fires(self):
         self._commit_turn(3)
         self._commit_turn(4)
-        # two approved turns < window of 3 → no baseline yet
         review_alerts.evaluate_turn_alerts(PROFILE, 4, 0.1, "approve", org_id=self.org_id)
         self.assertEqual(self._alerts("alignment_degradation"), [])
         self._commit_turn(5)
@@ -135,30 +122,25 @@ class ReviewAlertsTest(unittest.TestCase):
         rows = self._alerts("alignment_degradation")
         self.assertEqual(len(rows), 1)
         detail = json.loads(rows[0]["detail"])
-        self.assertEqual(detail["observed"], 4.0)  # mean(3,4,5)
+        self.assertEqual(detail["observed"], 4.0)
         self.assertEqual(detail["threshold"], 6)
         self.assertEqual(detail["window_turns"], 3)
 
     def test_04_degradation_skips_non_approved_and_healthy_means(self):
-        # redirect-quality scores must not trigger the approved-mean alert
         review_alerts.evaluate_turn_alerts(PROFILE, 2, 0.1, "redirected", org_id=self.org_id)
         self.assertEqual(self._alerts("alignment_degradation"), [])
-        # healthy window: 8,9,9
         for s in (8, 9, 9):
             self._commit_turn(s)
         review_alerts.evaluate_turn_alerts(PROFILE, 9, 0.1, "approve", org_id=self.org_id)
         self.assertEqual(self._alerts("alignment_degradation"), [])
 
-    # -- queue backlog -----------------------------------------------------------
 
     def test_05_queue_backlog(self):
-        # fresh pending row → not overdue
         _exec("INSERT INTO review_queue (org_id, message_pk, message_id, conversation_id, triggers) "
               "VALUES (%s, 999999901, %s, %s, '[\"random_sample\"]')",
               (self.org_id, str(uuid.uuid4()), self.cid))
         review_alerts.check_queue_backlog(self.org_id)
         self.assertEqual(self._alerts("queue_backlog"), [])
-        # age it past backlog_max_age_days=1
         _exec("UPDATE review_queue SET created_at = NOW() - INTERVAL 3 DAY WHERE org_id=%s", (self.org_id,))
         review_alerts.check_queue_backlog(self.org_id)
         rows = self._alerts("queue_backlog")
@@ -166,12 +148,10 @@ class ReviewAlertsTest(unittest.TestCase):
         detail = json.loads(rows[0]["detail"])
         self.assertEqual(detail["oldest_days"], 3)
         self.assertEqual(detail["max_age_days"], 1)
-        # dedup within cooldown
         review_alerts.check_queue_backlog(self.org_id)
         self.assertEqual(len(self._alerts("queue_backlog")), 1)
         _exec("DELETE FROM review_queue WHERE org_id=%s", (self.org_id,))
 
-    # -- webhook dispatch ---------------------------------------------------------
 
     def test_06_webhook_signed_and_outcome_journaled(self):
         db.set_org_review_config(self.org_id, {"alerts": {"webhook_url": "https://example.test/hook"}}, ACTOR)
@@ -217,7 +197,6 @@ class ReviewAlertsTest(unittest.TestCase):
         self.assertEqual(delivered["webhook"], "failed:ConnectionError")
         db.set_org_review_config(self.org_id, {"alerts": {"webhook_url": None}}, ACTOR)
 
-    # -- purge sweep ---------------------------------------------------------------
 
     def test_08_orphan_sweep_removes_pending_keeps_reviewed(self):
         args = [(self.org_id, 999999911, str(uuid.uuid4()), self.cid, "pending"),

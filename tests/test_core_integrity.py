@@ -1,22 +1,3 @@
-"""
-The Core Loop integrity check (scripts/verify_integrity.py), and the manifest
-that must never go stale.
-
-WHY THIS IS IN THE SUITE. The manifest is a hash snapshot, and every legitimate
-core change invalidates it. Without enforcement it would go stale on the first
-edit after release and every deployment would then fail verification against
-code that is genuinely upstream. This suite runs in CI on every push, so
-test_the_shipped_tree_verifies_intact is the mechanism that forces
-`--update` to be part of any core-touching commit — the check fails HERE first,
-not in a customer's deployment.
-
-The tamper tests pin the two verdicts that give the trademark policy (agreement
-Section IV) its teeth: a benign edit is MODIFIED-but-invariants-intact (submit
-for review), while a model call inside a deterministic faculty is a named
-structural finding (the thing the architecture forbids outright).
-
-Run:  docker compose -f docker-compose.test.yml run --rm --build tests -k core_integrity
-"""
 import json
 import shutil
 import subprocess
@@ -44,10 +25,6 @@ def run_json(*args):
 class TheShippedTreeIsIntact(unittest.TestCase):
 
     def test_the_shipped_tree_verifies_intact(self):
-        """THE STALENESS GUARD. If this fails, a Core Loop file was changed
-        without regenerating the manifest — run:
-            python scripts/verify_integrity.py --update
-        and commit the manifest in the same change."""
         code, data = run_json()
         self.assertEqual(data["modified"], [],
                          "core files changed without a manifest update: "
@@ -64,7 +41,6 @@ class TheShippedTreeIsIntact(unittest.TestCase):
 
 
 class TamperDetection(unittest.TestCase):
-    """Runs against a disposable copy — the real tree is never touched."""
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="safi-integrity-"))
@@ -82,8 +58,6 @@ class TamperDetection(unittest.TestCase):
         self.assertEqual(code, 0)
 
     def test_a_benign_edit_is_modified_but_invariants_hold(self):
-        """The Section IV middle ground: hash fails, architecture intact —
-        the org must submit for review, but nothing was collapsed."""
         f = self.tmp / "safi_app/core/faculties/conscience.py"
         f.write_text(f.read_text() + "\n# fork-local comment\n")
         code, data = run_json("--root", str(self.tmp))
@@ -93,8 +67,6 @@ class TamperDetection(unittest.TestCase):
                          "a comment must not read as an architectural violation")
 
     def test_a_model_call_in_the_will_is_a_named_finding(self):
-        """The violation the agreement exists to prevent — and the check must
-        say WHICH commitment broke, not just that bytes differ."""
         f = self.tmp / "safi_app/core/faculties/will.py"
         f.write_text(f.read_text() + "\nimport openai\n")
         code, data = run_json("--root", str(self.tmp))
@@ -103,8 +75,6 @@ class TamperDetection(unittest.TestCase):
                             for x in data["structural_findings"]), data["structural_findings"])
 
     def test_an_llm_provider_call_in_a_deterministic_faculty_is_caught(self):
-        """The subtler bypass: no new import, just invoking the reference the
-        Will already holds for interface symmetry."""
         f = self.tmp / "safi_app/core/faculties/will.py"
         f.write_text(f.read_text()
                      + "\ndef _sneak(self):\n    return self.llm_provider.run_will('x')\n")
@@ -119,8 +89,6 @@ class TamperDetection(unittest.TestCase):
         self.assertIn("safi_app/core/faculties/utils.py", data["missing"])
 
     def test_exit_code_2_when_the_manifest_is_absent(self):
-        """A deployment that lost its manifest must get 'cannot verify', which
-        is a different answer from 'verified' or 'modified'."""
         (self.tmp / "scripts" / MANIFEST.name).unlink()
         code, _, err = run_check("--root", str(self.tmp))
         self.assertEqual(code, 2)
@@ -133,14 +101,9 @@ class TheManifestIsWellFormed(unittest.TestCase):
         m = json.loads(MANIFEST.read_text())
         self.assertIn("Governance Agreement", m["comment"])
         self.assertEqual(len(m["root_fingerprint"]), 64)
-        # Core decision code, required local enforcement dependencies, the
-        # generic audit templates, and the persistence integrity surface.
         self.assertGreaterEqual(len(m["files"]), 14)
 
     def test_every_deterministic_faculty_is_covered_by_a_hash(self):
-        """The invariant checks only diagnose; the hash layer is the verdict.
-        A deterministic faculty missing from the manifest would let an edit
-        there pass silently as long as it avoided the regexes."""
         m = json.loads(MANIFEST.read_text())["files"]
         for rel in ("safi_app/core/faculties/phase_zero.py",
                     "safi_app/core/faculties/will.py",
@@ -155,18 +118,6 @@ class TheManifestIsWellFormed(unittest.TestCase):
         self.assertNotIn("safi_app/core/threat_intel.py", m)
 
     def test_the_human_side_will_is_covered_and_auth_is_deliberately_not(self):
-        """Ruled 2026-08-13 (backlog 38). rbac.py is enforcement semantics —
-        the role ladder and separation-of-duties — and role assignment is
-        database data, so covering it costs organizations nothing while a fork
-        weakening approval rules must not verify INTACT.
-
-        auth.py is pinned OPEN in the same breath: agreement §III explicitly
-        grants authentication-infrastructure freedom, and custom IdP/SSO wiring
-        is a legitimate code-level need. Covering it would turn every
-        enterprise SSO integration into a Section IV event. If this assertion
-        ever fails because someone added auth.py to the manifest, that is a
-        boundary DECISION being reversed — take it back to the agreement, not
-        just to this test."""
         m = json.loads(MANIFEST.read_text())["files"]
         self.assertIn("safi_app/core/rbac.py", m)
         self.assertNotIn("safi_app/api/auth.py", m)

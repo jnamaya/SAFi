@@ -1,15 +1,9 @@
-// Compliance tab: the org's examiner-facing controls in one place.
-// Order is deliberate — the evidence log leads (every other card on this tab
-// writes to it), then provider governance, records retention, examiner
-// export, and the security-incidents registry (ui-settings-incidents.js).
-// Moved out of the Organization tab 2026-07-16 so Organization stays
-// identity-only and roadmap phases D/E have an obvious home here.
 import * as ui from '../ui.js';
 import * as api from '../../core/api.js';
 import { renderIncidentsSection } from './ui-settings-incidents.js';
 
 export async function renderSettingsComplianceTab() {
-    logLimit = 20; // fresh visit starts with the compact window
+    logLimit = 20;
     const cards = document.getElementById('compliance-cards');
     const incidents = document.getElementById('compliance-incidents');
     if (!cards) return;
@@ -19,7 +13,7 @@ export async function renderSettingsComplianceTab() {
     try {
         const orgRes = await api.getMyOrganization();
         org = orgRes ? orgRes.organization : null;
-    } catch (e) { /* fall through to the no-org notice */ }
+    } catch (e) {   }
 
     if (!org) {
         cards.innerHTML = `<p class="text-sm text-gray-500">You need an organization (and the admin role) to manage compliance settings.</p>`;
@@ -143,7 +137,6 @@ export async function renderSettingsComplianceTab() {
         </div>
     `;
 
-    // --- Provider allow-list wiring ---
     const chkRestrict = cards.querySelector('#chk-provider-restrict');
     const checklist = cards.querySelector('#provider-checklist');
     const providerPanel = cards.querySelector('#provider-restrict-panel');
@@ -167,7 +160,6 @@ export async function renderSettingsComplianceTab() {
         }
     });
 
-    // --- Data-source connector wiring ---
     const chkConnRestrict = cards.querySelector('#chk-connector-restrict');
     const connChecklist = cards.querySelector('#connector-checklist');
     const connPanel = cards.querySelector('#connector-restrict-panel');
@@ -175,8 +167,6 @@ export async function renderSettingsComplianceTab() {
     loadConnectorChecklist(org.id);
     loadConnections(org.id);
     cards.querySelector('#btn-save-connectors').addEventListener('click', async () => {
-        // Unlike providers, an empty list is a legitimate policy here: "members
-        // may link nothing". An empty provider list would brick every LLM call.
         const allowlist = chkConnRestrict.checked
             ? [...connChecklist.querySelectorAll('input[type=checkbox]:checked')].map(c => c.value)
             : null;
@@ -189,7 +179,6 @@ export async function renderSettingsComplianceTab() {
         }
     });
 
-    // --- Retention & legal hold wiring ---
     const chkHold = cards.querySelector('#chk-legal-hold');
     const inpReason = cards.querySelector('#inp-hold-reason');
     chkHold.addEventListener('change', () => inpReason.classList.toggle('hidden', !chkHold.checked));
@@ -208,7 +197,6 @@ export async function renderSettingsComplianceTab() {
         }
     });
 
-    // --- Offline kill-switch wiring ---
     cards.querySelector('#btn-save-offline').addEventListener('click', async () => {
         try {
             await api.updateOfflineConfig(org.id, cards.querySelector('#chk-offline-enabled').checked);
@@ -219,7 +207,6 @@ export async function renderSettingsComplianceTab() {
         }
     });
 
-    // --- Examiner export wiring ---
     cards.querySelector('#btn-export-records').addEventListener('click', () => {
         const from = cards.querySelector('#exp-from').value;
         const to = cards.querySelector('#exp-to').value;
@@ -232,9 +219,6 @@ export async function renderSettingsComplianceTab() {
     renderIncidentsSection(incidents, org);
 }
 
-// The API returns newest-first and hard-caps at 100. Start with 20; "Show
-// more" raises the window to the cap. Kept module-level so refreshes after
-// retention saves / exports don't collapse an expanded view.
 const LOG_CAP = 100;
 let logLimit = 20;
 
@@ -306,8 +290,6 @@ async function loadProviderChecklist(orgId) {
         const badge = (on, label, title = '') => on
             ? `<span class="ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400" ${title ? `title="${title.replace(/"/g, '&quot;')}"` : ''}>${label}</span>`
             : '';
-        // ZDR: green = no retention by default; amber = zero-data-retention
-        // available on an enterprise/request basis (not automatic).
         const zdrBadge = (p) => {
             if (!p.zdr) return '';
             const cls = p.zdr === 'default'
@@ -376,7 +358,6 @@ async function loadConnections(orgId) {
     }
 }
 
-// Member names and emails are user-supplied and land in innerHTML above.
 function _esc(s) {
     return String(s ?? '').replace(/[&<>"']/g, ch => (
         { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));

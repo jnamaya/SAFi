@@ -1,35 +1,12 @@
-/**
- * js/ui/settings/ui-settings-knowledge.js
- *
- * The Knowledge tab: user-created document repositories an agent can be
- * grounded in.
- *
- * Why this is a Control Panel tab and not part of the composer's data-source
- * dropdown: a knowledge base is a durable, owned, governed asset with a
- * lifecycle — the same kind of thing as an Agent or a Policy. `ui-data-sources.js`
- * is a per-chat affordance for OAuth connectors and owns nothing.
- *
- * TWO THINGS THE UI MUST KEEP SAYING OUT LOUD, because both are cases where
- * the honest state looks like a bug if unexplained:
- *
- *   1. **Indexing is asynchronous.** Uploading a document does not make it
- *      retrievable; the indexer container has to rebuild first. A card that
- *      jumped straight to "ready" would be lying, so status is polled.
- *   2. **A shared KB answers only from its APPROVED subset.** If three
- *      documents await review, the agent is grounded in less than the list
- *      appears to show, and the operator has to be told that in words.
- */
 import * as api from '../../core/api.js';
 import { escapeHtml } from '../../core/utils.js';
 
 let currentUser = null;
-let openKbId = null;      // non-null when the detail view is showing
+let openKbId = null;
 let pollTimer = null;
 
 const SHARED_VISIBILITIES = ['member', 'auditor', 'editor', 'admin'];
 
-// Statuses that mean the indexer still has work to do, so the view should
-// keep refreshing. Anything else is a resting state.
 const BUSY_STATUSES = ['pending', 'indexing'];
 
 export function setKnowledgeCurrentUser(user) {
@@ -68,7 +45,6 @@ export async function renderSettingsKnowledgeTab() {
     await renderList();
 }
 
-// --- List view ------------------------------------------------------------
 
 async function renderList() {
     const root = document.getElementById('kb-root');
@@ -149,10 +125,6 @@ function statusPill(kb) {
         failed:   ['Failed', 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'],
     };
 
-    // A shared KB whose documents are all awaiting review is legitimately at
-    // zero chunks — but "Empty" reads as a malfunction to whoever just watched
-    // their working corpus drop to nothing on sharing it. Name the actual
-    // reason instead; it is also the only state with an action attached.
     const awaiting = (kb.pending_count || 0) > 0;
     if (awaiting && kb.status !== 'indexing' && kb.status !== 'pending') {
         return `<span class="shrink-0 px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">${
@@ -163,7 +135,6 @@ function statusPill(kb) {
     return `<span class="shrink-0 px-2 py-0.5 rounded-full text-[11px] font-medium ${classes}">${label}</span>`;
 }
 
-// --- Create ---------------------------------------------------------------
 
 function openCreateForm() {
     const root = document.getElementById('kb-root');
@@ -209,7 +180,6 @@ function openCreateForm() {
     });
 }
 
-// --- Detail view ----------------------------------------------------------
 
 async function openDetail(kbId) {
     openKbId = kbId;
@@ -233,9 +203,6 @@ async function renderDetail() {
         return;
     }
 
-    // From the server, not re-derived here. `_can_write` already owns this rule
-    // (ownership, not rank — mirroring delete_agent), and a second copy in the
-    // browser would drift the moment that rule changes.
     const mine = !!kb.can_manage;
     const docs = kb.documents || [];
     const pending = kb.pending_count || 0;
@@ -344,14 +311,6 @@ async function renderDetail() {
     else stopPolling();
 }
 
-/**
- * True when every pending document was uploaded by the current user.
- *
- * That is the dead end: separation of duties means you cannot clear your own
- * queue, so a sole Admin who shares a corpus they built watches it drop to
- * zero grounding with no in-product way forward. The rule is right; leaving
- * someone to discover it by staring at an empty index is not.
- */
 function allPendingAreMine(kb, docs) {
     if (!currentUser) return false;
     const pendingDocs = (docs || []).filter(d => d.status === 'pending');
@@ -359,18 +318,6 @@ function allPendingAreMine(kb, docs) {
         pendingDocs.every(d => String(d.uploaded_by) === String(currentUser.id));
 }
 
-/**
- * Inline rename + re-describe, owner only.
- *
- * The name is display-only metadata: it lives in MySQL and never reaches the
- * filesystem (the index is named by the KB's UUID), so renaming touches no
- * vectors and needs no rebuild. That is exactly why it is safe to expose — and
- * worth stating, because "renaming a corpus" sounds like it should be
- * expensive.
- *
- * Agents keep working across a rename for the same reason: they store the id,
- * and the chat header resolves the display name per turn.
- */
 function wireRename(kb) {
     const btn = document.getElementById('kb-edit-name');
     if (!btn) return;
@@ -418,7 +365,6 @@ function wireRename(kb) {
 
         document.getElementById('kb-rename-save').addEventListener('click', save);
         document.getElementById('kb-rename-cancel').addEventListener('click', renderDetail);
-        // Enter saves from the name field; Escape abandons from either.
         input.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') { e.preventDefault(); save(); }
         });
@@ -519,8 +465,6 @@ async function uploadFiles(kb, files) {
         try {
             await api.uploadKnowledgeBaseDocument(kb.id, files[i]);
         } catch (err) {
-            // Report per-file rather than aborting the batch: one unreadable
-            // PDF in a drop of twenty should not discard the other nineteen.
             failures.push(`${files[i].name}: ${err.message}`);
         }
     }
@@ -541,11 +485,6 @@ function docRow(doc, kb, mine) {
         pending:  ['Awaiting approval', 'text-amber-600 dark:text-amber-400'],
         rejected: ['Rejected', 'text-red-600 dark:text-red-400'],
     };
-    // A read-only viewer sees whether a document is grounding answers, not the
-    // workflow state that decided it. "Awaiting review" is kept because a
-    // partially-grounded agent is something an operator must be able to see;
-    // "rejected" becomes "not in use" because the fact of a rejection is
-    // governance deliberation and its reason is not sent to them at all.
     const readOnlyBadges = {
         private:  ['In use', 'text-green-600 dark:text-green-400'],
         approved: ['In use', 'text-green-600 dark:text-green-400'],
@@ -557,7 +496,6 @@ function docRow(doc, kb, mine) {
         : (readOnlyBadges[doc.status] || readOnlyBadges.private);
     const selfUploaded = currentUser && String(doc.uploaded_by) === String(currentUser.id);
     const showReview = kb_shared && doc.status === 'pending' && isReviewer();
-    // Own uploads are reviewable only under the sole-administrator exception.
     const mayReview = showReview && (!selfUploaded || kb.sole_reviewer);
 
     return `
@@ -630,10 +568,6 @@ function wireDocActions(kb) {
     });
 }
 
-// --- Polling --------------------------------------------------------------
-// The indexer runs in its own container, so the only way this view learns a
-// build finished is to ask. Stopped on every re-render and on tab change so a
-// backgrounded Control Panel is not polling forever.
 
 function startPolling(fn) {
     stopPolling();

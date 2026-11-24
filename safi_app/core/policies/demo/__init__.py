@@ -1,8 +1,3 @@
-"""Built-in Business-Unit Policies package.
-
-One policy per built-in agent, defined in its own module and aggregated here.
-Seeded into the `policies` table at startup by application bootstrap.
-"""
 from typing import Any, Dict
 
 from .base import _lift_values, lift_values

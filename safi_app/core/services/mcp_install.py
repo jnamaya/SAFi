@@ -1,13 +1,3 @@
-"""
-Helpers shared by the operator CLI and by discovery (backlog 48, reduced by 48d).
-
-This module used to carry the policy for installing servers from a browser:
-install modes, endpoint validation, approval, the sole-reviewer rule. All of it
-went when installation moved to the CLI, because none of it had a caller left.
-A server now arrives one way, from the operator's file, and the only questions
-remaining are what to call it and whether its own description of itself is safe
-to put in front of a model.
-"""
 from __future__ import annotations
 
 import logging
@@ -20,19 +10,10 @@ log = logging.getLogger(__name__)
 
 _KEY_SAFE = re.compile(r"[^a-z0-9_]+")
 
-# Labels that identify no one. Stripped so a policy author is not asked to
-# authorize a connector called "mcp" or "api".
 _HOST_NOISE = ("mcp", "api", "www", "server", "servers", "app", "co")
 
 
 def connector_key_for_url(url: str) -> str:
-    """Derive a connector key from an endpoint.
-
-    `https://mcp.deepwiki.com/mcp` becomes `deepwiki`, `https://tandem.ac/mcp`
-    becomes `tandem`. The last label is always a TLD and carries no meaning, so
-    it goes first; generic service prefixes go next; what is left is the name a
-    person would use for the thing.
-    """
     from urllib.parse import urlparse
 
     host = (urlparse(url or "").hostname or "").lower()
@@ -45,14 +26,6 @@ def connector_key_for_url(url: str) -> str:
 
 
 def scan_tool_descriptions(tools: Dict[str, Dict[str, Any]], server: str) -> List[str]:
-    """Deterministic scan of third-party tool text before it reaches a model.
-
-    Tool names and descriptions are advertised by the server and enter the
-    Intellect's context as instructions. The operator chose the server, so this
-    is not a gate; it is a report, run once at discovery, using the signature
-    list Phase Zero already owns. No model call and no judgement: a hit is
-    printed, and a person decides what it means.
-    """
     from ...security_policy import EMBEDDED_INSTRUCTION_MARKERS, INJECTION_SIGNATURES
 
     findings: List[str] = []

@@ -1,4 +1,3 @@
-"""Tests for configurable TTS availability (Config.tts_enabled)."""
 from unittest.mock import patch
 
 from safi_app.config import Config

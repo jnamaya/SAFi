@@ -22,20 +22,12 @@ from ..core import pii_validators
 from .. import security_policy
 from ..core.rbac import require_role, check_permission, get_current_org_id
 from ..core import integrity
-# Same check the governance compiler uses, applied at save time: what would
-# raise at chat time is rejected while the admin is still looking at the form.
 from ..core.faculties.synderesis import _has_usable_rubric
 
 organizations_bp = Blueprint('organizations', __name__)
 
 
 def _domain_uses_google_workspace(domain):
-    """Best-effort signal that a domain's mail is hosted on Google Workspace:
-    its MX records point at Google's mail servers. Google has no per-domain
-    discovery endpoint the way Microsoft does, so this is the closest
-    equivalent — a real DNS fact about where the domain is hosted, not an
-    assumption. Returns False (never raises) on any lookup failure, which
-    the caller treats as "not on Google Workspace"."""
     try:
         answers = dns.resolver.resolve(domain, 'MX')
         return any(
@@ -48,12 +40,6 @@ def _domain_uses_google_workspace(domain):
 
 
 def _discover_ms_tenant_id(domain):
-    """Best-effort Microsoft tenant discovery for a just-verified domain.
-    The OIDC discovery document's issuer embeds the tenant's real GUID
-    (https://login.microsoftonline.com/<tenant-guid>/v2.0) — a standard,
-    publicly documented, unauthenticated lookup; no credentials sent, no
-    secret exposed. Returns None (never raises) on any failure, which the
-    caller treats as "this domain isn't on Microsoft", not an error."""
     try:
         resp = requests.get(
             f"https://login.microsoftonline.com/{domain}/v2.0/.well-known/openid-configuration",
@@ -86,16 +72,6 @@ def start_domain_verification():
     if not org_id or not domain:
         return jsonify({"error": "Missing org_id or domain"}), 400
 
-    # A domain can be verified by ONE organization (backlog 78). Nothing used to
-    # stop two orgs verifying the same one, and because get_organization_by_domain
-    # takes the first row with no ordering, which org then "owned" the domain was
-    # arbitrary. That matters: a verified domain outranks invitations and drives
-    # auto-join, so an ambiguous owner sends new people to an arbitrary tenant.
-    #
-    # Refused here rather than resolved, because the alternative (moving people
-    # or the domain between orgs) would let a later verifier take over an
-    # existing organization. Reconciliation is a support conversation, not
-    # something an endpoint should decide.
     existing = db.get_organization_by_domain(str(domain).strip().lower())
     if existing and str(existing['id']) != str(org_id):
         return jsonify({
@@ -141,9 +117,6 @@ def verify_domain_dns():
         if not domain or not token:
             return jsonify({"error": "No verification in progress."}), 400
 
-        # Re-checked at the moment of commit, not only at start (backlog 78).
-        # The start check can be minutes or days old, and another org can verify
-        # the same domain in between, so this is the one that actually decides.
         owner = db.get_organization_by_domain(str(domain).strip().lower())
         if owner and str(owner['id']) != str(org_id):
             return jsonify({
@@ -165,18 +138,12 @@ def verify_domain_dns():
         if found:
             db.confirm_domain_verification(org_id)
             
-            # Auto-rename to the verified domain (e.g. "My Org" -> "example.com").
             try:
                 db.update_organization_name(org_id, domain)
                 current_app.logger.info(f"Auto-renamed Org {org_id} to {domain}")
             except Exception as e:
                 current_app.logger.error(f"Failed to auto-rename org verify: {e}")
 
-            # Proving the domain claims its identities (backlog 78): existing
-            # accounts on it join this org as members, and this admin decides who
-            # is promoted. Never fatal to the verification itself, which already
-            # succeeded and is committed; a failure here is reported and left for
-            # a retry rather than rolling back a proven domain.
             absorbed = {"moved": [], "skipped": [], "emptied_orgs": [],
                         "orgs_without_authority": []}
             try:
@@ -192,17 +159,6 @@ def verify_domain_dns():
             except Exception as e:
                 current_app.logger.error(f"Domain absorption failed for {domain}: {e}")
 
-            # A DNS-verified domain is the strongest ownership signal this
-            # system has — turn it into the thing that actually restricts
-            # logins (backlog 52 follow-up). domain_verified itself gates
-            # nothing on its own in single-tenant deployments; google_hd /
-            # ms_tenant_id are what _org_claim_gate actually checks,
-            # regardless of tenancy mode. Each is only set when there is an
-            # actual signal the domain is hosted there — a domain on
-            # neither (a third-party mail host) gets neither set, which is
-            # correct: nothing to restrict against on a provider nobody at
-            # this org will ever log in through. Never fatal to the
-            # verification, which already committed.
             identity_configured = {}
             try:
                 identity_changes = {}
@@ -223,9 +179,6 @@ def verify_domain_dns():
                 "status": "verified",
                 "domain": domain,
                 "identity_configured": identity_configured,
-                # The admin needs to see this: people they did not invite are now
-                # members of their org, and any org left without an admin or
-                # without members needs an operator to reconcile it.
                 "absorbed": absorbed["moved"],
                 "orgs_without_admin": absorbed["orgs_without_authority"],
                 "emptied_orgs": absorbed["emptied_orgs"],
@@ -234,13 +187,11 @@ def verify_domain_dns():
             return jsonify({
                 "status": "failed", 
                 "error": "Token not found in DNS TXT records."
-            }), 200 # Return 200 so frontend handles it gracefully
+            }), 200
             
     except dns.resolver.NXDOMAIN:
         return jsonify({"status": "failed", "error": "Domain does not exist."}), 200
     except dns.resolver.NoAnswer:
-        # The domain resolves but has no TXT records at all yet. This is the
-        # normal state right after starting verification, not a server error.
         return jsonify({
             "status": "failed",
             "error": "No TXT records found on the domain yet. DNS changes can take a few minutes to a few hours to propagate."
@@ -258,26 +209,6 @@ def verify_domain_dns():
 @organizations_bp.route('/organizations/domain/verify-directory', methods=['POST'])
 @require_role('admin')
 def verify_domain_directory():
-    """Verify a domain through the configured LDAP/AD directory instead of DNS.
-
-    Internal namespaces (safi.local, corp.ad, ...) have no public DNS to put
-    a TXT record on, so DNS verification is structurally impossible for them.
-    The equivalent ownership proof for such a domain is the directory itself:
-    if the deployment's bound directory lists the domain as a naming context
-    (rootDSE namingContexts / rootDomainNamingContext), then whoever controls
-    the directory controls every identity on that domain — the same claim a
-    TXT record makes for a public domain. Nothing about any specific domain
-    is hardcoded: the proof is read live from whatever directory this
-    deployment is configured against.
-
-    Guards:
-    - Only allowed when the domain is NOT publicly resolvable: a domain with
-      real DNS must go through TXT verification, the stronger,
-      deployment-independent proof. Directory verification is a fallback for
-      namespaces that have no DNS to check.
-    - Same one-owner-per-domain rule and moment-of-commit recheck as the DNS
-      path (backlog 78), and the same org_id scoping.
-    """
     from ..core import ldap_client
 
     data = request.json or {}
@@ -297,7 +228,6 @@ def verify_domain_directory():
     if not domain or not token:
         return jsonify({"error": "No verification in progress."}), 400
 
-    # One-owner rule, rechecked at commit (mirrors verify_domain_dns).
     owner = db.get_organization_by_domain(domain)
     if owner and str(owner['id']) != str(org_id):
         return jsonify({
@@ -315,8 +245,6 @@ def verify_domain_directory():
                      "verification instead."
         }), 200
 
-    # Guard: only for domains without public DNS. If the domain resolves
-    # publicly, TXT verification is available and is the stronger proof.
     try:
         dns.resolver.resolve(domain, 'SOA')
         return jsonify({
@@ -327,7 +255,7 @@ def verify_domain_directory():
                      "namespaces without public DNS."
         }), 200
     except dns.exception.DNSException:
-        pass  # NXDOMAIN / no answer / timeout: internal namespace, proceed
+        pass
     except Exception as e:
         current_app.logger.error(f"SOA precheck failed for {domain}: {e}")
 
@@ -351,10 +279,6 @@ def verify_domain_directory():
                       detail={"domain": domain,
                               "directory_contexts": proof["contexts"]})
 
-    # Same post-verification action as the DNS path: absorb existing
-    # accounts on the domain into this org. (No auto-rename and no
-    # google_hd/ms_tenant_id autoconfig: an internal directory domain has
-    # no Workspace/Entra counterpart to discover.)
     absorbed = {"moved": [], "skipped": [], "emptied_orgs": [],
                 "orgs_without_authority": []}
     try:
@@ -380,12 +304,6 @@ def verify_domain_directory():
 @organizations_bp.route('/organizations/<org_id>/usage', methods=['GET'])
 @require_role('admin')
 def get_org_usage(org_id):
-    """
-    [GET /api/organizations/<org_id>/usage?days=30]
-    Aggregated LLM token usage for the Usage & Cost tab (backlog 61).
-    Raw counts plus the display-time price map; dollars are computed in the
-    browser so a price change never rewrites stored history.
-    """
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
     try:
@@ -403,14 +321,6 @@ def get_org_usage(org_id):
 @organizations_bp.route('/organizations/usage/deployment', methods=['GET'])
 @require_role('admin')
 def get_deployment_usage():
-    """
-    [GET /api/organizations/usage/deployment?days=30]
-    Whole-deployment usage grouped by org (backlog 65) — the operator's view
-    of who spends the shared .env provider keys. Gated on SAFI_SUPER_ADMINS
-    (deployment config), never on any org role: an org admin who is not a
-    named super admin gets 403 and the Usage & Cost tab skips the section
-    silently. Blank SAFI_SUPER_ADMINS = nobody, the documented safe default.
-    """
     from ..config import Config
     user = session.get('user') or {}
     user_id = user.get('sub') or user.get('id')
@@ -432,7 +342,6 @@ def get_deployment_usage():
         return jsonify({"error": "Internal Server Error"}), 500
 
 def _provider_keys_forbidden(org_id):
-    """Shared guard for the provider-key endpoints: admin of THIS org only."""
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
     return None
@@ -441,23 +350,12 @@ def _provider_keys_forbidden(org_id):
 @organizations_bp.route('/organizations/<org_id>/provider-keys', methods=['GET'])
 @require_role('admin')
 def list_provider_keys(org_id):
-    """
-    [GET /api/organizations/<org_id>/provider-keys]
-    Which providers this org holds its own key for — display shape only
-    (provider, last 4, updated). The key itself is write-only and never
-    returned by any endpoint. Also carries the provider options and whether
-    the deployment has its own .env key for each.
-    """
     forbidden = _provider_keys_forbidden(org_id)
     if forbidden:
         return forbidden
     from ..core.services.deployment_keys import deployment_key_providers
     from ..core.services.model_routing import PROVIDER_METADATA, configured_providers
     from ..config import Config
-    # A DB deployment key is as much a deployment-level fallback as a .env one:
-    # it is what calls resolve to when this org has no key of its own. Excluding
-    # it here showed an org "no deployment key" for a provider that was actually
-    # working, which reads as a broken setup rather than an inherited default.
     deployment = configured_providers(Config) | deployment_key_providers()
     try:
         return jsonify({
@@ -481,12 +379,6 @@ def list_provider_keys(org_id):
 @organizations_bp.route('/organizations/<org_id>/provider-keys', methods=['PUT'])
 @require_role('admin')
 def set_provider_key(org_id):
-    """
-    [PUT /api/organizations/<org_id>/provider-keys]  {provider, key}
-    Stores the org's own key for one provider, encrypted. It overlays the
-    deployment .env key for this org's calls within a minute (per-worker
-    cache TTL). The key is never echoed back and never logged.
-    """
     forbidden = _provider_keys_forbidden(org_id)
     if forbidden:
         return forbidden
@@ -504,7 +396,6 @@ def set_provider_key(org_id):
     try:
         db.set_org_provider_key(org_id, provider, key, updated_by=user_id)
         invalidate_org_keys_cache(org_id)
-        # Evidence: the change, never the key.
         db.append_compliance_log(org_id, 'provider_key_change', f"user:{user_id}",
                                  {"action": "set", "provider": provider,
                                   "last4": key[-4:]})
@@ -517,10 +408,6 @@ def set_provider_key(org_id):
 @organizations_bp.route('/organizations/<org_id>/provider-keys', methods=['DELETE'])
 @require_role('admin')
 def delete_provider_key(org_id):
-    """
-    [DELETE /api/organizations/<org_id>/provider-keys?provider=x]
-    Removes the org's key; calls fall back to the deployment .env default.
-    """
     forbidden = _provider_keys_forbidden(org_id)
     if forbidden:
         return forbidden
@@ -545,19 +432,12 @@ def delete_provider_key(org_id):
 @organizations_bp.route('/organizations/<org_id>/scim', methods=['GET'])
 @require_role('admin')
 def get_scim_config(org_id):
-    """SCIM directory-sync status for the admin UI (backlog 68): enabled,
-    whether a token exists (never the token itself), the base URL the IdP
-    points at, the group->role map, and how many resources the IdP has pushed.
-    """
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
     from ..persistence import scim_store
     from ..config import Config
     try:
         cfg = scim_store.get_config(org_id)
-        # The deployment's declared public URL, not request.url_root: it is the
-        # real external base an IdP must call, with the correct scheme. SCIM
-        # requires HTTPS, so surface whether this deployment provides it.
         base = Config.WEB_BASE_URL.rstrip('/') + '/scim/v2'
         return jsonify({
             "ok": True,
@@ -594,8 +474,6 @@ def set_scim_enabled(org_id):
 @organizations_bp.route('/organizations/<org_id>/scim/token', methods=['POST'])
 @require_role('admin')
 def rotate_scim_token(org_id):
-    """Generate a new SCIM bearer token and return it ONCE. Any previous token
-    stops working immediately. Only the hash is stored."""
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
     from ..persistence import scim_store
@@ -672,7 +550,6 @@ def cancel_domain_verification():
         return jsonify({"error": "Internal Server Error"}), 500
 
 @organizations_bp.route('/organizations', methods=['POST'])
-# Any authenticated user may create an organization; there is no role gate.
 def create_organization():
     user = session.get('user')
     user_id = user.get('id') if user else None
@@ -686,7 +563,6 @@ def create_organization():
     try:
         result = create_organization(name, user_id)
         
-        # The user's generic session is left alone; only the new org id is returned.
         
         return jsonify({
             "status": "created", 
@@ -716,12 +592,8 @@ def update_organization_policy(org_id):
 @organizations_bp.route('/organizations/me', methods=['GET'])
 def get_my_organization():
     user = session.get('user')
-    # Local appliance accounts may intentionally have no email. Membership is
-    # already represented by org_id, so an email requirement incorrectly hid
-    # a valid organization from username-only admins.
     if not user: return jsonify({"organization": None})
     
-    # The stored org_id wins over the email domain.
     if user.get('org_id'):
        org = db.get_organization(user['org_id'])
        return jsonify({"organization": org})
@@ -748,9 +620,6 @@ def update_organization(org_id):
             db.append_compliance_log(org_id, 'org_renamed', actor, {"name": name})
 
         if settings:
-            # governance_split and spirit_beta change how every agent in the org
-            # is scored, so the VALUES are the evidence here, not just the fact
-            # that something moved.
             before = {}
             try:
                 existing = (db.get_organization(org_id) or {}).get('settings') or {}
@@ -801,11 +670,6 @@ def update_user_role(org_id, user_id):
         return jsonify({"error": "Invalid role"}), 400
         
     try:
-        # Read the prior role first: update_member_role journals it to
-        # auth_events, but that table has no reader — no endpoint, no UI — so
-        # the record exists where nobody can see it. The compliance log is what
-        # records_api surfaces, and a role change is an access-control event an
-        # auditor expects to find beside the config changes it enables.
         prior = (db.get_user_details(user_id) or {}).get('role')
         db.update_member_role(
             user_id, org_id, new_role, actor=_actor(),
@@ -815,17 +679,11 @@ def update_user_role(org_id, user_id):
             "member": user_id,
             "prior_role": prior,
             "new_role": new_role,
-            # Called out on its own because it is the change that matters most:
-            # admin is the role that can rewrite the Charter, the AI Standards
-            # and every policy.
             "admin_granted": new_role == 'admin' and prior != 'admin',
             "admin_revoked": prior == 'admin' and new_role != 'admin',
         })
         return jsonify({"status": "updated", "user_id": user_id, "role": new_role})
     except db.LastAuthorityRoleError as e:
-        # 409: valid request, conflicts with current state. The message is
-        # deliberately surfaced — a generic 500 here would leave the admin with
-        # no idea why the change was refused or how to proceed.
         return jsonify({"error": str(e)}), 409
     except Exception as e:
         current_app.logger.error(f"Error updating role: {e}")
@@ -839,11 +697,6 @@ def remove_organization_member(org_id, user_id):
 
     try:
         prior = (db.get_user_details(user_id) or {}).get('role')
-        # Off-boarding reaches the member's connected tool servers too: their
-        # agents are about to be out of reach, so a token nothing can consume
-        # would be pure blast radius, at SAFi and inside the gateways alike.
-        # Best effort BEFORE the rows die (the token is the proof of
-        # possession revocation requires); removal proceeds regardless.
         from ..core.services import mcp_oauth
         revoked = mcp_oauth.revoke_all_mcp_tokens(user_id)
         for key in revoked:
@@ -853,9 +706,6 @@ def remove_organization_member(org_id, user_id):
             administrator_roles=ROLE_CONFIG["organization_admin_roles"],
             default_role=ROLE_CONFIG["default_role"],
         )
-        # Sharing rows must not outlive the membership: direct grants and
-        # group memberships in this org go with the member (backlog 55),
-        # and so do direct conversation/folder shares (backlog 56).
         from ..persistence import sharing_store, conversation_sharing_store
         sharing_store.remove_user_from_org_sharing(user_id, org_id)
         conversation_sharing_store.remove_user_from_org_sharing(user_id, org_id)
@@ -870,14 +720,8 @@ def remove_organization_member(org_id, user_id):
         return jsonify({"error": "An internal error occurred."}), 500
 
 
-# ADMIN-PROVISIONED LOCAL ACCOUNTS (appliance/offline deployments)
-
 def _generate_local_password():
-    """Server-side credential generation: the admin never picks the password,
-    so no weak/shared secrets, and the plaintext exists only in the one HTTP
-    response that hands it over — never in a log or in the database."""
     import secrets
-    # 20 chars of a 70-symbol alphabet ≈ 123 bits: strong, no ambiguous glyphs.
     alphabet = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#%*-_=+"
     return "".join(secrets.choice(alphabet) for _ in range(20))
 
@@ -885,9 +729,6 @@ def _generate_local_password():
 @organizations_bp.route('/organizations/<org_id>/members/local', methods=['POST'])
 @require_role('admin')
 def create_local_member(org_id):
-    """[POST .../members/local] Admin creates an appliance account: username +
-    password (custom or server-generated), no email, no IdP. Same trust model as an
-    invitation — the admin is the authority — minus the SMTP delivery."""
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
     if str(_actor() or "").startswith("demo_"):
@@ -913,7 +754,6 @@ def create_local_member(org_id):
         return jsonify({"error": str(e)}), 400
 
     if not created:
-        # 409 not 400: the request itself was valid, the identifier is taken.
         return jsonify({"error": "That username (or matching email) is already in use."}), 409
 
     from ..persistence import sharing_store
@@ -944,8 +784,6 @@ def create_local_member(org_id):
     current_app.logger.info("Local account created: %s (by %s) with %d group(s)", username, _actor(), len(added_groups))
     return jsonify({"status": "created", "user_id": created["user_id"],
                     "username": created["username"],
-                    # Shown once in the admin UI; the admin hands it over out of
-                    # band. Nothing plaintext is persisted anywhere.
                     "initial_password": password,
                     "groups": added_groups}), 201
 
@@ -953,8 +791,6 @@ def create_local_member(org_id):
 @organizations_bp.route('/organizations/<org_id>/members/<user_id>/password', methods=['POST'])
 @require_role('admin')
 def reset_member_password(org_id, user_id):
-    """[POST .../members/<id>/password] Admin resets a local account's
-    password; a fresh server-generated one is returned once."""
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
 
@@ -968,28 +804,15 @@ def reset_member_password(org_id, user_id):
                     "initial_password": password})
 
 
-# ENTERPRISE IDENTITY (Phase 1): member sessions, invitations, identity config
-
 def _actor():
     user = session.get('user') or {}
     return user.get('email') or user.get('id') or 'unknown'
 
 
-_INVITE_CLAIM_EXPIRES_DAYS = 14  # matches create_org_invitation's own default
+_INVITE_CLAIM_EXPIRES_DAYS = 14
 
 
 def _send_invite_claim_email(inv, org):
-    """Backlog 51: emails the SMTP-delivered claim link for a freshly
-    created invitation. The email IS the verification — only whoever can
-    read this exact inbox ever sees the token — which is why there is no
-    "copy invite link" affordance anywhere in the admin UI. A copied link
-    could be pasted anywhere (a Slack channel, a group chat) and would then
-    prove nothing about who is actually claiming it.
-
-    Raises on any SMTP failure; the caller treats that as
-    claim_email_sent=False without failing the invite-creation request —
-    the invitation itself was already created and still works if the
-    invitee already has a matching Google or Microsoft account."""
     from .auth import issue_invite_claim_token
 
     token = issue_invite_claim_token(inv['id'], inv['email'], _INVITE_CLAIM_EXPIRES_DAYS)
@@ -1039,7 +862,7 @@ def list_member_sessions(org_id, user_id):
         return jsonify({"error": "Not a member of this organization"}), 404
     rows = db.list_user_sessions(user_id)
     return jsonify({"ok": True, "sessions": [{
-        "id": r["id"][:8] + "…",  # opaque preview — admins revoke in bulk, never need the full sid
+        "id": r["id"][:8] + "…",
         "created_at": utc_isoformat(r.get("created_at")),
         "last_seen_at": utc_isoformat(r.get("last_seen_at")),
         "ip": r.get("ip"), "user_agent": r.get("user_agent"),
@@ -1049,7 +872,6 @@ def list_member_sessions(org_id, user_id):
 @organizations_bp.route('/organizations/<org_id>/members/<user_id>/sessions', methods=['DELETE'])
 @require_role('admin')
 def revoke_member_sessions(org_id, user_id):
-    """Force-logout a member everywhere (admin off-boarding lever)."""
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
     if not _member_of_org(org_id, user_id):
@@ -1087,10 +909,6 @@ def create_invitation(org_id):
         current_app.logger.error(f"Error creating invitation: {e}")
         return jsonify({"error": "An internal error occurred."}), 500
 
-    # Claim-link email (backlog 51): only when SMTP is configured. No
-    # fallback link is ever surfaced in the admin UI when it isn't — an
-    # unsent link would be indistinguishable from a verified one to whoever
-    # the admin might otherwise be tempted to hand it to directly.
     claim_email_sent = False
     if Config.smtp_configured():
         try:
@@ -1138,9 +956,6 @@ def update_identity_config(org_id):
         return jsonify({"error": "An internal error occurred."}), 500
 
 
-# LDAP PHASE 2 — directory group → role mappings (admin-managed, evaluated
-# at login time; see _apply_ldap_role_mapping in api/auth.py).
-
 @organizations_bp.route('/organizations/<org_id>/ldap/group-mappings', methods=['GET'])
 @require_role('admin')
 def list_ldap_group_mappings(org_id):
@@ -1180,7 +995,6 @@ def delete_ldap_group_mapping(org_id, mapping_id):
     return (jsonify({"ok": True}) if ok
             else (jsonify({"error": "Mapping not found"}), 404))
 
-# CHARTER ROUTES
 
 @organizations_bp.route('/organizations/<org_id>/charter', methods=['GET'])
 def get_charter(org_id):
@@ -1209,9 +1023,6 @@ def upsert_charter(org_id):
 
     try:
         user = session.get('user', {})
-        # Counts and a diff summary, never the text itself — the convention the
-        # log already follows. Enough to answer "who changed the charter, when,
-        # and did the values change or only the mission".
         prev = db.get_charter(org_id) or {}
         db.upsert_charter(org_id, mission, core_values, created_by=user.get('id'))
         db.append_compliance_log(org_id, 'charter_saved', f"user:{user.get('id')}", {
@@ -1243,21 +1054,9 @@ def delete_charter(org_id):
         return jsonify({"error": "An internal error occurred."}), 500
 
 
-# A separate resource from the charter, because they are separate artifacts: a
-# charter is who the organization is and every organization has one; AI
-# standards say how its AI must behave and are optional. Adopting or dropping
-# them must not touch the charter, which is why this is not another field on it.
-
 @organizations_bp.route('/organizations/<org_id>/pii-checks', methods=['GET'])
 @require_role('admin')
 def list_pii_checks(org_id):
-    """[GET] The fixed catalogue of sensitive-data checks the UI renders.
-
-    Served rather than hardcoded in JS so the labels, and in particular each
-    check's honest precision note, come from the same place the detectors do.
-    An admin ticking a box should be able to see that the routing-number check
-    is the loosest one BEFORE enabling it, not discover it in production.
-    """
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
     return jsonify({"checks": pii_validators.catalogue(security_policy.PII_CATALOGUE)})
@@ -1295,21 +1094,9 @@ def upsert_ai_standards(org_id):
     if allowed_tools is not None and not isinstance(allowed_tools, list):
         return jsonify({"error": "allowed_tools must be an array or null"}), 400
 
-    # A disclaimer that is required but has no substring to look for is a config
-    # error the Will can only log and skip, so it would read as enforced while
-    # enforcing nothing — reject it here instead.
     if structural.get('require_disclaimer') and not str(structural.get('mandatory_disclaimer_substring') or '').strip():
         return jsonify({"error": "A required disclaimer needs the exact text to check for."}), 400
 
-    # PII validators (GOVERNANCE_BACKLOG 83). The settings UI offers a fixed
-    # menu, so ANY key outside the catalogue is either a bug or an attempt to
-    # smuggle in a pattern. Rejected loudly at save time rather than dropped
-    # silently: an admin who thinks they enabled something must not find out at
-    # audit time that they did not.
-    #
-    # There is deliberately no free-text field anywhere in this path. A caller
-    # supplied regex would run on every turn inside the deterministic tier,
-    # where there is no timeout and no model to blame.
     pii = structural.get('pii_validators')
     if pii is not None:
         if not isinstance(pii, list):
@@ -1321,9 +1108,6 @@ def upsert_ai_standards(org_id):
                 "Unknown sensitive-data check(s): %s. Valid options are: %s."
                 % (", ".join(unknown[:5]), ", ".join(security_policy.PII_CATALOGUE))
             )}), 400
-        # Normalized so storage order is stable and duplicates cannot accumulate
-        # across saves. An empty list is a legitimate value: it means the org
-        # turned every check off, which is the default state.
         structural['pii_validators'] = pii_validators.normalize(
             pii, security_policy.PII_CATALOGUE
         )
@@ -1338,11 +1122,6 @@ def upsert_ai_standards(org_id):
             return jsonify({"error": "alignment_score_threshold must be between 0 and 1"}), 400
         structural['alignment_score_threshold'] = threshold
 
-    # Each standard is BLOCKING (a hard gate) or SCORED, chosen per standard.
-    # Both are audited, so both need criteria: a blocking one the Conscience
-    # cannot score fails closed on every request across the whole organization,
-    # and a scored one it cannot score is silently stripped by the compiler and
-    # freezes the Spirit average. Reject either at save time.
     cleaned = []
     for v in values:
         if not isinstance(v, dict):
@@ -1366,9 +1145,6 @@ def upsert_ai_standards(org_id):
             weight = 0.0
         cleaned.append({
             **v, "name": name, "hard_gate": blocking,
-            # Blocking standards sit outside the weight split at 0. Scored ones
-            # share the organization's slice with the charter's values, so they
-            # need a positive weight to be normalized against.
             "weight": 0.0 if blocking else (weight if weight > 0 else 1.0),
         })
 
@@ -1380,9 +1156,6 @@ def upsert_ai_standards(org_id):
             early_prompt_blacklist=blacklist, allowed_tools=allowed_tools,
             created_by=user.get('id'),
         )
-        # Non-negotiable standards get named individually: each one can stop
-        # every response from every agent, so "which ones were non-negotiable on
-        # the day traffic stopped" has to be answerable from the log alone.
         db.append_compliance_log(org_id, 'ai_standards_saved', f"user:{user.get('id')}", {
             "created": not prev,
             "standards_before": len(prev.get('values') or []),
@@ -1415,37 +1188,17 @@ def delete_ai_standards(org_id):
         return jsonify({"error": "An internal error occurred."}), 500
 
 
-# The boot integrity check (`safi_app/core/integrity.py`) compares the files
-# against the in-tree manifest. It cannot answer the authenticity question:
-# a local tamper can regenerate that manifest. This endpoint answers it by
-# comparing the manifest's fingerprint against the official release list
-# published on the project website, which is append-only. "Unreachable" is its
-# own answer and never a pass. The logic lives in the API layer on purpose:
-# `core/integrity.py` is a Core Loop file, and touching it would move the TCB
-# fingerprint for every install.
-
 _TCB_RELEASES_URL = os.environ.get(
     "SAFI_TCB_RELEASES_URL",
     "https://selfalignmentframework.com/tcb/releases.json",
 )
-# The signature is always the message file plus ".minisig", published next to
-# the list, so it follows any SAFI_TCB_RELEASES_URL override.
 _TCB_SIG_URL = _TCB_RELEASES_URL + ".minisig"
-# The pinned public half of the release-registry signing key. Shipped in the
-# image (Dockerfile COPYs safi_app/) and published at /tcb/TCB_KEY.pub; the two
-# copies must be byte-identical, and the git history is the anchor outside the
-# website. This is what "the key on the website" points at: a deployment that
-# holds a different key rejects the list instead of accepting it.
 _TCB_PUBKEY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tcb_key.pub")
 _TCB_CACHE_TTL_SECONDS = 300
 _tcb_cache = {"at": 0.0, "releases": None}
 
 
 def _parse_minisign_pubkey(text):
-    """Parse a minisign public key file into (keynum, 32-byte ed25519 key).
-    File layout (minisign >= 0.5): an untrusted comment line, then base64 of
-    b"Ed" + keynum(8) + public_key(32). Returns None on any malformation, so
-    a bad pinned key fails closed instead of being skipped."""
     try:
         lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
         if len(lines) < 2 or not lines[0].startswith("untrusted comment:"):
@@ -1459,10 +1212,6 @@ def _parse_minisign_pubkey(text):
 
 
 def _verify_minisig(payload, sig_text, keynum, public_key):
-    """Verify a minisign (legacy, raw-message) ed25519 signature over the exact
-    payload bytes. Signature layout: base64 of b"Ed" + keynum(8) + sig(64).
-    Returns (ok, reason). The keynum in the signature must equal the pinned
-    one; a signature made by a different key fails both checks."""
     try:
         lines = [ln.strip() for ln in sig_text.splitlines() if ln.strip()]
         if len(lines) < 2 or not lines[0].startswith("untrusted comment:"):
@@ -1481,8 +1230,6 @@ def _verify_minisig(payload, sig_text, keynum, public_key):
 
 
 def _load_tcb_pubkey():
-    """The pinned registry key from this image. None means the deployment has
-    no key at all, which must NOT fall through to "list trusted"."""
     try:
         with open(_TCB_PUBKEY_PATH, encoding="utf-8") as f:
             return _parse_minisign_pubkey(f.read())
@@ -1491,15 +1238,6 @@ def _load_tcb_pubkey():
 
 
 def _fetch_tcb_releases():
-    """Fetch and authenticate the official release fingerprint list. Returns
-    (reachable, verified, releases, error).
-
-    `reachable` means the site answered with a list body. `verified` means
-    that body's signature matched the pinned key. A reachable site serving an
-    unauthenticated list is a threat, not an outage, so the verdict caller
-    treats verified=False as unverifiable; only transport/read failures are
-    offline. `releases` is a list of dicts or None. Cached for a short TTL so
-    every org admin clicking the button does not hammer the site."""
     now = time.time()
     if _tcb_cache["releases"] is not None and now - _tcb_cache["at"] < _TCB_CACHE_TTL_SECONDS:
         return True, True, _tcb_cache["releases"], None
@@ -1546,9 +1284,6 @@ def _fetch_tcb_releases():
                                 releases = parsed
                                 _tcb_cache.update(at=now, releases=releases)
                             else:
-                                # A signed list with no usable releases cannot
-                                # establish membership; that is unverifiable,
-                                # not a clean "not on the list".
                                 error = "published list contains no releases"
     except requests.RequestException as e:
         error = f"unreachable: {e}"[:200]
@@ -1556,12 +1291,6 @@ def _fetch_tcb_releases():
 
 
 def _detect_git_branch(start=None, max_parents=4):
-    """Best-effort git branch of the running tree, read from .git/HEAD (a
-    plain text file; no git binary needed). The Dockerfile deliberately does
-    not copy .git, so a stock image has no answer; deployments that bind the
-    checkout (the local compose) report their branch. A hint for the
-    operator, never part of the verdict: a tamperer can edit .git, but not
-    the fingerprint check. Never raises."""
     try:
         here = os.path.abspath(start or os.path.dirname(__file__))
         for _ in range(max_parents):
@@ -1584,14 +1313,6 @@ def _detect_git_branch(start=None, max_parents=4):
 @organizations_bp.route('/organizations/<org_id>/tcb-verify', methods=['POST'])
 @require_role('admin')
 def tcb_verify(org_id):
-    """
-    [POST /api/organizations/<org_id>/tcb-verify]
-    Verifies this deployment's TCB against the official release fingerprint
-    list published on the project website, and writes the result to the
-    compliance log. The on-disk view is computed fresh so the answer reflects
-    the files right now; the boot view is what this process imported at
-    startup and stamps into governance records.
-    """
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
 
@@ -1620,9 +1341,6 @@ def tcb_verify(org_id):
     elif not reachable:
         verdict = "offline"
     elif not verified:
-        # The site answered but the list did not authenticate against the
-        # pinned key. That is a trust failure, never a pass and never an
-        # outage: it means a registry this deployment cannot account for.
         verdict = "unverifiable"
     elif official:
         verdict = "authentic"
@@ -1667,14 +1385,8 @@ def tcb_verify(org_id):
     }
 
     try:
-        # The full result is the evidence record: verdict, fingerprints, the
-        # branch, and the remote state. Storing it whole is what lets the
-        # settings card and the compliance tab re-render the last check from
-        # the log alone, without re-verifying on every page load.
         db.append_compliance_log(org_id, 'tcb_verify', f"user:{_actor()}", result)
     except Exception as e:
-        # The verification answer must not be lost because the audit write
-        # failed; log loudly and still return the result.
         current_app.logger.error(f"tcb_verify: compliance log write failed: {e}")
 
     return jsonify(result)
@@ -1683,11 +1395,6 @@ def tcb_verify(org_id):
 @organizations_bp.route('/organizations/<org_id>/tcb-verify/last', methods=['GET'])
 @require_role('admin')
 def last_tcb_verify(org_id):
-    """[GET /api/organizations/<org_id>/tcb-verify/last]
-    The most recent verification stored in the compliance log, so the
-    settings card can persist its last verdict across page loads without
-    re-running the check. `found` is false when nothing has been recorded.
-    """
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
     try:

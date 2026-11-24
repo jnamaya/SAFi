@@ -1,43 +1,3 @@
-"""
-OAuth 2.1 client for MCP tool servers (GOVERNANCE_BACKLOG 48i).
-
-This is the other half of the credential story. An MCP server installed with a
-token in its environment is a service principal: one identity for everybody,
-attribution lost. A server that implements the MCP authorization specification
-instead advertises an Authorization Server, and SAFi acts as an OAuth client:
-each member signs in once, SAFi holds a token for THAT member, and every tool
-call runs as the person who asked for it.
-
-THE NO-PASSTHROUGH RULE, WHICH SHAPES EVERYTHING HERE
-------------------------------------------------------
-SAFi never requests or holds an upstream (e.g. Google) token. The token minted
-for us carries `aud` = the MCP server's URI — asked for explicitly via
-RFC 8707's `resource` parameter at BOTH the authorization and token endpoints —
-and is useless anywhere else. The MCP server validates it against the IdP's
-JWKS and does its own upstream exchange (RFC 8693) if it needs one. So a token
-stolen from SAFi's database opens exactly one tool server, not a mailbox, and
-the server can never be confused into replaying our token at Google because
-Google would not accept it.
-
-WHAT IS IMPLEMENTED
--------------------
-* Discovery: RFC 9728 Protected Resource Metadata at the server's
-  /.well-known/oauth-protected-resource (path-suffixed variant tried too),
-  then RFC 8414 Authorization Server Metadata, falling back to OpenID Connect
-  discovery — real IdPs ship one or the other.
-* PKCE (S256), mandatory. There is no non-PKCE path and no implicit flow.
-* Dynamic Client Registration (RFC 7591) when the AS advertises a
-  registration_endpoint and the operator supplied no client_id. The
-  registration is per deployment and persisted (mcp_store), not per user.
-* Token exchange and refresh, both carrying `resource`.
-* Storage: the existing encrypted oauth_tokens table, provider "mcp:<key>",
-  so retention, encryption and the same-transaction evidence row all come for
-  free and identically to the delegated-OAuth connectors.
-
-Everything here is deterministic plumbing: requests, redirects and parameter
-checks. No model is ever involved, and nothing here grants a tool — the Will's
-gate is upstream of every call this module authenticates.
-"""
 from __future__ import annotations
 
 import base64
@@ -65,27 +25,19 @@ _ENV_REF = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
 
 def _expand_env(value: str) -> str:
-    """${VAR} from the process environment, the same convention the server
-    file uses for stdio env blocks. The definition is a file that gets copied;
-    a client secret written into it literally will eventually leak."""
     return _ENV_REF.sub(lambda m: os.environ.get(m.group(1), ""), value or "")
 
-# Discovery results barely change and are re-read on every login redirect, so a
-# short cache keeps the login route from hammering the IdP. Failures are never
-# cached: an IdP outage should not stick for ten minutes.
 _DISCOVERY_TTL = 600
 _discovery_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
 
 
 class OAuthConfigError(Exception):
-    """The server or its IdP is not set up in a way this flow can use."""
+    pass
 
 
 def provider_key(server_key: str) -> str:
     return f"{PROVIDER_PREFIX}{server_key}"
 
-
-# ── Discovery ─────────────────────────────────────────────────────────────────
 
 def _get_json(url: str) -> Optional[Dict[str, Any]]:
     try:
@@ -100,14 +52,6 @@ def _get_json(url: str) -> Optional[Dict[str, Any]]:
 
 
 def discover(server_url: str) -> Dict[str, Any]:
-    """Resolve a server URL to its IdP's endpoints, per the MCP auth spec.
-
-    Returns {resource, issuer, authorization_endpoint, token_endpoint,
-    registration_endpoint?, revocation_endpoint?, scopes_supported?}. Raises
-    OAuthConfigError with a reason an operator can act on: "the server publishes
-    no resource metadata" is a different problem from "its IdP publishes no
-    metadata", and collapsing them costs someone an afternoon.
-    """
     cached = _discovery_cache.get(server_url)
     if cached and time.time() - cached[0] < _DISCOVERY_TTL:
         return cached[1]
@@ -116,8 +60,6 @@ def discover(server_url: str) -> Dict[str, Any]:
     origin = f"{parsed.scheme}://{parsed.netloc}"
     path = parsed.path.rstrip("/")
 
-    # RFC 9728: the well-known may be at the origin root or path-suffixed
-    # (/.well-known/oauth-protected-resource/mcp for a server at /mcp).
     prm = None
     for candidate in (
         f"{origin}/.well-known/oauth-protected-resource{path}",
@@ -141,8 +83,6 @@ def discover(server_url: str) -> Dict[str, Any]:
         )
     issuer = str(servers[0]).rstrip("/")
 
-    # RFC 8414 first, OIDC discovery as the fallback; issuers with a path
-    # component get the path-aware RFC 8414 form tried as well.
     iss = urlparse(issuer)
     iss_origin = f"{iss.scheme}://{iss.netloc}"
     iss_path = iss.path.rstrip("/")
@@ -163,15 +103,11 @@ def discover(server_url: str) -> Dict[str, Any]:
         )
 
     result = {
-        # The identifier the token must be bound to. The PRM's own `resource`
-        # claim wins when present; the server URL is the spec's default identity.
         "resource": str(prm.get("resource") or server_url),
         "issuer": str(meta.get("issuer") or issuer),
         "authorization_endpoint": str(meta["authorization_endpoint"]),
         "token_endpoint": str(meta["token_endpoint"]),
         "registration_endpoint": meta.get("registration_endpoint"),
-        # RFC 7009, when the AS offers it. Offboarding revocation (48l) reads
-        # this; absent means deleting SAFi's row is the only lever.
         "revocation_endpoint": meta.get("revocation_endpoint"),
         "scopes_supported": prm.get("scopes_supported") or meta.get("scopes_supported") or [],
     }
@@ -183,36 +119,18 @@ def clear_discovery_cache() -> None:
     _discovery_cache.clear()
 
 
-# ── PKCE ──────────────────────────────────────────────────────────────────────
-
 def make_pkce() -> Tuple[str, str]:
-    """(code_verifier, code_challenge), S256. There is no 'plain' fallback:
-    an AS that cannot do S256 does not get a code from us."""
     verifier = secrets.token_urlsafe(64)
     digest = hashlib.sha256(verifier.encode("ascii")).digest()
     challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
     return verifier, challenge
 
 
-# ── Client identity (configured or dynamically registered) ────────────────────
-
 def ensure_client(server_key: str, definition: Dict[str, Any],
                   discovery: Dict[str, Any], redirect_uri: str) -> Dict[str, str]:
-    """The OAuth client this deployment presents to the IdP.
-
-    Precedence: credentials in the server definition (client_secret usually via
-    ${VAR}) win; else a stored dynamic registration is reused; else register
-    (RFC 7591) if the AS allows it. Registration is once per deployment and
-    persisted — re-registering per login would litter the IdP with clients and
-    break token revocation as a management tool.
-    """
     if definition.get("client_id"):
         client_id = _expand_env(str(definition["client_id"]))
         if not client_id:
-            # Stop here with a reason, not at the IdP with a riddle. An empty
-            # expansion once redirected the member to GitHub's authorize page
-            # with a blank client_id, which GitHub renders as a bare 404 that
-            # says nothing about whose fault it is.
             raise OAuthConfigError(
                 f"This server's client_id is configured as "
                 f"{definition['client_id']!r} but that variable is empty in the "
@@ -264,24 +182,17 @@ def ensure_client(server_key: str, definition: Dict[str, Any],
     return client
 
 
-# ── The flow ──────────────────────────────────────────────────────────────────
-
 def build_authorization_url(discovery: Dict[str, Any], client_id: str,
                             redirect_uri: str, state: str,
                             code_challenge: str,
                             scopes: Optional[list] = None) -> str:
     params = {
-        # OAuth 2.1: authorization code only. There is no implicit branch to
-        # take and none will be added.
         "response_type": "code",
         "client_id": client_id,
         "redirect_uri": redirect_uri,
         "state": state,
         "code_challenge": code_challenge,
         "code_challenge_method": "S256",
-        # RFC 8707: bind the requested token to the MCP server, by identity.
-        # This is the line that makes the no-passthrough rule real — the IdP
-        # mints for the tool server, never for anything upstream of it.
         "resource": discovery["resource"],
     }
     scope_list = scopes if scopes is not None else discovery.get("scopes_supported") or []
@@ -294,13 +205,7 @@ def _token_request(discovery: Dict[str, Any], client: Dict[str, str],
                    form: Dict[str, str]) -> Dict[str, Any]:
     form = dict(form)
     form["client_id"] = client["client_id"]
-    # `resource` again at the token endpoint: RFC 8707 wants it at both stops,
-    # and some ASes decide the audience only here.
     form["resource"] = discovery["resource"]
-    # The secret travels in the body, not as Basic auth. RFC 6749 permits both;
-    # GitHub's token endpoint accepts only the body form, and every other AS we
-    # have met (Keycloak, Auth0, our own gateway) accepts that too — so the body
-    # is the one shape that works everywhere.
     if client.get("client_secret"):
         form["client_secret"] = client["client_secret"]
     resp = requests.post(discovery["token_endpoint"], data=form,
@@ -335,12 +240,8 @@ def refresh(discovery: Dict[str, Any], client: Dict[str, str],
     })
 
 
-# ── Token storage and retrieval ───────────────────────────────────────────────
-
 def store_tokens(user_id: str, server_key: str, body: Dict[str, Any],
                  org_id: Optional[str]) -> None:
-    # oauth_tokens.expires_at is a DATETIME. Stored naive-UTC, matching how the
-    # connector tokens in the same table are written.
     expires_at = None
     if body.get("expires_in"):
         try:
@@ -360,12 +261,6 @@ def store_tokens(user_id: str, server_key: str, body: Dict[str, Any],
 
 def access_token_for(user_id: str, server_key: str,
                      definition: Dict[str, Any]) -> Optional[str]:
-    """This user's live token for this server, refreshed when near expiry.
-
-    None means the person has never connected, or their refresh failed and the
-    stale row was cleared — which sends them back through a clean sign-in rather
-    than a loop of failing refreshes.
-    """
     row = db.get_oauth_token(user_id, provider_key(server_key))
     if not row or not row.get("access_token"):
         return None
@@ -395,8 +290,6 @@ def access_token_for(user_id: str, server_key: str,
 
 def ensure_client_readonly(server_key: str, definition: Dict[str, Any],
                            discovery: Dict[str, Any]) -> Dict[str, str]:
-    """The client identity without ever registering a new one — refresh runs on
-    the tool-call path, and a background call must not create IdP clients."""
     if definition.get("client_id"):
         return {"client_id": _expand_env(str(definition["client_id"])),
                 "client_secret": _expand_env(str(definition.get("client_secret") or ""))}
@@ -407,24 +300,8 @@ def ensure_client_readonly(server_key: str, definition: Dict[str, Any],
             "client_secret": stored.get("client_secret") or ""}
 
 
-# ── Revocation (offboarding) ──────────────────────────────────────────────────
-
 def revoke_at_server(user_id: str, server_key: str,
                      definition: Dict[str, Any]) -> bool:
-    """Tell the server to destroy everything it holds for this member.
-
-    RFC 7009 against the revocation_endpoint from the server's AS metadata.
-    SAFi's own gateways cascade from the presented token to the subject: every
-    gateway refresh token dies, the stored upstream tokens die, and where the
-    upstream offers revocation (Google) the grant is revoked there too. Best
-    effort BY DESIGN — an unreachable gateway must never block a disconnect or an
-    offboarding, so every failure path returns False and the caller deletes the
-    SAFi-side row regardless. True only when the endpoint answered 200.
-
-    A server with no AS metadata or no revocation_endpoint (GitHub's official
-    server is both today) simply returns False: deleting SAFi's row is the only
-    lever there, and pretending otherwise would be a false audit claim.
-    """
     import requests
 
     row = db.get_oauth_token(user_id, provider_key(server_key))
@@ -450,13 +327,6 @@ def revoke_at_server(user_id: str, server_key: str,
 
 
 def revoke_all_mcp_tokens(user_id: str) -> Dict[str, bool]:
-    """Offboarding sweep: every MCP server this member ever connected.
-
-    Called BEFORE the rows die (delete_user cascades them away), because the
-    stored token is the proof of possession the revocation endpoint requires.
-    Maps server key to whether its server confirmed, for the caller's log line.
-    Never raises.
-    """
     from .mcp_manager import file_servers
 
     results: Dict[str, bool] = {}
@@ -472,7 +342,7 @@ def revoke_all_mcp_tokens(user_id: str) -> Dict[str, bool]:
         key = str(provider)[len(PROVIDER_PREFIX):]
         try:
             results[key] = revoke_at_server(user_id, key, definitions.get(key) or {})
-        except Exception as exc:  # revoke_at_server already catches; defensive redundancy
+        except Exception as exc:
             log.warning("revocation at %s raised for %s: %s", key, user_id, exc)
             results[key] = False
     if results:

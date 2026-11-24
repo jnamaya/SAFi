@@ -1,11 +1,3 @@
-"""
-Tests for the per-org offline/PWA kill switch (Phase F): default-off posture,
-evidence-logged toggles, admin-only endpoint with org scoping, and the
-offline_enabled flag on /api/me (personal users keep offline; org members
-follow their org).
-
-Requires local MySQL. Run:  venv/bin/python tests/test_offline_config.py
-"""
 import json
 import sys
 import uuid
@@ -65,11 +57,9 @@ class TestOfflineConfig(unittest.TestCase):
         self.assertFalse(db.get_org_offline_config(self.org_id)["offline_enabled"])
 
     def test_02_me_flags(self):
-        # Org member: follows the org default (off)
         res = self.client(self.member, "member", self.org_id).get("/api/me")
         self.assertEqual(res.status_code, 200)
         self.assertFalse(json.loads(res.data)["user"]["offline_enabled"])
-        # Personal user: offline stays available
         res = self.client(self.personal, "member", None).get("/api/me")
         self.assertTrue(json.loads(res.data)["user"]["offline_enabled"])
 
@@ -79,24 +69,19 @@ class TestOfflineConfig(unittest.TestCase):
         ev = db.list_compliance_log(self.org_id, 5)[0]
         self.assertEqual(ev["event_type"], "offline_config_changed")
         self.assertEqual(ev["detail"], {"old": False, "new": True})
-        # No-op change logs nothing
         before = len(db.list_compliance_log(self.org_id, 50))
         db.set_org_offline_config(self.org_id, True, "admin@example.test")
         self.assertEqual(len(db.list_compliance_log(self.org_id, 50)), before)
-        # Member now sees offline enabled on /api/me
         res = self.client(self.member, "member", self.org_id).get("/api/me")
         self.assertTrue(json.loads(res.data)["user"]["offline_enabled"])
         db.set_org_offline_config(self.org_id, False, "admin@example.test")
 
     def test_04_endpoint_rbac_and_scoping(self):
         url = f"/api/organizations/{self.org_id}/offline-config"
-        # member forbidden
         res = self.client(self.member, "member", self.org_id).put(url, json={"offline_enabled": True})
         self.assertEqual(res.status_code, 403)
-        # admin of another org forbidden
         res = self.client(self.admin, "admin", self.other_org).put(url, json={"offline_enabled": True})
         self.assertEqual(res.status_code, 403)
-        # admin of the org: works
         c = self.client(self.admin, "admin", self.org_id)
         res = c.put(url, json={"offline_enabled": True})
         self.assertEqual(res.status_code, 200)
@@ -105,7 +90,6 @@ class TestOfflineConfig(unittest.TestCase):
         self.assertTrue(json.loads(res.data)["offline_enabled"])
         res = c.put(url, json={"offline_enabled": False})
         self.assertFalse(json.loads(res.data)["offline_enabled"])
-        # missing field is a 400
         res = c.put(url, json={})
         self.assertEqual(res.status_code, 400)
 

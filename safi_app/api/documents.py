@@ -1,10 +1,3 @@
-"""
-Document upload and text extraction.
-
-POST /api/documents/extract takes a multipart file upload and returns its
-extracted text for injection into the user's prompt. The uploaded file is
-never stored — only a sha256 digest of it.
-"""
 from flask import Blueprint, session, jsonify, request, current_app
 from ..config import Config
 from ..persistence import database as db
@@ -23,11 +16,6 @@ def get_user_id():
 
 @documents_bp.route('/documents/extract', methods=['POST'])
 def extract_document_text():
-    """multipart/form-data upload with a 'file' field.
-
-    Response: JSON with 'text', 'filename', 'sha256', 'bytes',
-    'total_chars', 'was_truncated', 'chars_used'.
-    """
     user_id = get_user_id()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
@@ -57,13 +45,6 @@ def extract_document_text():
             "error": f"File too large ({size_mb:.1f}MB). Maximum: {Config.MAX_UPLOAD_SIZE_MB}MB"
         }), 400
 
-    # Digest the bytes before extraction consumes the stream: this is the whole
-    # provenance record. The file itself is deliberately NOT stored — the text
-    # already lands encrypted in chat_history and the audit trail, so keeping
-    # the original would mean a second copy of the same sensitive data needing
-    # its own purge, legal-hold and export coverage. A digest answers the
-    # question that actually gets asked — "is this the document the agent
-    # read?" — for 64 characters.
     file.seek(0)
     digest = hashlib.sha256(file.read()).hexdigest()
     file.seek(0)
@@ -81,8 +62,6 @@ def extract_document_text():
             f"{total_chars:,} chars | sha256:{digest[:12]} | User: {user_id}"
         )
 
-        # Org-level evidence, matching a knowledge-base upload: feeding a
-        # document into a governed agent is governance-relevant (see backlog 21b).
         try:
             org_id = get_current_org_id()
             if org_id:
@@ -94,7 +73,6 @@ def extract_document_text():
                     "truncated_to": Config.MAX_DOCUMENT_CHARS if truncated else None,
                 })
         except Exception as e:
-            # Evidence must not cost the user their upload.
             current_app.logger.error(f"Could not log document attachment: {e}")
 
         return jsonify({
@@ -108,7 +86,6 @@ def extract_document_text():
         })
 
     except ValueError as e:
-        # Known errors (unsupported format, missing dependency, empty document)
         return jsonify({"error": str(e)}), 400
     except Exception as e:
         current_app.logger.error(f"Document extraction failed: {e}")

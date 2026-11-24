@@ -1,22 +1,3 @@
-"""
-SCIM 2.0 directory sync (backlog 68).
-
-The contract, pinned here:
-
-- Bearer-token auth per org: no token / wrong token is 401; a token only ever
-  reaches its own org's resources.
-- Provisioning a not-yet-registered user creates a long-lived invitation (the
-  SSO login path accepts it by email); provisioning an existing SAFi user sets
-  their org membership and role.
-- Deprovisioning (active=false, PATCH or DELETE) runs off-boarding: the
-  member's org membership is removed and any pending invitation revoked.
-- Group->role: a mapped group elevates its members' effective role; removing
-  them from the group returns them to the base role.
-- The last admin is never stripped by a directory sync.
-
-Requires local MySQL (drives the HTTP API and writes/deletes rows).
-Run: docker compose -f docker-compose.test.yml run --rm tests -k scim
-"""
 import sys
 import uuid
 import unittest
@@ -53,7 +34,7 @@ class ScimBase(unittest.TestCase):
 
     def setUp(self):
         self.org = _mk_org()
-        self.token = scim_store.rotate_token(self.org)  # also enables SCIM
+        self.token = scim_store.rotate_token(self.org)
         self.client = self.app.test_client()
 
     def tearDown(self):
@@ -92,13 +73,8 @@ class Auth(ScimBase):
 
 
 class HttpsEnforcement(ScimBase):
-    """On an https deployment, SCIM must refuse a non-TLS request before the
-    token is even considered. Localhost/plain-http deployments are exempt."""
 
     def test_https_deployment_rejects_plain_http(self):
-        # The test client forces wsgi.url_scheme via PREFERRED_URL_SCHEME, so
-        # drive the incoming scheme explicitly (as ProxyFix would from
-        # X-Forwarded-Proto) to simulate a real plain-http vs https request.
         from safi_app.config import Config
         original = Config.WEB_BASE_URL
         Config.WEB_BASE_URL = "https://safi.example.com"
@@ -114,8 +90,6 @@ class HttpsEnforcement(ScimBase):
             Config.WEB_BASE_URL = original
 
     def test_localhost_deployment_allows_http(self):
-        # Default WEB_BASE_URL is http://localhost:5000 in the test env, so the
-        # https requirement does not apply even to a plain-http request.
         r = self.client.get("/scim/v2/Users", headers=self._h(),
                             environ_overrides={"wsgi.url_scheme": "http"})
         self.assertEqual(r.status_code, 200)
@@ -231,10 +205,8 @@ class OrgIsolation(ScimBase):
         other = _mk_org("Other Org")
         other_token = scim_store.rotate_token(other)
         try:
-            # Create a user in the other org via its own token.
             self.client.post("/scim/v2/Users", headers=self._h(other_token),
                             json={"userName": f"other_{uuid.uuid4().hex[:8]}@example.test"})
-            # This org's token lists zero.
             r = self.client.get("/scim/v2/Users", headers=self._h())
             self.assertEqual(r.get_json()["totalResults"], 0,
                              "one org's token must never see another org's resources")

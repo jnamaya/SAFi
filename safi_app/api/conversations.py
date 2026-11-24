@@ -26,7 +26,6 @@ from ..config import Config
 from ..role_config import ROLE_CONFIG
 
 def agentic_faculty_token_usage(route: str):
-    """OpenAI-compatible usage for a specific route (intellect, conscience)."""
     from ..core.services.usage_tracking import request_call_usage
 
     usage = request_call_usage(route)
@@ -59,19 +58,10 @@ harness_intellect_token_usage = agentic_intellect_token_usage
 
 conversations_bp = Blueprint('conversations', __name__)
 
-# Which agents the unauthenticated /api/public/process_prompt chatbot may use.
-# Browser-facing, so this is a hardcoded whitelist — a visitor can pick among
-# these and nothing else, however the agents table changes. Default is the SAFi
-# Guide (key 'safi'); the RunSAFi marketing widget sends 'runsafi'.
 PUBLIC_CHATBOT_AGENTS = ("safi", "runsafi")
 DEFAULT_PUBLIC_CHATBOT_AGENT = "safi"
 
 def _tts_stream_generator(text: str, voice: str, cache_path):
-    """
-    Sync generator that yields MP3 chunks from edge-tts as they arrive,
-    then writes the complete audio to disk cache when done.
-    Uses a background thread + queue to bridge the async edge-tts stream.
-    """
     import edge_tts
     import queue
     import threading
@@ -114,8 +104,6 @@ def _tts_stream_generator(text: str, voice: str, cache_path):
                 pass
 
 def _mistral_tts_bytes(text: str, model: str, voice_id: str) -> bytes:
-    """Synthesize speech via Mistral's /v1/audio/speech (Voxtral TTS).
-    Non-streaming: the response is JSON with base64-encoded MP3 audio."""
     import base64
     import requests
     resp = requests.post(
@@ -130,56 +118,42 @@ def _mistral_tts_bytes(text: str, model: str, voice_id: str) -> bytes:
 
 
 def _strip_markdown(text: str) -> str:
-    """Strip markdown so TTS reads clean prose instead of symbols."""
-    text = re.sub(r'#{1,6}\s*', '', text)          # headings
-    text = re.sub(r'\*{1,3}([^*]+)\*{1,3}', r'\1', text)  # bold / italic
-    text = re.sub(r'`{1,3}[^`]*`{1,3}', '', text)  # inline & fenced code
-    text = re.sub(r'^\s*[-*+]\s+', '', text, flags=re.MULTILINE)   # bullet points
-    text = re.sub(r'^\s*\d+\.\s+', '', text, flags=re.MULTILINE)   # numbered lists
-    text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)  # links → label only
-    text = re.sub(r'!\[[^\]]*\]\([^)]+\)', '', text)       # images
-    text = re.sub(r'^\s*>+\s*', '', text, flags=re.MULTILINE)      # blockquotes
-    text = re.sub(r'[-_*]{3,}', '', text)           # horizontal rules
-    text = re.sub(r'\|[^\n]+\|', '', text)          # table rows
-    text = re.sub(r'\n{3,}', '\n\n', text)          # excess blank lines
+    text = re.sub(r'#{1,6}\s*', '', text)
+    text = re.sub(r'\*{1,3}([^*]+)\*{1,3}', r'\1', text)
+    text = re.sub(r'`{1,3}[^`]*`{1,3}', '', text)
+    text = re.sub(r'^\s*[-*+]\s+', '', text, flags=re.MULTILINE)
+    text = re.sub(r'^\s*\d+\.\s+', '', text, flags=re.MULTILINE)
+    text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
+    text = re.sub(r'!\[[^\]]*\]\([^)]+\)', '', text)
+    text = re.sub(r'^\s*>+\s*', '', text, flags=re.MULTILINE)
+    text = re.sub(r'[-_*]{3,}', '', text)
+    text = re.sub(r'\|[^\n]+\|', '', text)
+    text = re.sub(r'\n{3,}', '\n\n', text)
     return text.strip()
 
 
 class SafiInstanceCache:
-    """Thread-safe SAFi instance cache, so Vector DB and embeddings load once."""
-    def __init__(self, ttl_seconds=600): # Default 10 minute TTL
+    def __init__(self, ttl_seconds=600):
         self._cache = {}
         self._lock = threading.Lock()
         self._ttl = ttl_seconds
 
     def _normalize_key(self, name):
-        """Standardizes profile name to ensure cache hits regardless of casing/spacing."""
         if not name: return ""
-        # Same safe-slug rule as values.py / agent_api_routes.py.
         clean = name.lower().strip().replace(" ", "_")
         return "".join(c for c in clean if c.isalnum() or c == '_')
 
     def _generate_key(self, profile_name, intellect, will, conscience, policy_id=None, org_settings_hash=None):
-        """Key permitting prefix-match invalidation:
-        {normalized_profile_name}|{md5_hash_of_rest}"""
         norm_name = self._normalize_key(profile_name)
         rest = f"{intellect}|{will}|{conscience}|{policy_id or ''}|{org_settings_hash or ''}"
         rest_hash = hashlib.md5(rest.encode()).hexdigest()
         
-        # Prefix is the plaintext profile name; suffix is a unique hash.
         return f"{norm_name}|{rest_hash}"
 
     def get_or_create(self, profile_name, intellect_model, will_model, conscience_model, policy_id=None, org_id=None):
-        # The profile adapter resolves user-land data, then calls the pure compiler.
-        # resolves role + Policy + Charter (+ weights and β) and stamps policy_id /
-        # org_id / spirit_beta. Here we only handle caching and SAFi instantiation.
-        # `policy_id`, when given (e.g. the API-key path), overrides the agent's own.
         prof = get_profile(profile_name, policy_id=policy_id, org_id=org_id)
         spirit_beta = float(prof.get("spirit_beta", 0.90))
 
-        # The cache key folds in the governing config: any Charter / Policy / weight
-        # edit changes the compiled profile, which changes this hash and busts the
-        # cached instance on the next request.
         gov_fingerprint = {
             "org_id": prof.get("org_id"),
             "worldview": prof.get("worldview", ""),
@@ -213,7 +187,7 @@ class SafiInstanceCache:
                 intellect_model=intellect_model,
                 will_model=will_model,
                 conscience_model=conscience_model,
-                spirit_beta=spirit_beta  # from the compiled profile
+                spirit_beta=spirit_beta
             )
             self._cache[key] = {
                 'instance': instance,
@@ -223,12 +197,10 @@ class SafiInstanceCache:
             return instance
 
     def invalidate_profile(self, profile_name):
-        """Drop every cached instance of a profile, forcing a reload next request."""
         norm_name = self._normalize_key(profile_name)
         prefix = f"{norm_name}|"
         
         with self._lock:
-            # Keys start with the normalized profile name, so a prefix delete is safe.
             keys_to_remove = [k for k in self._cache.keys() if k.startswith(prefix)]
             count = len(keys_to_remove)
             for k in keys_to_remove:
@@ -238,7 +210,6 @@ class SafiInstanceCache:
                 current_app.logger.info(f"Invalidated {count} cached instances for profile: {profile_name}")
 
 global_safi_cache = SafiInstanceCache(ttl_seconds=600)
-
 
 
 def get_user_id():
@@ -266,8 +237,6 @@ async def bot_process_prompt_endpoint():
     if not all([user_id, user_prompt, conversation_id]):
         return jsonify({"error": "Missing required fields"}), 400
 
-    # Same char(36) ceiling as the public endpoint — this id is caller-supplied
-    # here too, and reached the same failing INSERT.
     if not isinstance(conversation_id, str) or len(conversation_id.strip()) > db.CONVERSATION_ID_MAX_LEN:
         return jsonify({
             "error": f"'conversation_id' must be at most "
@@ -276,7 +245,6 @@ async def bot_process_prompt_endpoint():
         }), 400
     conversation_id = conversation_id.strip()
 
-    # Just-in-time registration of the external bot user.
     try:
         user_details = db.get_user_details(user_id)
         if not user_details:
@@ -343,12 +311,10 @@ async def bot_process_prompt_endpoint():
             selected_intellect,
             None,
             selected_conscience,
-            policy_id=policy_id, # <--- INJECT POLICY
+            policy_id=policy_id,
             org_id=org_id,
         )
 
-        # JIT bot users carry no org, so provider governance falls to the
-        # governing policy's org.
         result = await saf_system.process_prompt(
             user_prompt,
             user_id,
@@ -357,11 +323,6 @@ async def bot_process_prompt_endpoint():
             org_id=org_id
         )
         result["aiProvenance"] = provenance.ai_marker(model=selected_intellect)
-        # The Alignment Trend's series, derived server-side. Attached here rather
-        # than in the orchestrator because that has several return points; and
-        # attached at all because the client used to assemble it from its own
-        # conversation cache, which is empty whenever an org disables offline
-        # persistence (the default) — silently dropping the trend on live turns.
         try:
             result["spirit_scores_history"] = db.spirit_score_history_for_message(
                 result.get("messageId"))
@@ -392,21 +353,15 @@ def tts_audio_endpoint():
         model     = getattr(Config, "TTS_MODEL",     "edge-tts")
         cache_dir = getattr(Config, "TTS_CACHE_DIR", "tts_cache")
 
-        # Provider follows the model id; the voice must match the provider
-        # (edge and Mistral use disjoint voice namespaces).
         tts_provider = ("openai" if model.startswith("gpt-")
                         else "gemini" if model.startswith("gemini")
                         else "mistral" if model.startswith(("voxtral-", "mistral-"))
-                        else None)  # None = edge-tts
+                        else None)
         if tts_provider == "mistral":
             voice = getattr(Config, "MISTRAL_TTS_VOICE", "en_paul_neutral")
         else:
             voice = getattr(Config, "TTS_VOICE", "en-US-AndrewNeural")
 
-        # Per-org provider governance for voice synthesis: OpenAI/Gemini/
-        # Mistral TTS models map to registry providers and are enforced;
-        # edge-tts has no registry provider and is a documented residual
-        # until Phase F of the compliance roadmap (TTS hardening).
         user_details = db.get_user_details(user_id) or {}
         allowlist = pg.get_user_model_allowlist(user_id, user_details.get('org_id'), user_details.get('role'))
         if allowlist is not None:
@@ -423,7 +378,6 @@ def tts_audio_endpoint():
         cache_hash = hashlib.sha256(f"{text_clean}|{model}|{voice}".encode()).hexdigest()
         cache_path = Path(cache_dir) / f"{cache_hash}.mp3"
 
-        # Cache hit: Content-Length is what lets the browser scrub the duration.
         if cache_path.exists():
             try:
                 audio_bytes = cache_path.read_bytes()
@@ -433,11 +387,7 @@ def tts_audio_endpoint():
             except IOError:
                 pass
 
-        # Cache miss. Synthetic audio carries the Art. 50(2) marking as a
-        # header — the only machine-readable channel an MP3 stream has.
         if tts_provider == "mistral":
-            # Mistral's speech API returns the full clip as base64 JSON, so
-            # this path serves complete bytes rather than streaming chunks.
             audio_bytes = _mistral_tts_bytes(text_clean, model, voice)
             try:
                 cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -448,9 +398,6 @@ def tts_audio_endpoint():
             resp.headers['Content-Length'] = len(audio_bytes)
             return provenance.mark_json_response(resp)
 
-        # edge-tts (also the current fallback for OpenAI/Gemini TTS models,
-        # which the streaming path does not yet synthesize natively):
-        # stream chunks as they arrive, cache on completion.
         return provenance.mark_json_response(Response(
             _tts_stream_generator(text_clean, voice, cache_path),
             mimetype='audio/mpeg',
@@ -464,12 +411,6 @@ def tts_audio_endpoint():
 
 @conversations_bp.route('/export_document', methods=['POST'])
 def export_document_endpoint():
-    """Render a governed answer to a downloadable DOCX or PDF (backlog 66).
-
-    A deterministic render of text the Will already approved — no model call,
-    same trust model as /tts_audio, which turns a governed answer into audio.
-    The client sends the answer it is displaying; the endpoint only formats it,
-    so it creates no new governed content and needs no faculty involvement."""
     user_id = get_user_id()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
@@ -491,7 +432,6 @@ def export_document_endpoint():
         current_app.logger.error(f"Document export failed ({fmt}): {e}")
         return jsonify({"error": "Failed to generate the document."}), 500
 
-    # Filename from the title, sanitized to a safe basename.
     base = re.sub(r'[^A-Za-z0-9 _-]', '', title).strip() or 'SAFi-Document'
     filename = f"{base[:80]}.{ext}"
 
@@ -504,34 +444,22 @@ def export_document_endpoint():
 
 @conversations_bp.route('/public/process_prompt', methods=['POST'])
 async def public_process_prompt_endpoint():
-    """
-    Process a user prompt from the public WordPress chatbot.
-    Conversation context is preserved across turns using the plugin-supplied
-    conversation_id. Rate-limited per IP using the existing prompt_usage table.
-    """
     data = request.json
     if not data or 'message' not in data or 'conversation_id' not in data:
         return jsonify({"error": "'message' and 'conversation_id' are required."}), 400
 
     incoming_convo_id = data['conversation_id']
 
-    # Internal-key gate (P3): the WordPress widget's browser never holds a key;
-    # the Apache proxy on each public origin injects X-Internal-Key. Warn mode
-    # (default) logs and serves so proxies can deploy first; enforcement is a
-    # single env flip (SAFI_ENFORCE_INTERNAL_KEY=1).
     from .keys import require_internal_key, per_minute_allowed
     if not require_internal_key():
         return jsonify({"error": "Unauthorized."}), 401
 
-    # Per-minute throttle keyed on IP + key-present (P3), ahead of any LLM work.
     throttle_bucket = "pub:{}:{}".format(
         request.remote_addr or "-",
         "k" if request.headers.get("X-Internal-Key") else "n")
     if not per_minute_allowed(throttle_bucket):
         return jsonify({"error": "Rate limit exceeded. Try again shortly."}), 429
 
-    # Message-size cap (P3): 8 KB keeps a single chat turn bounded; anything
-    # larger is rejected before model routing, not mid-stream.
     message = data['message']
     if not isinstance(message, str) or not message.strip():
         return jsonify({"error": "'message' must be a non-empty string."}), 400
@@ -539,10 +467,6 @@ async def public_process_prompt_endpoint():
         return jsonify({"error": "'message' exceeds the 8 KB limit.",
                         "code": "MESSAGE_TOO_LARGE"}), 413
 
-    # Reject an id the schema cannot store, rather than letting it reach
-    # `INSERT INTO conversations` and come back as an HTTP 500. Every
-    # conversation-id column is char(36); see db.CONVERSATION_ID_MAX_LEN for
-    # the full list and the incident that motivated this.
     if not isinstance(incoming_convo_id, str) or not incoming_convo_id.strip():
         return jsonify({"error": "'conversation_id' must be a non-empty string."}), 400
     incoming_convo_id = incoming_convo_id.strip()
@@ -552,18 +476,12 @@ async def public_process_prompt_endpoint():
                      f"{db.CONVERSATION_ID_MAX_LEN} characters.",
             "code": "CONVERSATION_ID_TOO_LONG",
         }), 400
-    # Format check (P3): every conversation id in this system is a UUID; a
-    # non-UUID string is a malformed or hostile payload, not a conversation.
     try:
         uuid.UUID(incoming_convo_id)
     except (ValueError, AttributeError):
         return jsonify({"error": "'conversation_id' must be a UUID.",
                         "code": "CONVERSATION_ID_INVALID"}), 400
 
-    # Optional agent selector for the embedded chatbot. The caller is an
-    # anonymous visitor, so the value is checked against a whitelist before it
-    # ever reaches get_profile — an unknown or unrequested agent is a 400, not
-    # a 500, and a fetch of an arbitrary agent is impossible.
     agent_key = (data.get('agent') or DEFAULT_PUBLIC_CHATBOT_AGENT).strip().lower()
     if agent_key not in PUBLIC_CHATBOT_AGENTS:
         return jsonify({
@@ -577,20 +495,14 @@ async def public_process_prompt_endpoint():
             "code": "AGENT_DISABLED",
         }), 400
 
-    # Stable, namespaced user identity so public users don't collide with real accounts
     anonymous_user_id = f"public_{incoming_convo_id}"
 
-    # IP-based rate limiting, reusing the existing prompt_usage DB functions.
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr or '').split(',')[0].strip()
     ip_key = f"ip_{hashlib.md5(client_ip.encode()).hexdigest()[:16]}"
     public_limit = Config.DAILY_PROMPT_LIMIT if Config.DAILY_PROMPT_LIMIT > 0 else 20
     if db.get_todays_prompt_count(ip_key) >= public_limit:
         return jsonify({"error": "Daily message limit reached.", "code": "LIMIT_REACHED"}), 429
 
-    # Email must be globally unique — use the full anonymous_user_id so two
-    # public users created in the same time window never collide on the
-    # UNIQUE email constraint (which would cause upsert_user to silently
-    # update the wrong row and leave this user_id with no users table entry).
     if not db.get_user_details(anonymous_user_id):
         db.upsert_user({
             "sub": anonymous_user_id,
@@ -600,26 +512,16 @@ async def public_process_prompt_endpoint():
         })
     user_details = db.get_user_details(anonymous_user_id) or {"org_id": None}
 
-    # Anonymous public users have no org of their own, so without a fallback every
-    # turn here is recorded with org_id = NULL — and `org_id = NULL` matches
-    # nothing in SQL, so the record exists but is unreachable from the Audit Hub
-    # and from both exports. Same fallback order as /bot/process_prompt (the
-    # governing policy's org), then an explicitly configured public org.
     org_id = user_details.get('org_id')
     if not org_id:
         org_id = Config.PUBLIC_ORG_ID
     if not org_id:
-        # Warn, do not refuse: dropping the turn would break the embedded widget,
-        # and an unauditable turn is still better than no answer. But it must not
-        # be silent — this is exactly how 5 invisible records accumulated.
         current_app.logger.warning(
             "public/process_prompt: no org for %s — this turn's governance record "
             "will have org_id NULL and will NOT appear in any Audit Hub view. "
             "Set SAFI_PUBLIC_ORG_ID to make the public bot auditable.",
             anonymous_user_id)
 
-    # ensure_conversation_access() creates the row only if it doesn't exist yet,
-    # preserving history and Spirit EMA memory across the full session.
     db.ensure_conversation_access(anonymous_user_id, incoming_convo_id)
 
     db.record_prompt_usage(ip_key)
@@ -641,19 +543,16 @@ async def public_process_prompt_endpoint():
 
     saf_system = global_safi_cache.get_or_create(
         agent_key,
-        intellect_model,   # isolated from the main app's model selection
+        intellect_model,
         None,
         conscience_model,
         org_id=org_id,
     )
 
-    # org_id was already resolved above (user -> policy -> configured public org).
-    # It used to be re-read from user_details here, which silently discarded that
-    # fallback and put every public turn back to NULL.
     result = await saf_system.process_prompt(
         data['message'],
         anonymous_user_id,
-        incoming_convo_id,   # real conversation ID — context now persists across turns
+        incoming_convo_id,
         user_name="Guest",
         org_id=org_id
     )
@@ -662,8 +561,6 @@ async def public_process_prompt_endpoint():
 
 
 def _check_daily_token_limit(user_details, org_id):
-    """Enforce SAFI_DAILY_TOKEN_LIMIT (tokens_in + tokens_out per UTC day)
-    unless org_id is in SAFI_UNLIMITED_ORGS or the user is in SAFI_UNLIMITED_USERS."""
     token_limit = getattr(Config, "DAILY_TOKEN_LIMIT", 0) or 0
     if token_limit <= 0 or not org_id:
         return None
@@ -696,8 +593,6 @@ def _check_daily_token_limit(user_details, org_id):
 
 @conversations_bp.route('/process_prompt', methods=['POST'])
 async def process_prompt_endpoint():
-    """Process a prompt under the caller's selected profile and models, after
-    verifying ownership of the conversation."""
     user_id = get_user_id()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
@@ -712,7 +607,6 @@ async def process_prompt_endpoint():
                 }), 429
         except Exception as e:
             current_app.logger.error(f"Demo limit check failed: {e}")
-            # Fail safe: if the count cannot be read, treat the limit as reached.
             return jsonify({
                 "error": "Demo limit reached (Verification Failed).",
                 "code": "DEMO_LIMIT_REACHED"
@@ -738,11 +632,6 @@ async def process_prompt_endpoint():
     if token_limit_resp is not None:
         return token_limit_resp
 
-    # --- SECURITY: Verify Ownership (and Auto-Create for External Bots), or a
-    # backlog-56 contributor grant. A brand-new conversation_id has no row yet
-    # and is always a fresh conversation of the caller's own — the shared case
-    # only exists for conversations that already exist, so it can't reach the
-    # auto-create branch.
     meta = db.get_conversation_meta(conversation_id)
     if meta is None:
         if not db.ensure_conversation_access(user_id, conversation_id):
@@ -762,12 +651,6 @@ async def process_prompt_endpoint():
     if limit > 0 or user_id.startswith('demo_'):
         db.record_prompt_usage(user_id)
 
-    # Which agent governs this turn: the owner's own active_profile, as
-    # always - but a contributor continuing someone else's conversation is
-    # governed by the conversation's OWN established agent instead, so one
-    # conversation stays under one charter no matter who is typing (backlog
-    # 56; see the write-up there for why this can't just be the poster's
-    # own active_profile once posters other than the owner are possible).
     agent_key_override = data.get('agent_key') or data.get('profile')
     if is_owner:
         if agent_key_override and sharing_store.can_use_built_in_or_custom_agent(
@@ -786,8 +669,6 @@ async def process_prompt_endpoint():
     try:
         agent_profile = get_profile(user_profile_name, org_id=user_details.get('org_id'))
     except KeyError:
-        # The stored agent no longer exists (retired demo agent or deleted
-        # custom agent). Fall back to the user's first usable agent.
         usable = sharing_store.get_first_usable_agent(
             user_id, user_details.get('role'), user_details.get('org_id'), ROLE_CONFIG
         ) if is_owner else None
@@ -801,10 +682,6 @@ async def process_prompt_endpoint():
     except Exception:
         agent_profile = {}
 
-    # Use-path enforcement: both custom DB agents and built-in agents (sysadmin,
-    # security_engineer, software_engineer) are verified against the user's role
-    # and group memberships on EVERY turn, so revoked permissions fail closed
-    # immediately rather than at the next profile switch.
     if not sharing_store.can_use_built_in_or_custom_agent(
             user_id, user_details.get('role'), user_details.get('org_id'), user_profile_name,
             ROLE_CONFIG):
@@ -833,15 +710,9 @@ async def process_prompt_endpoint():
                 "code": "AGENT_ACCESS_DENIED"
             }), 403
 
-    # Resolution order: agent -> user -> system default. Explicit model
-    # choices are kept, but duplicate faculty models resolve to another usable
-    # chat model.
     intellect_model = agent_profile.get('intellect_model') or user_details.get('intellect_model') or Config.INTELLECT_MODEL
     conscience_model = agent_profile.get('conscience_model') or user_details.get('conscience_model') or Config.CONSCIENCE_MODEL
 
-    # Per-org provider governance: reject a disallowed model up front with a
-    # clear error instead of failing mid-turn. Defense in depth — the LLM
-    # dispatch layer enforces the same allow-list fail-closed regardless.
     effective_org = agent_profile.get('org_id') or user_details.get('org_id')
     user_role = user_details.get('role') or 'member'
     user_allowlist = pg.get_user_model_allowlist(user_id, effective_org, user_role)
@@ -893,11 +764,6 @@ async def process_prompt_endpoint():
             user_timezone=data.get('timezone')
         )
         result["aiProvenance"] = provenance.ai_marker(model=intellect_model)
-        # This is the endpoint the signed-in UI actually calls (api.js -> PROCESS),
-        # so this is where the Alignment Trend's series has to be attached. See
-        # the note on /bot/process_prompt: derived server-side because the client
-        # used to assemble it from a conversation cache that is empty whenever an
-        # org disables offline persistence, which is the default.
         try:
             result["spirit_scores_history"] = db.spirit_score_history_for_message(
                 result.get("messageId"))
@@ -921,8 +787,6 @@ def cancel_message_endpoint(message_id):
 
 @conversations_bp.route('/audit_result/<message_id>', methods=['GET'])
 def get_audit_result_endpoint(message_id):
-    # This endpoint is polled every ~1.5s while a message is processing (and a
-    # few more times for follow-up suggestions), so keep its logging at debug.
     current_app.logger.debug(f"AUDIT CHECK: Looking for message_id={message_id}")
     user_id = get_user_id()
     if not user_id:
@@ -998,7 +862,6 @@ def handle_rename_conversation(conversation_id):
     if not new_title:
         return jsonify({"error": "'title' is required."}), 400
     
-    # Ownership is enforced in the DB layer (user_id is part of the WHERE clause).
     if not db.rename_conversation(conversation_id, new_title, user_id=user_id):
         return jsonify({"error": "Conversation not found."}), 404
     return jsonify({"status": "success"})
@@ -1013,14 +876,10 @@ def handle_pin_conversation(conversation_id):
     if is_pinned is None or not isinstance(is_pinned, bool):
         return jsonify({"error": "'is_pinned' boolean field is required."}), 400
     
-    # Ownership is enforced in the DB layer (user_id is part of the WHERE clause).
     if not db.toggle_conversation_pin(conversation_id, is_pinned, user_id=user_id):
         return jsonify({"error": "Conversation not found."}), 404
     return jsonify({"status": "success", "is_pinned": is_pinned})
 
-# 409, not 403: the request is authorised, the resource state forbids it. The
-# wording says WHY, because a delete that silently succeeds-but-doesn't is how
-# a member ends up believing content is gone when a hold has preserved it.
 HOLD_MESSAGE = ("A legal hold is in force for your organization. Conversations "
                 "cannot be deleted until it is lifted.")
 
@@ -1042,14 +901,12 @@ def handle_delete_conversation(conversation_id):
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
     
-    # Ownership is enforced in the DB layer (user_id is part of the WHERE clause).
     try:
         deleted = db.delete_conversation(conversation_id, user_id=user_id)
     except db.LegalHoldActive:
         return jsonify({"error": HOLD_MESSAGE}), 409
     if not deleted:
         return jsonify({"error": "Conversation not found."}), 404
-    # Grants must not outlive the conversation (no FKs, so cleanup is explicit).
     conversation_sharing_store.delete_grants_for_conversation(conversation_id)
     return jsonify({"status": "success"})
 
@@ -1092,9 +949,6 @@ def handle_delete_project(project_id):
         return jsonify({"error": "Authentication required."}), 401
     if not db.delete_project(project_id, user_id):
         return jsonify({"error": "Project not found."}), 404
-    # Grants must not outlive the folder (no FKs, so cleanup is explicit).
-    # Conversations that were inside it are preserved (see db.delete_project);
-    # any DIRECT grant on one of them is untouched — only the folder grant goes.
     conversation_sharing_store.delete_grants_for_project(project_id)
     return jsonify({"status": "success"})
 
@@ -1104,21 +958,13 @@ def handle_move_conversation(conversation_id):
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
     data = request.get_json(silent=True) or {}
-    # project_id may be null to detach the conversation from any project.
     project_id = data.get('project_id')
     if not db.move_conversation_to_project(conversation_id, project_id, user_id):
         return jsonify({"error": "Could not move conversation."}), 404
     return jsonify({"status": "success", "project_id": project_id})
 
-# --- Sharing (backlog 56): per-conversation and per-folder visibility grants,
-# reusing sharing_store's org groups. Owner-only to manage, no org-admin
-# bypass — sharing is peer collaboration, oversight of every conversation
-# already exists separately via the Audit Hub. ---
 
 def _conversation_owner_meta_or_404(conversation_id, user_id):
-    """The conversation's meta if it exists and belongs to user_id, else
-    None — a foreign or missing id both read as 404 at the call site, so an
-    id can never be confirmed to exist by probing."""
     meta = db.get_conversation_meta(conversation_id)
     if not meta or meta.get('user_id') != user_id:
         return None
@@ -1133,7 +979,6 @@ def _project_owner_meta_or_404(project_id, user_id):
 
 
 def _validate_share_request(data, org_id):
-    """(grantee_type, grantee_id, role, error_response)."""
     grantee_type = (data.get('grantee_type') or '').strip()
     grantee_id = (data.get('grantee_id') or '').strip()
     role = (data.get('role') or 'viewer').strip()
@@ -1156,11 +1001,6 @@ def _validate_share_request(data, org_id):
 
 
 def _agent_block_for_conversation(conversation_id, grantee_type, grantee_id):
-    """None when the share may proceed; an (error, status) tuple when it must
-    be blocked (backlog 56: block, don't loan). Checked only for a direct
-    'user' grant — a group's membership and roles can drift after the grant
-    exists, so that side is enforced live instead, at continue-time, by
-    process_prompt_endpoint's own can_use_agent check."""
     if grantee_type != 'user':
         return None
     profile_name = db.get_conversation_agent_profile(conversation_id)
@@ -1168,7 +1008,7 @@ def _agent_block_for_conversation(conversation_id, grantee_type, grantee_id):
         return None
     raw_agent = db.get_agent(profile_name)
     if not raw_agent:
-        return None  # built-in agent: platform-wide, nothing to block
+        return None
     target = db.get_user_details(grantee_id)
     if not target:
         return None
@@ -1181,14 +1021,6 @@ def _agent_block_for_conversation(conversation_id, grantee_type, grantee_id):
 
 
 def _agent_warning_for_project(project_id, grantee_type, grantee_id):
-    """None, or a warning string to surface alongside a successful folder
-    share. A folder is never BLOCKED over this (see _agent_block_for_conversation's
-    docstring: a folder isn't agent-bound) — but silently letting the owner
-    believe a contributor grant is fully functional when it plainly is not
-    for one or more conversations inside is its own bug, so this warns
-    instead. Same 'user grant only' scope as the block check, same reason:
-    a group's access can drift after the grant, so it is judged live
-    instead, per-conversation, at continue-time."""
     if grantee_type != 'user':
         return None
     target = db.get_user_details(grantee_id)
@@ -1199,7 +1031,7 @@ def _agent_warning_for_project(project_id, grantee_type, grantee_id):
     for profile_name in db.get_project_agent_profiles(project_id):
         raw_agent = db.get_agent(profile_name)
         if not raw_agent:
-            continue  # built-in: platform-wide, never blocked
+            continue
         total_custom += 1
         if not sharing_store.can_use_agent(
             grantee_id, target.get('role'), target.get('org_id'), raw_agent, ROLE_CONFIG
@@ -1296,10 +1128,6 @@ def list_conversations_shared_with_me():
 @conversations_bp.route('/conversations/shared-with-me/<conversation_id>',
                         methods=['DELETE'], strict_slashes=False)
 def remove_conversation_shared_with_me(conversation_id):
-    """Grantee-side removal: drop MY OWN grant on a conversation someone
-    shared with me. Distinct from the owner's revoke route — no ownership
-    check, only the caller's own grant row is touched. Group grants and
-    folder-derived access are reported back, not removed."""
     user_id = get_user_id()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
@@ -1316,8 +1144,6 @@ def remove_conversation_shared_with_me(conversation_id):
 @conversations_bp.route('/projects/shared-with-me/<project_id>',
                         methods=['DELETE'], strict_slashes=False)
 def remove_project_shared_with_me(project_id):
-    """Grantee-side removal for a shared folder. Same contract as the
-    conversation route above."""
     user_id = get_user_id()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
@@ -1333,9 +1159,6 @@ def remove_project_shared_with_me(project_id):
 
 @conversations_bp.route('/conversations/my-shares', methods=['GET'], strict_slashes=False)
 def list_my_shares():
-    """Which of the caller's OWN conversations and folders carry a grant, so
-    the sidebar can mark them. Ids only: the grantees themselves come from
-    the per-resource /shares endpoint when the owner opens the dialog."""
     user_id = get_user_id()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
@@ -1384,11 +1207,6 @@ def grant_project_share(project_id):
     grantee_type, grantee_id, role, err = _validate_share_request(data, org_id)
     if err:
         return err
-    # Folders are not agent-bound (they can hold conversations with
-    # different or no agents), so there is nothing to block here — access
-    # to each conversation inside is still enforced live, per-conversation,
-    # when it's actually opened or continued. The owner still gets told
-    # up front when that will bite, via a non-blocking warning.
     warning = _agent_warning_for_project(project_id, grantee_type, grantee_id)
     conversation_sharing_store.set_project_grant(project_id, grantee_type, grantee_id, role, org_id, user_id)
     db.append_compliance_log(org_id, 'project_shared', f"user:{user_id}",
@@ -1428,7 +1246,6 @@ def list_projects_shared_with_me():
     return jsonify(conversation_sharing_store.list_projects_shared_with_me(user_id, org_id))
 
 
-
 @conversations_bp.route('/saved-content', methods=['GET'])
 def get_saved_content():
     user_id = get_user_id()
@@ -1445,8 +1262,6 @@ def handle_save_content():
     message_id = data.get('message_id')
     if not message_id:
         return jsonify({"error": "'message_id' is required."}), 400
-    # Ownership is enforced in the DB layer (message resolved via its
-    # conversation's user_id; project ownership validated the same way).
     saved = db.save_content(user_id, message_id, project_id=data.get('project_id'))
     if not saved:
         return jsonify({"error": "Message not found."}), 404
@@ -1458,7 +1273,6 @@ def handle_move_saved_content(saved_id):
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
     data = request.get_json(silent=True) or {}
-    # project_id may be null to detach the saved item from any folder.
     project_id = data.get('project_id')
     if not db.move_saved_content(saved_id, project_id, user_id):
         return jsonify({"error": "Could not move saved item."}), 404
@@ -1474,16 +1288,7 @@ def handle_delete_saved_content(saved_id):
     return jsonify({"status": "success"})
 
 
-# --- Agent work-context memory: user-facing view + delete (backlog 50b) -----
-# View and delete ONLY, no edit: every stored entry traces to a governed turn
-# via its src stamp, and a user-typed fact would break that provenance story.
-# Deletions run through merge_agent_context's removal machinery — the same
-# deterministic path the extractor uses — never through a model. Deletion is
-# forward-looking; governance records keep the snapshot each past turn saw.
-
 def _memory_edit_evidence(event_type, user_id, agent_id, detail):
-    """Best-effort compliance evidence for a memory edit. A logging failure
-    must not block the user from deleting their own memory."""
     try:
         org_id = (session.get('user') or {}).get('org_id')
         db.append_compliance_log(org_id, event_type, user_id,
@@ -1492,19 +1297,10 @@ def _memory_edit_evidence(event_type, user_id, agent_id, detail):
         current_app.logger.warning("memory edit evidence logging failed", exc_info=True)
 
 
-# --- Scheduled Updates: personal agent digests (backlog 54) -----------------
-# v1 rules, decided 2026-08-17: delivery goes to the owner's own account
-# email only (resolved at send time by the runner, never stored as a field);
-# schedules are a local time + weekday set in the user's timezone. The runner
-# (scripts/scheduled_tasks_runner.py) executes due tasks as full governed
-# turns; these routes only manage the rows.
-
 _TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
 def _validate_schedule_fields(data, require_all):
-    """Returns (fields, error). Only validated fields are returned, so a
-    partial update cannot smuggle arbitrary columns."""
     from zoneinfo import ZoneInfo
     fields = {}
     if 'prompt' in data or require_all:
@@ -1539,8 +1335,6 @@ def _validate_schedule_fields(data, require_all):
             get_profile(agent_key)
         except Exception:
             return None, f"Unknown agent '{agent_key}'."
-        # A schedule is a standing chat turn, so it clears the same sharing
-        # resolver the live path does (backlog 55). Built-ins are not rows.
         raw_agent = db.get_agent(agent_key)
         if raw_agent:
             sess_user = session.get('user') or {}
@@ -1632,7 +1426,7 @@ def delete_agent_memory_item(agent_id):
         return jsonify({"error": "Authentication required."}), 401
     data = request.get_json(silent=True) or {}
     category = data.get('category')
-    identity = data.get('identity')  # string, or {event, date} for milestones
+    identity = data.get('identity')
     if category not in _CTX_LIST_FIELDS or not identity:
         return jsonify({"error": "'category' and 'identity' are required."}), 400
     try:
@@ -1659,12 +1453,6 @@ def clear_agent_memory(agent_id):
     return jsonify({"status": "success"})
 
 def _readable_conversation_or_none(user_id, conversation_id):
-    """None when the conversation doesn't exist. Otherwise the owner's own
-    user_id if the caller may read it (self, or a viewer/contributor grant —
-    backlog 56), or False if the caller may not. The owner's user_id is what
-    the caller must hand to db.fetch_chat_history_for_conversation, since
-    that function's ownership JOIN checks against the conversation's OWNER,
-    not the requester."""
     meta = db.get_conversation_meta(conversation_id)
     if meta is None:
         return None
@@ -1709,9 +1497,6 @@ def export_chat_history(conversation_id):
 
     history = db.fetch_chat_history_for_conversation(conversation_id, limit=9999, offset=0, user_id=owner_id)
 
-    # get_conversation_title is unscoped by design (see its docstring), so a
-    # shared conversation's real title comes through rather than "Untitled" —
-    # access to the title itself was already decided above.
     convo_title = db.get_conversation_title(conversation_id) or "Untitled"
 
     filename_title = "".join(x for x in convo_title if x.isalnum() or x in " _-").rstrip()
@@ -1729,7 +1514,6 @@ def export_chat_history(conversation_id):
 
 
 def _normalize_workspace_context(raw_context):
-    """Accept only bounded absolute path metadata from the harness gateway."""
     if not isinstance(raw_context, dict):
         return {}
     normalized = {}
@@ -1742,14 +1526,6 @@ def _normalize_workspace_context(raw_context):
 
 
 def _normalize_agentic_tools(raw_tools, workspace_context=None):
-    """Convert agentic OpenAI-format tool specs into the MCP shape Intellect expects.
-
-    Agentic clients advertise tools as {"type": "function", "function": {name,
-    description, parameters}}; the provider layer reads name/description/
-    input_schema. Anything already in MCP shape passes through, and malformed
-    entries are dropped rather than failing the turn — a client advertising a
-    bad tool should still get a governed answer, just without that tool.
-    """
     if not isinstance(raw_tools, list):
         return []
 
@@ -1796,7 +1572,6 @@ _normalize_harness_tools = _normalize_agentic_tools
 
 @conversations_bp.route('/agentic/progress/<message_id>', methods=['GET'])
 def agentic_progress_endpoint(message_id):
-    """Authenticated, minimal progress feed for the agentic gateway."""
     api_key = request.headers.get("X-API-KEY") or request.headers.get("Authorization", "")
     if api_key.startswith("Bearer "):
         api_key = api_key.split(" ", 1)[1]
@@ -1847,7 +1622,6 @@ def agentic_progress_endpoint(message_id):
 
 @conversations_bp.route('/agentic/cancel/<message_id>', methods=['POST'])
 def agentic_cancel_endpoint(message_id):
-    """Authenticate and mark an in-flight agentic message as cancelled."""
     api_key = request.headers.get("X-API-KEY") or request.headers.get("Authorization", "")
     if api_key.startswith("Bearer "):
         api_key = api_key.split(" ", 1)[1]
@@ -1873,7 +1647,6 @@ def agentic_cancel_endpoint(message_id):
 
 @conversations_bp.route('/agentic/process_prompt', methods=['POST'])
 async def agentic_process_prompt_endpoint():
-    """Authenticate and translate client fields, then enter SAFi's orchestrator."""
     api_key = request.headers.get("X-API-KEY") or request.headers.get("Authorization", "")
     if api_key.startswith("Bearer "):
         api_key = api_key.split(" ", 1)[1]
@@ -1912,8 +1685,6 @@ async def agentic_process_prompt_endpoint():
 
     workspace_context = _normalize_workspace_context(data.get("workspace_context"))
     raw_tools = data.get("tools")
-    # Informational or advisory agents (such as fiduciary, health_navigator)
-    # run governed server-side MCP tools instead of local repository agentic tools.
     is_coding_agent = bool(agent_data.get("track_work_context")) if agent_data else (agent_key == "software_engineer")
     if raw_tools is not None and is_coding_agent:
         tools = _normalize_agentic_tools(raw_tools, workspace_context)
@@ -2047,10 +1818,6 @@ async def agentic_process_prompt_endpoint():
         begin_request_usage()
         effective_user_name = user_name or (user_details.get("name") if user_details else None) or "User"
 
-        # Per-request reasoning-effort override (CLI /reasoning): "low" |
-        # "medium" | "high" honored by reasoning-capable models; anything
-        # else falls back to each provider's tuned default. Scoped to this
-        # request and always cleared so it cannot leak into background tasks.
         raw_effort = (data.get("reasoning_effort") or data.get("thinking") or "").strip().lower()
         from ..core.services import llm_provider as _llm_provider
         _llm_provider.set_reasoning_effort(raw_effort if raw_effort in ("low", "medium", "high") else "")
@@ -2102,7 +1869,6 @@ async def agentic_process_prompt_endpoint():
 
 @conversations_bp.route('/agentic/compress', methods=['POST'])
 async def agentic_compress_endpoint():
-    """Compress or retrieve conversational memory summary for an agentic session."""
     api_key = request.headers.get("X-API-KEY") or request.headers.get("Authorization", "")
     if api_key.startswith("Bearer "):
         api_key = api_key.split(" ", 1)[1]
@@ -2153,7 +1919,6 @@ async def agentic_compress_endpoint():
             "tokens": 0,
         })
 
-    # Action: compress
     raw_history = db.fetch_chat_history_for_conversation(conversation_id, limit=100)
     valid_turns = [m for m in raw_history if m.get("content") and m.get("content").strip()]
     if len(valid_turns) < 2:
@@ -2228,9 +1993,6 @@ async def agentic_compress_endpoint():
         f"{full_transcript}\n\nProduce the structured technical summary:"
     )
 
-    # Prefer the dedicated background/summarizer model when a second local
-    # server (SAFI_CONSCIENCE_BASE_URL) is configured so manual compression
-    # runs on the fast MoE server without evicting the Intellect KV cache.
     primary_compress_model = (
         Config.BACKEND_MODEL
         if getattr(Config, "CONSCIENCE_BASE_URL", "") and Config.BACKEND_MODEL

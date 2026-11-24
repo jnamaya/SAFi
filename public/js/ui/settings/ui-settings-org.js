@@ -3,42 +3,12 @@ import * as api from '../../core/api.js';
 import { escapeHtml } from '../../core/utils.js';
 import { loadToolCategories, renderToolGrid } from '../shared/tool-picker.js';
 
-let currentUser = null; // We need to set this if we want to check "isSelf"
-// Cloud edition flag (SAFI_CLOUD_EDITION via /app-config). false on the
-// appliance: hides domain verification and Google/Microsoft SSO restriction
-// fields in the Identity & Access tab. Defaults true so an older backend
-// (flag absent) keeps the full cloud UI.
+let currentUser = null;
 let cloudEdition = true;
-// But how? 
-// The original file had a module-level `currentUser`.
-// We should probably export an update function here too, or fetch it.
-// The `renderSettingsOrganizationTab` doesn't take user as param.
-// BUT `renderMembersTable` uses `currentUser`. 
-// I'll add an `updateCurrentUser` execution in core that calls this if needed, 
-// OR just pass user into `renderSettingsOrganizationTab` from core?
-// Original: `renderSettingsOrganizationTab()` called `api.getMyOrganization()`.
-// `renderMembersTable` uses module-level `currentUser`.
-// `ui-settings-core` has `updateCurrentUser`.
-// I should export `updateCurrentUser` here as well and call it from core when core updates.
-// OR better: `renderSettingsOrganizationTab` should just fetch the user itself or accept it.
-// `api.getMe()` is cheap (cached usually?).
-// Actually, `ui-settings-core` receives `updateCurrentUser`.
-// We need to set this if we want to check "isSelf"
-// We export a specific setter to avoid name conflict with core.
 export function setOrgCurrentUser(u) {
     currentUser = u;
 }
 
-/**
- * Renders the Org Settings tab, first in the Organization group
- * (historically "Organization Settings"). Admin only.
- * Handles fetching org details and Domain Verification.
- */
-// The Settings tab (org identity, charter, governance) and the Identity &
-// Access tab (domain, members, groups, approvers, SCIM) render from one data
-// fetch and one listener pass - the cards are split across the two containers,
-// and the listener block finds elements in both by id. Either tab's entry
-// point triggers the shared render, so opening either shows current data.
 export async function renderSettingsOrganizationTab() {
     return _renderOrgTabs();
 }
@@ -79,7 +49,6 @@ async function _renderOrgTabs() {
             return;
         }
 
-        // Two independent artifacts: an org may have either, both or neither.
         const [charterRes, standardsRes] = await Promise.all([
             api.getCharter(org.id).catch(() => null),
             api.getAiStandards(org.id).catch(() => null),
@@ -97,9 +66,6 @@ async function _renderOrgTabs() {
 
 function renderOrganizationUI(container, identityContainer, org, charter, aiStandards) {
     const isVerified = org.domain_verified;
-    // Appliance edition: domain verification is a cloud-product feature (it
-    // locks sign-in to a Google/Microsoft tenant and claims the domain across
-    // hosted deployments), so hide it entirely on non-cloud installs.
     const verificationSection = !cloudEdition ? '' : isVerified
         ? `
             <div class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4 mb-6">
@@ -170,8 +136,6 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
     const structuralData = aiStandards ? { ...(aiStandards.structural_requirements || {}) } : {};
     const blacklistData = aiStandards ? [...(aiStandards.early_prompt_blacklist || [])] : [];
     const aiStandardsData = aiStandards ? [...(aiStandards.values || [])] : [];
-    // null (not []) means "no org-wide tool cap". An empty array would read as
-    // one, and authorized_tools treats empty as "does not narrow" anyway.
     let allowedToolsData = aiStandards && Array.isArray(aiStandards.allowed_tools)
         ? [...aiStandards.allowed_tools]
         : null;
@@ -531,7 +495,6 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
         </div>
     `;
 
-    // --- Identity & Access tab: everything about who is in the org ---
     if (identityContainer) identityContainer.innerHTML = `
         <div class="settings-page-header">
             <h1>Identity &amp; Access</h1>
@@ -704,12 +667,10 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
         ${identitySessionsCard}
     `;
 
-    // Attach Listeners
     if (cloudEdition && currentUser && currentUser.role === 'admin') {
         renderScimSection(org.id);
     }
 
-    // --- Charter ---
     const valuesList = document.getElementById('charter-values-list');
     renderCharterValues(charterValuesData, valuesList);
 
@@ -741,7 +702,6 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
         renderCharterValues(charterValuesData, valuesList);
     });
 
-    // --- Org-wide rules: blocked phrases ---
     const renderCharterBlacklist = () => {
         const list = document.getElementById('charter-blacklist-list');
         if (!list) return;
@@ -776,11 +736,6 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
         if (e.key === 'Enter') { e.preventDefault(); addCharterPhrase(); }
     });
 
-    // --- Org-wide rules: tool cap ---
-    // --- Sensitive-data checks (backlog 83) ---
-    // Mirrors the tools loader below: lazy, retryable, and it renders from the
-    // server catalogue rather than a hardcoded list so each check's precision
-    // note comes from the same file as its detector.
     const piiToggle = document.getElementById('charter-block-pii');
     const piiPanel = document.getElementById('charter-pii-panel');
     let piiLoaded = false;
@@ -790,7 +745,7 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
         piiLoaded = true;
         const loading = document.getElementById('charter-pii-loading');
         const grid = document.getElementById('charter-pii-grid');
-        if (!grid) return;                        // tab navigated away mid-load
+        if (!grid) return;
         let checks = null;
         try {
             const res = await api.getPiiChecks(org.id);
@@ -798,7 +753,7 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
         } catch (e) { checks = null; }
         if (!checks) {
             if (loading) loading.textContent = 'Failed to load checks.';
-            piiLoaded = false;                    // let a reopen retry
+            piiLoaded = false;
             return;
         }
         const enabled = new Set(structuralData.pii_validators || []);
@@ -824,7 +779,6 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                 piiPanel?.classList.add('hidden');
             }
         });
-        // Already on when the tab opened: populate without waiting for a click.
         if (piiToggle.checked) loadPiiChecks();
     }
 
@@ -838,10 +792,10 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
         const categories = await loadToolCategories();
         const loading = document.getElementById('charter-tools-loading');
         const grid = document.getElementById('charter-tools-grid');
-        if (!grid) return;                       // tab navigated away mid-load
+        if (!grid) return;
         if (!categories) {
             if (loading) loading.textContent = 'Failed to load tools.';
-            toolsLoaded = false;                 // let a reopen retry
+            toolsLoaded = false;
             return;
         }
         if (loading) loading.classList.add('hidden');
@@ -866,15 +820,11 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
             toolsPanel?.classList.remove('hidden');
             loadCharterTools();
         } else {
-            // null, not [] - an empty list would still read as "a cap exists".
             allowedToolsData = null;
             toolsPanel?.classList.add('hidden');
         }
     });
 
-    // --- AI Standards: non-negotiable standards list ---
-    // Reuses the charter value editor: same shape (name, description, rubric),
-    // and it already renders a hard gate with the weight slider disabled.
     function renderAiStandards() {
         const list = document.getElementById('ai-standards-list');
         if (!list) return;
@@ -895,9 +845,6 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
             let list = typeof res.content === 'string' ? JSON.parse(res.content.trim()) : res.content;
             if (!Array.isArray(list)) list = [list];
 
-            // Appended, never replacing: these are suggestions on top of whatever
-            // the admin has already written. Scored by default, like a
-            // hand-added one - promoting a standard to blocking is a decision.
             const existing = new Set(aiStandardsData.map(v => String(v.name || '').trim().toLowerCase()));
             let added = 0;
             list.forEach(v => {
@@ -936,8 +883,6 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
         const disclaimerText = document.getElementById('charter-disclaimer-text')?.value.trim() || '';
         const thresholdRaw = document.getElementById('charter-alignment-threshold')?.value.trim() || '';
 
-        // The server rejects these too; catching them here keeps the typed
-        // values on screen instead of bouncing the whole form.
         if (requireDisclaimer && !disclaimerText) {
             ui.showToast('Enter the disclaimer text to check for, or untick the requirement.', 'error');
             return;
@@ -947,10 +892,6 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
             structural.require_disclaimer = true;
             structural.mandatory_disclaimer_substring = disclaimerText;
         }
-        // Only send the key when the master switch is on. Sending [] when it is
-        // off is also correct (it means "block nothing") but sending nothing at
-        // all leaves any existing value untouched, which would be wrong here:
-        // unticking the box must actually turn the checks off.
         const piiOn = document.getElementById('charter-block-pii')?.checked;
         structural.pii_validators = piiOn
             ? Array.from(document.querySelectorAll('.pii-check:checked')).map(c => c.value)
@@ -988,8 +929,6 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
     });
 
     document.getElementById('btn-delete-ai-standards')?.addEventListener('click', async () => {
-        // Deleting standards must not touch the charter - that separation is the
-        // whole point of them being different artifacts.
         if (!confirm('Delete the organization AI standards? Your Charter is not affected.')) return;
         try {
             await api.deleteAiStandards(org.id);
@@ -1006,8 +945,6 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
         btn.disabled = true;
         btn.textContent = 'Saving...';
         try {
-            // Mission and core values only. AI conduct rules save separately -
-            // see the AI Standards card.
             const res = await api.saveCharter(org.id, {
                 mission,
                 core_values: charterValuesData.filter(v => v.name),
@@ -1038,7 +975,6 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
         }
     });
 
-    // --- Org Name Editing ---
     const editBtn = document.getElementById('btn-edit-org-name');
     const saveBtn = document.getElementById('btn-save-org-name');
     const cancelBtn = document.getElementById('btn-cancel-org-name');
@@ -1058,7 +994,7 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
         cancelBtn.addEventListener('click', () => {
             editContainer.classList.add('hidden');
             displayContainer.classList.remove('hidden');
-            nameInput.value = org.name; // Reset
+            nameInput.value = org.name;
         });
     }
 
@@ -1071,7 +1007,6 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                 return;
             }
 
-            // UI Loading state
             nameInput.disabled = true;
             saveBtn.disabled = true;
 
@@ -1079,7 +1014,7 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                 const res = await api.updateOrganization(org.id, { name: newName });
                 if (res && (res.ok || res.status === 'updated')) {
                     ui.showToast("Organization renamed!", "success");
-                    renderSettingsOrganizationTab(); // Full Refresh
+                    renderSettingsOrganizationTab();
                 } else {
                     throw new Error(res.error || "Update failed");
                 }
@@ -1091,7 +1026,6 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
         });
     }
 
-    // --- Domain Verification ---
     const startBtn = document.getElementById('btn-start-verify');
     if (startBtn) {
         startBtn.addEventListener('click', async () => {
@@ -1104,7 +1038,7 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                 const res = await api.startDomainVerification(startBtn.dataset.orgId, domain);
                 if (res && res.status === 'pending') {
                     ui.showToast("Verification started!", "success");
-                    renderSettingsOrganizationTab(); // Refresh
+                    renderSettingsOrganizationTab();
                 }
             } catch (e) {
                 ui.showToast(e.message, "error");
@@ -1128,7 +1062,7 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                         ? `Domain verified - sign-in is now locked to your ${lockedTo} tenant.`
                         : "Domain verified! (Mail isn't on Google or Microsoft, so no sign-in restriction was added.)",
                         "success");
-                    renderSettingsOrganizationTab(); // Refresh
+                    renderSettingsOrganizationTab();
                 } else {
                     ui.showToast(res && res.error ? res.error : "TXT record not found yet. It may take a few minutes.", "warning");
                     checkBtn.disabled = false;
@@ -1151,7 +1085,7 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                 const res = await api.checkDomainVerificationByDirectory(checkDirBtn.dataset.orgId);
                 if (res && res.status === 'verified') {
                     ui.showToast(`Domain verified via your directory (${res.directory_contexts ? res.directory_contexts.join(', ') : 'LDAP'}).`, 'success');
-                    renderSettingsOrganizationTab(); // Refresh
+                    renderSettingsOrganizationTab();
                 } else {
                     ui.showToast(res && res.error ? res.error : "The directory could not confirm this domain.", "warning");
                     checkDirBtn.disabled = false;
@@ -1175,7 +1109,7 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                 const res = await api.cancelDomainVerification(cancelVerifyBtn.dataset.orgId);
                 if (res && (res.status === 'cancelled' || res.ok)) {
                     ui.showToast("Verification cancelled", "success");
-                    renderSettingsOrganizationTab(); // Refresh
+                    renderSettingsOrganizationTab();
                 } else {
                     throw new Error(res.error || "Cancellation failed");
                 }
@@ -1186,7 +1120,6 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
         });
     }
 
-    // --- Governance Settings ---
     const slGov = document.getElementById('sl-gov-weight');
     const lblGov = document.getElementById('lbl-gov-weight');
     const slBeta = document.getElementById('sl-spirit-beta');
@@ -1220,7 +1153,6 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                 const res = await api.updateOrganization(org.id, { settings });
                 if (res && (res.ok || res.status === 'updated')) {
                     ui.showToast("Governance settings saved!", "success");
-                    // Update local org object reference potentially, or just wait for reload
                 } else {
                     throw new Error(res.error || "Save failed");
                 }
@@ -1233,12 +1165,7 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
         });
     }
 
-    // --- TCB Verification ---
-    // Compares this deployment's TCB fingerprint against the official release
-    // list. The server writes the result to the compliance log.
     function renderTcbResult(r) {
-        // A stored entry from the compliance log may predate the full-result
-        // shape; default the sections so either renders identically.
         const local = r.local || {};
         const remote = r.remote || {};
         const pin = r.pin || {};
@@ -1306,8 +1233,6 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
                     resultEl.innerHTML = '<p class="text-sm text-gray-500">Offline: the verification was queued and will run later.</p>';
                     return;
                 }
-                // postWithQueue returns the raw JSON body on success, with no
-                // `ok` field, so presence of `error` is the failure test here.
                 if (res && res.error) {
                     const tail = res.branch
                         ? `, this instance is on the ${escapeHtml(res.branch)} tree.`
@@ -1325,9 +1250,6 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
         });
     }
 
-    // Persisted last verdict: the compliance log stores the full result of
-    // every run, so the card shows the stored one on load and only moves when
-    // the button is pressed again. A failed fetch leaves the placeholder.
     const persistedTcbEl = document.getElementById('tcb-verify-result');
     if (persistedTcbEl) {
         api.getLastTcbVerify(org.id)
@@ -1339,10 +1261,6 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
             .catch(() => {});
     }
 
-    // --- Identity & Sessions ---
-    // These cards live in the Identity & Access tab (identityContainer), not
-    // the Settings container, so look them up by id document-wide rather than
-    // scoped to `container` - otherwise the save button never wires.
     const btnSaveIdentity = document.getElementById('btn-save-identity');
     if (btnSaveIdentity) {
         api.getOrgIdentity(org.id).then(cfg => {
@@ -1394,7 +1312,6 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
         });
     }
 
-    // --- LDAP group→role mappings (Identity & Access card, admin) ---
     const btnAddMapping = document.getElementById('btn-add-ldap-mapping');
     if (btnAddMapping) {
         const renderMappings = (mappings) => {
@@ -1439,7 +1356,6 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
         loadMappings();
     }
 
-    // --- Invitations ---
     const btnInvite = document.getElementById('btn-send-invite');
     if (btnInvite) {
         btnInvite.addEventListener('click', async () => {
@@ -1461,7 +1377,6 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
         loadPendingInvites(org.id);
     }
 
-    // --- Local accounts (admin only; card rendered above only for admins) ---
     const btnTogglePw = document.getElementById('btn-toggle-local-password');
     if (btnTogglePw) {
         btnTogglePw.addEventListener('click', () => {
@@ -1532,12 +1447,8 @@ function renderOrganizationUI(container, identityContainer, org, charter, aiStan
         });
     }
 
-    // --- Load Members ---
-    // (Retention, legal hold, examiner export, evidence log, and the provider
-    // allow-list moved to the Compliance tab - ui-settings-compliance.js.)
     loadOrganizationMembers(org.id);
 
-    // --- Groups (admin only; the card is only rendered for admins) ---
     if (currentUser && currentUser.role === 'admin') {
         document.getElementById('btn-create-group')?.addEventListener('click', async () => {
             const inp = document.getElementById('inp-group-name');
@@ -1818,17 +1729,10 @@ async function loadPendingInvites(orgId) {
 }
 
 function renderCharterValues(valuesData, container, mode = 'charter') {
-    // `mode` decides whether a value may block. Charter values are organizational
-    // identity and are SCORED - letting one be flagged non-negotiable by hand is
-    // exactly how a required disclosure once became a value that blocked every
-    // turn. Gates belong to AI Standards, where every entry is one by definition.
     if (!container) return;
     container.innerHTML = '';
 
     if (!valuesData.length) {
-        // Each mode names its own thing and its own button. The charter's
-        // wording used to show here, telling an admin on the AI Standards card
-        // that no "values" were defined and to press a button on another card.
         const empty = mode === 'standard'
             ? { what: 'No standards yet.',
                 how: 'Click <strong>Suggest standards</strong> for a starting set, or <strong>Add standard</strong> to write your own.' }
@@ -1850,9 +1754,6 @@ function renderCharterValues(valuesData, container, mode = 'charter') {
         const hasRubric = v.rubric.scoring_guide.length > 0;
         const weightPct = v.weight <= 1.0 ? Math.round(v.weight * 100) : (v.weight || 100);
 
-        // Same editor, two artifacts. A charter value is something the
-        // organization stands for; an AI standard is a rule its agents follow.
-        // Reusing the widget is fine - reusing its wording is not.
         const copy = mode === 'standard'
             ? { name: 'Standard name (e.g. Personal Data Protection)',
                 desc: 'What must the agent do, or never do? e.g. "Never reveal a person\u2019s social security, bank account or passport number."' }
@@ -1906,8 +1807,6 @@ function renderCharterValues(valuesData, container, mode = 'charter') {
                     { score: 0.0,  icon: '⚪', label: 'Neutral (0)',   color: 'gray',   bg: 'bg-white dark:bg-neutral-800 border-gray-200 dark:border-neutral-700',
                       hint: mode === 'standard' ? 'Optional. Leave blank for a pass/fail standard.' : 'Acceptable, neither good nor bad...' },
                     { score: -1.0, icon: '🚫', label: 'Violation (−1)', color: 'red',   bg: 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-900',
-                      // The trap that broke a live agent: "does not include X" fires
-                      // on every answer that never raised the topic.
                       hint: mode === 'standard' ? 'Something the response actually DID - "reveals a bank account number". Never "fails to mention…", which would flag every unrelated answer.' : 'What a violation looks like...' }
                 ].map(def => {
                     const item = v.rubric.scoring_guide.find(g => Math.abs(g.score - def.score) < 0.1);
@@ -1925,11 +1824,9 @@ function renderCharterValues(valuesData, container, mode = 'charter') {
 
         container.appendChild(card);
 
-        // Bind name/description changes
         card.querySelector('.cv-name').addEventListener('input', e => { valuesData[idx].name = e.target.value; });
         card.querySelector('.cv-desc').addEventListener('input', e => { valuesData[idx].description = e.target.value; });
 
-        // Weight slider
         const slider = card.querySelector('.cv-weight-slider');
         const lbl    = card.querySelector('.cv-weight-lbl');
         slider.addEventListener('input', e => {
@@ -1938,26 +1835,19 @@ function renderCharterValues(valuesData, container, mode = 'charter') {
             lbl.textContent = pct + '%';
         });
 
-        // The non-negotiable toggle exists only for AI standards. A charter value is
-        // organizational identity and is always scored; letting one block by
-        // hand is what produced a required disclosure that stopped every turn.
         const blockingToggle = card.querySelector('.cv-blocking');
         if (blockingToggle) {
             blockingToggle.addEventListener('change', e => {
                 const on = !!e.target.checked;
                 valuesData[idx].hard_gate = on;
-                // A blocking standard sits outside the weight split; a scored one
-                // needs a positive weight to be normalized against.
                 valuesData[idx].weight = on ? 0 : (valuesData[idx].weight || 1);
                 renderCharterValues(valuesData, container, mode);
             });
         }
 
-        // Rubric toggle
         const rubricPanel = card.querySelector('.cv-rubric-panel');
         card.querySelector('.btn-toggle-rubric').addEventListener('click', () => rubricPanel.classList.toggle('hidden'));
 
-        // Rubric text changes
         card.querySelectorAll('.cv-rubric-text').forEach(ta => {
             ta.addEventListener('input', e => {
                 const score = parseFloat(e.target.dataset.score);
@@ -1967,7 +1857,6 @@ function renderCharterValues(valuesData, container, mode = 'charter') {
             });
         });
 
-        // Remove
         card.querySelector('.btn-remove-cv').addEventListener('click', () => {
             valuesData.splice(idx, 1);
             renderCharterValues(valuesData, container);
@@ -1975,7 +1864,6 @@ function renderCharterValues(valuesData, container, mode = 'charter') {
     });
 }
 
-// --- Members pagination & search state ---
 let _membersState = { page: 1, per_page: 25, search: '', total: 0 };
 let _membersSearchTimer = null;
 
@@ -2014,10 +1902,6 @@ function renderMembersTable(container, members, orgId, total = 0, page = 1, per_
     }
 
     const rows = members.map(m => {
-        // Can edit? Only admins can edit others.
-        // We assume the current user is admin if they can see this, but let's be safe.
-        // Also, you can't edit your OWN role usually to prevent lockout, or maybe you can?
-        // Let's allow editing everyone for now, backend enforces permission.
 
         const isSelf = (currentUser && m.id === currentUser.id);
         const roleOptions = ['admin', 'editor', 'auditor', 'member'].map(r =>
@@ -2073,34 +1957,31 @@ function renderMembersTable(container, members, orgId, total = 0, page = 1, per_
         ${_renderPaginationBar(orgId, total, page, per_page, totalPages)}
     `;
 
-    // Attach Change Listeners
     container.querySelectorAll('.role-select').forEach(select => {
         select.addEventListener('change', async (e) => {
             const userId = e.target.dataset.userId;
             const newRole = e.target.value;
             const originalRole = Array.from(e.target.options).find(o => o.defaultSelected)?.value || newRole;
 
-            e.target.disabled = true; // Lock during update
+            e.target.disabled = true;
 
             try {
                 const res = await api.updateMemberRole(orgId, userId, newRole);
                 if (res && (res.status === 'updated' || res.ok)) {
                     ui.showToast(`Role updated to ${newRole}`, "success");
                     e.target.disabled = false;
-                    // Update defaultSelected to current
                     Array.from(e.target.options).forEach(o => o.defaultSelected = (o.value === newRole));
                 } else {
                     throw new Error(res.error || "Update failed");
                 }
             } catch (err) {
                 ui.showToast(err.message, "error");
-                e.target.value = originalRole; // Revert
+                e.target.value = originalRole;
                 e.target.disabled = false;
             }
         });
     });
 
-    // Attach Reset-password listeners (local accounts only: no email)
     container.querySelectorAll('.btn-reset-password').forEach(btn => {
         btn.addEventListener('click', async (e) => {
             const userId = e.currentTarget.dataset.userId;
@@ -2121,20 +2002,17 @@ function renderMembersTable(container, members, orgId, total = 0, page = 1, per_
         });
     });
 
-    // Wire pagination + search controls (was previously only wired in the empty branch)
     _wireMembersControls(container, orgId);
 
-    // Attach Remove Listeners
     container.querySelectorAll('.btn-remove-member').forEach(btn => {
         btn.addEventListener('click', async (e) => {
             if (!confirm("Are you sure you want to remove this member from the organization?")) return;
-            const userId = e.currentTarget.dataset.userId; // Use currentTarget for button
+            const userId = e.currentTarget.dataset.userId;
 
             try {
                 const res = await api.removeMember(orgId, userId);
                 if (res && (res.status === 'removed' || res.ok)) {
                     ui.showToast("Member removed", "success");
-                    // Reload list
                     loadOrganizationMembers(orgId);
                 } else {
                     throw new Error(res.error || "Removal failed");
@@ -2169,7 +2047,6 @@ function _renderPaginationBar(orgId, total, page, per_page, totalPages) {
 }
 
 function _wireMembersControls(container, orgId) {
-    // Pagination buttons
     container.querySelectorAll('[data-page]').forEach(btn => {
         btn.addEventListener('click', () => {
             const targetPage = parseInt(btn.dataset.page, 10);
@@ -2179,7 +2056,6 @@ function _wireMembersControls(container, orgId) {
         });
     });
 
-    // Search input (debounced)
     const searchInput = document.getElementById('inp-member-search');
     if (searchInput) {
         const runSearch = () => {
@@ -2189,19 +2065,16 @@ function _wireMembersControls(container, orgId) {
             loadOrganizationMembers(orgId);
         };
 
-        // Live filtering as you type (debounced)
         searchInput.oninput = () => {
             clearTimeout(_membersSearchTimer);
             _membersSearchTimer = setTimeout(runSearch, 350);
         };
 
-        // Enter key triggers immediately
         searchInput.onkeydown = (e) => {
             if (e.key === 'Enter') { e.preventDefault(); runSearch(); }
         };
     }
 
-    // Search / Clear buttons
     document.getElementById('btn-member-search')?.addEventListener('click', () => {
         const input = document.getElementById('inp-member-search');
         if (input) { input.focus(); }
@@ -2220,8 +2093,6 @@ function _wireMembersControls(container, orgId) {
     });
 }
 
-// --- Directory Sync (SCIM 2.0), backlog 68. Admin-only. ---
-// Automated provisioning/deprovisioning and group->role from the org's IdP.
 async function renderScimSection(orgId) {
     if (!cloudEdition) return;
     const host = document.getElementById('scim-section');

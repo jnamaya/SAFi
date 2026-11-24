@@ -1,9 +1,3 @@
-"""
-Authentication and user management: Google/Microsoft OAuth 2.0 (OpenID) web
-login, password and TOTP-MFA login, the disposable demo login, invite claiming,
-tool-token acquisition (Google Drive, SharePoint), server-side sessions, and
-profile / model-preference management.
-"""
 from flask import Blueprint, session, jsonify, request, url_for, redirect, current_app, abort, g
 from functools import wraps
 import hashlib
@@ -29,17 +23,12 @@ from ..core import totp as totp_lib
 
 auth_bp = Blueprint('auth', __name__)
 
-# Anti-enumeration timing equalizer: verified once for unknown users so a
-# missing account costs the same bcrypt round as a wrong password.
 _DUMMY_PASSWORD_HASH = "pbkdf2:sha256$bugGYOUtECOdeqFragMEnts$"
 "120000$4f4e8b2a1c9d0e3f5a6b7c8d9e0f1a2b3c4d4e5f60718293a4b5c6d7e8f9012"
 
-# TOTP MFA HELPERS (enterprise identity Phase 2)
 
 _MFA_TOKEN_TTL_SECONDS = 300
 
-# In-process attempt throttle: user_id -> [timestamps]. Good enough for a
-# single-box deploy; the auth_events journal is the durable record.
 _mfa_attempts: dict = {}
 _MFA_MAX_ATTEMPTS = 5
 _MFA_ATTEMPT_WINDOW = 300
@@ -59,8 +48,6 @@ def _mfa_record_attempt(user_id):
 
 
 def _issue_mfa_token(user_id):
-    """Short-lived proof that the password step succeeded; the second factor
-    must be presented before any session exists."""
     payload = {
         "sub": user_id,
         "type": "mfa_pending",
@@ -80,16 +67,7 @@ def _verify_mfa_token(token):
         return None
 
 
-# INVITE CLAIM LINK (backlog 51): password-based join for an invitee with
-# no Google/Microsoft account on their domain.
-
 def issue_invite_claim_token(invite_id, email, expires_days):
-    """Signed, stateless proof that this invite's email was reached by SMTP —
-    same shape as _issue_mfa_token. Not itself the authority: the
-    org_invitations row is. claim_invitation_with_password re-checks
-    accepted_at/revoked_at/expires_at there, so revoking the invite kills
-    this token's usefulness immediately even before its own exp. Issued by
-    organizations.py at invite-creation time, verified here."""
     payload = {
         "sub": invite_id,
         "email": email,
@@ -112,12 +90,8 @@ def verify_invite_claim_token(token):
     except jwt.PyJWTError:
         return None
 
-# ENTERPRISE IDENTITY PHASE 1 HELPERS (server-side sessions)
 
 def _establish_session(user_details, idp, extra_context=None, lifetime_hours=None):
-    """Create the server-side session row, journal the login, and set the slim
-    {'sid'} cookie. Replaces the old fat session['user'] writes — everything
-    but the sid is re-resolved per request by core/identity.resolve_session."""
     from ..core import identity as _identity
     user_id = user_details['id']
     org_id = user_details.get('org_id')
@@ -128,7 +102,7 @@ def _establish_session(user_details, idp, extra_context=None, lifetime_hours=Non
         ctx.update(extra_context)
     sid = db.create_session(
         user_id, org_id, hours,
-        ip=request.remote_addr,  # ProxyFix already resolves the client IP
+        ip=request.remote_addr,
         user_agent=request.user_agent.string if request.user_agent else None,
         auth_context=ctx,
     )
@@ -141,16 +115,10 @@ def _establish_session(user_details, idp, extra_context=None, lifetime_hours=Non
     return sid
 
 
-# AMR values that count as a completed MFA factor (Entra: mfa/ngcmfa/hwk;
-# generic OIDC: otp/fido/sms/swk).
 _MFA_AMR_METHODS = {"mfa", "ngcmfa", "hwk", "otp", "fido", "sms", "swk"}
 
 
 def _sso_evidence(idp, claims):
-    """Distill id_token claims into the auth_context audit evidence:
-    which directory vouched for this person, and was MFA used.
-    mfa is True/False when amr was present, None when the IdP sent none
-    (Google rarely does — 'enforced at Workspace, attested by policy')."""
     ev = {"idp": idp}
     for k in ("iss", "tid", "hd", "auth_time"):
         if claims.get(k) is not None:
@@ -167,10 +135,6 @@ def _sso_evidence(idp, claims):
 
 
 def _org_claim_gate(user_details, idp, claims):
-    """Per-tenant OIDC enforcement (enterprise identity Phase 2 §4.3).
-    Returns a denial reason (journaled as login_denied) or None to proceed.
-    Only orgs that configured a restriction are affected — fail open for
-    unconfigured orgs, fail closed once a tenant/domain is pinned."""
     org_id = user_details.get('org_id')
     if not org_id:
         return None
@@ -179,12 +143,8 @@ def _org_claim_gate(user_details, idp, claims):
     if idp.startswith('google'):
         want_hd = cfg.get('google_hd')
         if want_hd and (claims.get('hd') or '').lower() != want_hd:
-            reason = 'hd_mismatch'  # consumer accounts have no hd → rejected
+            reason = 'hd_mismatch'
     elif idp == 'ldap':
-        # LDAP/AD sign-in is org-opt-in: the deployment is configured
-        # globally (SAFI_LDAP_*), but each org must also allow it, so a
-        # directory user whose email happens to match a member of an
-        # unrelated org cannot use AD as an entry point into it.
         if not cfg.get('ldap_enabled'):
             reason = 'ldap_not_enabled'
     elif idp == 'microsoft':
@@ -195,8 +155,6 @@ def _org_claim_gate(user_details, idp, claims):
             amr = claims.get('amr') or []
             if isinstance(amr, str):
                 amr = [amr]
-            # Entra sends amr on v1/v2 tokens with the optional claim enabled;
-            # an org that mandates MFA must present MFA evidence to log in.
             if not any(m in _MFA_AMR_METHODS for m in amr):
                 reason = 'mfa_evidence_missing'
     if reason:
@@ -211,8 +169,6 @@ def _org_claim_gate(user_details, idp, claims):
 
 
 def _ms_link_allowed(user, tid):
-    """An existing account found only by email may be adopted by a Microsoft
-    login when its organization is pinned to the signing-in tenant."""
     org_id = (user or {}).get('org_id')
     if not org_id or not tid:
         return False
@@ -221,26 +177,6 @@ def _ms_link_allowed(user, tid):
 
 
 def _enforce_domain_ownership(user_details, idp):
-    """A verified domain owns its identities CONTINUOUSLY, not only at the
-    instant someone verifies it (backlog 78).
-
-    Runs for a user who already has an org. If their email domain is verified by
-    a different org, they are moved into it as a member.
-
-    Why this exists, and why it is not redundant with absorption: absorption
-    fires once, at verification. Any account that ends up outside its domain's
-    org afterwards stays there until a human notices. The visible symptom is an
-    admin of a stray org seeing the domain-verification field for a domain
-    somebody else already owns, which is not a cosmetic problem to hide but
-    evidence that the invariant is broken. Enforcing it here makes the state
-    self-correcting at the next login instead.
-
-    Cost is one indexed lookup per login for users who have an org, which is
-    nothing next to a governed turn.
-
-    Demotion only: the move is always to 'member', so this can never grant
-    authority, and it never touches a user already in the owning org.
-    """
     user_id = user_details['id']
     email = (user_details.get('email') or '').strip().lower()
     if '@' not in email:
@@ -272,14 +208,6 @@ def _enforce_domain_ownership(user_details, idp):
 
 
 def _resolve_single_tenant_membership(user_details, idp):
-    """SAFI_TENANCY_MODE=single (the default): this deployment serves exactly
-    one organization, so there is nothing to referee between orgs — no
-    domain lookup, no absorption. A pending invitation still wins, the same
-    as multi-tenant mode, since an admin naming a specific role for a
-    specific person is meaningful even with only one org. Otherwise the user
-    joins the deployment's one org: pinned by SAFI_SINGLE_TENANT_ORG_ID if an
-    operator set it, else whichever org already exists, else a fresh one
-    founded by this user as its first login ever."""
     user_id = user_details['id']
     email = (user_details.get('email') or '').strip().lower()
 
@@ -308,9 +236,6 @@ def _resolve_single_tenant_membership(user_details, idp):
         current_app.logger.info(f"User {user_id} joined single-tenant org {org_id}")
         return
 
-    # No org exists yet anywhere in this deployment: first login ever on a
-    # fresh install. Found it and become its admin, identical to the
-    # multi-tenant Founder Flow except there will never be a second one.
     org_name = f"{user_details.get('name', 'My')} Organization"
     new_org = create_organization(org_name, user_id)
     user_details['org_id'] = new_org['org_id']
@@ -323,14 +248,6 @@ def _resolve_single_tenant_membership(user_details, idp):
 
 
 def _resolve_membership(user_details, idp):
-    """Membership at login: a live invitation wins, EXCEPT against the org that
-    has verified the email's domain, which always owns its own people; otherwise
-    domain auto-join under the org's join policy (invite_only orgs journal the
-    denial and the user lands org-less — they still authenticate). Mutates
-    user_details. Only ever called for a user with no org.
-
-    All of the above is the SAFI_TENANCY_MODE=multi path. The default, single,
-    branches out immediately below to _resolve_single_tenant_membership."""
     if Config.TENANCY_MODE != 'multi':
         _resolve_single_tenant_membership(user_details, idp)
         return
@@ -339,7 +256,6 @@ def _resolve_membership(user_details, idp):
     email = (user_details.get('email') or '').strip().lower()
     domain = email.split('@')[-1] if '@' in email else None
 
-    # Who, if anyone, has VERIFIED this email's domain.
     org = None
     if domain:
         try:
@@ -349,11 +265,6 @@ def _resolve_membership(user_details, idp):
 
     inv = db.match_pending_invitation(email)
 
-    # A verified domain outranks an invitation from anyone else (backlog 75).
-    # create_org_invitation refuses these at the door, but an invitation can
-    # predate the domain verification, so the decision point enforces it too.
-    # Dropping the invite here is journaled: someone tried to place this user in
-    # a tenant their domain owner did not authorize, and that is worth evidence.
     if inv and org and str(inv['org_id']) != str(org['id']):
         db.log_auth_event('invite_declined_domain_owned', f"user:{user_id}",
                           org_id=inv['org_id'], user_id=user_id,
@@ -376,9 +287,6 @@ def _resolve_membership(user_details, idp):
 
     if not org:
         return
-    # Remembered for the caller's Founder Flow: a user whose domain belongs to
-    # an existing org must never be handed a personal org of their own, whatever
-    # this org's join policy decides below (backlog 78).
     user_details['_domain_owned_by'] = org['id']
     policy = db.get_org_identity_config(org['id'])['join_policy']
     if policy in ('domain_auto_join', 'both'):
@@ -396,31 +304,6 @@ def _resolve_membership(user_details, idp):
         current_app.logger.info(f"User {user_id} not auto-joined to {org['name']}: join_policy={policy}")
 
 def _found_org_if_unaffiliated(user_details, idp):
-    """"Founder Flow": a genuinely unaffiliated user gets a personal org and is
-    its admin. Runs on every login path, after membership resolution.
-
-    NOT when their email domain already belongs to an organization (backlog 78).
-    That combination reaches here only under invite_only, since domain_auto_join
-    would have placed them already, and handing them their own org would
-    recreate the shadow IT that verifying the domain exists to eliminate: a new
-    account on a claimed corporate domain, admin of its own ungoverned tenant.
-    They stay unaffiliated until the domain's admin invites them, which is what
-    invite_only means. Free to check: the domain owner was already looked up
-    during membership resolution.
-
-    Lived in callback() alone until 2026-08-25, which meant Google web login
-    founded orgs and Microsoft and mobile did not. An unaffiliated Microsoft
-    user finished login with org_id NULL, showing the users.role column default
-    of 'member', and had no route back: POST /api/organizations never promotes
-    the caller, no front end calls it, and domain verification needs admin.
-
-    Single-tenant mode never reaches the body: _resolve_single_tenant_membership
-    always sets org_id, and it journals its own org_founded event.
-
-    Returns True when an org was founded. Swallows its own failures, the same
-    as the inlined version: a founder-flow error must not turn an otherwise
-    valid login into an auth failure.
-    """
     if user_details.get('org_id') or user_details.get('_domain_owned_by'):
         return False
 
@@ -428,9 +311,6 @@ def _found_org_if_unaffiliated(user_details, idp):
     org_name = f"{user_details.get('name', 'My')} Organization"
     try:
         new_org = create_organization(org_name, user_id)
-        # create_organization_atomic sets organizations.owner_id and touches no
-        # user row, so the promotion has to be persisted separately or the
-        # founder is left outside the org they just founded.
         db.update_user_org_and_role(user_id, new_org['org_id'], 'admin')
         user_details['org_id'] = new_org['org_id']
         user_details['role'] = 'admin'
@@ -446,22 +326,7 @@ def _found_org_if_unaffiliated(user_details, idp):
         return False
 
 
-# MAIN APP AUTHENTICATION (OpenID Connect for Login)
-
 def sso_required(fn):
-    """Refuse an SSO endpoint when this deployment has SSO turned off.
-
-    Hiding the login buttons is cosmetic -- /api/login/google would still be a
-    live, unauthenticated entry point. Gating the routes is what actually
-    enforces SAFI_SSO_ENABLED.
-
-    404 rather than 403: a provider that is switched off should be
-    indistinguishable from one that was never configured, so the API cannot be
-    used to enumerate which identity providers a deployment talks to.
-
-    Read from Config at call time rather than at import time, so tests (and an
-    appliance .env written after import) both see the current value.
-    """
     @wraps(fn)
     def wrapper(*args, **kwargs):
         if not Config.SSO_LOGIN_ENABLED:
@@ -472,7 +337,6 @@ def sso_required(fn):
 
 @auth_bp.route('/app-config', methods=['GET'])
 def app_config():
-    """Non-sensitive feature flags, so the UI can adapt before login."""
     google_configured = bool(Config.GOOGLE_CLIENT_ID and Config.GOOGLE_CLIENT_SECRET)
     microsoft_configured = bool(Config.MICROSOFT_CLIENT_ID and Config.MICROSOFT_CLIENT_SECRET)
     return jsonify({
@@ -484,15 +348,9 @@ def app_config():
         "sso_login_enabled":   Config.SSO_LOGIN_ENABLED and (google_configured or microsoft_configured),
         "google_login_enabled": Config.SSO_LOGIN_ENABLED and google_configured,
         "microsoft_login_enabled": Config.SSO_LOGIN_ENABLED and microsoft_configured,
-        # Env config alone is not enough: the login screen is pre-auth and has
-        # no org context, so the AD checkbox is only offered when the
-        # deployment is LDAP-configured AND at least one org has the
-        # "LDAP / Active Directory sign-in" toggle switched on. Per-org
-        # enforcement still happens at bind time via _org_claim_gate.
         "ldap_login_enabled":    Config.ldap_configured() and db.any_org_ldap_enabled(),
     })
 
-# MAIN APP AUTHENTICATION (OpenID Connect for Login)
 
 @auth_bp.route('/login')
 @sso_required
@@ -511,8 +369,6 @@ def login():
 def callback():
     try:
         current_app.logger.info("Web callback initiated.")
-        # Authlib handles redirect_uri from session automatically, 
-        # provided the login route set it correctly (with https).
         token = oauth.google.authorize_access_token()
         nonce = session.pop('nonce', None)
         id_claims = oauth.google.parse_id_token(token, nonce=nonce) or {}
@@ -535,14 +391,11 @@ def callback():
             user_details['active_profile'] = default_profile
 
         if not user_details.get('org_id'):
-            # Membership: invitation first, then domain auto-join under the
-            # org's join policy (enterprise identity Phase 1).
             try:
                 _resolve_membership(user_details, idp='google')
             except Exception as e:
                 current_app.logger.error(f"Error resolving membership: {e}")
         else:
-            # Already in an org: keep the domain invariant true (backlog 78).
             try:
                 _enforce_domain_ownership(user_details, idp='google')
             except Exception as e:
@@ -550,7 +403,6 @@ def callback():
 
         _found_org_if_unaffiliated(user_details, idp='google')
 
-        # Per-tenant claim enforcement + directory/MFA evidence (Phase 2)
         denied = _org_claim_gate(user_details, 'google', id_claims)
         if denied:
             return redirect(f'/?error=login_denied&reason={denied}')
@@ -579,16 +431,6 @@ def login_mobile():
         return jsonify({"error": "Missing auth token"}), 400
 
     try:
-        # SECURITY: Verify the Google ID token's signature, issuer and expiry
-        # against Google's public certs. Never trust an unverified JWT — decoding
-        # with verify_signature=False let any client forge a login as any user.
-        #
-        # The native (Capacitor) app authenticates with its OWN Google OAuth
-        # client, so its token's audience differs from the web GOOGLE_CLIENT_ID.
-        # We therefore verify the signature without a fixed audience, then
-        # explicitly enforce that the audience is one of OUR registered client
-        # ids (web + mobile). This keeps audience validation strict while
-        # supporting both clients.
         allowed_audiences = {
             aud for aud in (
                 current_app.config.get('GOOGLE_CLIENT_ID'),
@@ -599,18 +441,15 @@ def login_mobile():
             user_info = id_token.verify_oauth2_token(
                 token,
                 google_requests.Request(),
-                audience=None,  # audience enforced manually against allow-list below
+                audience=None,
             )
         except ValueError as verify_error:
             current_app.logger.warning(f"Mobile login: rejected invalid Google token: {verify_error}")
             return jsonify({"error": "Invalid authentication token"}), 401
 
-        # verify_oauth2_token already enforces iss ∈ {accounts.google.com,
-        # https://accounts.google.com}; double-check defensively.
         if user_info.get('iss') not in ('accounts.google.com', 'https://accounts.google.com'):
             return jsonify({"error": "Invalid token issuer"}), 401
 
-        # Enforce audience against our own registered client ids.
         if user_info.get('aud') not in allowed_audiences:
             current_app.logger.warning(
                 f"Mobile login: rejected token with unrecognized audience {user_info.get('aud')}"
@@ -642,7 +481,6 @@ def login_mobile():
             db.update_user_profile(user_id, default_profile)
             user_details['active_profile'] = default_profile
 
-        # Membership + server-side session (enterprise identity Phase 1).
         if not user_details.get('org_id'):
             try:
                 _resolve_membership(user_details, idp='google_mobile')
@@ -656,8 +494,6 @@ def login_mobile():
 
         _found_org_if_unaffiliated(user_details, idp='google_mobile')
 
-        # Per-tenant claim enforcement — the verified Google ID token IS the
-        # claims dict here (includes hd for Workspace accounts).
         denied = _org_claim_gate(user_details, 'google_mobile', user_info)
         if denied:
             return jsonify({"error": "Login denied by your organization's policy",
@@ -671,22 +507,9 @@ def login_mobile():
         current_app.logger.error(f"Mobile login failed: {e}", exc_info=True)
         return jsonify({"error": "Authentication failed"}), 500
 
-# LOCAL LOGIN (Persistent Admin, No OAuth Required)
 
 @auth_bp.route('/login/local', methods=['POST'])
 def login_local():
-    """
-    [POST /api/login/local]
-    Checks any password-login account by USERNAME or EMAIL: the persistent
-    local admin (SAFI_LOCAL_ADMIN_USERNAME / _EMAIL + _PASSWORD), or an
-    invite-claimed account (backlog 51). Available whenever either could
-    exist — see Config.password_login_available().
-
-    A local appliance account has a username and normally no email at all, so
-    the field cannot stay email-only. `identifier` is the current name;
-    `email` is still accepted so the native app and any older cached client
-    keep working unchanged.
-    """
     from werkzeug.security import check_password_hash
 
     if not Config.password_login_available():
@@ -696,8 +519,6 @@ def login_local():
     identifier = (data.get('identifier') or data.get('email') or '').strip()
     password   = data.get('password') or ''
 
-    # P2: per-IP and per-identifier throttles ahead of any DB or hash work.
-    # Reuses the dependency-free sliding-window limiter from api/keys.py.
     from .keys import per_minute_allowed as _pm_allowed
     if not _pm_allowed("login:ip:{}".format(request.remote_addr or "-")) or (
             identifier and not _pm_allowed("login:id:{}".format(identifier.lower()))):
@@ -705,10 +526,6 @@ def login_local():
             "login_throttled ip=%s", request.remote_addr)
         return jsonify({"error": "Too many attempts. Try again shortly."}), 429
 
-    # Anti-enumeration: every failure — missing fields, unknown user, wrong
-    # password — is ONE response, and a password-hash check always runs so
-    # the timing for an unknown user matches a wrong password. Never let a
-    # 400-vs-401 (or fast-vs-slow) difference reveal whether an account exists.
     user = db.get_user_by_identifier(identifier) if (identifier and password) else None
     stored_hash = (user or {}).get('password_hash') or _DUMMY_PASSWORD_HASH
     valid = bool(identifier and password and user
@@ -723,17 +540,11 @@ def login_local():
 
     totp_state = db.get_user_totp(user['id'])
     if totp_state['enabled']:
-        # Password verified but no session yet: hand back a short-lived
-        # mfa_pending token; the session is only created by /login/local/mfa.
         return jsonify({"ok": False, "mfa_required": True,
                         "mfa_token": _issue_mfa_token(user['id'])})
 
     cfg = db.get_org_identity_config(user.get('org_id'))
     if cfg.get('require_mfa'):
-        # Org mandates MFA and this account has none: grant a session that
-        # can ONLY reach /me + MFA enrollment + logout (enforced centrally in
-        # core/identity.resolve_session), so enrollment is possible but
-        # nothing else is.
         _establish_session(user, idp='local', extra_context={
             "amr": ["pwd"], "mfa": False, "mfa_pending_enrollment": True})
         current_app.logger.info(f"Local login (MFA enrollment required): {identifier}")
@@ -747,15 +558,6 @@ def login_local():
 
 @auth_bp.route('/cli/login', methods=['POST'])
 def cli_login():
-    """
-    [POST /api/cli/login]
-    Password-to-key exchange for safi-cli: verifies the SAME credentials as
-    the web login (local account or LDAP/AD bind), then provisions a fresh
-    API key bound to the user's governing policy and returns the raw key
-    (plus the policy id and agent-relevant identity fields). The password is
-    never stored; only the standard hashed api_keys row is created, labelled
-    "safi-cli" (a repeat login revokes the previous cli key first).
-    """
     from werkzeug.security import check_password_hash
     from .keys import per_minute_allowed as _pm_allowed
 
@@ -856,7 +658,6 @@ def _cli_sso_save(device_code: str, rec: dict) -> None:
 @auth_bp.route('/cli/sso/start', methods=['POST'])
 @sso_required
 def cli_sso_start():
-    """Mint a short-lived device code + poll token for safi-cli browser SSO."""
     import hashlib
     import time
     from .keys import per_minute_allowed as _pm_allowed
@@ -885,7 +686,6 @@ def cli_sso_start():
 @auth_bp.route('/cli/sso/authorize', methods=['GET', 'POST'])
 @sso_required
 def cli_sso_authorize():
-    """Browser endpoint where an SSO user authenticates and approves safi-cli."""
     import html as _html
 
     code = (request.args.get("code") or request.form.get("code") or "").strip()
@@ -1001,7 +801,6 @@ def cli_sso_authorize():
 @auth_bp.route('/cli/sso/poll', methods=['POST'])
 @sso_required
 def cli_sso_poll():
-    """Poll for completion of a pending safi-cli browser SSO login."""
     import hashlib
     import hmac
 
@@ -1033,11 +832,6 @@ def cli_sso_poll():
 
 @auth_bp.route('/login/local/mfa', methods=['POST'])
 def login_local_mfa():
-    """
-    [POST /api/login/local/mfa]
-    Second step of local login for TOTP-enrolled accounts: exchanges the
-    mfa_pending token + a live code for a real session.
-    """
     if not Config.password_login_available():
         return jsonify({"error": "Local login is not enabled on this instance."}), 404
 
@@ -1067,18 +861,7 @@ def login_local_mfa():
     return jsonify({"ok": True})
 
 
-# LDAP / ACTIVE DIRECTORY LOGIN (enterprise identity LDAP Phase 1)
-#
-# Design: docs/internal/DESIGN_LDAP_AD_AUTH.md. AD is the sole password
-# authority (direct bind, never stored); SAFi chains its own TOTP on top
-# when the org mandates MFA, mirroring /login/local exactly. First login
-# for a TOTP-less account under require_mfa issues the restricted
-# enrollment session, not a full one.
-
 def _ldap_jit_target_org(email):
-    """Org eligible to JIT-provision this directory user: a live invitation
-    (any role the admin chose), else the verified-domain owner when it has
-    BOTH ldap_enabled and ldap_auto_provision. Returns {id, role} or None."""
     inv = db.match_pending_invitation(email)
     if inv:
         if db.get_org_identity_config(inv['org_id']).get('ldap_enabled'):
@@ -1095,8 +878,6 @@ def _ldap_jit_target_org(email):
 
 
 def _ldap_provision_user(email, bind_result, jit_org, username):
-    """Create the email-keyed user row for a first-time directory login.
-    No password hash — the AD bind IS the credential (same posture as SSO)."""
     user_id = f"ldap_{uuid.uuid4()}"
     db.upsert_user({
         "id": user_id, "email": email,
@@ -1107,11 +888,6 @@ def _ldap_provision_user(email, bind_result, jit_org, username):
 
 
 def _apply_ldap_role_mapping(user, user_dn):
-    """Group→role mapping (Phase 2): resolve the directory groups' mapped role
-    and update membership when it changed. Nothing is cached on the user row —
-    the directory is re-read at every sign-in, so demotions/promotions in AD
-    apply at the next login. Best-effort: a directory that fails to answer
-    memberOf keeps the existing role rather than blocking login."""
     if not user or not user.get('org_id'):
         return
     from ..core import ldap_client
@@ -1131,13 +907,6 @@ def _apply_ldap_role_mapping(user, user_dn):
 
 @auth_bp.route('/login/ldap', methods=['POST'])
 def login_ldap():
-    """
-    [POST /api/login/ldap]
-    Step 1: verify DOMAIN\\user + AD password by direct bind, reconcile the
-    account to a SAFi user by email, then either establish a session (no
-    MFA required), hand back an mfa_pending token (TOTP enrolled), or a
-    restricted enrollment session (org requires MFA, no TOTP yet).
-    """
     from ..core import ldap_client
 
     if not Config.ldap_configured():
@@ -1160,8 +929,6 @@ def login_ldap():
 
     email = result.get('email')
     if not email:
-        # Without a mail attribute there is nothing to reconcile against —
-        # the SSO identity model is email-keyed by design.
         db.log_auth_event('login_denied', f"ldap:{username}",
                           detail={"idp": "ldap", "reason": "no_email_attribute"})
         return jsonify({"error": "Your directory account has no email attribute; "
@@ -1169,9 +936,6 @@ def login_ldap():
 
     user = db.get_user_by_email(email)
     if not user:
-        # Phase 2 optional JIT provisioning: only for an org that BOTH enabled
-        # LDAP and opted into auto-provision, resolved via a pending invitation
-        # or the email's verified domain. Never a free-floating account.
         jit_org = _ldap_jit_target_org(email)
         if not jit_org:
             db.log_auth_event('login_denied', f"ldap:{username}", org_id=None,
@@ -1192,16 +956,12 @@ def login_ldap():
 
     totp_state = db.get_user_totp(user['id'])
     if totp_state['enabled']:
-        # AD password verified, but the second factor is still owed. The
-        # mfa_pending token is only issued after a successful bind.
         current_app.logger.info(f"LDAP login (MFA pending): {email}")
         return jsonify({"ok": False, "mfa_required": True,
                         "mfa_token": _issue_mfa_token(user['id'])})
 
     cfg = db.get_org_identity_config(user.get('org_id'))
     if cfg.get('require_mfa'):
-        # Same restricted enrollment session as local login: /me + TOTP
-        # enrollment + logout only (enforced in core/identity.resolve_session).
         _establish_session(user, idp='ldap', extra_context={
             "amr": ["pwd"], "mfa": False, "mfa_pending_enrollment": True,
             "ldap_dn": result.get('dn')})
@@ -1216,12 +976,6 @@ def login_ldap():
 
 @auth_bp.route('/login/ldap/mfa', methods=['POST'])
 def login_ldap_mfa():
-    """
-    [POST /api/login/ldap/mfa]
-    Step 2: exchange the mfa_pending token (issued after a successful AD
-    bind) plus a live TOTP code for a real session. Identical contract to
-    /login/local/mfa — only the step-1 authority differs.
-    """
     if not Config.ldap_configured():
         return jsonify({"error": "LDAP sign-in is not configured on this instance."}), 404
 
@@ -1254,14 +1008,6 @@ def login_ldap_mfa():
 
 @auth_bp.route('/invite/claim', methods=['POST'])
 def claim_invitation():
-    """
-    [POST /api/invite/claim]
-    Completes an SMTP-delivered invite-claim link (backlog 51): the token
-    is proof this address received the email, so this endpoint lets the
-    invitee set a password and joins them to the inviting org. Public by
-    design — same trust boundary as /login/local's password check, the
-    token stands in for "an account already exists" up to this point.
-    """
     data = request.get_json(silent=True) or {}
     token = data.get('token') or ''
     name = (data.get('name') or '').strip()
@@ -1285,8 +1031,6 @@ def claim_invitation():
         return jsonify({"error": "This invitation is no longer valid — it may have "
                                   "expired, been revoked, or already been claimed."}), 400
 
-    # accept_invitation re-checks the row's own liveness under a row lock,
-    # same as the OAuth login path — the check above is not the last word.
     accepted = db.accept_invitation(claim['invite_id'], result['user_id'],
                                     f"user:{result['user_id']}")
     if not accepted:
@@ -1303,28 +1047,13 @@ def claim_invitation():
     current_app.logger.info(f"Invite claimed: {claim['email']} joined org {accepted['org_id']}")
     return jsonify({"ok": True})
 
-# DEMO LOGIN (Auditor Role, Disposable)
 
 @auth_bp.route('/login/demo')
 def login_demo():
-    """
-    [GET /api/login/demo]
-    Creates 'Auditor' account for demo purposes.
-    - RESUMABLE: Checks for 'safi_demo_id' cookie to reuse existing session.
-    - CLEANUP: Triggers cleanup of old accounts.
-    - DISABLED: Returns 404 if SAFI_ENABLE_DEMO is false.
-    - NATIVE: ?client=native returns JSON instead of a 302 redirect. The
-      Capacitor app calls this cross-origin (bundled assets are served
-      under a spoofed local origin); a fetch() that follows a redirect
-      needs BOTH hops to pass CORS, while a single JSON response only
-      needs the one. The session cookie itself is unaffected either way —
-      Flask sets it on whatever response is returned.
-    """
     if not Config.ENABLE_DEMO_LOGIN:
         return jsonify({"error": "Demo login is not available on this instance."}), 404
 
     try:
-        # Prevents "thundering herd" where every login triggers a DB-heavy cleanup
         import random
         if random.random() < 0.05:
             from ..persistence import demo_store
@@ -1342,7 +1071,6 @@ def login_demo():
         if not user_to_login:
             demo_id = f"demo_{uuid.uuid4()}"
             
-            # Sandbox org name uses the last 4 id chars: readable but unique.
             org_name = f"SAFi Demo ({demo_id[-4:]})"
             org_id = db.create_organization(org_name)
             
@@ -1357,21 +1085,12 @@ def login_demo():
             }
             db.upsert_user(user_info)
 
-            # Count it now, while the account exists. In 24 hours this row and
-            # its org are gone, and without this the only trace that anyone
-            # used the demo is whatever the purge forgets to delete
-            # (GOVERNANCE_BACKLOG 82). Never fatal to a login.
             from ..persistence import demo_store
             demo_store.record_demo_signup()
 
             default_profile = Config.DEFAULT_PROFILE
             db.update_user_profile(demo_id, default_profile)
 
-            # Public-demo default model (user-level, so guests can still
-            # switch in Settings). Conscience stays on the global default.
-            # Only stored when this install can actually serve it: a demo
-            # model from an unconfigured provider would fail every guest
-            # turn, so the guest inherits the global default instead.
             if Config.DEMO_INTELLECT_MODEL:
                 from ..core.services.model_routing import model_provider_configured
                 if model_provider_configured(Config.DEMO_INTELLECT_MODEL, Config):
@@ -1386,7 +1105,6 @@ def login_demo():
             
             current_app.logger.info(f"Created new demo user {demo_id}")
 
-        # Session: fixed 24h absolute, matching the sandbox purge.
         _establish_session(user_to_login, idp='demo', lifetime_hours=24,
                            extra_context={"is_demo": True})
         
@@ -1402,8 +1120,6 @@ def login_demo():
         return redirect('/?error=demo_failed')
 
 
-# MICROSOFT LOGIN (App Login / Linking via "Sign in with Microsoft")
-
 @auth_bp.route('/login/microsoft')
 @sso_required
 def login_microsoft():
@@ -1412,8 +1128,6 @@ def login_microsoft():
         session['cli_sso_code'] = cli_code
     nonce = secrets.token_urlsafe(16)
     session['nonce'] = nonce
-    # scheme='https' explicitly: Authlib's inferred scheme otherwise fails with
-    # AADSTS50011 behind a reverse proxy.
     redirect_uri = url_for('auth.callback_microsoft', _external=True, _scheme='https')
     return oauth.microsoft.authorize_redirect(redirect_uri, nonce=nonce)
 
@@ -1424,7 +1138,6 @@ def callback_microsoft():
     try:
         current_app.logger.info("Microsoft callback initiated.")
         
-        # Authlib uses the saved redirect_uri from session automatically.
         token = oauth.microsoft.authorize_access_token()
         nonce = session.pop('nonce', None)
         id_claims = oauth.microsoft.parse_id_token(token, nonce=nonce) or {}
@@ -1448,7 +1161,6 @@ def callback_microsoft():
             if photo_resp.ok:
                 b64_img = base64.b64encode(photo_resp.content).decode('utf-8')
                 content_type = photo_resp.headers.get('Content-Type', 'image/jpeg')
-                # This Base64 string is huge (kb/mb). We save it to DB but NOT session.
                 picture_data = f"data:{content_type};base64,{b64_img}"
         except Exception as e:
              current_app.logger.warning(f"Error fetching Microsoft photo: {e}")
@@ -1489,7 +1201,6 @@ def callback_microsoft():
         user_id = mapped_user_info.get('id')
         user_details = db.get_user_details(user_id)
         
-        # Membership + server-side session (enterprise identity Phase 1)
         if not user_details.get('org_id'):
             try:
                 _resolve_membership(user_details, idp='microsoft')
@@ -1503,8 +1214,6 @@ def callback_microsoft():
 
         _found_org_if_unaffiliated(user_details, idp='microsoft')
 
-        # Per-tenant claim enforcement + directory/MFA evidence (Phase 2).
-        # tid/amr come from the verified id_token.
         denied = _org_claim_gate(user_details, 'microsoft', id_claims)
         if denied:
             return redirect(f'/?error=login_denied&reason={denied}')
@@ -1522,28 +1231,8 @@ def callback_microsoft():
         return redirect('/?error=auth_failed')
 
 
-# TOOL AUTHENTICATION (Google Drive & SharePoint via Manual Flow)
-
 @auth_bp.route('/auth/status')
 def auth_status():
-    """What this member has linked, and what their org permits them to link.
-
-    `connectors` is the delegated-account catalog, empty since the last
-    built-in connector retired (2026-08-15); it stays in the payload so older
-    clients keep parsing. `mcp_servers` is the live successor, and each entry
-    carries two independent flags:
-
-      allowed  the org may reach this server (the operator's `orgs` field,
-               enforced again at dispatch; the UI filtering is presentation)
-      usable   at least one agent this member can reach is authorized to call
-               a tool from it. Offering a source no agent uses buys the member
-               a live OAuth grant that nothing reads.
-
-    `connected` can legitimately include an account whose tools have since
-    been narrowed away. The
-    UI keeps showing those so the member can still disconnect; hiding a live
-    token is the one thing worse than showing it.
-    """
     from ..core.rbac import get_current_org_id, get_current_role
     from ..core.services.connector_governance import connectors_for_member
 
@@ -1553,9 +1242,6 @@ def auth_status():
 
     org_id = get_current_org_id()
 
-    # OAuth-protected MCP tool servers ride along with the same two flags the
-    # connectors carry, so the one menu can offer both kinds of account with
-    # one set of rules. `connected` here is per member per server.
     from ..core.services.mcp_manager import is_guest, member_oauth_servers
     from ..core.services import mcp_oauth
     mcp_servers = []
@@ -1578,46 +1264,21 @@ def disconnect_provider(provider):
     if not user_id:
         return jsonify({"error": "Not logged in"}), 401
         
-    # No allow-list check: removing access is always permitted, even for a
-    # connector an admin has since blocked — that is the direction the policy
-    # wants to travel in.
     from ..core.services import mcp_oauth
     if provider.startswith(mcp_oauth.PROVIDER_PREFIX):
-        # Reach the server too, best effort, while the stored token still
-        # exists to prove possession. The row dies regardless.
         from ..core.services.mcp_manager import file_servers
         key = provider[len(mcp_oauth.PROVIDER_PREFIX):]
         mcp_oauth.revoke_at_server(user_id, key, file_servers().get(key) or {})
     db.delete_oauth_token(user_id, provider, org_id=_connector_org())
     return jsonify({"status": "disconnected", "provider": provider})
 
-# DATA-SOURCE CONNECTORS (retired)
-# The delegated per-user linking routes that lived here (/auth/github,
-# /auth/google, /auth/microsoft) retired one by one through 2026-08-15 as
-# their connectors were absorbed by MCP OAuth servers (GOVERNANCE_BACKLOG
-# 48k). Members now connect accounts per server via /api/mcp/auth/<key>/login,
-# which carries the same login-and-callback gating these routes pioneered.
-# The generic /auth/<provider>/disconnect above stays: it is how a member
-# removes ANY stored token, including MCP ones, and removing access is always
-# permitted.
 
 def _connector_org():
-    """The org to attribute a connect/disconnect to, or None on a single-user
-    install with no org (nothing to evidence-log against)."""
     from ..core.rbac import get_current_org_id
     return get_current_org_id()
 
 
-
 def _safe_profile(preferred: str, fallback: str):
-    """Best-effort profile resolution for /api/me.
-
-    The stored preference may name an agent that is disabled in the active
-    catalog (e.g. SAFI_BUILTIN_AGENTS without it) — and the fallback may be
-    the very same disabled key. Login must never 500 over this: try the
-    preference, then the configured default, then any active catalog agent,
-    and only surface the problem if the catalog itself is broken.
-    """
     from ..profile_resolver import get_profile, AGENTS
     for candidate in (preferred, fallback, Config.DEFAULT_PROFILE):
         if not candidate:
@@ -1634,11 +1295,6 @@ def _safe_profile(preferred: str, fallback: str):
 
 @auth_bp.route('/me', methods=['GET'])
 def get_me():
-    # The slim session cookie only carries 'sid'; identity.resolve_session
-    # hydrates g.user per request. session['user_id'] exists only mid-request
-    # (and is stripped before the cookie is serialized), so it must not be
-    # used as the auth check here — it made freshly-created local-account
-    # sessions look anonymous.
     user = getattr(g, 'user', None)
     user_id = (user or {}).get('id') or session.get('user_id')
     if not user_id:
@@ -1656,7 +1312,6 @@ def get_me():
         from ..persistence import sharing_store
         from ..role_config import ROLE_CONFIG
 
-        # Verify whether the stored profile is actually authorized for this user
         if not active_profile_name or not sharing_store.can_use_built_in_or_custom_agent(
                 user_id, user_role, user_org, active_profile_name, ROLE_CONFIG):
             usable = sharing_store.get_first_usable_agent(user_id, user_role, user_org, ROLE_CONFIG)
@@ -1700,10 +1355,6 @@ def get_me():
         if 'role' not in user_details: user_details['role'] = 'member'
         if 'org_id' not in user_details: user_details['org_id'] = None
 
-        # Offline/PWA posture (Phase F): personal users keep offline support;
-        # org members follow their org's kill switch (default OFF — no local
-        # copies of org content on the device). The client purges its caches
-        # when this is false.
         user_details['offline_enabled'] = True
         if user_details.get('org_id'):
             try:
@@ -1712,22 +1363,13 @@ def get_me():
             except Exception:
                 user_details['offline_enabled'] = False
 
-        # Org-mandated MFA, not yet enrolled (restricted session): tell the
-        # frontend to show the enrollment gate instead of the app.
         from flask import g as _g
         if getattr(_g, 'mfa_pending_enrollment', False):
             user_details['mfa_setup_required'] = True
 
-        # Credential material never leaves the server, even hashed/encrypted.
         for _sensitive in ('password_hash', 'totp_secret', 'totp_enabled_at'):
             user_details.pop(_sensitive, None)
 
-        # --- Organization identity, and self-correction for org owners ---
-        # One fetch serves both. get_user_details is SELECT * FROM users, so it
-        # carries org_id but never the org's NAME; the profile header needs the
-        # name and whether this member owns the org, and the owner promotion
-        # below needs the same row. Previously fetched only for non-admins,
-        # which is why no caller could ever name the org.
         user_details['org_name'] = None
         user_details['is_org_owner'] = False
         if user_details.get('org_id'):
@@ -1738,17 +1380,8 @@ def get_me():
                 if user_details['is_org_owner'] and user_details.get('role') != 'admin':
                     current_app.logger.warning(f"User {user_id} is Org Owner but has role '{user_details['role']}'. Auto-promoting to ADMIN.")
                     db.update_user_org_and_role(user_id, user_details['org_id'], 'admin')
-                    user_details['role'] = 'admin' # Update local dict
+                    user_details['role'] = 'admin'
 
-        # --- P5: slim the payload to an explicit whitelist. ---
-        # get_user_details is SELECT * and the profile resolver attaches the
-        # FULL compiled role config (worldview, values, will_rules, Phase-0
-        # injection signatures, tool allow-list) — reconnaissance material
-        # for prompt-injection targeting. No client consumes
-        # active_profile_details (the UI loads profiles via
-        # fetchAvailableProfiles), and everything else the frontend/tests
-        # read is enumerated below. Anything not listed never leaves the
-        # server.
         _ME_FIELDS = (
             'id', 'username', 'name', 'email', 'picture', 'avatar',
             'role', 'org_id', 'org_name', 'is_org_owner',
@@ -1765,11 +1398,6 @@ def get_me():
 
 @auth_bp.route('/me/profile', methods=['GET'])
 def get_user_profile():
-    """Reads the authenticated user's persistent profile (facts, values, interests).
-
-    Merged from the former profile_api blueprint. The PUT sibling below
-    handles the active-agent preference; these two handle profile *memory*.
-    """
     user_id = session.get('user', {}).get('id')
     if not user_id:
         return jsonify({"ok": False, "error": "Not authenticated"}), 401
@@ -1782,7 +1410,6 @@ def get_user_profile():
 
 @auth_bp.route('/me/profile', methods=['POST'])
 def update_user_profile():
-    """Overwrites the authenticated user's persistent profile."""
     user_id = session.get('user', {}).get('id')
     if not user_id:
         return jsonify({"ok": False, "error": "Not authenticated"}), 401
@@ -1804,10 +1431,6 @@ def set_user_profile():
     profile_name = (data.get('profile') or '').strip()
     if not profile_name:
         return jsonify({"error": "'profile' is required."}), 400
-    # Use-path enforcement (backlog 55b). This field used to be written with
-    # no validation at all, and the chat path trusts it, so this endpoint was
-    # a way to use any private agent by key. Built-ins are platform-wide;
-    # custom agents must clear the sharing resolver.
     from ..profile_resolver import AGENTS
     if profile_name not in AGENTS:
         from ..persistence import sharing_store
@@ -1827,9 +1450,6 @@ def set_user_models():
     if not user_id: return jsonify({"error": "Auth required"}), 401
     data = request.json or {}
     current = db.get_user_details(user_id) or {}
-    # Partial updates let the quick Intellect selector change the drafting
-    # model without overwriting a separately chosen Conscience model. A field
-    # explicitly sent as null still clears that model preference.
     intellect = data["intellect_model"] if "intellect_model" in data else current.get("intellect_model")
     will = data["will_model"] if "will_model" in data else current.get("will_model")
     conscience = data["conscience_model"] if "conscience_model" in data else current.get("conscience_model")
@@ -1840,9 +1460,6 @@ def set_user_models():
 def delete_me():
     user_id = session.get('user_id')
     if not user_id: return jsonify({"error": "Auth required"}), 401
-    # Before the rows die: revoke this member's tokens at every MCP server
-    # they connected, or the upstream credentials outlive the account inside
-    # the gateways. Best effort; deletion proceeds regardless.
     from ..core.services.mcp_oauth import revoke_all_mcp_tokens
     revoke_all_mcp_tokens(user_id)
     db.revoke_user_sessions(user_id, f"user:{user_id}")
@@ -1850,7 +1467,6 @@ def delete_me():
     session.clear()
     return jsonify({"status": "success"})
 
-# SESSION MANAGEMENT (self-service; enterprise identity Phase 1)
 
 @auth_bp.route('/me/sessions', methods=['GET'])
 def list_my_sessions():
@@ -1882,17 +1498,14 @@ def revoke_my_session(sid):
 
 @auth_bp.route('/me/sessions', methods=['DELETE'])
 def revoke_my_other_sessions():
-    """Log out everywhere else — revokes every session except the current."""
     user_id = session.get('user_id')
     if not user_id: return jsonify({"error": "Auth required"}), 401
     from flask import g
     count = db.revoke_user_sessions(user_id, f"user:{user_id}", keep_sid=getattr(g, 'sid', None))
     return jsonify({"ok": True, "revoked": count})
 
-# TOTP MFA SELF-SERVICE (enterprise identity Phase 2)
 
 def _sync_appliance_os_password(new_password: str) -> bool:
-    """Sync admin password to Linux OS account if running on an appliance."""
     import subprocess
     from pathlib import Path
     helper = Path("/usr/local/sbin/safi-admin-passwd")
@@ -1921,12 +1534,6 @@ def _sync_appliance_os_password(new_password: str) -> bool:
 
 @auth_bp.route('/me/password', methods=['POST'])
 def change_my_password():
-    """[POST /api/me/password] Self-service password change for local
-    (password) accounts. The CURRENT password must be presented — this is
-    what makes the flow safe for a handed-over temp credential: whoever can
-    use the account can replace the credential, and nobody else can. OAuth /
-    SCIM-only identities are refused (they have no password to change, and
-    must not silently gain an appliance credential)."""
     from werkzeug.security import check_password_hash
     user_id = session.get('user_id')
     if not user_id:
@@ -1964,14 +1571,11 @@ def get_my_mfa():
     cfg = db.get_org_identity_config(user.get('org_id'))
     return jsonify({"ok": True, "totp_enabled": state['enabled'],
                     "org_requires_mfa": bool(cfg.get('require_mfa')),
-                    # OAuth accounts satisfy MFA at the IdP, not here.
                     "local_account": bool(user.get('password_hash'))})
 
 
 @auth_bp.route('/me/mfa/totp/setup', methods=['POST'])
 def setup_my_totp():
-    """Generate a pending secret and return it (Base32 + otpauth URI). Not
-    enforced at login until confirmed with a live code via /verify."""
     user_id = session.get('user_id')
     if not user_id: return jsonify({"error": "Auth required"}), 401
     user = db.get_user_details(user_id) or {}
@@ -1989,9 +1593,6 @@ def setup_my_totp():
 
 @auth_bp.route('/me/mfa/totp/verify', methods=['POST'])
 def verify_my_totp():
-    """Confirm enrollment with a live code. If the current session was a
-    restricted mfa_pending_enrollment session (org-mandated MFA), upgrade it
-    in place so the user proceeds without re-login."""
     from flask import g
     user_id = session.get('user_id')
     if not user_id: return jsonify({"error": "Auth required"}), 401
@@ -2030,15 +1631,12 @@ def verify_my_totp():
 
 @auth_bp.route('/me/mfa/totp', methods=['DELETE'])
 def disable_my_totp():
-    """Self-service disable — requires a live code so a hijacked session
-    cannot strip the second factor."""
     user_id = session.get('user_id')
     if not user_id: return jsonify({"error": "Auth required"}), 401
     if _mfa_rate_limited(user_id):
         return jsonify({"error": "Too many attempts. Wait a few minutes."}), 429
     state = db.get_user_totp(user_id)
     if not state['enabled']:
-        # Pending (unconfirmed) enrollments can be dropped without a code.
         db.disable_user_totp(user_id, f"user:{user_id}")
         return jsonify({"ok": True, "totp_enabled": False})
     code = (request.get_json(silent=True) or {}).get('code') or ''
@@ -2054,7 +1652,6 @@ def disable_my_totp():
 
 @auth_bp.route('/logout', methods=['GET', 'POST'])
 def logout():
-    """Revokes the server-side session and clears the cookie."""
     sid = session.get('sid')
     user_id = session.get('user_id') or (session.get('user') or {}).get('id')
     if sid:

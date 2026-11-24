@@ -1,4 +1,3 @@
-"""Pro Systems Administration Policy for the Systems Administrator agent."""
 from typing import Any, Dict, List
 
 from ...agents.sysadmin import SYSADMIN_AGENT

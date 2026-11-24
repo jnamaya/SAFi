@@ -1,23 +1,6 @@
 import * as ui from '../ui.js';
 import * as api from '../../core/api.js';
 
-/**
- * Renders the App Settings tab.
- *
- * Card order is fixed by the template — Appearance, Connected Accounts,
- * Security, Account — and the two async sections fill a placeholder that is
- * already in the right place. The previous version located its insertion point
- * by searching for an <h4> whose textContent was "Account", which had two
- * consequences: Connected Accounts ended up *inside* the Account card (that h4's
- * parent is the .settings-card itself, not a wrapper), and the final order
- * depended on which fetch resolved first.
- *
- * Sign-out lives in the sidebar (Log Out) — not duplicated here.
- *
- * @param {string} currentTheme - 'light' | 'dark' | 'system'
- * @param {Function} onThemeChange - Callback for theme selection
- * @param {Function} onDelete - Callback for the delete-account button
- */
 export function renderSettingsAppTab(currentTheme, onThemeChange, onDelete) {
     ui._ensureElements();
     const container = ui.elements.cpTabAppSettings;
@@ -70,17 +53,12 @@ export function renderSettingsAppTab(currentTheme, onThemeChange, onDelete) {
 }
 
 
-/* ── Appearance ──────────────────────────────────────────────────────────── */
-
 const THEMES = [
     { key: 'light',  name: 'Light',  icon: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>' },
     { key: 'dark',   name: 'Dark',   icon: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>' },
     { key: 'system', name: 'System', icon: '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>' },
 ];
 
-// Written out in full rather than composed, so Tailwind's scanner sees both
-// variants as complete literals — a class name built by concatenation is not
-// emitted into main.css.
 const SEG_BASE = 'relative flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium cursor-pointer select-none transition-colors';
 const SEG_ON = 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-sm';
 const SEG_OFF = 'text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200';
@@ -103,8 +81,6 @@ function _themeControl(currentTheme) {
 
 function _wireThemeControl(container, onThemeChange) {
     const segments = container.querySelectorAll('[data-theme-seg]');
-    // Real radio inputs rather than buttons with role="radio": arrow-key
-    // navigation within the group then comes from the browser for free.
     container.querySelectorAll('input[name="theme-select"]').forEach(radio => {
         radio.addEventListener('change', (e) => {
             onThemeChange(e.target.value);
@@ -117,8 +93,6 @@ function _wireThemeControl(container, onThemeChange) {
 }
 
 
-/* ── Security ────────────────────────────────────────────────────────────── */
-
 async function _renderSecurityCard(container) {
     const card = container.querySelector('#app-security-card');
     if (!card) return;
@@ -127,9 +101,9 @@ async function _renderSecurityCard(container) {
     try {
         mfa = await api.getMyMfa();
     } catch {
-        return; // endpoint unavailable (e.g. demo user) — leave the card hidden
+        return;
     }
-    if (!mfa || !mfa.ok || !mfa.local_account) return; // SSO accounts: MFA lives at the IdP
+    if (!mfa || !mfa.ok || !mfa.local_account) return;
 
     const render = (state) => {
         card.classList.remove('hidden');
@@ -189,16 +163,12 @@ async function _renderSecurityCard(container) {
                                 class="w-28 px-2 py-1.5 rounded border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-sm text-center tracking-widest">
                             <button id="mfa-confirm-btn" class="px-4 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-medium transition-colors">Confirm</button>
                         </div>`;
-                    // qrcode global from js/lib/qrcode.js (vendored, MIT). typeNumber 0
-                    // auto-sizes to the data length; 'M' matches common authenticator-app
-                    // QR conventions. Rendered as self-contained SVG (own white background
-                    // baked in), so it stays legible regardless of the app's theme.
                     try {
                         const qr = qrcode(0, 'M');
                         qr.addData(res.otpauth_uri);
                         qr.make();
                         body.querySelector('#mfa-qr').innerHTML = qr.createSvgTag(4);
-                    } catch { /* manual-entry details above still work without it */ }
+                    } catch {   }
                     body.querySelector('#mfa-confirm-btn').addEventListener('click', async () => {
                         errEl.classList.add('hidden');
                         const code = body.querySelector('#mfa-confirm-code').value.trim();
@@ -217,14 +187,6 @@ async function _renderSecurityCard(container) {
 }
 
 
-/* ── Connected accounts ──────────────────────────────────────────────────── */
-
-// Empty since 2026-08-15: the delegated connectors this catalogue offered
-// (Google Drive, OneDrive/SharePoint, GitHub) all retired in favour of MCP
-// OAuth servers, which members connect from the Tools Catalog or the
-// composer's + panel. The renderer below hides the whole card when there is
-// nothing to offer, so an empty list keeps the tab clean without deleting
-// the machinery a future delegated account would reuse.
 const PROVIDERS = [];
 
 const _connectBtn = (id) =>
@@ -240,40 +202,22 @@ async function _renderConnectedAccounts(container) {
     const list = container.querySelector('#connected-list');
     if (!list) return;
 
-    // One call gives what this member has linked, what their org permits, and
-    // whether any agent they can reach would actually use it. Nothing renders
-    // until it returns: drawing the full catalogue first and removing rows
-    // afterwards flashes Connect buttons for sources they cannot use.
     let connected = [];
-    let offerable = null;   // null = server said nothing; fall back to the catalogue
+    let offerable = null;
     try {
         const res = await api.getAuthStatus();
         connected = (res && res.connected) ? res.connected : [];
         if (res && Array.isArray(res.connectors)) {
-            // Both flags must hold. `allowed` is the org's policy; `usable`
-            // means some agent is authorized to call a tool from this source.
-            // Offering an allowed-but-unusable source buys the member an OAuth
-            // grant that nothing reads.
             offerable = new Set(res.connectors.filter(c => c.allowed && c.usable).map(c => c.key));
         }
     } catch (e) {
-        // Server unreachable: fall through and render the catalogue on
-        // "Connect". The route guard is the actual control, so a stale list
-        // here cannot create a connection the org has blocked.
         console.warn('Failed to load connection status', e);
     }
 
-    // A source can be linked but no longer offerable — an admin blocked it, or
-    // the tool came out of the policy, after the fact. Keep those visible so
-    // the member can still disconnect: hiding a live token is the one thing
-    // worse than showing it.
     const isConnected = (id) => connected.includes(id) || connected.some(c => c.provider === id);
     const visible = PROVIDERS.filter(p => offerable === null || offerable.has(p.id) || isConnected(p.id));
 
     if (!visible.length) {
-        // Hiding the whole card rather than explaining an empty one: for most
-        // orgs no agent uses a data source at all, and three greyed-out rows
-        // with a disclaimer is noise on a tab everyone opens for the theme.
         const card = container.querySelector('#app-connected-card');
         if (card) card.classList.add('hidden');
         return;
@@ -294,8 +238,6 @@ async function _renderConnectedAccounts(container) {
                 No agent you can use reads from this any more. Disconnecting is safe.
             </p>` : ''}`).join('');
 
-    // Delegated rather than per-button: the row contents are replaced after a
-    // disconnect, and a listener bound to the button would go with them.
     list.addEventListener('click', async (e) => {
         const btn = e.target.closest('[data-disconnect]');
         if (!btn) return;
@@ -309,9 +251,6 @@ async function _renderConnectedAccounts(container) {
         try {
             await api.disconnectProvider(id);
             if (offerable !== null && !offerable.has(id)) {
-                // Only visible because it was still linked. Now that it is not,
-                // offering Connect would point at something the route blocks or
-                // no agent would use.
                 row.nextElementSibling?.matches('p') && row.nextElementSibling.remove();
                 row.remove();
                 if (!list.querySelector('[data-provider]')) {

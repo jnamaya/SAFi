@@ -17,7 +17,6 @@ import {
     renderReviewStep
 } from './ui-wizard-review.js';
 
-// --- WIZARD STATE ---
 let currentStep = 1;
 const TOTAL_STEPS = 5;
 
@@ -51,13 +50,10 @@ export let agentData = {
     history_max_chars: null
 };
 
-// --- MAIN ENTRANCE ---
 export function openAgentWizard(existingAgent = null) {
     currentStep = 1;
 
     if (existingAgent) {
-        // Pre-fill from an existing agent. A null key means this is a
-        // duplicate (create-from-copy), not an edit — it must POST, not PUT.
         const isUpdate = !!existingAgent.key;
         agentData = {
             key: existingAgent.key || "",
@@ -115,7 +111,6 @@ export function openAgentWizard(existingAgent = null) {
 
     ensureWizardInlineExists();
 
-    // store active tab to restore later
     const activeTab = document.querySelector('.tab-content:not(.hidden):not(#agent-wizard-view)');
     if (activeTab) {
         document.body.dataset.wizardPreviousTab = activeTab.id;
@@ -128,7 +123,7 @@ export function openAgentWizard(existingAgent = null) {
     renderStep(1);
 
     document.getElementById('agent-wizard-view').classList.remove('hidden');
-    document.getElementById('agent-wizard-view').classList.add('flex'); // Ensure flex display
+    document.getElementById('agent-wizard-view').classList.add('flex');
 }
 
 export function closeWizard() {
@@ -142,16 +137,13 @@ export function closeWizard() {
         if (prevTab) prevTab.classList.remove('hidden');
         delete document.body.dataset.wizardPreviousTab;
     } else {
-        // Fallback: Show agents tab if nothing stored
         const agentsTab = document.getElementById('tab-agents');
         if (agentsTab) agentsTab.classList.remove('hidden');
     }
 }
 
-// --- DOM & NAV ---
 
 function ensureWizardInlineExists() {
-    // Check if the specific content we need exists, not just any HTML (which might be comments)
     if (document.getElementById('wizard-progress-track')) return;
 
     const container = document.getElementById('agent-wizard-view');
@@ -227,21 +219,11 @@ function updateProgress() {
         else el.classList.remove('text-green-600', 'dark:text-green-400');
     });
 
-    // Key presence is not a reliable edit signal: create mode auto-generates
-    // a key at the Review step, and duplicates start with no key at all.
     const isEdit = !!agentData.is_update_mode;
-    // Label only. This used to swap the button's color per step (blue for
-    // Next, green for the final Create) — with one primary color that swap is
-    // meaningless, and its collapsed remains were an add-then-REMOVE of the
-    // same classes, which stripped the background and left a white-on-white
-    // Next button in the light theme. The markup's own bg-green-600 is the
-    // permanent primary; nothing here may touch the color classes.
     nextBtn.innerText = currentStep === TOTAL_STEPS
         ? (isEdit ? 'Save Changes' : 'Create Agent')
         : 'Next';
 
-    // Save-from-any-step, edit mode only: a half-built create must not be
-    // saveable. Hidden on the last step, where Next IS the save.
     const saveBtn = document.getElementById('wizard-save-btn');
     if (saveBtn) {
         if (isEdit && currentStep < TOTAL_STEPS) saveBtn.classList.remove('hidden');
@@ -261,10 +243,6 @@ async function renderStep(step) {
             case 3: renderIntellectStep(container, agentData); break;
             case 4: renderSafetyStep(container, agentData); break;
             case 5:
-                // Regenerate the key from the current name on every Review
-                // render in create mode, so a rename after backtracking
-                // doesn't leave a key slugged from the old name. Edit mode
-                // never touches the key — it's immutable on the backend.
                 if (!agentData.is_update_mode && agentData.name) {
                     agentData.key = await generateAgentKey(agentData.name);
                 }
@@ -277,8 +255,6 @@ async function renderStep(step) {
     }
 }
 
-// Org-prefixed key slug, e.g. "acme_com_stoic_coach". Mirrors the backend's
-// key normalization in agent_api_routes.py.
 async function generateAgentKey(name) {
     let prefix = "org";
     try {
@@ -322,7 +298,7 @@ function validateCurrentStep() {
         case 2: return validateToolsStep(agentData);
         case 3: return validateIntellectStep(agentData);
         case 4: return validateSafetyStep(agentData);
-        case 5: return true; // Review always valid
+        case 5: return true;
         default: return true;
     }
 }
@@ -334,24 +310,18 @@ async function finishWizard(btn = null) {
     btn.disabled = true;
 
     try {
-        // Fallback: the Review step normally sets the key, but guard anyway.
         if (!agentData.key && agentData.name) {
             agentData.key = await generateAgentKey(agentData.name);
         }
 
-        // Underscore-prefixed fields (_policyData, _hasCharter) are wizard
-        // internals — keep them out of the request body.
         const payload = Object.fromEntries(
             Object.entries(agentData).filter(([k]) => !k.startsWith('_'))
         );
-        payload.worldview = agentData.instructions; // Map back to backend expectation
+        payload.worldview = agentData.instructions;
 
         const res = await api.saveAgent(payload);
 
-        // Handle SUCCESS or QUEUED
         if (res === 'QUEUED' || res.ok) {
-            // Tool additions on org agents wait for a reviewer (backlog 57b);
-            // say so before the reload wipes the toast.
             const pending = (res && Array.isArray(res.tools_pending_approval)) ? res.tools_pending_approval : [];
             if (pending.length) {
                 ui.showToast(`Saved. ${pending.length} tool grant${pending.length === 1 ? '' : 's'} (${pending.join(', ')}) awaits approval by an admin or auditor.`, 'warning', 6000);
@@ -359,25 +329,22 @@ async function finishWizard(btn = null) {
                 ui.showToast(agentData.is_update_mode ? "Agent Updated!" : "Agent Created!", "success");
             }
             closeWizard();
-            // Force reload to update UI lists (User Request)
             setTimeout(() => {
                 window.location.reload();
             }, pending.length ? 2600 : 500);
         } else {
-            // Should be unreachable if offlineManager throws, but handled for safety
             throw new Error(res.error || "Save failed");
         }
     } catch (e) {
         console.error("Save Agent Error:", e);
         let msg = e.message;
 
-        // Try to parse JSON error message from backend
         try {
             if (msg.includes("{")) {
                 const json = JSON.parse(msg);
                 if (json.error) msg = json.error;
             }
-        } catch (parseErr) { /* ignore */ }
+        } catch (parseErr) {   }
 
         if (msg.includes("already exists") || msg.includes("Agent exists")) {
             ui.showToast("An agent with this name already exists. Please choose a different name.", "error");

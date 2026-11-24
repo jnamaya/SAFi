@@ -1,23 +1,3 @@
-"""
-Tool output must reach the Conscience as evidence.
-
-Until this was fixed, tool results went only into the Intellect's agent_history.
-The Conscience received retrieved_context, which is assigned only from the RAG
-path, so a turn that ran three web searches audited against an EMPTY evidence
-block. The auditor then correctly scored Evidence First -1 on claims the agent
-had actually retrieved, and because Claim Discipline is a hard gate in the
-marketing policy the answer was blocked. Tool use and grounding enforcement were
-mutually exclusive: every searched answer blocked, permanently.
-
-The load-bearing assertions here are the two that would have caught it:
-  * test_tool_result_lands_inside_the_auditors_fence — end to end, the exact
-    string a tool returned appears inside <retrieved_context> in the audit prompt.
-  * test_merge_precedes_finalize_draft — order in process_prompt. Merging after
-    _finalize_draft would leave the audit exactly as broken while every other
-    test still passed.
-
-Run:  venv/bin/python tests/test_tool_evidence_reaches_conscience.py
-"""
 import asyncio
 import inspect
 import logging
@@ -40,11 +20,6 @@ EVIDENCE = f"[TOOL RESULT — web_search called with {ARGS}]\n{TOOL_RESULT}"
 
 
 class CapturingProvider:
-    """Stands in for LLMProvider and keeps the prompts it was handed.
-
-    run_conscience is the real entry point (conscience.py:215); capturing a
-    generic get_completion would have silently recorded nothing.
-    """
 
     def __init__(self):
         self.calls = []
@@ -55,12 +30,6 @@ class CapturingProvider:
 
 
 def fence(provider, name="retrieved_context"):
-    """Extract a data fence from the audit BODY.
-
-    Scoped to the user prompt on purpose: the SYSTEM prompt's data-boundary
-    instruction NAMES these tags, so searching system+user together matches an
-    opening tag inside the instructions and a closing tag far away in the body.
-    """
     body = "\n".join(c["user"] for c in provider.calls)
     m = re.search(rf"<{name}>(.*?)</{name}>", body, re.S)
     return m.group(1) if m else None
@@ -100,7 +69,6 @@ class TestFenceDelivery(unittest.TestCase):
                       "which call produced the result")
 
     def test_empty_context_is_still_reported_as_none(self):
-        # The no-evidence case must stay distinguishable from the has-evidence one.
         provider = CapturingProvider()
         auditor = ConscienceAuditor(
             provider,
@@ -115,7 +83,6 @@ class TestFenceDelivery(unittest.TestCase):
 
 
 class TestMergeSemantics(unittest.TestCase):
-    """The expression process_prompt uses, exercised directly."""
 
     @staticmethod
     def merge(retrieved_context, tool_evidence):
@@ -135,14 +102,10 @@ class TestMergeSemantics(unittest.TestCase):
         self.assertIn(TOOL_RESULT, merged)
 
     def test_no_tool_evidence_is_a_no_op(self):
-        # Non-tool turns must be bit-identical to before the change.
         self.assertEqual(self.merge("RAG ONLY", []), "RAG ONLY")
         self.assertEqual(self.merge("", []), "")
 
     def test_unlimited_by_default_keeps_every_chunk(self):
-        # The default must reach the Conscience whole: dropped evidence cannot be
-        # verified, and the truncation notice tells the model not to complete the
-        # passage from memory. Both cost confidence on grounding fidelity.
         big = [f"[TOOL RESULT — web_search #{i}]\n" + ("x" * 3000) for i in range(6)]
         merged = self.merge("", big)
         self.assertEqual(Config.MAX_CONTEXT_CHARS, 0)
@@ -172,8 +135,6 @@ class TestWiring(unittest.TestCase):
                         "sees the unmerged context and this bug is back")
 
     def test_every_executed_tool_appends_evidence(self):
-        # One append per execute_tool, so a second call site added later without
-        # evidence would be caught.
         src = inspect.getsource(orch.SAFi.process_prompt)
         self.assertEqual(src.count("await self.mcp_manager.execute_tool("),
                          src.count("tool_evidence.append("),
@@ -181,8 +142,6 @@ class TestWiring(unittest.TestCase):
                          "tool_evidence.append — its output is invisible to the audit")
 
     def test_args_are_formatted_before_the_provider_adapter(self):
-        # The routed provider owns history serialization; the core prepares a
-        # provider-neutral argument string before passing it along.
         src = inspect.getsource(orch.SAFi.process_prompt)
         assign = src.find("_args_str = json.dumps")
         branch = src.find("tool_call_history_entry(")

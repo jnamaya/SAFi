@@ -1,35 +1,3 @@
-"""
-TCB remote verification endpoint (org settings "Verify this Install").
-
-Four verdicts plus a fifth off-line answer, and the operator pin surfaced as
-advisory evidence:
-
-  * authentic   -- files match the in-tree manifest AND the manifest's
-                  fingerprint is in the official release list published on
-                  selfalignmentframework.com AND that list's signature
-                  authenticated against the pinned registry key
-  * unreleased  -- intact against the local manifest, but that fingerprint is
-                  not an official release (dev snapshot / fork)
-  * modified    -- files do not match the in-tree manifest
-  * unverifiable -- no verdict is possible: the local check failed, OR the
-                  official list was reachable but did not authenticate
-                  (bad/missing signature, unusable pubkey, empty list)
-  * offline     -- intact, but the official list could not be fetched; never
-                  a pass, and distinct from the local states
-
-The list is only trusted after a minisign (legacy, raw-message) ed25519 check
-over the exact published bytes, using the key pinned in this image. Tests
-generate an in-memory keypair, write a minisign-format public key to a temp
-file, sign the payload exactly as `scripts/tcb_sign.py` does, and the fake
-transport serves it per URL.
-
-The boot integrity machinery is consumed, never edited: the endpoint reads
-get_status(), and nothing in core/integrity.py changes here, so the TCB
-fingerprint of the shipped tree is untouched (backlog: remote TCB verify).
-
-Requires the disposable stack (MySQL, real session auth):
-    docker compose -f docker-compose.test.yml run --rm --build tests -k tcb_remote
-"""
 import base64
 import json
 import os
@@ -80,35 +48,27 @@ def _exec(sql, params=()):
 
 
 def _ed25519_keypair():
-    """An in-memory minisign-compatible keypair: (keynum8, pub32, priv32)."""
     priv = ed25519.Ed25519PrivateKey.generate()
     pub = priv.public_key().public_bytes(
         serialization.Encoding.Raw,
         serialization.PublicFormat.Raw,
     )
-    keynum = pub[:8]  # a stable binding, like minisign's key number
+    keynum = pub[:8]
     return keynum, pub, priv
 
 
 def _minisign_pubkey_file(keynum, pub):
-    """The public key file layout minisign 0.12 reads: a comment line, then
-    base64(b"Ed" + keynum(8) + pub(32))."""
     return ("untrusted comment: minisign public key test\n"
             + base64.b64encode(b"Ed" + keynum + pub).decode() + "\n")
 
 
 def _minisig(payload, keynum, priv):
-    """Sign the exact payload bytes the way scripts/tcb_sign.py does: raw
-    ed25519 over the message, wrapped in minisign's signature layout
-    base64(b"Ed" + keynum(8) + sig(64))."""
     sig = priv.sign(payload)
     return ("untrusted comment: test signature\n"
             + base64.b64encode(b"Ed" + keynum + sig).decode() + "\n")
 
 
 class _BytesResp:
-    """A requests.Response stand-in exposing .status_code and .content; the
-    endpoint no longer calls .json() on the wire payload, it reads bytes."""
 
     def __init__(self, status_code=200, content=b""):
         self.status_code = status_code
@@ -131,9 +91,6 @@ class StubIntegrity:
 
 
 class BrokenIntegrity:
-    """Models the only realistic failure of the local check: get_status and
-    _ROOT both raising or the files being unreadable. Returns a 500 with the
-    error body, not a verdict."""
 
     _ROOT = "/safi/root"
 
@@ -163,8 +120,6 @@ class TestTcbVerify(unittest.TestCase):
         cls.pubkey_path = os.path.join(cls.pubkey_dir.name, "TCB_KEY.pub")
         with open(cls.pubkey_path, "w") as f:
             f.write(_minisign_pubkey_file(cls.keynum, cls.pub))
-        # The exact bytes the endpoint will fetch and verify, and the matching
-        # signature, mirroring how the real site serves releases.json.
         cls.payload = json.dumps(RELEASES).encode()
         cls.valid_sig = _minisig(cls.payload, cls.keynum, cls.priv)
 
@@ -173,8 +128,6 @@ class TestTcbVerify(unittest.TestCase):
         cls.pubkey_dir.cleanup()
 
     def setUp(self):
-        # A fresh module cache every test: the TTL is 300s and sharing state
-        # across tests would let a stale list leak into a later one.
         organizations._tcb_cache.update(at=0.0, releases=None)
         self._old_pubkey_path = organizations._TCB_PUBKEY_PATH
         organizations._TCB_PUBKEY_PATH = self.pubkey_path
@@ -186,9 +139,6 @@ class TestTcbVerify(unittest.TestCase):
     @staticmethod
     def _fake_get(payload=None, sig=None, exc=None, release_status=200,
                   sig_status=200, sig_exc=None):
-        """URL-aware transport fake: the releases URL serves `payload`
-        (bytes), the signature URL serves `sig`. Raise `exc` for any URL when
-        given, or `sig_exc` for the signature URL only."""
         def _get(url, timeout):
             if exc is not None:
                 raise exc
@@ -240,7 +190,6 @@ class TestTcbVerify(unittest.TestCase):
         self.assertEqual(data["remote"]["official_release"]["tag"], "v1.4.1")
         self.assertEqual(data["local"]["state"], "intact")
         self.assertTrue(data["local"]["intact"])
-        # The disk view is computed fresh (root=); the boot view is the cached one.
         self.assertEqual(stub.calls, ["/safi/root", None])
         log = self._last_compliance()
         self.assertIsNotNone(log)
@@ -248,8 +197,6 @@ class TestTcbVerify(unittest.TestCase):
         self.assertEqual(log["detail"]["verdict"], "authentic")
 
     def test_intact_but_not_an_official_release(self):
-        # Files match this branch's manifest, but that manifest's fingerprint
-        # is not in the official list: a dev snapshot or a fork.
         state = {**INTACT, "expected_fingerprint": F64_A}
         stub = StubIntegrity(disk=state, boot=state)
         with patch.object(organizations, "integrity", stub), \
@@ -293,8 +240,6 @@ class TestTcbVerify(unittest.TestCase):
         self.assertTrue(data["local"]["intact"])
 
     def test_signed_list_with_no_releases_is_unverifiable(self):
-        """A valid signature over an empty registry proves nothing; membership
-        cannot be established, so it must not fall through to 'unreleased'."""
         empty = json.dumps({"releases": []}).encode()
         stub = StubIntegrity(disk=INTACT, boot=INTACT)
         with patch.object(organizations, "integrity", stub), \
@@ -307,8 +252,6 @@ class TestTcbVerify(unittest.TestCase):
         self.assertIn("no releases", data["remote"]["error"])
 
     def test_tampered_list_is_unverifiable_never_authentic(self):
-        """The whole point of signing: a modified list that still carries the
-        old signature must not authenticate, no matter how official it looks."""
         tampered = self.payload + b"\n"
         stub = StubIntegrity(disk=INTACT, boot=INTACT)
         with patch.object(organizations, "integrity", stub), \
@@ -390,10 +333,6 @@ class TestTcbVerify(unittest.TestCase):
         self.assertEqual(r.status_code, 403)
 
     def test_fetch_is_cached_inside_the_ttl(self):
-        """Two clicks in a row hit the site once, not twice: every org admin
-        gets the same deployment verdict and the site is not hammered. The
-        signed deployment now costs two requests (list + signature) on the
-        first click, then zero while the TTL holds."""
         stub = StubIntegrity(disk=INTACT, boot=INTACT)
         with patch.object(organizations, "integrity", stub), \
              patch.object(organizations.requests, "get",
@@ -404,8 +343,6 @@ class TestTcbVerify(unittest.TestCase):
             self.assertEqual(mocked.call_count, 2)
 
     def test_branch_is_reported_when_git_metadata_present(self):
-        """The dev/demo compose binds .git read-only, so the button can say
-        which tree this instance is on. A hint, never part of the verdict."""
         stub = StubIntegrity(disk=INTACT, boot=INTACT)
         with patch.object(organizations, "integrity", stub), \
              patch.object(organizations.requests, "get", self._signed_get()), \
@@ -417,8 +354,6 @@ class TestTcbVerify(unittest.TestCase):
         self.assertEqual(data["local"]["revision"], "82c7caf")
 
     def test_branch_is_absent_without_git_metadata(self):
-        """A stock image has no .git (the Dockerfile never copies it), so the
-        field is null and the UI falls back to the snapshot/fork wording."""
         stub = StubIntegrity(disk=INTACT, boot=INTACT)
         with patch.object(organizations, "integrity", stub), \
              patch.object(organizations.requests, "get", self._signed_get()), \
@@ -430,8 +365,6 @@ class TestTcbVerify(unittest.TestCase):
         self.assertIsNone(data["local"]["revision"])
 
     def test_error_response_carries_the_branch(self):
-        """When the local check itself fails, the 500 body still names the
-        tree, so the UI can say "this instance is on the dev tree"."""
         with patch.object(organizations, "integrity", BrokenIntegrity()), \
              patch.object(organizations, "_detect_git_branch",
                           return_value={"branch": "dev", "revision": None}):
@@ -441,9 +374,6 @@ class TestTcbVerify(unittest.TestCase):
         self.assertEqual(r.get_json()["branch"], "dev")
 
     def test_last_returns_the_stored_verdict(self):
-        """The settings card persists: the last run's full result is stored
-        in the compliance log and replayed by GET /tcb-verify/last, so a
-        reload shows the stored verdict without re-verifying."""
         stub = StubIntegrity(disk=INTACT, boot=INTACT)
         with patch.object(organizations, "integrity", stub), \
              patch.object(organizations.requests, "get", self._signed_get()):
@@ -455,7 +385,6 @@ class TestTcbVerify(unittest.TestCase):
                 f"/api/organizations/{self.org_id}/tcb-verify/last").get_json()
         self.assertTrue(last["found"])
         self.assertEqual(last["verdict"], stored["verdict"])
-        # The full result is the evidence record, not just a verdict string.
         self.assertEqual(last["local"]["fingerprint"], stored["local"]["fingerprint"])
         self.assertEqual(last["remote"]["reachable"], stored["remote"]["reachable"])
         self.assertEqual(last["checked_at"], stored["checked_at"])
@@ -489,8 +418,6 @@ class TestTcbVerify(unittest.TestCase):
 
 
 class TestDetectGitBranch(unittest.TestCase):
-    """The helper walks up from the module directory reading .git/HEAD as a
-    plain text file, so it works without a git binary and never raises."""
 
     def _make(self, head_contents=None, head_missing=False):
         tmp = tempfile.TemporaryDirectory()

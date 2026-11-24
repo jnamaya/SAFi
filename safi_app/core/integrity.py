@@ -1,47 +1,3 @@
-"""
-Runtime TCB attestation — measured boot for SAFi (backlog 39).
-
-TCB = Trusted Computing Base, the security-engineering term of art for what
-the integrity manifest covers: the set of components a governance claim
-depends on — a defect inside it can violate the policy, a defect outside it
-cannot (TCSEC, 1983). "Core Loop" is the same set's name in the License &
-Governance Agreement; kernel/userland is the informal teaching analogy and
-carries a footnote this term does not need: TCB claims trust dependency,
-never memory isolation.
-
-Three jobs, all built on the canonical checker in scripts/verify_integrity.py
-(loaded by file path and reused, never reimplemented — two hash implementations
-would eventually disagree, and the one an auditor runs by hand must be the one
-the app ran at boot):
-
-  1. BOOT VERIFICATION. create_app() calls enforce_at_boot(): the Core Loop is
-     hashed against the release manifest once, and the result is logged loudly —
-     the fingerprint when intact, every modified file when not. Like a Linux
-     TAINT FLAG, a mismatch does not stop the app by default: AGPL grants forks
-     the right to RUN modified code — only the NAME is conditional (agreement
-     §IV) — so taint is about representation and evidence, not permission.
-
-  2. STRICT MODE. SAFI_ENFORCE_INTEGRITY=strict refuses to start on anything
-     but a verified-intact tree ("unverifiable" included: a deployment that
-     cannot attest is not intact for a deployment that demanded attestation).
-     Regulated deployments opt in; forks and development trees never trip it
-     by default.
-
-  3. THE STAMP. tcb_stamp() is folded into every governance record
-     (database._insert_governance_record), so each audit record names the
-     TCB that produced it — fingerprint and intact/tainted — the way a kernel
-     oops report carries taint flags (the analogy, not the term). Evidence
-     per record, not per deployment claim.
-
-The status is computed ONCE and cached: these are the files the running
-process imported at startup, and re-hashing per record would measure the disk,
-not the process. On-disk drift after boot is the next row of the table
-(backlog 39 lists it as deliberately not built).
-
-This module is itself in the Core Loop manifest: a fork that no-ops the stamp
-would mint records claiming an intact TCB, which is precisely the lie the
-stamp exists to make impossible.
-"""
 from __future__ import annotations
 
 import importlib.util
@@ -66,9 +22,6 @@ def _load_checker():
 
 
 def _compute(root: Path) -> Dict[str, Any]:
-    """Mirror of the checker's verify branch, minus printing. Any failure to
-    even run the check is 'unverifiable' — a distinct third answer, because
-    'could not check' must never be reported as either intact or tainted."""
     try:
         chk = _load_checker()
         import json as _json
@@ -109,8 +62,6 @@ def _compute(root: Path) -> Dict[str, Any]:
 
 
 def get_status(root: Optional[Path] = None, refresh: bool = False) -> Dict[str, Any]:
-    """The boot-time verification result. Cached after the first call; `root`
-    and `refresh` exist for tests, which verify copies of the tree."""
     global _status
     if root is not None:
         return _compute(Path(root))
@@ -120,7 +71,6 @@ def get_status(root: Optional[Path] = None, refresh: bool = False) -> Dict[str, 
 
 
 def tcb_stamp() -> Dict[str, Any]:
-    """The per-record attestation folded into every governance capture."""
     s = get_status()
     return {
         "fingerprint": s["fingerprint"],
@@ -130,19 +80,6 @@ def tcb_stamp() -> Dict[str, Any]:
 
 
 def enforce_at_boot(app_logger=None, status: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Log the verification result; refuse to start in strict mode unless
-    verified intact. `status` is injectable for tests.
-
-    SAFI_EXPECTED_FINGERPRINT is the operator's pin: the fingerprint copied
-    from an official release's published `TCB Fingerprint:` line at install time.
-    The manifest ships INSIDE the tree it guards, so a local tamper can also
-    regenerate it; the pin lives in the operator's config, provisioned apart
-    from the code, and holds the deployment to the value a human verified
-    out of band. It protects honest deployments from drift and tampering; it
-    does nothing against a fork that simply does not set it, and claims
-    nothing about authenticity — that comparison stays with the human at pin
-    time.
-    """
     logger = app_logger or log
     s = status if status is not None else get_status()
     mode = os.environ.get("SAFI_ENFORCE_INTEGRITY", "").strip().lower()

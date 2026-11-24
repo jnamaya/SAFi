@@ -1,22 +1,3 @@
-"""Legal hold: destruction stops, including destruction the user asked for.
-
-WHY. `DATA_ERASURE_AND_RETENTION.md` §4 and `HIPAA_READINESS.md` both state
-that a hold "suspends all destruction". Until 2026-08-26 that was true of one
-purge phase and of nothing else (GOVERNANCE_BACKLOG 2):
-
-  * `legal_hold_active` appeared twice in scripts/retention_purge.py, the
-    definition and a single call in Phase A, so a hold placed mid-run did not
-    stop Phase B, B2 or C;
-  * `delete_conversation` / `delete_all_conversations` never checked at all, so
-    a member could clear their own conversations during an active hold. That is
-    the spoliation a hold exists to prevent, and the published claim said it
-    could not happen.
-
-These tests exist because the failure is silent: a delete under hold looked
-exactly like a successful delete, and the purge phases reported normal counts.
-
-Run:  python tests/test_legal_hold.py
-"""
 import os
 import sys
 import unittest
@@ -26,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 os.environ.setdefault("FLASK_ENV", "development")
 
-from safi_app.persistence import database as db  # noqa: E402
+from safi_app.persistence import database as db
 
 
 class LegalHoldBlocksUserDeletion(unittest.TestCase):
@@ -71,7 +52,7 @@ class LegalHoldBlocksUserDeletion(unittest.TestCase):
         self.conn.commit()
 
     def _convo_exists(self):
-        self.conn.commit()          # end this connection's read snapshot
+        self.conn.commit()
         self.cur.execute("SELECT COUNT(*) n FROM conversations WHERE id=%s", (self.convo_id,))
         return self.cur.fetchone()["n"] == 1
 
@@ -88,8 +69,6 @@ class LegalHoldBlocksUserDeletion(unittest.TestCase):
         self.assertTrue(self._convo_exists(), "clear-all destroyed content under a hold")
 
     def test_deletion_works_again_once_the_hold_is_lifted(self):
-        """The guard must not become a permanent block. A hold that cannot be
-        lifted is its own kind of defect."""
         self._set_hold(True)
         with self.assertRaises(db.LegalHoldActive):
             db.delete_conversation(self.convo_id, user_id=self.user_id)
@@ -104,13 +83,6 @@ class LegalHoldBlocksUserDeletion(unittest.TestCase):
 
 
 class EveryPurgePhaseRechecksTheHold(unittest.TestCase):
-    """Source-level, deliberately.
-
-    Driving four purge phases to a mid-run hold needs a populated multi-org
-    database and a scheduler; the regression this guards against is simply
-    someone adding a delete loop that forgets to ask. Reading the source
-    catches that, and catches it in the file where the mistake would be made.
-    """
 
     @classmethod
     def setUpClass(cls):
@@ -133,7 +105,6 @@ class EveryPurgePhaseRechecksTheHold(unittest.TestCase):
                               f"{phase} deletes in a loop without re-checking the hold")
 
     def test_phase_a_still_checks(self):
-        """It always did. This fails if a refactor drops it."""
         self.assertIn("legal_hold_active(org_id)", self.src)
 
 

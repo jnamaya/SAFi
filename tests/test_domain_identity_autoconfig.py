@@ -1,25 +1,3 @@
-"""
-A DNS-verified domain auto-populates the login restriction (backlog 52
-follow-up), instead of leaving google_hd/ms_tenant_id for the admin to set
-by hand after already proving ownership via TXT record.
-
-WHY. domain_verified gates nothing on its own in single-tenant deployments —
-_resolve_single_tenant_membership never looks at it. google_hd/ms_tenant_id
-are what _org_claim_gate actually checks, on every tenancy mode. Populating
-them at verification time is what makes "verify your domain" actually
-restrict who can log in, rather than being a purely cosmetic step.
-
-Each field is only set when there is a real signal the domain is hosted
-there: Google's hosted-domain claim has no per-domain discovery endpoint, so
-_domain_uses_google_workspace checks MX records instead; Microsoft's tenant
-id is a GUID that _discover_ms_tenant_id resolves via the standard,
-unauthenticated OIDC discovery lookup. A domain on neither (a third-party
-mail host) must get neither field set — there's nothing to restrict against
-on a provider nobody at that org will ever log in through.
-
-Needs the disposable stack:
-    docker compose -f docker-compose.test.yml run --rm tests -k domain_identity_autoconfig
-"""
 import sys
 import uuid
 import unittest

@@ -1,7 +1,3 @@
-/* Self-hosted Inter (variable, weights 100-900) — served from our own
-   origin, no fonts.googleapis.com callout. Registered as 'Inter' so the
-   existing font stacks pick it up unchanged. License:
-   assets/fonts/LICENSE-Inter.txt (SIL OFL 1.1). */
 @font-face {
   font-family: 'Inter';
   src: url('../assets/fonts/InterVariable.woff2') format('woff2');
@@ -18,9 +14,7 @@
   font-display: swap;
 }
 
-/* Self-hosted Source Serif 4 (variable, weights 200-900) — the reading
-   face for generated responses only; all UI chrome stays on Inter.
-   License: assets/fonts/LICENSE-SourceSerif4.md (SIL OFL 1.1). */
+
 @font-face {
   font-family: 'Source Serif 4';
   src: url('../assets/fonts/SourceSerif4Variable-Roman.woff2') format('woff2');
@@ -41,8 +35,7 @@ body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
   font-size: 16px;
   line-height: 1.6;
-  /* Stop mobile browsers (Android font-boosting, iOS auto-adjust) from
-     inflating text so 16px renders as 16px on phones too. */
+
   -webkit-text-size-adjust: 100%;
   -moz-text-size-adjust: 100%;
   text-size-adjust: 100%;
@@ -69,8 +62,8 @@ body {
 }
 
 html {
-  height: 100vh;   /* fallback for browsers without svh */
-  height: 100svh;  /* small viewport height — always fits even with browser UI visible */
+  height: 100vh;
+  height: 100svh;
   width: 100%;
   overflow: hidden;
   overscroll-behavior: none;
@@ -79,22 +72,21 @@ html {
 #app-container {
   max-width: 100%;
   height: 100%;
-  /* Ensure main container fills screen */
+
   display: flex;
-  /* Enable flex layout for sidebar + content */
+
 }
 
-/* --- NEW: GLOBAL HIDE SCROLLBARS (Desktop & Mobile) --- */
-/* Applies to custom scrollbar class, chat window, login view, and modals */
+
 .custom-scrollbar,
 #chat-window,
 #login-view,
 .overflow-y-auto,
 .overflow-x-auto {
   -ms-overflow-style: none;
-  /* For IE and Edge */
+
   scrollbar-width: none;
-  /* For Firefox */
+
 }
 
 .custom-scrollbar::-webkit-scrollbar,
@@ -103,67 +95,18 @@ html {
 .overflow-y-auto::-webkit-scrollbar,
 .overflow-x-auto::-webkit-scrollbar {
   display: none;
-  /* For Chrome, Safari, and Opera */
+
 }
 
 
-/* Scrollbar hidden rules removed */
-
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   SAFi BRANDING COLORS — the palette, standardized 2026-08-13.
-
-   Three colors and their shades. Nothing else is brand:
-
-     GREEN  (Tailwind `green-*`)      the ONE accent. Buttons, links, active
-                                      states, focus, selection, icon chips —
-                                      if it's colored because it's SAFi, it's
-                                      this green. Canonical anchors below as
-                                      --brand-*.
-     BLACK -> WHITE (`neutral-*`,     every surface, border and text. The
-              `gray-*`, #f9f9f9)      canvas is #f9f9f9 light / #000 dark.
-
-   Reserved for MEANING, never decoration (a red button is a destructive
-   action, not a style):
-     red    = error / blocked / destructive      (score tier "Concern")
-     amber  = warning / caution                  (score tier "Caution")
-     green  = approved / aligned — the brand and the good outcome share the hue
-              on purpose.
-
-   Deliberately EXEMPT, because they are function, not chrome:
-     - agent monogram fills (ui-agent-mark.js MARK_FILLS): a categorical
-       palette for telling agents apart, contrast-verified against both
-       surfaces and engineered NOT to collide with the outcome ring colors.
-     - third-party logos (Google / Microsoft / GitHub connector marks).
-
-   BUTTON HIERARCHY — a color is a role, so two buttons with different colors
-   must mean different things:
-
-     PRIMARY      bg-green-600 hover:bg-green-700 text-white
-                  The main action of a view: New Conversation, Save, Invite,
-                  Continue, Confirm. At most one per view. There is no black
-                  primary — the inverted bg-gray-900/dark:bg-white style that
-                  seven Save buttons and Invite wore was a second primary
-                  language, retired 2026-08-13.
-     SECONDARY    neutral outline or ghost: transparent/neutral bg, neutral
-                  border, --fg text. Cancel, Back, Preview — anything that
-                  yields to the primary.
-     DESTRUCTIVE  bg-red-600 white text, or red outline for the confirm step.
-                  Red is a meaning, never a style.
-
-   Enforced by tests/test_brand_palette.py: blue, purple, indigo, violet, sky,
-   cyan, teal, pink, fuchsia, rose, emerald and orange utilities are banned
-   from the UI, and so is the inverted black/white primary. New accent =
-   green, or it fails CI.
-   ═════════════════════════════════════════════════════════════════════════ */
 :root {
-  --brand-400: #4ade80; /* green-400 — dark-mode accents on black */
-  --brand-500: #22c55e; /* green-500 — logo green, rings, highlights */
-  --brand-600: #16a34a; /* green-600 — THE button green (New Conversation) */
-  --brand-700: #15803d; /* green-700 — hover of the above */
+  --brand-400: #4ade80;
+  --brand-500: #22c55e;
+  --brand-600: #16a34a;
+  --brand-700: #15803d;
 }
 
-/* --- NEW: Text-first chat styles from mockup --- */
+
 :root {
   --bg: #ffffff;
   --fg: #0a0a0a;
@@ -171,8 +114,8 @@ html {
   --hint: #4b5563;
   --accent: var(--brand-600);
 
-  --user-bg: #16a34a; /* Green */
-  --user-fg: #ffffff; /* White text */
+  --user-bg: #16a34a;
+  --user-fg: #ffffff;
   --ai-fg: #111827;
   --ai-bg: transparent;
 }
@@ -184,28 +127,20 @@ html {
   --hint: #d1d5db;
   --accent: var(--brand-500);
 
-  --user-bg: #166534; /* Dark green */
-  --user-fg: #f0fdf4; /* Light text */
+  --user-bg: #166534;
+  --user-fg: #f0fdf4;
   --ai-fg: #f9fafb;
   --ai-bg: transparent;
 }
 
 .message-container {
   width: 100%;
-  /* Center the messages inside the full-width scroll view */
+
   margin: 0 auto;
   padding: 0 16px;
-  max-width: 48rem !important; /* tighter, centered reading column (~768px) */
+  max-width: 48rem !important;
 
-  /* Modern slide-and-fade entrance.
-     NO `both`. The 100% keyframe is translateY(0), i.e. the element's normal
-     position, so `forwards` gained nothing visually and cost real quality: a
-     retained transform (even an identity one) keeps the element on its own
-     compositing layer, and browsers drop subpixel text antialiasing on a
-     composited layer. Every message stayed on a layer forever, so all chat
-     text rendered grayscale-AA and looked thinner and rougher than the rest
-     of the page. Dropping the fill mode releases the layer when the animation
-     ends. There is no animation-delay here, so `backwards` was inert too. */
+
   animation: fade-slide-up 0.45s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -234,7 +169,7 @@ html {
   align-items: flex-start;
   color: var(--ai-fg);
   max-width: 100%;
-  gap: 16px; /* Beautiful horizontal spacing between avatar and text */
+  gap: 16px;
 }
 
 .ai-avatar {
@@ -242,20 +177,17 @@ html {
   width: 42px;
   height: 42px;
   flex-shrink: 0;
-  margin-top: 6px; /* Aligns avatar perfectly with the text's line-height and padding */
+  margin-top: 6px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #22c55e, #86efac); /* Active self-governing green gradient */
-  /* 4px, not the original 1.5px: the ring now carries the alignment outcome,
-     and 1.5px of amber was indistinguishable from an orange monogram fill at
-     32px. 1.5px of that is spent on the surface gap below. */
+  background: linear-gradient(135deg, #22c55e, #86efac);
+
   padding: 4px;
-  box-shadow: 0 0 10px rgba(34, 197, 94, 0.15); /* Soft glowing aura */
+  box-shadow: 0 0 10px rgba(34, 197, 94, 0.15);
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  /* `background` is in the transition so a score landing eases the ring from
-     pending grey into its outcome colour rather than snapping. */
+
   transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s ease,
               background 0.35s ease;
 }
@@ -265,29 +197,10 @@ html {
   box-shadow: 0 0 12px rgba(34, 197, 94, 0.25);
 }
 
-/* ── Thinking state: the status ring sweeps while a turn is in flight ──────────
-   Applied by showLoadingIndicator() in js/ui/ui-messages.js. chat.js removes
-   that whole container on every success AND error path, so there is no teardown
-   here and no way to leave a ring spinning after a failed turn.
 
-   The animation lives on a pseudo-element rather than on the ring itself:
-   a linear-gradient's angle cannot be interpolated without @property, and
-   rotating a symmetric ring is invisible anyway. Most of the conic gradient is
-   transparent so the static green above still shows through — what you see is a
-   bright arc sweeping over the existing ring, not a replacement for it. */
-/* The resting ring is 1.5px, which is too fine for motion to read — at 32px the
-   sweep disappeared entirely. Thickening it only while thinking is free here:
-   the thinking avatar lives in its own container that is destroyed when the
-   answer arrives, so there is no morph between states and no size jitter. */
 .ai-avatar.is-thinking {
   padding: 5.5px;
-  /* "Working" is not a verdict — and green IS the verdict for "Aligned" here
-     (it is also --accent). A green in-flight ring therefore asserted alignment
-     on every turn, before anything had been judged, which is the same mistake
-     `.ring-pending` two rules down exists to prevent. The base is now the
-     pending neutral, and the sweep above carries all three possible outcomes.
-     A prior turn's colour still cannot bleed in: the state rules are scoped
-     :not(.is-thinking). */
+
   box-shadow: 0 0 12px rgba(163, 163, 163, 0.34);
   background: linear-gradient(135deg, #a3a3a3, #d4d4d4);
 }
@@ -300,31 +213,9 @@ html {
 .ai-avatar.is-thinking::before {
   content: '';
   position: absolute;
-  /* MUST be absolute. .ai-avatar is display:flex, and a pseudo-element on a
-     flex container is otherwise a flex ITEM — it would be laid out beside the
-     image instead of behind it. */
-  inset: -30%; /* negative so the rotating box still covers the corners */
-  /* All three outcomes at once, because while the turn is in flight the outcome
-     is genuinely undetermined. The ring settles to ONE of these when the audit
-     lands, so the spin reads as three possibilities collapsing to a verdict
-     rather than as a decorative loader.
 
-     Hues are the chip's exact vocabulary (green #22c55e / amber #eab308 /
-     red #ef4444), not new ones, so the ring and the chip cannot look like
-     different scales.
+  inset: -30%;
 
-     Stops are a seamless wheel — green appears at both 0turn and 1turn — or the
-     wrap shows a hard seam once per revolution. They are blended rather than
-     hard thirds so red fades through amber instead of presenting as a solid
-     alarm segment on a turn that may well end green. Alpha lets the neutral
-     base show through, marking the state as provisional; the settled ring is
-     fully opaque, which is what makes the resolution visible.
-
-     Amber appears TWICE, and that is the fix for a real artefact rather than
-     symmetry for its own sake. With three evenly spaced stops the return leg
-     interpolates red straight to green, and sRGB routes that through a muddy
-     olive-brown that looked like a rendering fault. Mirroring amber means every
-     leg runs between adjacent hues. */
   background: conic-gradient(from 0turn,
       rgba(34, 197, 94, 0.80)  0turn,
       rgba(234, 179, 8, 0.80)  0.25turn,
@@ -334,9 +225,7 @@ html {
   animation: safi-ring-sweep 1.15s linear infinite;
 }
 
-/* On a near-black surface the mid hues go muddy, so dark mode uses the same
-   lighter variants its settled rings already use (#4ade80 / #facc15 / #f87171)
-   rather than a second invented palette. */
+
 .dark .ai-avatar.is-thinking::before {
   background: conic-gradient(from 0turn,
       rgba(74, 222, 128, 0.85)  0turn,
@@ -346,15 +235,7 @@ html {
       rgba(74, 222, 128, 0.85)  1turn);
 }
 
-/* Lifts the mark above the sweep so only the ring animates, and separates the
-   mark from the ring with a hairline of SURFACE colour.
 
-   The gap is load-bearing, not decoration. The monogram palette (blue / burnt
-   orange / aqua) and the outcome palette (green / amber / red) both occupy warm
-   and green hues, so ring and fill would otherwise touch and blend: amber ring +
-   orange fill became one blob at 32px, and a red ring around the aqua fill read
-   as a single muddled object. A surface gap makes them two separate marks, which
-   is the standard remedy for adjacent fills. */
 .ai-avatar img {
   position: relative;
   z-index: 1;
@@ -365,26 +246,7 @@ html {
   box-shadow: 0 0 0 1.5px #1a1a1a;
 }
 
-/* ── Outcome ring: the turn's alignment tier, once the audit lands ────────────
-   Set by _applyRingState() in js/ui/ui-messages.js from _scoreTier() — the SAME
-   function the score chip uses, so the ring and the chip can never disagree
-   about the same turn.
 
-   Colours are the chip's existing vocabulary, not new hexes:
-     seg-green  #22c55e   Aligned  (>= 8)
-     seg-yellow #eab308   Caution  (5..8)
-     seg-red    #ef4444   Concern  (< 5)
-     seg-pending #a3a3a3  Audit pending
-
-   Deliberately NOT per-agent colours. Green already means "governed/aligned"
-   here (it is also --accent), so an agent-coloured ring would assert a verdict
-   it does not have — and an amber ring would sit next to an amber caution dot on
-   every answer. Agent identity is already carried inside the ring by the
-   monogram's letters and its own palette. */
-
-/* Audit pending — neutral, never green. A turn the Conscience has not judged
-   must not wear the "aligned" colour, and the ring is far more prominent than
-   the chip. */
 .ai-avatar.ring-pending:not(.is-thinking) {
   background: linear-gradient(135deg, #a3a3a3, #d4d4d4);
   box-shadow: none;
@@ -430,10 +292,7 @@ html {
   to { transform: rotate(1turn); }
 }
 
-/* First honoured instance in this stylesheet — deliberately scoped to this
-   animation rather than a global sweep. Rotation is the exact pattern that
-   triggers vestibular symptoms, so it is replaced with a still ring that
-   breathes, which still communicates "working". */
+
 @media (prefers-reduced-motion: reduce) {
   .ai-avatar.is-thinking::before {
     animation: safi-ring-breathe 1.8s ease-in-out infinite;
@@ -451,9 +310,9 @@ html {
   flex-shrink: 0;
   margin-top: 6px;
   border-radius: 50%;
-  background-color: #f3f4f6; /* Subtle off-white background for custom icons */
-  border: 1px solid rgba(0, 0, 0, 0.06); /* Clean micro-border outline */
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04); /* Soft drop shadow */
+  background-color: #f3f4f6;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -462,7 +321,7 @@ html {
 }
 
 .dark .user-avatar {
-  background-color: #1a1a1a; /* Dark mode backdrop */
+  background-color: #1a1a1a;
   border-color: rgba(255, 255, 255, 0.08);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
@@ -473,7 +332,7 @@ html {
 }
 
 .user-avatar:hover {
-  transform: scale(1.05); /* Elegant hover scale micro-animation */
+  transform: scale(1.05);
 }
 
 .ai-avatar img {
@@ -481,15 +340,9 @@ html {
   height: 100%;
   object-fit: cover;
   border-radius: 50%;
-  background-color: #ffffff; /* Prevents back-bleeding of SVG transparent areas */
+  background-color: #ffffff;
 }
 
-/* NO transform on the image. This used to carry `scale(1.2)` with
-   `transform-origin: center 35%` to crop the old cartoon portraits to head and
-   shoulders, plus a scale(1.3) hover zoom. Both would slice the edges off a
-   monogram's letterform, which is now the identity channel — see
-   js/ui/ui-agent-mark.js. The parent `.ai-avatar:hover { transform: scale(1.05) }`
-   already provides the hover feedback. */
 
 .dark .ai-avatar img {
   background-color: #1a1a1a;
@@ -524,12 +377,7 @@ html {
   color: var(--ai-fg);
   padding: 8px 0;
   position: relative;
-  /* Generated responses are reading material, not interface: they get
-     the serif reading face; all UI chrome (and user bubbles) stays on
-     Inter. 18px at the 16px root — serifs run optically smaller than
-     Inter at equal px, so this reads a touch below Inter's apparent size.
-     Scales proportionally under html.native. Code spans/fences keep
-     their own monospace stack. */
+
   font-family: 'Source Serif 4', Georgia, 'Times New Roman', serif;
   font-size: 1.125rem;
   line-height: 1.75;
@@ -624,23 +472,7 @@ html {
   hyphens: auto;
 }
 
-/* Markdown heading scale — 1.15 modular steps, deliberately calm.
-   Every adjacent pair must stay >= 1.15 apart: below roughly that, two levels
-   read as a rendering wobble rather than a hierarchy. The previous scale had
-   h2 at 1.32rem and h3 at 1.25rem — a 1.056 step, 1.1px at a 16px body, with
-   both at the same weight, so they were effectively indistinguishable.
 
-   Sizes are in `em`, NOT `rem`, so the scale tracks its container. The saved
-   -content modal renders this same markdown inside `.chat-bubble text-sm`
-   (ui-saved.js), and rem-based headings there stayed locked to the 16px root
-   — the same CSS produced a visibly stronger hierarchy than in chat.
-
-   Weight is graded as a second signal (Inter is a variable font, 100-900, so
-   these are real weights and not synthesized). h1 also keeps its rule as a
-   third cue; h2 and h3 had no second cue at all before.
-
-   tests/test_css_invariants.py asserts the ratios. Change the numbers there too,
-   deliberately, or don't change them. */
 .chat-bubble h1,
 .chat-bubble h2,
 .chat-bubble h3,
@@ -676,12 +508,7 @@ html {
   margin-bottom: 0.4em;
 }
 
-/* h4-h6 were not styled at all, and did NOT fall back to browser defaults:
-   Tailwind's preflight sets every heading to `font-size: inherit;
-   font-weight: inherit`, so `####` rendered as a plain paragraph — same size
-   AND weight 400, not even bold. Models emit `####` constantly, so this was
-   the more common failure of the two. h4 is the conventional same-size-but
-   -bold level; it must not compete with h3, so weight carries it alone. */
+
 .chat-bubble h4 {
   font-size: 1em;
   font-weight: 620;
@@ -690,16 +517,7 @@ html {
   margin-bottom: 0.35em;
 }
 
-/* opacity, not `color: var(--muted)` — the same markdown renders inside the
-   user bubble, which is white-on-green (.message.user .chat-bubble), and a
-   fixed gray there would be near-unreadable. Opacity recedes against whatever
-   colour it inherits. */
-/* h5 and h6 are deliberately ONE visual level — six distinguishable ranks in a
-   chat message is a fiction, and at these sizes the difference would be the
-   sub-pixel wobble this whole scale exists to avoid. 0.85em keeps a real 1.18
-   step down from h4; smaller than body text is correct for a sub-sub-heading
-   (GitHub's h6 is 0.85em too), with weight and opacity marking it as a heading
-   rather than fine print. */
+
 .chat-bubble h5,
 .chat-bubble h6 {
   font-size: 0.85em;
@@ -710,9 +528,7 @@ html {
   margin-bottom: 0.3em;
 }
 
-/* h1's rule is one of the three cues separating it from h2, and at
-   rgba(0,0,0,.1) it was invisible on a dark background. Matches the
-   .dark .chat-bubble hr convention above. */
+
 .dark .chat-bubble h1 {
   border-bottom-color: rgba(255, 255, 255, 0.2);
 }
@@ -817,7 +633,7 @@ html {
   line-height: 1.5;
 }
 
-/* Fenced code blocks: header bar (language + copy) above the pre */
+
 .code-block {
   border-radius: 0.75rem;
   overflow: hidden;
@@ -910,21 +726,7 @@ html {
   color: #dcfce7;
 }
 
-/* ── Tabular figures ─────────────────────────────────────────────────────
-   Inter's default figures are proportional: '1' is narrower than '7', so a
-   column of scores shimmers and cannot be compared down the page. Every
-   governance surface — Audit Hub scores, drift, counts, timestamps, the
-   review queue, the compliance log — is exactly the case tabular figures
-   exist for.
 
-   Scoped to tables inside the control panel rather than applied globally:
-   tabular figures are WRONG in running prose, where the even advance width
-   leaves visible gaps around narrow digits. Chat content and the serif
-   reading column keep proportional figures deliberately.
-
-   Handled here rather than by adding a class to every <td> across five
-   settings modules. Individual figures outside a table use Tailwind's own
-   `tabular-nums` utility — no second custom class for the same job. */
 #control-panel-view table,
 #control-panel-view th,
 #control-panel-view td,
@@ -1153,7 +955,7 @@ html {
   color: #000000;
 }
 
-/* Hard-gate (non-negotiable) values: lock icon + amber accent */
+
 .value-chip-gate {
   border: 1px solid #d97706;
   background-color: #fef3c7;
@@ -1220,33 +1022,32 @@ html {
   border-top: 1.5px solid #22c55e;
 }
 
-/* Premium Thinking Container (Float Animation, Clean System Look) */
+
 .thinking-container {
   display: inline-flex;
   align-items: center;
   gap: 12px;
-  background: transparent; /* No background in light theme */
+  background: transparent;
   border-radius: 16px;
-  padding: 10px 0; /* Left align cleanly in light theme */
-  box-shadow: none; /* No shadow */
+  padding: 10px 0;
+  box-shadow: none;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
   animation: float-gentle 4s ease-in-out infinite;
 }
 
 .dark .thinking-container {
-  background: rgba(34, 197, 94, 0.05); /* Soft green tint in dark theme */
-  padding: 10px 16px; /* Capsule padding for dark theme background */
+  background: rgba(34, 197, 94, 0.05);
+  padding: 10px 16px;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  box-shadow: none; /* No shadow */
+  box-shadow: none;
 }
 
 .pipeline-trace {
   display: inline-flex;
   align-items: center;
-  /* Spacing lives on connector margins (not gap) so unrevealed stages
-     collapse to zero width without leaving stray gaps behind. */
+
 }
 
 .pipeline-step {
@@ -1257,7 +1058,7 @@ html {
   transition: max-width 0.35s ease, opacity 0.3s ease;
 }
 
-/* Future stages stay hidden until the backend actually reaches them */
+
 .pipeline-step.unrevealed,
 .step-connector.unrevealed {
   max-width: 0;
@@ -1296,8 +1097,7 @@ html {
   white-space: nowrap;
 }
 
-/* Gather (agentic tool loop) shows the live tool status while active —
-   e.g. "Searching the web" — which runs longer than the fixed stage labels. */
+
 .pipeline-step.gather.active {
   max-width: 220px;
 }
@@ -1320,7 +1120,7 @@ html {
   transition: max-width 0.35s ease, margin 0.35s ease, opacity 0.3s ease;
 }
 
-/* Connector fills left-to-right as its stage completes */
+
 .step-connector::after {
   content: '';
   position: absolute;
@@ -1335,7 +1135,7 @@ html {
   transform: scaleX(1);
 }
 
-/* Active stage: filled pulsing dot, breathing label in sync */
+
 .pipeline-step.active .step-dot {
   border-color: #0a0a0a;
   background: #0a0a0a;
@@ -1347,7 +1147,7 @@ html {
   animation: step-label-breathe 1.4s infinite ease-in-out;
 }
 
-/* Completed stage: green check pops in */
+
 .pipeline-step.done .step-dot {
   border-color: #16a34a;
   background: #16a34a;
@@ -1378,7 +1178,7 @@ html {
   100% { transform: scale(1); }
 }
 
-/* Dark theme */
+
 .dark .step-dot {
   border-color: #525252;
 }
@@ -1422,7 +1222,7 @@ html {
   50% { transform: translateY(-2px); }
 }
 
-/* Premium Pulsing Dot Wave */
+
 .thinking-pulse-wave {
   display: flex;
   align-items: center;
@@ -1434,13 +1234,13 @@ html {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #0a0a0a; /* Solid system black for light theme */
+  background: #0a0a0a;
   opacity: 0.4;
   animation: dot-pulse-wave-light 1.4s infinite ease-in-out both;
 }
 
 .dark .thinking-pulse-wave span {
-  background: linear-gradient(135deg, #22c55e, #4ade80); /* Glowing green gradient for dark theme */
+  background: linear-gradient(135deg, #22c55e, #4ade80);
   animation: dot-pulse-wave-dark 1.4s infinite ease-in-out both;
 }
 
@@ -1475,12 +1275,12 @@ html {
   }
 }
 
-/* Shimmering / Solid Text */
+
 #thinking-status {
-  font-size: 0.875rem; /* text-sm */
+  font-size: 0.875rem;
   font-weight: 500;
   letter-spacing: -0.01em;
-  color: #0a0a0a; /* Solid system black for light theme */
+  color: #0a0a0a;
   display: inline-block;
   opacity: 0.8;
   animation: pulse-opacity 2s infinite ease-in-out;
@@ -1489,7 +1289,7 @@ html {
 .dark #thinking-status {
   font-weight: 500;
   color: transparent;
-  background: linear-gradient(90deg, #22c55e, #86efac, #22c55e); /* Future neon mint shimmer for dark theme */
+  background: linear-gradient(90deg, #22c55e, #86efac, #22c55e);
   background-size: 200% auto;
   -webkit-background-clip: text;
   background-clip: text;
@@ -1517,10 +1317,10 @@ html {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  /* REMOVED width: 100% - This was forcing tabs to be full width on mobile horizontal scroll */
+
   text-align: left;
   padding: 0.65rem 0.75rem;
-  font-size: 0.875rem; /* text-sm */
+  font-size: 0.875rem;
   font-weight: 500;
   border-radius: 0.5rem;
   color: #374151;
@@ -1557,7 +1357,7 @@ html {
   color: #22c55e;
 }
 
-/* FIX: Ensure hidden tabs stay hidden even with display:flex on base class */
+
 .modal-tab-button.hidden {
   display: none !important;
 }
@@ -1654,24 +1454,24 @@ html {
   .convo-menu-button:hover {
     background: rgba(120, 120, 120, 0.12);
   }
-} /* <-- ADD THIS CLOSING BRACE */
+}
 
 .convo-item {
   position: relative;
 }
 
 .app-tagline {
-  font-size: 0.875rem; /* text-sm */
+  font-size: 0.875rem;
   white-space: nowrap;
   font-weight: bold;
 }
 
 .convo-item-inner {
-  /* Transparent at rest so rows sit on the rail; hover/active add fills. */
+
   position: relative;
 }
 
-/* Active conversation: subtle tint + green left accent bar (no white card). */
+
 .convo-item-inner.is-active {
   background-color: rgba(0, 0, 0, 0.06);
 }
@@ -1714,7 +1514,7 @@ html {
   70% { transform: scale(1); }
 }
 
-/* --- Unified message action bar (AI answers) --- */
+
 .message.ai .meta {
   border-top: none;
   padding-top: 0;
@@ -1727,12 +1527,7 @@ html {
   gap: 2px;
   padding: 3px;
   border-radius: 999px;
-  /* Flat on the canvas, deliberately. The AI bubble is already transparent
-     (--ai-bg), so the old rgba tint + border made this bar the ONE piece of
-     chrome floating on the reading surface — a pill under every answer.
-     Transparent here IS "the same color as the canvas", and it stays correct
-     if the canvas color ever changes. The buttons keep their own hover
-     states, so affordance survives; only the resting chrome goes. */
+
   background: transparent;
   border: 1px solid transparent;
 }
@@ -1809,7 +1604,7 @@ html {
   transform: translateX(2px);
 }
 
-/* tiers — colored dot + value text, calm (no glow/pulse on the bar itself) */
+
 .score-seg.seg-green  { color: #15803d; }
 .score-seg.seg-green  .score-dot { background: #22c55e; box-shadow: 0 0 6px rgba(34, 197, 94, 0.55); }
 .score-seg.seg-yellow { color: #a16207; }
@@ -1828,9 +1623,7 @@ html {
   box-shadow: none;
 }
 
-/* Conflict count on the chip. Inherits the tier colour rather than forcing
-   red: a firm conflict on an 8.5 turn is still worth reading, and recolouring
-   the whole chip would contradict the score sitting next to it. */
+
 .score-seg .score-conflicts {
   display: inline-flex;
   align-items: center;
@@ -1853,18 +1646,13 @@ html {
 }
 
 
-/* Named top conflict, on its own line above the action bar. `.meta` is a flex
-   row, so the full-basis + order pair is what puts this above the bar without
-   restructuring the meta footer for every message. */
 .message.ai .meta {
   flex-wrap: wrap;
 }
 
 .conflict-note {
   flex: 0 0 100%;
-  /* min-width:auto is the flex default and would floor this item at its
-     min-content width, so a long unbroken value name would push past the
-     bubble instead of wrapping inside it. */
+
   min-width: 0;
   text-wrap: pretty;
   order: -1;
@@ -1897,22 +1685,7 @@ html {
   color: #fbbf24;
 }
 
-/* --- Narrow screens: the action bar must not be able to overflow ---------
-   The conflict segment added ~89px to a bar that already ran ~265px, and at a
-   360px viewport the bubble only gets ~336px (message-container's 12px side
-   padding; the AI bubble adds no horizontal padding of its own). The bar was
-   `inline-flex` with no wrap and `.score-seg` is `white-space: nowrap`, so it
-   could not reflow — it simply pushed out of the bubble. That is why the
-   distortion only appeared on a turn with a conflict.
 
-   Two-part fix, in this order of importance:
-
-   1. `flex-wrap` makes overflow structurally impossible at ANY content width,
-      font size or accessibility zoom, rather than fitting today's string by
-      luck. The radius drops to 14px because a wrapped 999px stadium reads as
-      a broken shape.
-   2. The label shortening below just keeps it on one line in the common case,
-      so the wrap is a safety net and not the normal appearance. */
 @media (max-width: 639px) {
   .msg-actionbar {
     flex-wrap: wrap;
@@ -1922,25 +1695,20 @@ html {
     border-radius: 14px;
   }
 
-  /* "2 conflicts" -> "2". The note directly below always names the conflict
-     (both render on exactly the same _significantConflicts() predicate), so
-     nothing is lost here — and the button's aria-label keeps the full wording
-     for screen readers regardless. */
+
   .score-seg .conflict-word {
     display: none;
   }
 }
 
-/* Very narrow: drop the tier word too, but only on a bar carrying a conflict
-   segment — a clean turn has room for it, and the dot colour already encodes
-   the tier. */
+
 @media (max-width: 419px) {
   .score-seg.has-conflicts .score-label {
     display: none;
   }
 }
 
-/* compact the action buttons so they sit neatly inside the bar */
+
 .msg-actionbar .tts-btn,
 .msg-actionbar .copy-btn,
 .msg-actionbar .save-btn,
@@ -1951,7 +1719,7 @@ html {
   height: 26px;
 }
 
-/* Premium Sliding Follow-Up prompt suggestion buttons */
+
 .ai-prompt-suggestion-btn {
   display: block;
   width: 100%;
@@ -1960,9 +1728,9 @@ html {
   border-radius: 10px;
   background: rgba(0, 0, 0, 0.02);
   border: 1px solid rgba(0, 0, 0, 0.06);
-  border-left: 3px solid rgba(34, 197, 94, 0.4); /* Emerald left active path marker */
+  border-left: 3px solid rgba(34, 197, 94, 0.4);
   color: var(--fg);
-  font-size: 0.875rem; /* text-sm */
+  font-size: 0.875rem;
   font-weight: 500;
   font-style: normal !important;
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
@@ -1981,7 +1749,7 @@ html {
   background: rgba(34, 197, 94, 0.03) !important;
   border-color: rgba(34, 197, 94, 0.15) !important;
   border-left-color: #22c55e !important;
-  transform: translateX(4px); /* Fluid slide translation */
+  transform: translateX(4px);
   box-shadow: 0 4px 12px rgba(34, 197, 94, 0.06) !important;
 }
 
@@ -1992,7 +1760,7 @@ html {
   box-shadow: 0 4px 16px rgba(34, 197, 94, 0.12) !important;
 }
 
-/* Frosted glass message action controls */
+
 .tts-btn,
 .copy-btn,
 .save-btn,
@@ -2041,59 +1809,47 @@ html {
   transform: scale(0.95);
 }
 
-/* --- NEW: Enhanced Input Styling (The "Conversational Surface") --- */
 
-/* 1. Wrapper for the input area (The "Dock") */
-
-/* UPDATED: Separated logic. This handles generic classes and the new wrapper.
-   Deliberately NOT a bare `form` selector: that leaked chat-composer styling
-   (flex row, translucent bg, 1rem padding) into every form in the app —
-   login, incident registry — mangling their layout. */
 .input-dock-container,
 .input-wrapper {
   position: relative;
-  /* Crucial for button positioning */
+
   background: rgba(255, 255, 255, 0.9);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   border-top: 1px solid rgba(0, 0, 0, 0.05);
   padding: 1rem;
-  /* 16px padding */
 
-  /* NEW: Ensure flex properties don't break absolute positioning */
+
   display: flex;
   align-items: flex-end;
   gap: 0;
-  /* Remove gap since button is absolute */
+
 }
 
-/* UPDATED: Dark mode support for wrapper */
+
 .dark .input-dock-container,
 .dark .input-wrapper {
   background: rgba(0, 0, 0, 0.8);
   border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-/* UPDATED: Special logic for the inner footer ID to respect full-width parent */
+
 #composer-footer {
-  /* Needs relative for button positioning */
+
   position: relative;
   display: flex;
   align-items: flex-end;
-  /* Background handled by wrapper, so we make this transparent */
+
   background: transparent !important;
   border: none !important;
   backdrop-filter: none !important;
-  /* Horizontal only. The vertical 16px used to be here too, and it STACKED
-     with the wrapper's pt-4/pb-3 (pt-8/pb-6 from md up) — 40px of dead space
-     under the input on desktop. Mobile had already been patched around it in
-     the max-width block below; this fixes the cause instead, so the wrapper
-     owns vertical spacing at every breakpoint. */
+
   padding: 0 16px;
   gap: 0;
 }
 
-/* NEW: Focus glow on the capsule when typing */
+
 #composer-capsule:focus-within {
   border-color: rgba(22, 163, 74, 0.4);
   box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.08), 0 4px 12px rgba(0, 0, 0, 0.06);
@@ -2104,45 +1860,29 @@ html {
   box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.1), 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
-/* 2. The Input Field Itself */
-#message-input {
-  /* Horizontal inset only. This ID rule beats the markup's utility classes,
-     and its old `padding: 8px 16px` silently overrode py-0 — 16px of vertical
-     padding the height JS divided into "lines", so one line measured as two.
-     The symptom set was exact: fine on first paint (autoSize had not run),
-     grew on the first keystroke, and never shrank back even when emptied.
-     Vertical centring is the wrapper's job (flex items-center + min-h);
-     vertical padding here must stay 0.
 
-     min-height/max-height also came out: they lost to the inline min-height
-     and beat the markup's max-h-32 respectively — three sources of truth for
-     one box. The markup is the authority now. */
+#message-input {
+
   padding: 0 16px;
 
-  /* Surface styling */
+
   background-color: transparent;
   border: none;
   box-shadow: none;
 
-  /* Typography */
+
   font-family: inherit;
-  font-size: 1rem; /* text-base — matches body */
+  font-size: 1rem;
   line-height: 1.5;
   color: var(--fg);
 
-  /* Behavior */
+
   outline: none;
-  /* NO transition here, and none may return. `transition: all` includes
-     height, and the height is JS-managed: the resize code collapses the box
-     to measure scrollHeight, and with an engaged transition that synchronous
-     read still sees the OLD height — so the textarea could grow but never
-     shrink back after deleting text or sending. Nothing here visually
-     transitions anyway: the background is always transparent and the focus
-     styling lives on the capsule. */
+
   resize: none;
   width: 100%;
 
-  /* Ensure it overrides Tailwind utility classes */
+
   margin: 0 !important;
   flex: 1;
 }
@@ -2158,24 +1898,24 @@ html {
 }
 
 .dark #message-input:focus {
-  /* No change */
+
 }
 
 #message-input::placeholder {
   color: #9ca3af;
 }
 
-/* 3. The Send Button */
+
 #send-button {
   width: 32px;
   height: 32px;
   border-radius: 50%;
 
-  /* Green accent */
+
   background-color: #16a34a !important;
   color: white !important;
 
-  /* Center the Icon */
+
   display: flex !important;
   align-items: center;
   justify-content: center;
@@ -2189,12 +1929,7 @@ html {
   z-index: 10;
 }
 
-/* Voice input: the mic takes over the send button's slot when the composer is
-   empty, so it mirrors that button's footprint and treatment and only the glyph
-   differs. Sized here rather than by utility classes because #send-button's own
-   width/height are set in this file too, and the two must match exactly or the
-   capsule visibly jumps on every swap. Visibility is driven from JS with inline
-   !important, since the display rule above is !important. */
+
 #composer-mic-btn {
   width: 32px;
   height: 32px;
@@ -2212,27 +1947,22 @@ html {
   z-index: 10;
 }
 
-/* Both composer action buttons share ONE vertical nudge, so the mic and the send
-   button sit in exactly the same place: swapping between them must not move
-   anything. Every state below re-states the lift, because a bare `transform` in a
-   hover or disabled rule would replace it and drop the button back down. Change
-   the one variable to shift both. */
+
 #send-button,
 #composer-mic-btn {
-  /* Desktop needs no nudge: both buttons are the same circle in the same slot,
-     so they already sit right. Only the phone layout lifts them (below). */
+
   --composer-btn-lift: 0px;
   transform: translateY(var(--composer-btn-lift));
 }
 
-/* Held down: red, so it is unmistakable that audio is being captured. */
+
 #composer-mic-btn.is-recording {
   background-color: #dc2626 !important;
   box-shadow: 0 2px 5px rgba(220, 38, 38, 0.35);
   transform: translateY(var(--composer-btn-lift)) scale(1.06);
 }
 
-/* Transcribing: dimmed and inert until the transcript lands. */
+
 #composer-mic-btn.is-working {
   opacity: 0.6;
   cursor: default;
@@ -2244,13 +1974,13 @@ html {
   box-shadow: 0 3px 8px rgba(22, 163, 74, 0.35);
 }
 
-/* Disabled State */
+
 #send-button:disabled {
   background-color: #d1d5db !important;
   color: #9ca3af !important;
   box-shadow: none;
   cursor: default;
-  /* Keep the lift: without it a disabled send sits 2px below an enabled one. */
+
   transform: translateY(var(--composer-btn-lift));
 }
 
@@ -2259,7 +1989,7 @@ html {
   color: #6b7280 !important;
 }
 
-/* Canceling State — overrides the green !important via higher specificity */
+
 #send-button.canceling {
   background-color: #dc2626 !important;
   box-shadow: 0 2px 5px rgba(220, 38, 38, 0.3);
@@ -2271,7 +2001,7 @@ html {
   transform: translateY(var(--composer-btn-lift)) scale(1.05);
 }
 
-/* Icon Sizing */
+
 #send-button svg {
   width: 14px;
   height: 14px;
@@ -2298,7 +2028,7 @@ html {
   gap: 0.5rem;
   margin-bottom: 1rem;
   min-height: 2rem;
-  /* Prevent collapse */
+
 }
 
 .profile-chip {
@@ -2310,7 +2040,7 @@ html {
   color: #1f2937;
   padding: 0.35rem 0.75rem;
   border-radius: 9999px;
-  /* Pill shape */
+
   font-size: 0.9rem;
   font-weight: 500;
   transition: all 0.2s;
@@ -2346,11 +2076,11 @@ html {
 
 .chip-delete-btn:hover {
   color: #ef4444;
-  /* Red on hover */
+
   background-color: rgba(239, 68, 68, 0.1);
 }
 
-/* Suggestions Area */
+
 .suggestions-area {
   margin-top: 0.75rem;
 }
@@ -2372,7 +2102,7 @@ html {
   margin-bottom: 0.5rem;
   border-radius: 0.5rem;
   background-color: rgba(22, 163, 74, 0.08);
-  /* Very light green */
+
   color: #15803d;
   cursor: pointer;
   border: 1px dashed #86efac;
@@ -2392,7 +2122,7 @@ html {
   transform: translateY(-1px);
 }
 
-/* Empty State */
+
 .empty-section-state {
   text-align: center;
   padding: 1rem;
@@ -2409,7 +2139,7 @@ html {
   color: #6b7280;
 }
 
-/* Visible Scrollbar for Input */
+
 .input-scrollbar {
   scrollbar-width: thin;
   scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
@@ -2437,7 +2167,7 @@ html {
   background-color: rgba(255, 255, 255, 0.2);
 }
 
-/* --- Control Panel / Settings design system --- */
+
 .settings-page-header {
   margin-bottom: 1.5rem;
 }
@@ -2456,14 +2186,7 @@ html {
   max-width: 42rem;
 }
 
-/* Reusable white card for grouping settings sections on the grey canvas. */
-/* Audit Hub categorical series slots. Assigned in fixed order off the org's
-   agent roster so a scope change never repaints the surviving lines. Both
-   columns validated against the card surfaces (#ffffff / #111111): worst
-   adjacent CVD dE 9.1 light / 8.4 dark, normal-vision 19.6 / 19.3. Three light
-   slots (aqua, yellow, magenta) sit under 3:1 on white, so the chart always
-   ships a legend and direct-labels up to 4 series — that is the relief, not a
-   nice-to-have. Do not reorder or substitute without re-validating. */
+
 :root {
   --ah-series-1: #2a78d6;
   --ah-series-2: #eb6834;
@@ -2508,10 +2231,7 @@ html {
   flex-shrink: 0;
 }
 
-/* Chain-head digest shown next to the "Chain verified" badge. user-select:all
-   so one click selects the whole hash even where the clipboard API is
-   unavailable (it requires a secure context, which plain-HTTP self-hosting
-   does not provide — see item 15). */
+
 .chain-hash {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 10.5px;
@@ -2570,7 +2290,7 @@ html {
   margin-top: 0.125rem;
 }
 
-/* --- Sidebar Active State (Control Panel) --- */
+
 .sidebar-item.active {
   background-color: #e5e5e5;
   color: #171717;
@@ -2590,7 +2310,7 @@ html {
   color: #e5e5e5;
 }
 
-/* --- PREMIUM COMPLIANCE AUDIT MODAL UPGRADE --- */
+
 #conscience-modal {
   background: #ffffff !important;
   border: 1px solid rgba(0, 0, 0, 0.08) !important;
@@ -2615,7 +2335,7 @@ html {
     bottom: 0 !important;
     left: 0 !important;
     right: 0 !important;
-    height: 80vh !important; /* Drawer occupies 80% of the viewport height */
+    height: 80vh !important;
     max-height: 80vh !important;
     border-radius: 20px 20px 0 0 !important;
     transform: none !important;
@@ -2633,34 +2353,12 @@ html {
   100% { transform: translateY(0); }
 }
 
-/* ============================================================
-   SMALL DIALOGS  (rename, delete, new folder, clear history)
-   ============================================================
-   One treatment for every confirm/prompt dialog. They were six copies of the
-   same utility soup: a Cancel button with no resting state, no icon, no
-   entrance, inconsistent title weights, destructive buttons that got LIGHTER
-   on hover while the green one got darker, and rename/folder text inputs
-   borrowing .settings-modal-select, which paints a dropdown chevron inside a
-   plain text field.
 
-   Palette per the branding standard: green is the only accent, neutral carries
-   the black-to-white axis, and red appears only where the action is actually
-   destructive. The icon badge is what makes intent readable at a glance, so
-   the colour is doing meaning, not decoration. */
-
-/* The modals below KEEP `both`, unlike the menu and message animations. Their
-   100% keyframe is translate(-50%, -50%) scale(1), and that translate is the
-   centring, not a leftover: these rules carry no transform of their own, so
-   dropping the fill mode would drop the dialog off centre. The composited
-   layer, and the grayscale text antialiasing that comes with it, is the price
-   of centring this way. Moving to a flex-centred wrapper would remove the
-   transform and win back subpixel AA inside dialogs; not done here. */
 .safi-dialog {
   background: #ffffff;
   border: 1px solid rgba(0, 0, 0, 0.06);
   border-radius: 18px;
-  /* Two layers: a hairline lift plus a soft ambient shadow. shadow-2xl alone
-     reads as a heavy drop under a small panel. */
+
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 16px 40px rgba(0, 0, 0, 0.16);
   padding: 1.5rem;
   animation: modal-zoom-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
@@ -2676,7 +2374,7 @@ html {
   .safi-dialog { animation: none; }
 }
 
-/* Header: badge + title on one line, so the eye lands on the icon first. */
+
 .dialog-head {
   display: flex;
   align-items: center;
@@ -2696,7 +2394,7 @@ html {
 
 .dialog-icon svg { width: 19px; height: 19px; }
 
-/* Green: an ordinary edit. Red: something is destroyed. */
+
 .dialog-icon-brand { background: #dcfce7; color: #15803d; }
 .dark .dialog-icon-brand { background: rgba(22, 163, 74, 0.16); color: #4ade80; }
 .dialog-icon-danger { background: #fee2e2; color: #b91c1c; }
@@ -2731,8 +2429,7 @@ html {
 
 .dark .dialog-label { color: #9ca3af; }
 
-/* A text input, not a select: no chevron, and the focus ring is the brand green
-   rather than the browser default. */
+
 .dialog-input {
   width: 100%;
   font-size: 0.9375rem;
@@ -2776,7 +2473,7 @@ html {
   box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.35);
 }
 
-/* Cancel: a real button at rest, so the pair reads as a pair. */
+
 .dialog-btn-secondary {
   background: #ffffff;
   border-color: #e5e7eb;
@@ -2796,13 +2493,12 @@ html {
 .dialog-btn-primary { background: #16a34a; color: #ffffff; }
 .dialog-btn-primary:hover { background: #15803d; }
 
-/* Destructive: darker on hover, matching the primary's direction. The old
-   red-600 -> red-500 got lighter, which read as the button going inactive. */
+
 .dialog-btn-danger { background: #dc2626; color: #ffffff; }
 .dialog-btn-danger:hover { background: #b91c1c; }
 .dialog-btn-danger:focus-visible { box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.35); }
 
-/* The backdrop earns a slight blur so the dialog sits clearly in front. */
+
 #modal-backdrop:not(.hidden) {
   backdrop-filter: blur(2px);
   -webkit-backdrop-filter: blur(2px);
@@ -2816,8 +2512,7 @@ html {
 
 @media (max-width: 480px) {
   .safi-dialog { padding: 1.25rem; border-radius: 16px; }
-  /* Full-width buttons stacked would be taller than the dialog body; keep them
-     side by side but let them share the row evenly. */
+
   .dialog-actions .dialog-btn { flex: 1; }
 }
 
@@ -2954,19 +2649,15 @@ html {
 .audit-card-neutral:hover { border-color: rgba(0, 0, 0, 0.12) !important; }
 .dark .audit-card-neutral:hover { border-color: rgba(255, 255, 255, 0.12) !important; }
 
-/* ============================================================
-   MOBILE CHAT LAYOUT FIXES  (max-width: 767px)
-   ============================================================ */
+
 @media (max-width: 767px) {
 
-    /* Bump the root size on phones so all rem-based text and spacing scale up
-       together (~6%). This is the same single knob the retired Capacitor shell
-       used, which set it the other way (14px) to shrink. */
+
     html {
         font-size: 17px;
     }
 
-    /* Smaller avatars — 42px eats into the narrow content area */
+
     .ai-avatar,
     .user-avatar {
         width: 32px;
@@ -2974,82 +2665,68 @@ html {
         margin-top: 4px;
     }
 
-    /* Tighter gap between avatar and message text */
+
     .message.ai {
         gap: 10px;
     }
 
-    /* User bubbles shouldn't span nearly 100% — looks like a wall of green */
+
     .message.user {
         max-width: 82%;
     }
 
-    /* Slimmer padding inside user bubbles */
+
     .message.user .chat-bubble {
         padding: 10px 16px;
         border-radius: 20px;
     }
 
-    /* Tighter still on small screens: the wrapper's pt-4 is enough above the
-       capsule, and horizontal padding comes from the wrapper's px-2 here. */
+
     #composer-footer {
         padding: 4px 0 0 0;
     }
 
-    /* Make the composer more compact on phones: smaller input text and a
-       shorter capsule so it takes less of the screen. */
+
     #message-input {
-        font-size: 0.9375rem; /* 15px */
+        font-size: 0.9375rem;
         line-height: 1.4;
     }
     #composer-capsule {
         min-height: 44px;
     }
 
-    /* Lift the whole button (circle and glyph together) 3px on phones so it
-       lines up with the + button. Moving the button, not the icon, keeps the
-       glyph centered in its circle. Overriding only the variable keeps the mic
-       and the send button on the same line: setting `transform` here instead
-       would apply to one of them and leave the other 3px lower. */
+
     #send-button,
     #composer-mic-btn {
         --composer-btn-lift: -3px;
     }
 
-    /* iOS safe area: keep the composer above the home indicator */
+
     .composer-bg-wrapper {
         padding-bottom: max(12px, env(safe-area-inset-bottom));
     }
 
-    /* Slightly tighter message container side padding */
+
     .message-container {
         padding: 0 12px;
     }
 
-    /* Settings cards keep 1.5rem padding on desktop, which is too much on a
-       phone once the inner cards (e.g. core-value editors) add their own. Trim
-       it so the nested content has room and stops looking cramped. */
+
     .settings-card {
         padding: 1rem;
     }
 
-    /* Mobile drawers (chat sidebar + control-panel menu): clear the status
-       bar / notch at the top and the gesture bar at the bottom so headers and
-       footers aren't cut off. Desktop is unaffected (max-width: 767px only). */
+
     #sidebar,
     #mobile-menu {
         padding-top: env(safe-area-inset-top);
         padding-bottom: env(safe-area-inset-bottom);
     }
 }
-/* --- Sidebar dropdown menu (conversation + project actions) --- */
+
 .convo-menu-dropdown {
   transform-origin: bottom right;
-  /* NO `both`, same reason as .message-container above: menu-pop ends on
-     scale(1) translateY(0), which is the element's resting state, so holding
-     it only pinned the popup to a compositing layer and cost it subpixel text
-     antialiasing. That is why the three-dots menu's labels looked rough next
-     to identical text in the sidebar behind it. */
+
   animation: menu-pop 0.14s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -3058,23 +2735,7 @@ html {
   100% { opacity: 1; transform: scale(1) translateY(0); }
 }
 
-/* --- Desktop collapsible sidebar --- */
-/* Collapsing no longer removes the sidebar entirely: a 56px icon rail
-   (#sidebar-rail, built next to the sidebar in ui-auth-sidebar.js) stays
-   behind, keeping new-conversation, the account picture and settings one
-   click away. The old floating "show sidebar" button is gone — the rail's
-   top icon is the expand control, via the same [data-sidebar-toggle]
-   delegation. Desktop-only: on mobile the sidebar is an overlay and the
-   rail never displays. */
 
-/* The desktop sidebar's width, in ONE place.
-   The number is needed twice — the sidebar's own width, and the margin that
-   keeps the chat clear of it, because #sidebar is `fixed` and takes no space in
-   flow. It used to be spelled as a Tailwind class at both ends, which meant
-   seven copies of it across four files, four of them the same eight-line block
-   copy-pasted with the comment "Match app.js Control Panel logic". Widening the
-   sidebar to 18rem updated two of the seven and left the Control Panel indented
-   by a sidebar that was no longer there. Change it here and everything follows. */
 :root {
   --sidebar-w: 18rem;
 }
@@ -3084,21 +2745,17 @@ html {
     width: var(--sidebar-w);
   }
 
-  /* The Control Panel's own nav is the same visual element in another view —
-     same background, same border — so it takes the same width from the same
-     place. It is in flow rather than fixed, so it needs no matching margin. */
+
   #control-panel-view > aside {
     width: var(--sidebar-w);
   }
 
-  /* Animate the chat area reclaiming space when the sidebar collapses. */
+
   #main-layout-wrapper {
     transition: margin-left 0.3s ease-in-out;
   }
 
-  /* html.has-sidebar is set by updateUIForAuthState() once a user is logged in.
-     Logged out there is no sidebar at all, so the login view centres on the
-     whole viewport. */
+
   html.has-sidebar #main-layout-wrapper {
     margin-left: var(--sidebar-w);
   }
@@ -3107,8 +2764,7 @@ html {
     transform: translateX(-100%);
   }
 
-  /* 3.5rem, not 0: the content clears the rail instead of sliding under it.
-     Must stay AFTER the has-sidebar rule — equal specificity, so order decides. */
+
   html.sidebar-collapsed #main-layout-wrapper {
     margin-left: 3.5rem;
   }
@@ -3117,23 +2773,7 @@ html {
     display: flex;
   }
 
-  /* The Control Panel replaces the whole chat chrome, so the chat sidebar, the
-     rail, and the gutter that was holding them all go with it.
 
-     Keyed on the panel's own visibility rather than patched into the handlers:
-     it is opened in four places and closed in six across four files, and every
-     one of those paths had its own copy of "hide the sidebar, drop the margin".
-     One rule replaces all of them, and the paths that never restored the margin
-     on the way out (chat.js:603 and :633 just hide the panel) are correct now
-     without being touched.
-
-     NOT qualified on html.sidebar-collapsed any more. That was the bug: with the
-     sidebar expanded, none of these applied, so the panel kept an 18rem indent
-     and the chat sidebar stayed painted beside it. The condition is "the panel is
-     on screen", which has nothing to do with whether the sidebar was collapsed.
-
-     No !important needed: :has() carries its argument's specificity, so these
-     land at (2,1,1) against (1,1,1) for the rules above. */
   html:has(#control-panel-view:not(.hidden)) #sidebar {
     display: none;
   }
@@ -3147,13 +2787,7 @@ html {
   }
 }
 
-/* --- Control Panel on mobile: full-screen sheet slide-in ---
-   On phones the panel already fills the viewport (w-full h-full); the desktop
-   :has() offset above is gated on min-width:768px and never applies here, so
-   there is no underlying layout shift to neutralize. All this adds is a short
-   slide-in the moment the sheet appears, for polish. It is keyed on
-   :not(.hidden) so the existing open/close handlers — which simply toggle the
-   `hidden` class — drive the animation with no extra JS. */
+
 @media (max-width: 767px) {
   #control-panel-view:not(.hidden) {
     animation: cp-sheet-in 0.2s ease-out;
@@ -3165,17 +2799,14 @@ html {
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* Respect users who prefer no motion: skip the slide-in entirely. */
+
 @media (prefers-reduced-motion: reduce) {
   #control-panel-view:not(.hidden) {
     animation: none;
   }
 }
 
-/* --- Composer + menu flyouts --- */
 
-/* Below md the submenu is an inline accordion, so the chevron points down
-   when open. On desktop the flyout genuinely goes right; leave it alone. */
 .submenu-trigger[aria-expanded="true"] .submenu-chevron {
   transform: rotate(90deg);
 }
@@ -3185,8 +2816,7 @@ html {
     transform: none;
   }
 
-  /* Set by _keepOnScreen when the default right-hand flyout would run past
-     the viewport edge. */
+
   .submenu-panel.flyout-left {
     left: auto;
     right: 100%;
@@ -3195,7 +2825,7 @@ html {
   }
 }
 
-/* --- Scroll-to-bottom button --- */
+
 #scroll-to-bottom-btn {
   left: 50%;
   transform: translateX(-50%);
@@ -3208,7 +2838,7 @@ html {
   transform: translate(-50%, 8px);
 }
 
-/* --- Desktop CLI Onboarding Card (Built-in CLI Agents) --- */
+
 .cli-onboard-card {
   max-width: 48rem;
   margin: 0.75rem auto 1.75rem auto;

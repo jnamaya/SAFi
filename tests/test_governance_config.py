@@ -1,13 +1,3 @@
-"""
-Unit tests for compile-time governance validation (Phase 2):
-
-- synderesis._validate_value_rubrics: hard gates without a usable rubric raise;
-  ordinary values without one are stripped and remaining weights renormalized.
-- WillGate.evaluate_draft_structure: require_disclaimer with a missing/blank
-  mandatory_disclaimer_substring is a config warning, not a KeyError.
-
-Run:  venv/bin/python tests/test_governance_config.py
-"""
 import sys
 import unittest
 from pathlib import Path
@@ -47,7 +37,7 @@ class TestValidateValueRubrics(unittest.TestCase):
         prof = profile_with([
             {"value": "Scope Compliance", "weight": 0.0, "hard_gate": True, "rubric": RUBRIC},
             {"value": "Honesty", "weight": 0.5, "rubric": RUBRIC},
-            {"value": "Care", "weight": 0.5},  # no rubric — must be stripped
+            {"value": "Care", "weight": 0.5},
         ])
         out = _validate_value_rubrics(prof, "test_agent")
         names = [v["value"] for v in out["values"]]
@@ -59,7 +49,7 @@ class TestValidateValueRubrics(unittest.TestCase):
         values = [
             {"value": "Scope Compliance", "weight": 0.0, "hard_gate": True, "rubric": RUBRIC},
             {"value": "Honesty", "weight": 0.6, "rubric": RUBRIC},
-            {"value": "Care", "weight": 0.4, "rubric": [{"score": 1.0}]},  # legacy list shape
+            {"value": "Care", "weight": 0.4, "rubric": [{"score": 1.0}]},
         ]
         prof = profile_with(values)
         out = _validate_value_rubrics(prof, "test_agent")
@@ -77,7 +67,7 @@ class TestDisclaimerGuard(unittest.TestCase):
         return WillGate(None, values=[], profile={"will_rules": {"structural_requirements": struct}})
 
     def test_missing_substring_skips_check_instead_of_keyerror(self):
-        gate = self._gate({"require_disclaimer": True})  # no substring key at all
+        gate = self._gate({"require_disclaimer": True})
         ok, reason = gate.evaluate_draft_structure("Any draft text.")
         self.assertTrue(ok)
         self.assertEqual(reason, "pass")

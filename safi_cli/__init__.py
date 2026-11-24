@@ -1,4 +1,3 @@
-"""SAFi CLI - Native governed agent interface package."""
 from __future__ import annotations
 
 

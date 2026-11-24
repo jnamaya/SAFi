@@ -1,13 +1,3 @@
-"""
-Unit tests for the Conscience Gate on Agent Redirects (Caging Rebel LLMs).
-
-Guarantees that:
-1. No dynamic redirect output bypasses Conscience.
-2. When a dynamic redirect fails Conscience audit (S_t < 6 or negative rubric score),
-   the rebel LLM output is suppressed and clamped to an immutable deterministic policy statement.
-3. The database receives ONLY the Conscience-approved text.
-4. The audit record retains the rebel draft under intellectDraft for forensic accountability.
-"""
 import sys
 import logging
 import unittest
@@ -54,12 +44,10 @@ class TestCagedRedirectConscience(unittest.IsolatedAsyncioTestCase):
         self.safi._enforce_redirect_structure = lambda text: text
 
     async def test_compliant_redirect_is_approved(self):
-        """A polite, compliant redirect that passes Conscience is shipped directly."""
         compliant_text = "That question falls outside my operational scope as Systems Administrator."
         self.safi.intellect_engine.generate_forced_response = AsyncMock(
             return_value=({"content": compliant_text}, "")
         )
-        # Conscience approves with 8/10
         self.safi.conscience.evaluate_redirect = AsyncMock(return_value=[
             {"value": "Redirect Clarity", "score": 1.0},
             {"value": "Reason Fidelity", "score": 1.0},
@@ -82,8 +70,6 @@ class TestCagedRedirectConscience(unittest.IsolatedAsyncioTestCase):
         self.safi.store.update_message_content.assert_called_with("msg-1", compliant_text, audit_status="complete")
 
     async def test_rebel_redirect_is_vetoed_and_caged(self):
-        """When an agent rebels and refuses the directive, Conscience vetoes it
-        and the harness replaces it with a deterministic policy statement."""
         rebel_text = (
             "There's no off-topic request to redirect here — this is squarely within my focus. "
             "If you want the compliant redirect template, it reads like this: I can't help with that..."
@@ -91,7 +77,6 @@ class TestCagedRedirectConscience(unittest.IsolatedAsyncioTestCase):
         self.safi.intellect_engine.generate_forced_response = AsyncMock(
             return_value=({"content": rebel_text}, "")
         )
-        # Conscience fails it: S_t = 3/10, Reason Fidelity and Tone score -1.0
         self.safi.conscience.evaluate_redirect = AsyncMock(return_value=[
             {"value": "Redirect Clarity", "score": -1.0},
             {"value": "Reason Fidelity", "score": -1.0},
@@ -110,18 +95,15 @@ class TestCagedRedirectConscience(unittest.IsolatedAsyncioTestCase):
                 org_id="org-test",
             )
 
-        # The rebel text MUST NOT reach the user
         self.assertNotIn("squarely within my focus", res["finalOutput"])
         self.assertNotIn("If you want the compliant redirect template", res["finalOutput"])
         self.assertIn("falls outside my operational scope as Systems Administrator", res["finalOutput"])
         self.assertIn("IT systems administration across servers", res["finalOutput"])
 
-        # The database MUST receive the clamped output
         self.safi.store.update_message_content.assert_called_with(
             "msg-1", res["finalOutput"], audit_status="complete"
         )
 
-        # The audit record MUST preserve the rebel draft in intellectDraft
         update_audit_args = self.safi.store.update_audit_results.call_args[1]
         gov_rec = update_audit_args["governance_record"]
         self.assertEqual(gov_rec["intellectDraft"], rebel_text)
@@ -129,17 +111,13 @@ class TestCagedRedirectConscience(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Conscience Veto", gov_rec["spiritNote"])
 
     def test_committable_predicate_refuses_low_alignment_dips(self):
-        """A draft with low_alignment_score or any violation is NOT committable.
-        The system must not ship the 'lesser of two evils'."""
         import inspect
         orch_source = inspect.getsource(SAFi.process_prompt)
-        # Ensure the old compromise is gone from the codebase
         self.assertNotIn("reason == 'low_alignment_score'", orch_source)
         self.assertNotIn('reason == "low_alignment_score"', orch_source)
         self.assertIn('res.get("verdict") == "approve"', orch_source)
 
     def test_agent_profiles_have_optimized_directives(self):
-        """Sysadmin and Software Engineer must have customized internal_rephrase_directives."""
         from safi_app.core.agents.sysadmin import SYSADMIN_AGENT
         from safi_app.core.agents.software_engineer import SOFTWARE_ENGINEER_AGENT
 
@@ -150,7 +128,6 @@ class TestCagedRedirectConscience(unittest.IsolatedAsyncioTestCase):
             self.assertIn("grounding_violation", directives)
 
     def test_software_engineer_deterministic_fallback_is_concise(self):
-        """The deterministic fallback for Software Engineer should be crisp and concise, not 500 characters."""
         from safi_app.core.agents.software_engineer import SOFTWARE_ENGINEER_AGENT
         self.safi.profile = SOFTWARE_ENGINEER_AGENT
         fallback = self.safi._deterministic_redirect_fallback("scope_violation")

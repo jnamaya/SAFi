@@ -1,17 +1,3 @@
-"""Human review queue API (Phase E2): FINRA 3110/3120 supervisory review and
-EU AI Act Art. 14 human oversight over sampled governance turns.
-
-Org-scoped. The reviewer set is an explicit role check — admin|auditor —
-not the rbac hierarchy: editors rank above auditors but content authors
-don't supervise themselves. Config changes are admin-only and go through
-db.set_org_review_config so the evidence log can never be skipped.
-
-Review is post-hoc supervision, never a delivery gate: an override does NOT
-retract a delivered message — it is the documented supervisory determination
-about it. Each disposition rides the message's chat_audit_trail hash chain
-('review' entry, same transaction as the queue-state change), so the sign-off
-inherits the same tamper-evidence as the record it supervises.
-"""
 import csv
 import hashlib
 import io
@@ -36,12 +22,6 @@ REPORT_DEFAULT_WINDOW_DAYS = 30
 
 def _actor():
     user = session.get('user') or {}
-    # Prefer email, but never return an empty actor: a local appliance account
-    # is created with a username and no email, and this value is written into
-    # the compliance log and into CSV exports (the "exported_by" column), where
-    # a blank would otherwise be recorded as the literal string "unknown" —
-    # an unattributable audit record, which is the one thing an audit trail
-    # must never contain. Falls back to username, then to the immutable id.
     label = (user.get('email') or user.get('username') or user.get('id') or '')
     return user.get('id'), label
 
@@ -50,9 +30,6 @@ def _org_forbidden(org_id):
     return str(org_id) != str(get_current_org_id())
 
 
-# Server-side sort: "field" or "field:asc"/"field:desc". Whitelisted keys map
-# to SQL fragments in db._REVIEW_QUEUE_SORTS so client input never reaches the
-# ORDER BY as raw SQL.
 _SORT_INVALID = object()
 _SORT_KEYS = ("created_at", "reviewed_at", "profile_name", "status")
 _SORT_ERROR = ("sort must be one of "
@@ -87,8 +64,6 @@ def _parse_date(value):
 def list_queue(org_id):
     if _org_forbidden(org_id):
         return jsonify({"error": "Forbidden"}), 403
-    # Multi-select: status and trigger accept comma-joined values (rows match
-    # ANY selected value). Single values remain valid for existing callers.
     status_vals = [s for s in (request.args.get("status") or "").split(",") if s]
     trigger_vals = [t for t in (request.args.get("trigger") or "").split(",") if t]
     bad_status = [s for s in status_vals if s not in VALID_STATUS]
@@ -112,8 +87,6 @@ def list_queue(org_id):
             sort=sort,
             created_from=_parse_date(request.args.get("from")),
             created_to=_parse_date(request.args.get("to")))
-        # Opportunistic queue_backlog check (design §6): off the request
-        # thread so a slow webhook can never delay the queue read.
         threading.Thread(target=review_alerts.check_queue_backlog,
                          args=(org_id,), daemon=True).start()
         return jsonify({"items": rows, "total": total, "limit": limit, "offset": offset})
@@ -140,9 +113,6 @@ def get_queue_item(org_id, queue_id):
 @review_bp.route('/organizations/<org_id>/review/queue/<int:queue_id>/action', methods=['POST'])
 @require_any_role(*REVIEWER_ROLES)
 def act_on_queue_item(org_id, queue_id):
-    """Approve or override. Override requires a reason (it becomes part of the
-    hash-chained trail evidence). A non-pending row returns 409 — dispositions
-    are one-shot; re-review would need a new sampled turn."""
     if _org_forbidden(org_id):
         return jsonify({"error": "Forbidden"}), 403
     data = request.json or {}
@@ -160,7 +130,6 @@ def act_on_queue_item(org_id, queue_id):
             return jsonify({"error": "Not found"}), 404
         return jsonify({"item": row})
     except db.SelfReviewError as e:
-        # 403, not 400: the request was well formed, this actor may not make it.
         return jsonify({"error": str(e)}), 403
     except ValueError as e:
         code = 409 if "already reviewed" in str(e) else 400
@@ -181,9 +150,6 @@ def get_config(org_id):
 @review_bp.route('/organizations/<org_id>/review/config', methods=['PUT'])
 @require_role('admin')
 def update_config(org_id):
-    """Partial update; merged server-side. Evidence-logged to
-    org_compliance_log in the same transaction (auditors see every change to
-    the sampling rules — thin sampling is visible, not hidden)."""
     if _org_forbidden(org_id):
         return jsonify({"error": "Forbidden"}), 403
     try:
@@ -200,10 +166,6 @@ def update_config(org_id):
 @review_bp.route('/organizations/<org_id>/review/report', methods=['GET'])
 @require_any_role(*REVIEWER_ROLES)
 def coverage_report(org_id):
-    """Supervisory coverage for [from, to) — defaults to the last 30 days.
-    format=json (default) is the dashboard read surface; format=csv downloads
-    an attachment and logs 'review_report_exported' to org_compliance_log as
-    chain of custody (mirroring the examiner export)."""
     if _org_forbidden(org_id):
         return jsonify({"error": "Forbidden"}), 403
     fmt = request.args.get("format", "json")
@@ -251,17 +213,6 @@ REVIEW_EXPORT_COLUMNS = (
 @review_bp.route('/organizations/<org_id>/review/export', methods=['GET'])
 @require_any_role(*REVIEWER_ROLES)
 def export_review_items(org_id):
-    """Per-item supervisory review export for [from, to) — one row per queue
-    item, defaulting to the last 30 days. The examiner-grade counterpart to
-    /review/report, which is aggregates only and cannot evidence that any
-    individual review happened.
-
-    Carries the decrypted reviewer rationale, so it is treated like the
-    examiner production in records_api: always logged to org_compliance_log,
-    with a sha256 of the exact emitted body. The digest is what lets someone
-    re-hash the file later and prove it is the artifact this export produced —
-    exported_at/exported_by rows inside a file are self-asserted and editable.
-    """
     if _org_forbidden(org_id):
         return jsonify({"error": "Forbidden"}), 403
     fmt = request.args.get("format", "csv")
@@ -294,9 +245,6 @@ def export_review_items(org_id):
             w.writerow(REVIEW_EXPORT_COLUMNS)
             for it in items:
                 row = dict(it)
-                # Flat, semicolon-joined so the column pivots in a spreadsheet.
-                # trigger_detail has no flat equivalent and stays JSON, in its
-                # own column rather than smuggled into another.
                 row["triggers"] = ";".join(row.get("triggers") or [])
                 row["trigger_detail"] = json.dumps(row.get("trigger_detail") or {}, default=str)
                 w.writerow(["" if row.get(c) is None else row.get(c) for c in REVIEW_EXPORT_COLUMNS])
@@ -314,8 +262,6 @@ def export_review_items(org_id):
         })
         return Response(body, mimetype=mimetype, headers={
             "Content-Disposition": f"attachment; filename={fname}",
-            # Also recorded in org_compliance_log above; the log is the
-            # authoritative copy, this header is for scripted callers.
             "X-SAFi-Export-SHA256": digest,
             "X-SAFi-Export-Truncated": "true" if truncated else "false",
         })

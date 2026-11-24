@@ -1,15 +1,3 @@
-"""
-GET /api/attention (backlog 57): the role-aware inbox of everything waiting
-on this user. One read-only endpoint; the bell in the sidebar shows the total
-and the panel deep-links each category to the tab where the action happens.
-
-Role shaping happens HERE, not in the store: the store answers "what is
-pending", this layer decides who may see which answer. Members see only
-their own items; auditors add the review workloads; admins see everything.
-The response deliberately contains no content bodies (no document text, no
-flagged turns), only counts, ages, and short labels, so this endpoint never
-becomes a second place where sensitive content must be access-controlled.
-"""
 from flask import Blueprint, jsonify, session
 
 from ..persistence import attention_store
@@ -19,7 +7,6 @@ from ..core.rbac import check_any_role
 
 attention_bp = Blueprint('attention_api', __name__)
 
-# category key -> (control panel tab it deep-links to, human title)
 _CATEGORIES = {
     "kb_documents":  ("knowledge", "Documents awaiting review"),
     "review_queue":  ("review", "Flagged turns awaiting disposition"),
@@ -32,17 +19,8 @@ _CATEGORIES = {
     "schedules":     ("schedules", "Scheduled updates failing"),
 }
 
-# Categories that are information rather than work: the reader may dismiss
-# them, the one exception to "items leave on their own once the work is
-# done" (an outcome has no work to do the leaving).
 _DISMISSIBLE = {"my_tool_requests"}
 
-# Informational categories: nothing for THIS reader to do (their own request
-# awaiting someone else's review, or the outcome of one). These must not
-# deep-link anywhere — clicking "your request was sent for review" and being
-# thrown into the Agents tab is the confusing behavior this flag removes. Only
-# actionable items (approvals, reviews, invitations, incidents, own failing
-# schedules) navigate.
 _INFORMATIONAL = {"my_pending_requests", "my_tool_requests"}
 
 
@@ -69,14 +47,12 @@ def get_attention():
     org_id = user.get('org_id')
 
     items = []
-    # Everyone: their own failing schedules, and the outcomes of their own
-    # tool requests (backlog 57c).
     try:
         agg = attention_store.failed_schedules(user_id)
         if agg["count"]:
             items.append(_item("schedules", agg))
     except Exception:
-        pass  # a broken source must never take the inbox down
+        pass
     try:
         agg = tool_approval_store.pending_own_requests(user_id)
         if agg["count"]:
@@ -100,10 +76,6 @@ def get_attention():
             except Exception:
                 pass
 
-    # Tool and policy requests route to their ACTIVE approver sets (backlog
-    # 57e/57f): the designated group when one exists, admin|auditor
-    # otherwise. A designated approver may hold any role, so neither is
-    # role-gated.
     if org_id:
         try:
             if tool_approval_store.is_reviewer(
@@ -142,17 +114,6 @@ def get_attention():
 
 @attention_bp.route('/attention/actions', methods=['GET'], strict_slashes=False)
 def get_attention_actions():
-    """The actionable subset of the inbox, with the item IDs the generic
-    /api/attention deliberately omits. People approve from the inbox, not only
-    from the deep-linked tab. The rollup endpoint stays count-only (its stated
-    invariant); this one carries the labels plus the IDs needed to call the
-    existing approve/reject endpoints for the two approval categories.
-
-    Like /api/attention, this is role-shaped and org-scoped: only a current
-    reviewer for each kind sees that kind, and only within their own org. No
-    content bodies are returned (no policy payloads, no added-tool internals),
-    only identities and the short change/tool labels the tabs already show.
-    """
     user = session.get('user')
     if not user:
         return jsonify({"error": "Authentication required."}), 401

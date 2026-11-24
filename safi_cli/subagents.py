@@ -1,4 +1,3 @@
-"""Isolated subagent execution: role confinement and live-status tool runner."""
 from __future__ import annotations
 
 import logging
@@ -27,7 +26,6 @@ def run_subagent_task(
     model: Optional[str] = None,
     max_steps: int = 6,
 ) -> str:
-    """Execute an isolated child subagent turn loop under strict role confinement."""
     description = (
         args.get("description")
         or args.get("task")
@@ -68,9 +66,6 @@ def run_subagent_task(
         allowed_tool_names = ("read", "grep", "glob", "list", "git_status", "git_diff")
         role_prompt = f"Subtask objective ({subagent_type}): Complete the delegated investigation."
 
-    # Mutation policy is enforced authoritatively by the server's Will gate plus
-    # the role tool filtering above: read-only subagents simply have no mutating
-    # tools available, so a heuristic client-side regex refusal is unnecessary.
     ui.print_subagent_start(subagent_type, description)
 
     child_tools = [t for t in tools.TOOL_SCHEMAS if t["function"]["name"] in allowed_tool_names]
@@ -150,7 +145,6 @@ def _execute_tool_with_live_status(
     workspace_root: Path,
     agent: Optional[str] = None,
 ) -> str:
-    """Execute a local tool while displaying a live animated spinner with elapsed seconds and streaming output."""
     stop_event = threading.Event()
     start_time = time.time()
     latest_line: Optional[str] = None

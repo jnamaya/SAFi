@@ -1,4 +1,3 @@
-"""Configuration resolver and persistence for the SAFi CLI."""
 from __future__ import annotations
 
 import hashlib
@@ -8,10 +7,10 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-try:  # Optional: OS keychain storage for API keys, falls back to config.json
+try:
     import keyring
     from keyring.errors import KeyringError
-except Exception:  # pragma: no cover - keyring simply unavailable
+except Exception:
     keyring = None
     KeyringError = Exception
 
@@ -25,7 +24,6 @@ INVENTORY_FILE = CONFIG_DIR / "inventory.json"
 
 
 def parse_lenient_json(text: str) -> Dict[str, Any]:
-    """Parse JSON text tolerating UTF-8 BOM, comments, trailing commas, and unescaped Windows paths."""
     if not text:
         return {}
     import re
@@ -33,20 +31,17 @@ def parse_lenient_json(text: str) -> Dict[str, Any]:
     if not cleaned:
         return {}
 
-    # Fast path: strict standard JSON
     try:
         data = json.loads(cleaned)
         return data if isinstance(data, dict) else {}
     except Exception:
         pass
 
-    # Strip single-line (// and #) and multi-line (/* */) comments
     comment_pat = r'("(?:\\.|[^"\\])*")|//.*?$|/\*.*?\*/|^\s*#.*?$'
     def _strip_comment(m):
         return m.group(1) if m.group(1) else ""
     cleaned = re.sub(comment_pat, _strip_comment, cleaned, flags=re.MULTILINE | re.DOTALL)
 
-    # Strip trailing commas before closing braces/brackets
     comma_pat = r'("(?:\\.|[^"\\])*")|(,\s*([\}\]]))'
     def _strip_comma(m):
         return m.group(1) if m.group(1) else m.group(3)
@@ -58,7 +53,6 @@ def parse_lenient_json(text: str) -> Dict[str, Any]:
     except Exception:
         pass
 
-    # Fix unescaped Windows backslashes inside string literals (e.g. C:\Users\... -> C:\\Users\\...)
     def _fix_escapes(s):
         return re.sub(r'\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})', r'\\\\', s)
 
@@ -73,14 +67,11 @@ def parse_lenient_json(text: str) -> Dict[str, Any]:
 
 
 def resolve_inventory_file() -> Path:
-    """Return the active inventory.json path, checking WSL ~/.config/safi then Windows user profile."""
-    # Honor explicit INVENTORY_FILE overrides or test patches
     if INVENTORY_FILE != CONFIG_DIR / "inventory.json":
         return INVENTORY_FILE
 
     local_inv = CONFIG_DIR / "inventory.json"
 
-    # Find Windows host inventory candidates if running inside WSL
     win_inv: Optional[Path] = None
     try:
         candidates = []
@@ -89,19 +80,15 @@ def resolve_inventory_file() -> Path:
             if p.is_file() and not p.name.startswith("All Users") and "Default" not in p_str and "Public" not in p_str:
                 candidates.append(p)
         if candidates:
-            # Sort with preference for non-empty files, then newest modification time
             candidates.sort(key=lambda x: (x.stat().st_size > 10, x.stat().st_mtime), reverse=True)
             win_inv = candidates[0]
     except Exception:
         pass
 
-    # If local inventory exists and has meaningful targets (>10 bytes)
     if local_inv.is_file() and local_inv.stat().st_size > 10:
         return local_inv
 
-    # If in WSL and Windows inventory exists with content
     if win_inv and win_inv.is_file():
-        # Auto-heal: if local ~/.config/safi is an empty directory or stub, symlink to Windows
         try:
             if not CONFIG_DIR.is_symlink():
                 if not local_inv.is_file() or local_inv.stat().st_size <= 10:
@@ -118,7 +105,6 @@ def resolve_inventory_file() -> Path:
 
 
 def load_inventory() -> Dict[str, Any]:
-    """Load managed infrastructure hosts from ~/.config/safi/inventory.json or Windows profile."""
     inv_file = resolve_inventory_file()
     if not inv_file.exists():
         return {}
@@ -131,12 +117,10 @@ def load_inventory() -> Dict[str, Any]:
 
 
 def get_inventory_targets() -> list[str]:
-    """Return list of host alias names defined in the SAFi inventory."""
     return list(load_inventory().keys())
 
 
 def get_agent_history_file(agent: Optional[str] = None) -> Path:
-    """Return an agent-scoped history file path so prompt histories and suggestions stay isolated."""
     if not agent:
         return HISTORY_FILE
     import re
@@ -174,7 +158,6 @@ def _keyring_delete(agent: str) -> None:
 
 
 def keyring_available() -> bool:
-    """True when an OS keyring backend is usable for secret storage."""
     return keyring is not None and _keyring_get("__probe__") is None
 
 
@@ -208,7 +191,6 @@ def save_config(values: Dict[str, Any]) -> None:
 
 
 def resolve_agent_api_key(agent: str, explicit_key: Optional[str] = None) -> Optional[str]:
-    """Resolve the Policy API key for a specific agent."""
     if explicit_key:
         return explicit_key.strip()
 
@@ -226,9 +208,6 @@ def resolve_agent_api_key(agent: str, explicit_key: Optional[str] = None) -> Opt
     if stored:
         return stored
 
-    # General fallback: a policy API key in SAFI_API_KEY, SAFI_POLICY_API_KEY,
-    # or config['api_key'], or any other configured agent key, is valid for all
-    # agents because a Policy API key is bound to the user's governing policy.
     gen_env = os.environ.get("SAFI_API_KEY") or os.environ.get("SAFI_POLICY_API_KEY")
     if gen_env:
         return gen_env.strip()
@@ -243,14 +222,12 @@ def resolve_agent_api_key(agent: str, explicit_key: Optional[str] = None) -> Opt
 
 
 def save_agent_api_key(agent: str, key: str) -> None:
-    """Save a Policy API key specifically for an agent."""
     ensure_config_dir()
     cfg = load_config()
     agent_keys = cfg.get("agent_keys") or {}
     if not isinstance(agent_keys, dict):
         agent_keys = {}
     clean_key = key.strip()
-    # Prefer the OS keyring; fall back to config.json when unavailable.
     if _keyring_set(agent, clean_key):
         agent_keys = cfg.get("agent_keys") or {}
         if isinstance(agent_keys, dict):
@@ -266,7 +243,6 @@ def save_agent_api_key(agent: str, key: str) -> None:
 
 
 def list_configured_agent_keys() -> Dict[str, str]:
-    """Return dictionary of configured agent keys."""
     cfg = load_config()
     agent_keys = dict(cfg.get("agent_keys") or {})
     if cfg.get("api_key") and "software_engineer" not in agent_keys:
@@ -279,7 +255,6 @@ def resolve_api_key(explicit_key: Optional[str] = None, agent: str = "software_e
 
 
 def clear_credentials() -> None:
-    """Clear all stored API keys, authenticated user identity, keyring entries, and active sessions."""
     cfg = load_config()
     for agent in list((cfg.get("agent_keys") or {}).keys()) + [
         "software_engineer", "sysadmin", "security_engineer", "default"
@@ -301,7 +276,6 @@ def clear_credentials() -> None:
 
 
 def clear_all_config() -> None:
-    """Completely wipe ~/.config/safi (credentials, sessions, and config)."""
     clear_credentials()
     if CONFIG_FILE.exists():
         try:
@@ -311,17 +285,10 @@ def clear_all_config() -> None:
 
 
 def is_appliance() -> bool:
-    """Return True if running locally on a SAFi appliance."""
     return Path("/var/lib/safi-firstboot").exists() or Path("/etc/systemd/system/safi.service").exists()
 
 
 def resolve_api_url(explicit_url: Optional[str] = None) -> str:
-    """Resolve the backend URL from explicit flag, config.json, or appliance localhost.
-
-    Environment variables are deliberately ignored so the CLI never silently
-    targets a shadowing local instance. When running locally on an appliance,
-    it automatically defaults to https://localhost.
-    """
     if explicit_url:
         return explicit_url.rstrip("/")
     cfg = load_config()
@@ -338,19 +305,16 @@ def resolve_api_url(explicit_url: Optional[str] = None) -> str:
 
 
 def has_configured_api_url() -> bool:
-    """Return True if an API URL has been configured in config.json or on appliance."""
     return bool(str(load_config().get("api_url") or "").strip()) or is_appliance()
 
 
 def get_default_agent() -> Optional[str]:
-    """Return configured default agent if set."""
     cfg = load_config()
     val = cfg.get("default_agent")
     return str(val).strip() if val else None
 
 
 def set_default_agent(agent: str) -> None:
-    """Save default agent to config."""
     save_config({"default_agent": agent.strip()})
 
 
@@ -377,33 +341,28 @@ def _load_sessions() -> Dict[str, Any]:
 
 
 def list_sessions() -> Dict[str, str]:
-    """Return the workspace-key -> conversation-id session map (metadata keys excluded)."""
     return {k: str(v) for k, v in _load_sessions().items() if not k.startswith("_") and isinstance(v, str)}
 
 
 def session_paths() -> Dict[str, str]:
-    """Return the conversation-id -> workspace-path map for friendly /sessions display."""
     data = _load_sessions()
     paths = data.get(SESSIONS_PATH_MAP_KEY)
     return paths if isinstance(paths, dict) else {}
 
 
 def session_names() -> Dict[str, str]:
-    """Return the conversation-id -> friendly name map."""
     data = _load_sessions()
     names = data.get(SESSIONS_NAME_MAP_KEY)
     return names if isinstance(names, dict) else {}
 
 
 def session_agents() -> Dict[str, str]:
-    """Return the conversation-id -> agent-name map."""
     data = _load_sessions()
     agents = data.get(SESSIONS_AGENT_MAP_KEY)
     return agents if isinstance(agents, dict) else {}
 
 
 def session_agent(conversation_id: str) -> Optional[str]:
-    """Return the agent name associated with a conversation ID, if known."""
     data = _load_sessions()
     agents = data.get(SESSIONS_AGENT_MAP_KEY)
     if isinstance(agents, dict):
@@ -414,7 +373,6 @@ def session_agent(conversation_id: str) -> Optional[str]:
 
 
 def get_workspace_agent(workspace_root: str) -> Optional[str]:
-    """Return the last active agent used in this workspace, if any."""
     data = _load_sessions()
     ws_key = _workspace_key(workspace_root)
     ws_agents = data.get(SESSIONS_WS_AGENT_MAP_KEY)
@@ -435,7 +393,6 @@ def get_workspace_agent(workspace_root: str) -> Optional[str]:
 
 
 def set_workspace_agent(workspace_root: str, agent: str, conversation_id: Optional[str] = None) -> None:
-    """Record the last active agent for a workspace (and optionally its session ID)."""
     ensure_config_dir()
     sessions = _load_sessions()
     ws_key = _workspace_key(workspace_root)
@@ -458,7 +415,6 @@ def set_workspace_agent(workspace_root: str, agent: str, conversation_id: Option
 
 
 def set_session_name(conversation_id: str, name: str) -> None:
-    """Assign a human-friendly name/title to a session ID."""
     ensure_config_dir()
     sessions = _load_sessions()
     names = dict(sessions.get(SESSIONS_NAME_MAP_KEY) or {})
@@ -471,13 +427,11 @@ def set_session_name(conversation_id: str, name: str) -> None:
 
 
 def session_for_workspace(workspace_root: str) -> Optional[str]:
-    """Return the conversation id currently bound to a workspace, if any."""
     val = _load_sessions().get(_workspace_key(workspace_root))
     return str(val) if isinstance(val, str) else None
 
 
 def set_workspace_session(workspace_root: str, conversation_id: str) -> None:
-    """Bind a workspace to an existing conversation id so /sessions can resume it."""
     ensure_config_dir()
     sessions = _load_sessions()
     sessions[_workspace_key(workspace_root)] = conversation_id
@@ -533,7 +487,6 @@ def resolve_session_id(workspace_root: str, new_session: bool = False, agent: Op
 
 
 def resolve_user_id() -> str:
-    """Safely resolve the CLI user identifier across TTY, container, and headless environments."""
     env_id = os.environ.get("SAFI_USER_ID")
     if env_id and env_id.strip():
         return env_id.strip()
@@ -548,7 +501,6 @@ def resolve_user_id() -> str:
 
 
 def resolve_user_name(explicit_name: Optional[str] = None) -> str:
-    """Resolve display name for the CLI user."""
     if explicit_name and explicit_name.strip():
         return explicit_name.strip()
     env_name = os.environ.get("SAFI_USER_NAME")
@@ -565,12 +517,10 @@ def resolve_user_name(explicit_name: Optional[str] = None) -> str:
 
 
 def save_user_name(name: str) -> None:
-    """Save default user name to config."""
     save_config({"user_name": name.strip()})
 
 
 def resolve_intellect_model(agent: Optional[str] = None, explicit_model: Optional[str] = None) -> Optional[str]:
-    """Resolve the preferred LLM model powering the agent."""
     if explicit_model and explicit_model.strip():
         return explicit_model.strip()
 
@@ -598,7 +548,6 @@ REASONING_LEVELS = ("low", "medium", "high")
 
 
 def resolve_reasoning_effort(explicit: Optional[str] = None) -> str:
-    """Resolve the preferred reasoning/thinking level ('' = provider default)."""
     candidate = (explicit or os.environ.get("SAFI_REASONING_EFFORT") or "").strip().lower()
     if candidate in REASONING_LEVELS:
         return candidate
@@ -608,7 +557,6 @@ def resolve_reasoning_effort(explicit: Optional[str] = None) -> str:
 
 
 def save_reasoning_effort(level: str) -> None:
-    """Persist the default reasoning level; '' clears it (provider default)."""
     clean = (level or "").strip().lower()
     if clean and clean not in REASONING_LEVELS:
         raise ValueError(f"Reasoning level must be one of {REASONING_LEVELS}")
@@ -616,7 +564,6 @@ def save_reasoning_effort(level: str) -> None:
 
 
 def save_intellect_model(model: str, agent: Optional[str] = None) -> None:
-    """Save default AI model preference."""
     ensure_config_dir()
     cfg = load_config()
     clean_model = model.strip()
@@ -632,6 +579,5 @@ def save_intellect_model(model: str, agent: Optional[str] = None) -> None:
     save_config(cfg)
 
 
-# Modern developer aliases
 resolve_model = resolve_intellect_model
 save_model = save_intellect_model

@@ -1,23 +1,3 @@
-"""
-Image attachments, and the scanned PDFs that used to arrive empty.
-
-THE GOVERNANCE DECISION THIS FILE PROTECTS. Images are OCR'd to text; the image
-bytes never reach a model. Phase Zero is a literal substring scan over the prompt
-(`phase_zero.py:64-75`) and cannot see inside an image, so attaching image bytes
-to a model call would create an input channel the deterministic tier structurally
-cannot inspect — instruction text in a screenshot would pass no gate at all.
-Converting to text first means an image travels exactly the path a PDF does:
-scanned by Phase Zero, capped at MAX_DOCUMENT_CHARS, recorded with a sha256 and a
-compliance-log entry.
-
-Declined deliberately, not overlooked — see GOVERNANCE_BACKLOG 32z for the sketch
-of how real vision could be governed and the gaps that remain in it.
-
-THE SECOND BUG FIXED HERE. A partly-scanned PDF used to succeed and return only
-its typed pages, which is worse than failing: the extraction looked complete.
-
-Run:  venv/bin/python tests/test_image_extraction.py
-"""
 import io
 import re
 import sys
@@ -28,8 +8,8 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from safi_app.config import Config  # noqa: E402
-from safi_app.core.services import document_processor as D  # noqa: E402
+from safi_app.config import Config
+from safi_app.core.services import document_processor as D
 
 DP = (ROOT / "safi_app" / "core" / "services" / "document_processor.py").read_text(encoding="utf-8")
 INDEX = (ROOT / "public" / "index.html").read_text(encoding="utf-8")
@@ -40,8 +20,6 @@ IMAGE_EXTS = {'.png', '.jpg', '.jpeg', '.tiff', '.tif', '.webp', '.bmp'}
 
 
 class TheImageBytesNeverLeave(unittest.TestCase):
-    """The load-bearing property. If this file ever needs changing, the change
-    needs a decision, not a commit."""
 
     def test_extraction_returns_text_not_image_data(self):
         for token in ("image_url", "base64", "inline_data", "b64_json"):
@@ -62,9 +40,6 @@ class AcceptedTypes(unittest.TestCase):
                 self.assertTrue(D.allowed_file("scan" + ext))
 
     def test_the_config_list_matches_the_processor(self):
-        """documents.py reports Config's list in its error message while
-        allowed_file() enforces the processor's — a mismatch tells the user a
-        type is unsupported when it works, or the reverse."""
         self.assertEqual(set(Config.ALLOWED_UPLOAD_EXTENSIONS), D.ALLOWED_EXTENSIONS)
 
     def test_the_file_picker_offers_them(self):
@@ -90,8 +65,6 @@ class OcrDegradesGracefully(unittest.TestCase):
         self.assertIn("tesseract", str(cm.exception))
 
     def test_availability_requires_the_binary_not_just_the_wheel(self):
-        """pytesseract installs cleanly and then fails at call time without the
-        tesseract binary, so importing it proves nothing."""
         block = DP[DP.index("def _ocr_available"):]
         block = block[:block.index("\ndef _ocr_image_bytes")]
         self.assertIn("get_tesseract_version", block)
@@ -104,8 +77,6 @@ class OcrDegradesGracefully(unittest.TestCase):
         self.assertIn("No readable text", str(cm.exception))
 
     def test_ocr_failures_return_empty_rather_than_propagating(self):
-        """A scanned PDF page must be able to fall through to whatever text it
-        had; one bad embedded image cannot fail the whole upload."""
         block = DP[DP.index("def _ocr_image_bytes"):]
         block = block[:block.index("\ndef _ocr_pdf_page_images")]
         self.assertIn("return \"\"", block)
@@ -123,15 +94,12 @@ class TranscriptionIsLabelled(unittest.TestCase):
         self.assertIn("Invoice total 4,210.00", text)
 
     def test_the_label_warns_that_figures_may_be_misread(self):
-        """A misrecognised digit presented as a quotation is the failure mode
-        that matters for anything financial."""
         with patch.object(D, "_ocr_available", return_value=True), \
              patch.object(D, "_ocr_image_bytes", return_value="123"):
             text, _ = D.extract_text(io.BytesIO(b"x"), "n.png")
         self.assertIn("uncertain", text.lower())
 
     def test_the_character_cap_still_applies_to_images(self):
-        """Images are attachments like any other — same budget, same notice."""
         with patch.object(D, "_ocr_available", return_value=True), \
              patch.object(D, "_ocr_image_bytes", return_value="z" * 200):
             text, total = D.extract_text(io.BytesIO(b"x"), "big.png", max_chars=100)
@@ -168,7 +136,6 @@ class ScannedPdfs(unittest.TestCase):
         self.assertIn("Scanned page two", out)
 
     def test_a_partly_scanned_pdf_declares_that_ocr_was_used(self):
-        """It used to silently return only the typed pages and look complete."""
         pages = [self._Page("Typed"), self._Page("", [self._Img()])]
         with patch.dict(sys.modules, {"pypdf": type("m", (), {"PdfReader": self._reader(pages)})}), \
              patch.object(D, "_ocr_available", return_value=True), \
@@ -202,13 +169,6 @@ class Packaging(unittest.TestCase):
         self.assertRegex(REQS, r"(?m)^Pillow>=")
 
     def test_the_binary_is_installed_in_the_runtime_stage(self):
-        """pytesseract shells out to it. Installed in the deps stage only, it
-        would not survive into the final image.
-
-        The runtime stage is found as the LAST `FROM`, not by matching a literal
-        image tag: the tag carries the interpreter version, so pinning it here
-        made this test fail on a Python bump or on parameterizing the version,
-        for a packaging reason that had not changed."""
         self.assertIn("tesseract-ocr", DOCKERFILE)
         self.assertIn("tesseract-ocr-eng", DOCKERFILE)
         from_positions = [m.start() for m in re.finditer(r"(?m)^FROM ", DOCKERFILE)]
@@ -218,8 +178,6 @@ class Packaging(unittest.TestCase):
                       "the apt install must be in the runtime stage")
 
     def test_the_language_pack_is_explicit(self):
-        """The base package ships no language data and tesseract then exits with
-        "Failed loading language 'eng'", which reads like a code bug."""
         self.assertIn("tesseract-ocr-eng", DOCKERFILE)
 
 

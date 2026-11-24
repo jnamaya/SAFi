@@ -1,11 +1,3 @@
-"""
-Grantee-side "remove from shared with me" (DELETE /conversations/shared-with-me/<id>
-and DELETE /projects/shared-with-me/<id>).
-
-Distinct from the owner's revoke routes: no ownership check, only the
-caller's own direct user grant is touched. Group grants and folder-derived
-access are reported via `still_shared`, never removed.
-"""
 import sys
 import unittest
 from pathlib import Path
@@ -70,7 +62,6 @@ class SharedWithMeRemovalTestCase(unittest.TestCase):
             except Exception:
                 pass
 
-    # -- conversations -----------------------------------------------------
 
     def test_grantee_can_remove_direct_conversation_share(self):
         cid = self._new_conversation(self.owner)
@@ -97,11 +88,9 @@ class SharedWithMeRemovalTestCase(unittest.TestCase):
         body = resp.get_json()
         self.assertFalse(body["ok"])
         self.assertEqual(body["still_shared"], "group")
-        # The group grant is intact — removal is not the member's to make.
         self.assertIsNotNone(conversation_sharing_store.get_conversation_role(
             self.member, self.org, cid, self.owner))
 
-    # -- projects ----------------------------------------------------------
 
     def test_grantee_can_remove_direct_project_share(self):
         pid = self._new_project(self.owner)
@@ -117,7 +106,6 @@ class SharedWithMeRemovalTestCase(unittest.TestCase):
             self.member, self.org, pid, self.owner))
 
     def test_owner_revoke_route_still_owner_only(self):
-        # The pre-existing owner route must NOT accept a grantee calling it.
         cid = self._new_conversation(self.owner)
         conversation_sharing_store.set_conversation_grant(
             cid, "user", self.member, "viewer", self.org, self.owner)

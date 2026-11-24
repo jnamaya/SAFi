@@ -1,10 +1,3 @@
-"""Terminal UI formatting and rich display for the SAFi CLI.
-
-SAFi Color Palette Philosophy:
-    - Primary Brand Accent: Green (#16a34a, #22c55e, #4ade80, #15803d)
-    - Dark Canvas / Neutral Axis: (#09090b, #18181b, #27272a, #737373, #ffffff)
-    - Semantic Colors: Red (error/blocked/concern), Amber/Yellow (warning/caution), Green (approved/aligned)
-"""
 from __future__ import annotations
 
 from datetime import datetime
@@ -30,7 +23,6 @@ from rich import box
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
-    """Parse an environment flag accepting 0/false/no/off as falsy."""
     val = os.environ.get(name)
     if val is None:
         return default
@@ -55,14 +47,12 @@ def set_non_blocking_mode(enabled: bool) -> None:
 
 
 def service_pending_interactive_prompt() -> None:
-    """Pause the main REPL thread while a worker thread reads interactive stdin."""
     if _INTERACTIVE_REQUESTED.is_set():
         _INTERACTIVE_READY.set()
         _INTERACTIVE_DONE.wait()
 
 
 def _run_with_terminal_input(fn):
-    """Run an interactive stdin prompt safely even when the non-blocking REPL is active."""
     if not _NON_BLOCKING_MODE:
         return fn()
     from . import prompt_input
@@ -84,36 +74,32 @@ def _run_with_terminal_input(fn):
 
 
 _UNICODE_SPACE_TRANS = str.maketrans({
-    "\u00a0": " ",   # non-breaking space
-    "\u202f": " ",   # narrow no-break space (commonly emitted by LLMs)
-    "\u2007": " ",   # figure space
-    "\u2008": " ",   # punctuation space
-    "\u2009": " ",   # thin space
-    "\u200a": " ",   # hair space
-    "\u2010": "-",   # hyphen
-    "\u2011": "-",   # non-breaking hyphen
-    "\u2012": "-",   # figure dash
-    "\u2013": "-",   # en dash
-    "\u2014": " - ", # em dash
+    "\u00a0": " ",
+    "\u202f": " ",
+    "\u2007": " ",
+    "\u2008": " ",
+    "\u2009": " ",
+    "\u200a": " ",
+    "\u2010": "-",
+    "\u2011": "-",
+    "\u2012": "-",
+    "\u2013": "-",
+    "\u2014": " - ",
 })
 
 
 def _sanitize_terminal_text(text: str) -> str:
-    """Normalize exotic Unicode spaces/dashes that render as '?' in legacy PowerShell."""
     if not text:
         return text
     return text.translate(_UNICODE_SPACE_TRANS)
 
 
 class MarginedConsole(Console):
-    """Console wrapper that applies left and right margins so output doesn't touch the terminal edges."""
 
     def print(self, *objects, **kwargs):
         pad_margin = kwargs.pop("pad_margin", True)
         interactive = getattr(self, "is_terminal", False)
 
-        # Normalize exotic spaces/dashes and brighten [dim] on dark terminals (especially
-        # default blue Windows PowerShell where SGR dim text is nearly invisible).
         norm_objects = []
         is_light = globals().get("IS_LIGHT_THEME", False)
         for obj in objects:
@@ -176,9 +162,7 @@ class MarginedConsole(Console):
                     except Exception:
                         plain = re.sub(r"\[.*?\]", "", str(status_markup)).strip()
 
-                    # Strip trailing timing like '· 2.5s' or '• 2.5s'
                     clean = re.sub(r"\s*[·•]\s*\d+(\.\d+)?s\s*$", "", plain).strip()
-                    # Strip leading SAFi or bullet markers
                     clean = re.sub(r"^(SAFi\s*[·•]\s*|[•·\s]+)", "", clean).strip()
                     if clean.lower().startswith("thinking with "):
                         clean = "Running with " + clean[14:]
@@ -195,13 +179,12 @@ class MarginedConsole(Console):
 console = MarginedConsole()
 
 def _query_terminal_bg(timeout: float = 0.15) -> Optional[str]:
-    """Ask the terminal for its background color via OSC 11. Returns 'rgb:RR/GG/BB' or None."""
     import select
     import sys
 
     try:
         import termios
-    except ImportError:  # Windows: no POSIX tty layer; OSC 11 detection unsupported.
+    except ImportError:
         return None
 
     try:
@@ -215,8 +198,7 @@ def _query_terminal_bg(timeout: float = 0.15) -> Optional[str]:
     except termios.error:
         return None
     try:
-        # Put tty in raw mode so the terminal's reply isn't echoed as keystrokes.
-        termios.tcsetattr(fd, termios.TCSANOW, old_attrs[:3] + [termios.CC])  # defensive; replaced below
+        termios.tcsetattr(fd, termios.TCSANOW, old_attrs[:3] + [termios.CC])
     except Exception:
         return None
     try:
@@ -245,10 +227,6 @@ def _query_terminal_bg(timeout: float = 0.15) -> Optional[str]:
 
 
 def _detect_light_background() -> bool:
-    """Decide whether the terminal background is light.
-
-    Priority: SAFI_CLI_THEME env override > OSC 11 query (luminance) > COLORFGBG heuristics.
-    """
     theme = (os.environ.get("SAFI_CLI_THEME") or "").strip().lower()
     if theme in ("light", "dark"):
         return theme == "light"
@@ -256,7 +234,6 @@ def _detect_light_background() -> bool:
     bg = _query_terminal_bg()
     if bg:
         r, g, b = (int(part, 16) for part in re.findall(r"([0-9a-fA-F]+)", bg.split(":", 1)[1]))
-        # Perceived luminance; > 0.5 is light. Scale 2-digit hex components.
         scale = 255.0 if max(r, g, b) <= 15 else 65535.0
         luminance = (0.2126 * r / scale) + (0.7152 * g / scale) + (0.0722 * b / scale)
         return luminance > 0.5
@@ -265,16 +242,14 @@ def _detect_light_background() -> bool:
     if colorfgbg and colorfgbg[-1].isdigit():
         bg_code = int(colorfgbg[-1])
         if bg_code in (7, 15) or (bg_code >= 231 and bg_code <= 255 and bg_code not in (234, 235, 236, 237, 238, 239)):
-            # 7/15 = white; 231-255 range maps to very light xterm colors (rough heuristic).
             return True
         return False
-    return False  # default: dark, matching the original palette
+    return False
 
 
 IS_LIGHT_THEME = _detect_light_background()
 
 if IS_LIGHT_THEME:
-    # Light-theme palette: darker, saturated tokens that stay legible on white/paper backgrounds.
     _PALETTE = {
         "COLOR_BRAND_600": "#15803d",
         "COLOR_BRAND_500": "#16a34a",
@@ -318,13 +293,11 @@ else:
         "COLOR_PROMPT_TEXT": "#f8fafc",
     }
 
-# SAFi Brand Tokens
 COLOR_BRAND_600 = _PALETTE["COLOR_BRAND_600"]
 COLOR_BRAND_500 = _PALETTE["COLOR_BRAND_500"]
 COLOR_BRAND_400 = _PALETTE["COLOR_BRAND_400"]
 COLOR_BRAND_700 = _PALETTE["COLOR_BRAND_700"]
 
-# Semantic Verdicts & Scores
 COLOR_PASS = _PALETTE["COLOR_PASS"]
 COLOR_WARN = _PALETTE["COLOR_WARN"]
 COLOR_FAIL = _PALETTE["COLOR_FAIL"]
@@ -332,26 +305,19 @@ COLOR_PENDING = _PALETTE["COLOR_PENDING"]
 COLOR_MUTED = _PALETTE["COLOR_MUTED"]
 COLOR_BORDER = _PALETTE["COLOR_BORDER"]
 
-# Prompt tokens (theme-aware)
 COLOR_PROMPT_DIVIDER = _PALETTE["COLOR_PROMPT_DIVIDER"]
 COLOR_PROMPT_BRAND = _PALETTE["COLOR_PROMPT_BRAND"]
 COLOR_PROMPT_AGENT = _PALETTE["COLOR_PROMPT_AGENT"]
 COLOR_PROMPT_CHEVRON = _PALETTE["COLOR_PROMPT_CHEVRON"]
 COLOR_PROMPT_TEXT = _PALETTE["COLOR_PROMPT_TEXT"]
 
-# Pygments theme for Syntax code blocks: dark editor theme on dark terminals,
-# terminal-default (no painted background) on light terminals.
 SYNTAX_THEME = "default" if IS_LIGHT_THEME else "monokai"
 
 
 def _syntax(code: str, lexer: str, **kwargs) -> "Syntax":
-    """Build a theme-aware Syntax block. On light themes the background is left
-    as the terminal default instead of monokai's dark canvas."""
     kwargs.setdefault("theme", SYNTAX_THEME)
     if IS_LIGHT_THEME:
         kwargs.setdefault("background_color", "default")
-    # Ensure at least one blank line above/below the code so blocks get
-    # vertical breathing room, whatever horizontal padding callers choose.
     pad = kwargs.get("padding", (0, 1))
     try:
         kwargs["padding"] = (1, pad[1] if len(pad) > 1 else pad[0])
@@ -359,7 +325,6 @@ def _syntax(code: str, lexer: str, **kwargs) -> "Syntax":
         kwargs["padding"] = (1, 1)
     return Syntax(code, lexer, **kwargs)
 
-# User Prompt Theme Tokens
 COLOR_USER_ACCENT = _PALETTE["COLOR_USER_ACCENT"]
 COLOR_USER_BORDER = _PALETTE["COLOR_USER_BORDER"]
 COLOR_USER_BG = os.environ.get("SAFI_CLI_USER_BG") or _PALETTE.get("COLOR_USER_BG", "#1e293b")
@@ -369,7 +334,6 @@ SHOW_AUDIT_PANEL = _env_flag("SAFI_CLI_SHOW_AUDIT", True)
 
 
 def set_show_audit_panel(flag: bool) -> None:
-    """Toggle the compact governance audit footer attached to final responses."""
     global SHOW_AUDIT_PANEL
     SHOW_AUDIT_PANEL = bool(flag)
 
@@ -399,7 +363,6 @@ STAGE_LABELS: Dict[str, str] = {
 
 
 def print_governance_step(step_text: str, elapsed: float) -> None:
-    """Print a completed governance step inline as part of the live activity feed."""
     clean_step = step_text.rstrip(".…").strip()
     if not clean_step or clean_step.lower() in ("governing turn", "analyzing your request"):
         return
@@ -416,7 +379,6 @@ def build_progress_line(
     elapsed: float,
     model: Optional[str] = None,
 ) -> str:
-    """Render a clean live progress line showing the current governance step and elapsed time."""
     codes = [c for c in dict.fromkeys(progress_codes or []) if c in PROGRESS_STAGES]
 
     step = (latest_step or "").rstrip(".…").strip()
@@ -434,7 +396,6 @@ def build_progress_line(
     if len(label) > text_width:
         label = label[: text_width - 1].rstrip() + "…"
 
-    # No explicit text color: inherit terminal foreground (readable on any theme).
     return (
         f"[bold {COLOR_BRAND_400}]SAFi[/] [dim]·[/] {escape(label)} "
         f"[dim]·[/] [dim]{elapsed:.1f}s[/]"
@@ -447,14 +408,11 @@ def build_tool_status_line(
     elapsed: float,
     latest_output: Optional[str] = None,
 ) -> str:
-    """Render a clean live progress line showing the active tool execution and elapsed time."""
     args = args or {}
     if tool_name == "bash":
         raw_cmd = (args.get("command") or "").strip()
         first_line = raw_cmd.splitlines()[0] if raw_cmd else ""
-        # Clean up nested wrappers for cleaner display if it's sys-exec
         if "sys-exec" in first_line:
-            # e.g., sys-exec win-server 'powershell -Command "Install-WindowsFeature..."' -> sys-exec win-server
             parts = first_line.split()
             if len(parts) >= 2 and parts[0] == "sys-exec":
                 label = f"Running sys-exec: {parts[1]}"
@@ -496,17 +454,12 @@ def build_tool_status_line(
         clean_out = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", latest_output).strip()
         clean_out = " ".join(clean_out.split())
 
-    # Available terminal width minus brand prefix, dots, timers, and spinner margin
     term_width = console.width or 120
-    # Reserve room for: "SAFi · " (7), " · Xs" (~8), margins/padding (~8) = ~23
     available_budget = max(term_width - 24, 20)
 
     if clean_out:
-        # Give progress output maximum available room
-        # Ensure label takes a reasonable prefix, rest goes to clean_out
         label_len = len(label)
         if label_len + len(clean_out) + 3 > available_budget:
-            # If both combined exceed the line, keep label concise (max 25) and let clean_out take the rest
             max_label = min(label_len, max(15, available_budget // 3))
             if label_len > max_label:
                 label = label[: max_label - 1].rstrip() + "…"
@@ -529,7 +482,6 @@ def build_tool_status_line(
 
 
 def clear_live_status_tail(last_status_markup: Optional[str] = None) -> None:
-    """Erase any residual spinner/status lines from the terminal."""
     if _NON_BLOCKING_MODE or not getattr(console, "is_terminal", False):
         return
     try:
@@ -551,16 +503,12 @@ def print_banner(
     user_name: Optional[str] = None,
     intellect_model: Optional[str] = None,
 ):
-    """Render the official SAFi governed workspace header banner."""
-    # Separate Text objects per line: embedded "\n" inside one Text makes Rich's
-    # Panel width measurement under-count, cropping the right border on middle rows.
     header_text = Text()
     header_text.append("SAFi", style=f"bold {COLOR_BRAND_400}")
     header_text.append(" (The Self-alignment Framework Interface)", style="bold")
     header_text.append("\n")
     header_text.append("The governance gateway for AI agents", style="dim")
 
-    # Explicit theme-aware text color; "white" renders light-yellow on light themes.
     info_table = Table.grid(padding=(0, 2))
     info_table.add_column("label", style="dim", justify="right")
     info_table.add_column("val", style="bold")
@@ -592,7 +540,6 @@ def render_menu(
     rows: List[List[Any]],
     border_style: Optional[str] = None,
 ) -> Table:
-    """Build and print a rounded SAFi-styled menu table from column specs and rows."""
     table = Table(
         title=title,
         box=box.ROUNDED,
@@ -613,7 +560,6 @@ def print_user_prompt(
     agent: Optional[str] = None,
     user_name: Optional[str] = None,
 ) -> None:
-    """Render the user's prompt cleanly in the conversation history with a hanging indent (>   prompt)."""
     if not prompt or not prompt.strip():
         return
 
@@ -634,7 +580,6 @@ def print_user_prompt(
 
 
 def get_input_prompt(agent: Optional[str] = None, user_name: Optional[str] = None) -> str:
-    """Format the interactive prompt with SAFi brand label, margin spacing, and distinct style."""
     agent_label = agent or "software_engineer"
     margin = " " * CLI_MARGIN if CLI_MARGIN > 0 else ""
     try:
@@ -658,24 +603,20 @@ _active_todos: List[Dict[str, Any]] = []
 
 
 def get_active_todos() -> List[Dict[str, Any]]:
-    """Return the currently tracked plan todos."""
     return list(_active_todos)
 
 
 def set_active_todos(todos: List[Dict[str, Any]]) -> None:
-    """Set active plan todos."""
     global _active_todos
     _active_todos = list(todos) if todos else []
 
 
 def clear_active_todos() -> None:
-    """Clear active plan todos."""
     global _active_todos
     _active_todos = []
 
 
 def mark_active_todos_completed() -> None:
-    """Mark all pending or in_progress tasks as completed upon successful final response."""
     global _active_todos
     if not _active_todos:
         return
@@ -686,7 +627,6 @@ def mark_active_todos_completed() -> None:
 
 
 def advance_active_todo(tool_name: str, args: Dict[str, Any], is_success: bool = True) -> None:
-    """Advance the active plan checklist when a real action tool succeeds."""
     global _active_todos
     if not _active_todos or not is_success:
         return
@@ -718,7 +658,6 @@ def advance_active_todo(tool_name: str, args: Dict[str, Any], is_success: bool =
 
 
 def clear_completed_todos() -> None:
-    """Clear active todos if all tasks have been completed."""
     global _active_todos
     if _active_todos and all((t.get("status") or "").lower() in ("completed", "done") for t in _active_todos):
         _active_todos = []
@@ -730,7 +669,6 @@ _SCRATCHPAD_CHECKBOX_RE = re.compile(
 
 
 def parse_scratchpad_todos(text: str) -> List[Dict[str, Any]]:
-    """Parse markdown checklist items ([ ], [>], [x]) from .safi/scratchpad.md."""
     todos: List[Dict[str, Any]] = []
     for idx, line in enumerate((text or "").splitlines(), start=1):
         m = _SCRATCHPAD_CHECKBOX_RE.match(line)
@@ -753,7 +691,6 @@ def parse_scratchpad_todos(text: str) -> List[Dict[str, Any]]:
 
 
 def sync_todos_from_scratchpad(workspace_root: Path, *, render: bool = False) -> List[Dict[str, Any]]:
-    """Sync _active_todos directly from .safi/scratchpad.md when present."""
     global _active_todos
     try:
         sp_path = Path(workspace_root) / ".safi" / "scratchpad.md"
@@ -812,7 +749,6 @@ _session_active_context = 0
 
 
 def reset_session_telemetry():
-    """Reset all session telemetry counters for a fresh conversation session."""
     global _session_intellect, _session_conscience, _session_compression, _session_active_context, _active_todos
     _session_intellect = {"in": 0, "out": 0, "cost": 0.0, "model": ""}
     _session_conscience = {"in": 0, "out": 0, "cost": 0.0, "model": ""}
@@ -835,7 +771,6 @@ def record_compression_telemetry(
     intellect_model: Optional[str] = None,
     conscience_model: Optional[str] = None,
 ):
-    """Adjust session telemetry when conversational context is compacted."""
     global _session_intellect, _session_conscience, _session_compression, _session_active_context
     _session_compression["tokens_before"] = int(tokens_before or 0)
     _session_compression["tokens_after"] = int(tokens_after or 0)
@@ -864,7 +799,6 @@ def record_compression_telemetry(
 
 
 def record_compression_reset():
-    """Clear compression state if memory summary is cleared."""
     global _session_compression
     _session_compression = {
         "tokens_before": 0,
@@ -876,7 +810,6 @@ def record_compression_reset():
 
 
 def _record_turn_telemetry(result: Dict[str, Any]):
-    """Accumulate session token and cost counters across turns for each faculty."""
     global _session_intellect, _session_conscience, _session_active_context
     models_usage = result.get("models_usage")
     if models_usage and isinstance(models_usage, dict):
@@ -931,7 +864,6 @@ def build_telemetry_panel(
     c_in: int = 0,
     c_out: int = 0,
 ) -> Panel:
-    """Build the standalone or embedded FACULTY TELEMETRY panel."""
     stats_content = []
 
     effective_i_model = (
@@ -994,7 +926,6 @@ def build_telemetry_panel(
 
 
 def build_audit_footer(result: Dict[str, Any]) -> Optional[Text]:
-    """Compact one-line governance verdict rendered beneath a governed response."""
     raw_spirit = result.get("spirit_score") or result.get("spiritScore")
     ledger = result.get("conscienceLedger") or []
 
@@ -1052,7 +983,6 @@ def build_audit_footer(result: Dict[str, Any]) -> Optional[Text]:
 
 
 def build_session_usage_panel() -> Panel:
-    """Standalone session-wide token, cost, and compaction summary for /usage."""
     i = _session_intellect
     c = _session_conscience
     comp = _session_compression
@@ -1091,7 +1021,6 @@ def build_session_usage_panel() -> Panel:
 
 
 def _detect_lexer(path: str) -> str:
-    """Infer syntax highlighting lexer from file extension."""
     ext = Path(path).suffix.lower() if path else ""
     mapping = {
         ".py": "python",
@@ -1129,7 +1058,6 @@ _ERROR_PREFIXES = (
 
 
 def _safe_float(value: Any) -> Optional[float]:
-    """Parse a rubric score; malformed values are skipped instead of crashing the render."""
     try:
         return float(value)
     except (TypeError, ValueError):
@@ -1137,7 +1065,6 @@ def _safe_float(value: Any) -> Optional[float]:
 
 
 def _result_is_error(result: str) -> bool:
-    """Classify a tool result as a failure from its structure."""
     text = (result or "").strip()
     m = _EXIT_CODE_RE.match(text)
     if m:
@@ -1146,7 +1073,6 @@ def _result_is_error(result: str) -> bool:
 
 
 def _fit(text: str, width: int) -> str:
-    """Collapse to a single line and truncate to `width` visible characters."""
     flat = " ".join((text or "").split())
     width = max(8, width)
     return flat if len(flat) <= width else flat[: width - 1] + "…"
@@ -1160,7 +1086,6 @@ def _cap_lines(text: str, limit: int = MAX_PREVIEW_LINES) -> str:
 
 
 def _summarize_args(tool_name: str, args: Dict[str, Any]) -> str:
-    """Human-oriented one-line summary of the arguments for a tool call."""
     if tool_name in ("read", "write", "edit", "delete", "remove", "list"):
         path = args.get("path") or args.get("filePath") or args.get("file_path") or "."
         extra = ""
@@ -1183,7 +1108,6 @@ def _summarize_args(tool_name: str, args: Dict[str, Any]) -> str:
 
 
 def _rubric_tags(ledger: List[Dict[str, Any]]) -> Optional[Text]:
-    """Inline preflight rubric badges (escaped, crash-safe)."""
     line = Text("  ")
     found = False
     for entry in ledger or []:
@@ -1202,7 +1126,6 @@ def _rubric_tags(ledger: List[Dict[str, Any]]) -> Optional[Text]:
 
 
 def _add_diff_stats_line(items: List[Any], adds: int, dels: int) -> None:
-    """Append a colored '+N -M' delta line describing an edit proposal."""
     line = Text("  Diff: ", style="dim")
     line.append(f"+{adds}", style=f"bold {COLOR_PASS}")
     line.append(" ", style="dim")
@@ -1211,7 +1134,6 @@ def _add_diff_stats_line(items: List[Any], adds: int, dels: int) -> None:
 
 
 def print_tool_proposal(name: str, args: Dict[str, Any], res: Dict[str, Any]):
-    """Render a clean tool proposal inside the Workspace."""
     _record_turn_telemetry(res)
     if name in ("todowrite", "todo_write"):
         return
@@ -1292,13 +1214,10 @@ def print_tool_proposal(name: str, args: Dict[str, Any], res: Dict[str, Any]):
     console.print(Group(*items))
 
 
-# Session-scoped approval state: once the developer answers "a" (always) to a
-# confirmation, all subsequent tool approvals in this process are granted.
 _APPROVAL_STATE = {"approve_all": False}
 
 
 def reset_approve_all() -> None:
-    """Re-enable confirmation prompts after 'always' was chosen."""
     _APPROVAL_STATE["approve_all"] = False
 
 
@@ -1307,11 +1226,6 @@ def approve_all_enabled() -> bool:
 
 
 def prompt_user_permission(name: str, args: Dict[str, Any], auto_approve: bool = False) -> bool:
-    """Prompt the developer before running mutating tools (bash, write, edit, delete).
-
-    Answering 'a' (always) grants approval for this and all future tools this
-    session; a fresh session or `reset_approve_all()` restores prompts.
-    """
     if (
         auto_approve
         or _APPROVAL_STATE["approve_all"]
@@ -1342,7 +1256,6 @@ def prompt_user_permission(name: str, args: Dict[str, Any], auto_approve: bool =
 
 
 def prompt_question(question: str, options: Optional[List[str]] = None) -> str:
-    """Render an interactive question card for developer clarification and capture input."""
     card_items = [Text(f"❓ {question}", style="bold")]
 
     if options and isinstance(options, list):
@@ -1379,7 +1292,6 @@ def prompt_question(question: str, options: Optional[List[str]] = None) -> str:
 
 
 def build_plan_panel(todos: Optional[List[Dict[str, Any]]] = None) -> Optional[Panel]:
-    """Build a styled Plan & Tasks view showing checklist items and progress in a clean rounded panel."""
     active = todos if todos is not None else _active_todos
     if not active:
         return None
@@ -1394,7 +1306,6 @@ def build_plan_panel(todos: Optional[List[Dict[str, Any]]] = None) -> Optional[P
 
     items = []
 
-    # Clean progress bar line
     prog_text = Text()
     prog_text.append("Progress: ", style="dim")
     prog_text.append(f"[{bar_str}] ", style=f"bold {COLOR_BRAND_400}")
@@ -1402,7 +1313,6 @@ def build_plan_panel(todos: Optional[List[Dict[str, Any]]] = None) -> Optional[P
     prog_text.append(f"({completed}/{total} completed)\n", style="dim")
     items.append(prog_text)
 
-    # 2-column grid for tasks so multi-line wrapped text stays indented
     grid = Table.grid(padding=(0, 1))
     grid.add_column(justify="left", no_wrap=True)
     grid.add_column(justify="left", overflow="fold")
@@ -1448,7 +1358,6 @@ def print_workspace_step(
     proposal_res: Dict[str, Any],
     result_str: str,
 ):
-    """Render an executed tool step in the Workspace."""
     ws_items = []
 
     is_approved = proposal_res.get("willDecision", "approved") in ("approve", "approved")
@@ -1507,7 +1416,6 @@ def print_workspace_step(
 
 
 def render_todo_list(todos: List[Dict[str, Any]], align_right: bool = False):
-    """Render an active plan/todo checklist inline in the main terminal workspace."""
     global _active_todos
     if not todos:
         return
@@ -1526,14 +1434,12 @@ _recent_tool_results: deque = deque(maxlen=20)
 
 
 def record_tool_result(name: str, result: str) -> None:
-    """Track the full output of a completed tool call for later paging."""
     if not name or name in ("todowrite", "todo_write"):
         return
     _recent_tool_results.append({"tool": name, "result": result})
 
 
 def get_last_tool_result(name: Optional[str] = None) -> Optional[Dict[str, str]]:
-    """Return the most recent tool result, optionally filtered by tool name."""
     if name:
         for entry in reversed(_recent_tool_results):
             if entry["tool"] == name:
@@ -1547,7 +1453,6 @@ def list_recent_tool_results() -> List[Dict[str, str]]:
 
 
 def print_full_tool_result(name: Optional[str] = None) -> None:
-    """Print the full body of a recent tool result, paged when interactive."""
     entry = get_last_tool_result(name)
     if not entry:
         if name:
@@ -1569,7 +1474,6 @@ def print_full_tool_result(name: Optional[str] = None) -> None:
 
 
 def print_tool_result_summary(name: str, result: str, show_error_detail: bool = True):
-    """Print a clean execution indicator for completed tool calls, with active plan progress."""
     record_tool_result(name, result)
     preview = result.strip().splitlines()
     first_line = preview[0] if preview else "(no output)"
@@ -1614,7 +1518,6 @@ def print_tool_result_summary(name: str, result: str, show_error_detail: bool = 
 
 
 def print_subagent_start(role: str, description: str):
-    """Print the launch indicator for a delegated subagent task."""
     line = Text("  ")
     line.append(f"↳ [Subagent: {role}] ", style="bold #38bdf8")
     line.append(f'Delegated: "{description}"', style="dim")
@@ -1622,7 +1525,6 @@ def print_subagent_start(role: str, description: str):
 
 
 def print_subagent_step(role: str, tool_name: str, args: Dict[str, Any], result: str):
-    """Print an inline progress step executed by a child subagent."""
     args_summary = _summarize_args(tool_name, args)
 
     preview = result.strip().splitlines()
@@ -1639,7 +1541,6 @@ def print_subagent_step(role: str, tool_name: str, args: Dict[str, Any], result:
 
 
 def print_subagent_done(role: str, summary: str, steps: int = 1):
-    """Print the completion verdict for a subagent."""
     preview = summary.strip().splitlines()
     first_line = preview[0] if preview else "(synthesis complete)"
     if len(first_line) > 90:
@@ -1651,7 +1552,6 @@ def print_subagent_done(role: str, summary: str, steps: int = 1):
 
 
 def print_final_output(text: str, res: Dict[str, Any]):
-    """Render the final governed markdown response in a single workspace."""
     _record_turn_telemetry(res)
 
     now_str = datetime.now().strftime("%H:%M:%S")
@@ -1688,7 +1588,6 @@ def print_final_output(text: str, res: Dict[str, Any]):
 
 
 def print_audit_details(result: Dict[str, Any]):
-    """Detailed drill-down of all policy rubrics, scores, confidence, and rationales."""
     ledger = result.get("conscienceLedger") or []
     if not ledger:
         console.print(f"[{COLOR_WARN}]No governance audit ledger available for this turn.[/]")
@@ -1723,12 +1622,10 @@ def print_audit_details(result: Dict[str, Any]):
 
 
 def print_error(message: str):
-    """Render an error message panel."""
     console.print(Panel(f"[bold {COLOR_FAIL}]Error:[/] {escape(message)}", border_style=COLOR_FAIL, box=box.ROUNDED))
 
 
 def _format_agent_context_panel(context: Dict[str, Any]) -> Optional[Panel]:
-    """Format the persistent agent project context into a rich display panel."""
     if not isinstance(context, dict):
         return None
 
@@ -1812,7 +1709,6 @@ def _format_agent_context_panel(context: Dict[str, Any]) -> Optional[Panel]:
 
 
 def print_compression_result(data: Dict[str, Any]):
-    """Render a clean summary panel for context compression and token savings."""
     if not data.get("ok"):
         error_msg = data.get("error", "Unknown error during compression.")
         console.print(Panel(f"[bold {COLOR_FAIL}]Compression Error:[/] {escape(str(error_msg))}", border_style=COLOR_FAIL, box=box.ROUNDED))

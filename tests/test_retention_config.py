@@ -1,8 +1,3 @@
-"""
-DB tests for retention config + legal hold evidence (org_compliance_log).
-
-Run:  venv/bin/python tests/test_retention_config.py
-"""
 import sys
 import uuid
 import unittest
@@ -94,7 +89,6 @@ class TestRetentionConfig(unittest.TestCase):
         conn.close()
         cfg = db.get_org_retention_config(self.org_id)
         self.assertFalse(cfg["valid"])
-        # restore
         db.set_org_retention_config(self.org_id, {"retention_years": None}, ACTOR)
 
 

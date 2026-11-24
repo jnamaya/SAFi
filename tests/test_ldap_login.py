@@ -1,13 +1,3 @@
-"""
-E2E tests for LDAP/AD sign-in (Phase 1): /api/login/ldap two-step flow.
-
-The directory itself is mocked (core/ldap_client.authenticate is patched),
-because the point under test is SAFi's own logic: email reconciliation, the
-org ldap_enabled gate, the TOTP chain when require_mfa is on, and
-first-login restricted enrollment sessions.
-
-Run:  venv/bin/python tests/test_ldap_login.py
-"""
 import sys
 import time
 import unittest
@@ -34,7 +24,6 @@ def live_code(secret):
 class TestLdapLogin(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        # Global LDAP config present (Config.ldap_configured()), org opts in.
         cls._saved = (Config.LDAP_URL, Config.LDAP_BASE_DN)
         Config.LDAP_URL = "ldap://dc01.test.local"
         Config.LDAP_BASE_DN = "DC=test,DC=local"
@@ -49,16 +38,12 @@ class TestLdapLogin(unittest.TestCase):
         self.client = self.app.test_client()
         org_id = db.create_organization(f"LDAP E2E Org {uuid.uuid4().hex[:6]}")
         self.org_id = org_id
-        # upsert_user requires a caller-supplied id ('sub'/'id' key) — same
-        # pattern as tests/test_mfa_totp.py.
         self.user_id = f"ldap_e2e_{uuid.uuid4().hex[:12]}"
         db.upsert_user({"id": self.user_id, "email": EMAIL, "name": "LDAP E2E",
                         "picture": None, "org_id": org_id})
         self.addCleanup(self._cleanup)
 
     def _cleanup(self):
-        # No delete_organization helper exists; raw SQL, keyed on the ids this
-        # test created (same pattern as tests/test_mfa_totp.py teardown).
         conn = db.get_db_connection()
         cur = conn.cursor()
         try:
@@ -76,7 +61,6 @@ class TestLdapLogin(unittest.TestCase):
             if password == PASSWORD else
             {"ok": False, "code": "invalid_credentials", "message": "Invalid credentials."})
 
-    # -- gate / reconciliation ------------------------------------------------
 
     def test_404_when_not_configured(self):
         saved = Config.LDAP_URL
@@ -116,7 +100,6 @@ class TestLdapLogin(unittest.TestCase):
         finally:
             ldap_client.authenticate = orig
 
-    # -- session / MFA paths --------------------------------------------------
 
     def test_plain_login_no_mfa_required(self):
         orig = ldap_client.authenticate
@@ -147,14 +130,11 @@ class TestLdapLogin(unittest.TestCase):
             self.assertTrue(data.get("mfa_required"))
             self.assertIn("mfa_token", data)
 
-            # No session before the second factor.
             self.assertFalse(self.client.get("/api/me").get_json().get("ok"))
 
-            # Wrong code rejected...
             r2 = self.client.post("/api/login/ldap/mfa",
                                   json={"mfa_token": data["mfa_token"], "code": "000000"})
             self.assertEqual(r2.status_code, 401)
-            # ...right code establishes the session.
             r3 = self.client.post("/api/login/ldap/mfa",
                                   json={"mfa_token": data["mfa_token"], "code": live_code(secret)})
             self.assertEqual(r3.status_code, 200)
@@ -173,7 +153,6 @@ class TestLdapLogin(unittest.TestCase):
             data = r.get_json()
             self.assertTrue(data.get("ok"))
             self.assertTrue(data.get("mfa_setup_required"))
-            # Restricted session: /me works, app endpoints do not.
             me = self.client.get("/api/me").get_json()
             self.assertTrue(me.get("ok"))
             self.assertTrue(me.get("user", {}).get("mfa_setup_required"))

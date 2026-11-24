@@ -1,45 +1,4 @@
 #!/usr/bin/env python3
-"""
-Core-loop integrity check — the verification step named in Section IV of
-docs/"SAFi License & Governance Agreement.md".
-
-WHAT THIS IS. The trademark policy lets an organization modify SAFi and still
-call its deployment SAFi only if the Core Loop (Section II of the agreement) is
-either unmodified or its modifications were submitted and accepted upstream.
-This script is how both sides check that claim: it recomputes a SHA-256 hash of
-every Core Loop file and compares it against the manifest shipped with the
-release, then runs the structural invariants that give a *reason* when a hash
-mismatch matters.
-
-Two layers, on purpose:
-
-  1. The HASH MANIFEST is the compliance verdict. Byte-identical or not — no
-     judgment involved, reproducible by anyone from the same tree. The manifest
-     also carries a single root fingerprint so a deployment can cite one hash
-     ("core loop fingerprint a1b2…") in an audit or a procurement answer.
-
-  2. The STRUCTURAL INVARIANTS are the diagnosis. A fork whose hashes fail is
-     told WHICH architectural commitment the edit touched, if any. A hash
-     mismatch with every invariant intact is ordinary drift from upstream; a
-     mismatch that puts a model call inside the Will is the thing the agreement
-     exists to prevent. The invariants are the load-bearing rule of this
-     codebase: enforcement is deterministic — Phase Zero, the Will, the Spirit,
-     Synderesis and the coaching builder never call a model; only the Intellect
-     and the Conscience do.
-
-Stdlib only, no imports from safi_app, so it runs on a bare checkout, inside
-the Docker image (scripts/ is copied in), or against any tree via --root.
-
-Usage:
-    python scripts/verify_integrity.py               # verify, human-readable
-    python scripts/verify_integrity.py --json        # verify, machine-readable
-    python scripts/verify_integrity.py --root /app   # verify another tree
-    python scripts/verify_integrity.py --update      # regenerate the manifest
-                                                     # (maintainers, at release)
-
-Exit codes: 0 = intact; 1 = modified/missing files or a broken invariant;
-2 = the manifest itself is missing or unreadable.
-"""
 import argparse
 import hashlib
 import json
@@ -49,22 +8,10 @@ from pathlib import Path
 
 MANIFEST_NAME = "core_integrity_manifest.json"
 
-# The Core Loop, as declared in Section II of the agreement, mapped to files.
-# In security-engineering terms this list is SAFi's TRUSTED COMPUTING BASE
-# (TCB): the set of components a governance claim depends on — a defect
-# inside it can violate the policy, a defect outside it cannot. Keeping the
-# list short is TCB minimization, and it is why additions get argued file by
-# file in the comments below.
-# The orchestrator's background-task and speech-delivery mixins are excluded:
-# they run after governance and do not decide whether a draft is approved.
-# Coaching remains in spirit.py because its output is injected into the next
-# governed draft.
 CORE_FILES = [
     "safi_app/core/orchestrator.py",
     "safi_app/core/faculties/__init__.py",
     "safi_app/core/faculties/phase_zero.py",
-    # Sensitive-identifier detection is called by Phase Zero and Will. Its
-    # implementation changes enforcement outcomes, so attest it with callers.
     "safi_app/core/pii_validators.py",
     "safi_app/core/faculties/synderesis.py",
     "safi_app/core/faculties/intellect.py",
@@ -72,71 +19,17 @@ CORE_FILES = [
     "safi_app/core/faculties/conscience.py",
     "safi_app/core/faculties/spirit.py",
     "safi_app/core/faculties/utils.py",
-    # The Core Database Schema: the hash-chained audit ledgers and temporal
-    # logs are created here. Modifying how the system records its actions is a
-    # Core Loop change even though the *content* of the database belongs to
-    # the organization (Section III).
     "safi_app/persistence/database.py",
-    # Database encryption is a local dependency of protected governance and
-    # identity records; include its implementation in the measured boundary.
     "safi_app/persistence/crypto.py",
-    # The generic faculty prompt templates and shipped Phase Zero security
-    # baseline both affect governed outcomes, so both are attested. Hosts may
-    # add rules, but weakening the shipped baseline must change the fingerprint.
     "safi_app/core/system_prompts.json",
     "safi_app/security_policy.py",
-    # The plugin registry is the MECHANISM behind agreement §III's plugin
-    # freedom (added 2026-08-13, backlog 37): organizations register plugins
-    # without touching the orchestrator. The registry itself must be covered
-    # or a fork could alter HOW dispatch works and still verify INTACT; what
-    # organizations register through it is their own content and is not.
     "safi_app/core/plugins/registry.py",
-    # The human-side Will: generic authorization and separation-of-duties
-    # mechanics are enforced here; role names, rank data, and assignments are
-    # supplied by the host configuration and database.
-    #
-    # Ruled OPEN at the same time, deliberately:
-    #   api/auth.py       — integration plumbing (OAuth, MFA, sessions).
-    #                       Agreement §III explicitly grants authentication
-    #                       infrastructure freedom, and custom IdP/SSO wiring
-    #                       is a legitimate code-level need until SAML ships.
-    #                       What a session may DO is enforced by rbac.py.
-    #   api/review_api.py — oversight mechanism, but coverage waits until its
-    #                       sampling knobs are extracted to config; covering
-    #                       it now would lock tuning behind Section IV.
     "safi_app/core/rbac.py",
-    # Runtime attestation (added 2026-08-13, backlog 39): computes the boot
-    # verification and stamps the TCB fingerprint into every governance
-    # record. A fork that no-ops the stamp would mint records claiming an
-    # intact TCB — the exact lie the stamp exists to make impossible.
     "safi_app/core/integrity.py",
-    # Scoped-visibility enforcement semantics (added 2026-08-17, backlog 59),
-    # admitted by the same test as rbac.py: these files hold rules about who
-    # may do what, and no organization ever needs to edit them, because grant
-    # and membership ASSIGNMENT is data in the database.
-    #   sharing_store.py       — the can_use_agent resolver every agent_key
-    #                            entry point consults, and the grant/group
-    #                            queries that widen it. A fork editing it is
-    #                            changing who may use an agent and must not
-    #                            verify INTACT.
-    #   tool_approval_store.py — the separation-of-duties kernel for tool
-    #                            grants: authors do not approve their own
-    #                            widening, sole-reviewer sign-offs are
-    #                            recorded as non-independent on the row, and
-    #                            the approved widening is what reaches the
-    #                            agent.
-    # Ruled OUT at the same time, deliberately: attention_store.py is
-    # read-only aggregation, a defect there cannot violate any policy, and
-    # the list stays minimal. Coverage fixes the RULES, not the call sites:
-    # the API routes that consult these stores remain open, the same bounded
-    # guarantee rbac.py carries.
     "safi_app/persistence/sharing_store.py",
     "safi_app/persistence/tool_approval_store.py",
 ]
 
-# Deterministic components: no provider imports, no model calls, ever.
-# will.py holds an UNUSED llm_provider attribute for interface symmetry, which
-# is why the check targets calls and imports rather than the identifier itself.
 DETERMINISTIC = [
     "safi_app/core/faculties/phase_zero.py",
     "safi_app/core/faculties/synderesis.py",
@@ -151,8 +44,6 @@ _PROVIDER_CALL = re.compile(r"\bself\.llm_provider\s*\.\s*\w+\s*\(")
 
 
 def _hash_file(path: Path) -> str:
-    # \r stripped so a CRLF checkout (Windows git autocrlf) hashes the same
-    # tree as the LF original — the bytes that matter are the code.
     return hashlib.sha256(path.read_bytes().replace(b"\r", b"")).hexdigest()
 
 
@@ -162,12 +53,11 @@ def _root_fingerprint(hashes: dict) -> str:
 
 
 def _structural_findings(root: Path) -> list:
-    """Invariant diagnostics. Empty list = every invariant intact."""
     findings = []
     for rel in DETERMINISTIC:
         f = root / rel
         if not f.exists():
-            continue  # the hash layer already reports it as missing
+            continue
         src = f.read_text(encoding="utf-8", errors="replace")
         if _PROVIDER_IMPORT.search(src):
             findings.append(
@@ -183,10 +73,6 @@ def _structural_findings(root: Path) -> list:
     orch = root / "safi_app/core/orchestrator.py"
     if orch.exists():
         src = orch.read_text(encoding="utf-8", errors="replace")
-        # Whole-file position is NOT execution order: _finalize_draft (Phases
-        # 3-5) is defined before process_prompt (Phases 0-2), and asserting a
-        # global ordering flagged a pristine tree. Each check is therefore
-        # scoped to the function whose body actually runs those phases.
         def _in_order(func_name, markers):
             at = src.find(f"def {func_name}")
             if at == -1:
@@ -293,11 +179,6 @@ def main() -> int:
               "collapse the faculty separation, but per Section IV they must still be "
               "submitted for review to retain the SAFi name.")
 
-    # The verdict is only ever relative to the manifest in THIS tree, and
-    # --update regenerates that manifest from whatever is on disk. So a clean
-    # match must never be phrased as a naming right: authenticity is decided
-    # by comparing the fingerprint against an official release's published
-    # value, and that comparison happens outside this script.
     if intact:
         print(f"\nRESULT: INTACT — this tree matches its own manifest.")
         print(f"  TCB Fingerprint: {_root_fingerprint(current)}")

@@ -1,14 +1,3 @@
-"""
-Unit tests for the human review queue's sampling layer (Phase E1):
-deterministic random sampling, the trigger matrix, config merge over
-defaults, and set_org_review_config input validation.
-
-Run:  venv/bin/python tests/test_review_sampling.py
-
-Pure-logic tests only — no DB. The transactional enqueue path
-(_maybe_enqueue_review inside update_audit_results) shares its cursor with
-the governance commit and is exercised end-to-end by the running service.
-"""
 import hashlib
 import sys
 import unittest
@@ -77,7 +66,6 @@ class TestDeterministicSampling(unittest.TestCase):
             self.assertEqual(self._sampled(self.MSG, 5), first)
 
     def test_matches_published_formula(self):
-        # The examiner-facing contract: sampled iff sha256(message_id) % 10000 < pct*100.
         pct = 7
         for i in range(200):
             mid = f"contract-{i}"
@@ -86,7 +74,7 @@ class TestDeterministicSampling(unittest.TestCase):
 
     def test_rate_roughly_matches_pct(self):
         hits = sum(self._sampled(f"rate-{i}", 10) for i in range(2000))
-        self.assertGreater(hits, 120)   # ~200 expected at 10%
+        self.assertGreater(hits, 120)
         self.assertLess(hits, 290)
 
 
@@ -103,15 +91,12 @@ class TestTriggerMatrix(unittest.TestCase):
         self.assertEqual(detail, {})
 
     def test_hard_gate_keys_on_stage_alone(self):
-        # Native hard-gate blocks ship as redirects — decision is 'redirected'.
         triggers, detail = self.eval(will_decision="redirected", will_stage="hard_gate",
                                      score=None, drift=None)
         self.assertEqual(triggers, ["hard_gate_block"])
         self.assertEqual(detail["will_stage"], "hard_gate")
 
     def test_agent_redirect_off_by_default(self):
-        # Unlike its siblings, agent_redirect defaults off — enabling it is
-        # an admin's journaled opt-in, never a deploy-time behavior change.
         triggers, _ = self.eval(will_decision="redirected", will_stage="spirit",
                                 score=None, drift=None)
         self.assertEqual(triggers, [])
@@ -125,8 +110,6 @@ class TestTriggerMatrix(unittest.TestCase):
             self.assertEqual(detail["will_stage"], stage)
 
     def test_agent_redirect_excludes_hard_gate_redirects(self):
-        # Hard-gate blocks ship as redirects but answer to the hard_gate_block
-        # checkbox alone — even when that checkbox is off.
         cfg = cfg_with(random_sample_pct=0, triggers={"agent_redirect": True})
         triggers, _ = self.eval(cfg=cfg, will_decision="redirected",
                                 will_stage="hard_gate", score=None, drift=None)
@@ -158,7 +141,6 @@ class TestTriggerMatrix(unittest.TestCase):
         self.assertEqual(triggers, [])
 
     def test_null_score_never_low_alignment(self):
-        # N/A is not a default — a redirect's None score must not read as 0.
         triggers, _ = self.eval(score=None)
         self.assertEqual(triggers, [])
 
@@ -223,7 +205,7 @@ class TestConfigValidation(unittest.TestCase):
         self.bad({"enabled": "yes"})
         self.bad({"random_sample_pct": -1})
         self.bad({"random_sample_pct": 101})
-        self.bad({"random_sample_pct": True})  # bool is not a number here
+        self.bad({"random_sample_pct": True})
         self.bad({"triggers": {"alignment_threshold": 11}})
         self.bad({"triggers": {"drift_threshold": 2}})
         self.bad({"triggers": {"hard_gate_block": 1}})

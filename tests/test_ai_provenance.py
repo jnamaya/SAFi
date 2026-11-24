@@ -1,11 +1,3 @@
-"""
-Tests for Art. 50(2) machine-readable AI-output marking (Phase G1): the
-provenance marker object, the X-AI-Generated header on generation surfaces,
-evaluator-only semantics for the /evaluate gateway, and per-message markers
-in the examiner and right-of-access exports.
-
-Run:  venv/bin/python tests/test_ai_provenance.py
-"""
 import json
 import sys
 import uuid

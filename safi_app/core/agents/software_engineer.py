@@ -1,4 +1,3 @@
-"""Governed software-engineering profile for SAFi CLI and developer clients."""
 from typing import Any, Dict
 
 

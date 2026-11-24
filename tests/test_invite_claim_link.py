@@ -1,24 +1,3 @@
-"""
-Backlog 51: an invite-claim link lets a member with no Google/Microsoft
-account on their domain join anyway, by setting a password themselves.
-
-WHY. SAFi's only login mechanisms were Google OAuth, Microsoft OAuth, and one
-hardcoded local-admin account, so an invitee on neither Workspace nor
-Microsoft 365 had no way to ever claim their invitation — it just expired
-silently. The fix has to actually verify the invitee controls that mailbox,
-which is why the claim token is only ever meant to reach them via SMTP
-delivered straight to the invited address (organizations.py's
-_send_invite_claim_email) — there is no "copy invite link" path anywhere. A
-link handed over any other way would prove nothing about who is claiming it.
-
-This file tests the verification and claim mechanics (auth.py's
-issue_invite_claim_token/verify_invite_claim_token, database.py's
-claim_invitation_with_password, and POST /api/invite/claim), not the SMTP
-transport itself.
-
-Needs the disposable stack:
-    docker compose -f docker-compose.test.yml run --rm tests -k invite_claim
-"""
 import sys
 import uuid
 import unittest
@@ -75,7 +54,6 @@ class InviteClaimLink(unittest.TestCase):
         return self.client.post("/api/invite/claim",
                                 json={"token": token, "name": name, "password": password})
 
-    # ---- token round trip ----
 
     def test_token_round_trips_to_the_right_invite(self):
         inv = self._invite(self._email("a"))
@@ -90,7 +68,6 @@ class InviteClaimLink(unittest.TestCase):
             mfa_token = auth_api._issue_mfa_token("some-user-id")
             self.assertIsNone(auth_api.verify_invite_claim_token(mfa_token))
 
-    # ---- the claim endpoint ----
 
     def test_claiming_joins_the_org_with_the_invited_role(self):
         email = self._email("b")
@@ -143,7 +120,7 @@ class InviteClaimLink(unittest.TestCase):
 
     def test_revoking_the_invitation_kills_the_link_before_the_token_expires(self):
         inv = self._invite(self._email("g"))
-        token = self._token(inv)  # still valid for 14 days
+        token = self._token(inv)
         db.revoke_org_invitation(self.org_id, inv["id"], self.actor)
 
         res = self._claim(token)
@@ -156,14 +133,8 @@ class InviteClaimLink(unittest.TestCase):
         self.assertEqual(res.status_code, 400)
 
     def test_claiming_adds_a_password_to_an_existing_oauth_account(self):
-        """An invitee who already has a SAFi account via Google keeps it —
-        the claim link adds a password credential rather than duplicating
-        the user row. The claim form's name is applied even here: there is
-        no way to tell a real prior name apart from a leftover fallback, and
-        whoever filled in the claim form is already trusted enough to set
-        the account's password."""
         email = self._email("i")
-        uid = new_user(email=email)  # simulates a prior Google/Microsoft login
+        uid = new_user(email=email)
         inv = self._invite(email)
 
         res = self._claim(self._token(inv), name="Jane Q. Invitee")
@@ -191,11 +162,6 @@ class InviteClaimLink(unittest.TestCase):
         self.assertEqual(res.status_code, 400)
 
     def test_reinviting_the_same_email_returns_an_id_the_new_token_can_claim(self):
-        """Regression: create_org_invitation's ON DUPLICATE KEY UPDATE path
-        (uq_org_email) used to return a freshly generated id that was never
-        actually written — the existing row keeps its own id. Delete +
-        re-invite is the everyday way to hit this: claim, delete the user,
-        invite the same email again, claim the NEW link."""
         email = self._email("j")
         first_inv = self._invite(email)
         first_claim = self._claim(self._token(first_inv))
@@ -210,14 +176,13 @@ class InviteClaimLink(unittest.TestCase):
             cur.close()
             conn.close()
 
-        second_inv = self._invite(email)  # hits uq_org_email — the update path
+        second_inv = self._invite(email)
         second_claim = self._claim(self._token(second_inv))
         self.assertEqual(second_claim.status_code, 200, second_claim.get_json())
 
         user = db.get_user_by_email(email)
         self.assertEqual(str(user["org_id"]), str(self.org_id))
 
-    # ---- repeat login after claiming (not the link — the ordinary form) ----
 
     def test_claimed_account_can_log_in_again_with_login_local(self):
         email = self._email("k")
@@ -226,8 +191,6 @@ class InviteClaimLink(unittest.TestCase):
         claim_res = self._claim(self._token(inv), password=password)
         self.assertEqual(claim_res.status_code, 200, claim_res.get_json())
 
-        # A fresh client: the claim response's session must not be what
-        # makes this work, or it isn't testing repeat login at all.
         fresh_client = self.app.test_client()
         res = fresh_client.post("/api/login/local", json={"email": email, "password": password})
         self.assertEqual(res.status_code, 200, res.get_json())
@@ -235,7 +198,6 @@ class InviteClaimLink(unittest.TestCase):
         me = fresh_client.get("/api/me")
         self.assertEqual(me.get_json().get("user", {}).get("email"), email)
 
-    # ---- password_login_available() gates /login/local + app-config ----
 
     def test_password_login_available_when_only_smtp_is_configured(self):
         orig_local, orig_host, orig_from = (
@@ -261,11 +223,8 @@ class InviteClaimLink(unittest.TestCase):
             Config.ENABLE_LOCAL_LOGIN, Config.SMTP_HOST, Config.SMTP_FROM = (
                 orig_local, orig_host, orig_from)
 
-    # ---- invite creation reports whether a claim email actually went out ----
 
     def test_creating_an_invitation_reports_no_claim_email_when_smtp_is_unconfigured(self):
-        # The disposable test stack sets no SMTP_* vars, matching a fresh
-        # self-hosted install before an operator configures outbound email.
         admin_uid = new_user(org_id=self.org_id, role="admin")
         login_as(self.client, admin_uid, "admin", org_id=self.org_id)
 

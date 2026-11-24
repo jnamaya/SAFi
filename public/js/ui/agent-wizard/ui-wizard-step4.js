@@ -1,16 +1,6 @@
-// Operational settings for the agent (a "role"). Values, scope, disclaimers,
-// permitted tools and other guardrails are NOT set here — they are inherited
-// from the agent's Governing Policy (Step 1) and the Organization's Charter.
-// This step only holds agent-level operational settings.
-
 export function renderSafetyStep(container, agentData) {
     const maxTurns = agentData.max_agent_turns || '';
-    // Default ON for custom agents unless explicitly disabled.
     const trackWork = agentData.track_work_context !== false;
-    // History window: blank means "use the platform default". 0 means keep
-    // every turn, which the backend treats as unlimited (bounded by chars).
-    // Both reads below must be nullish, not truthy: 0 is the meaningful
-    // value here, and || would render it as blank.
     const historyTurnsValue = (agentData.history_turns === null || agentData.history_turns === undefined)
         ? '' : String(agentData.history_turns);
     const historyMaxCharsValue = (agentData.history_max_chars === null || agentData.history_max_chars === undefined)
@@ -89,7 +79,6 @@ export function renderSafetyStep(container, agentData) {
         });
     }
 
-    // Normalize the default so the saved payload is explicit.
     agentData.track_work_context = trackWork;
     const trackToggle = container.querySelector('#track-work-context-toggle');
     if (trackToggle) {

@@ -1,33 +1,13 @@
-"""PII blocking end to end: Phase Zero, the Will, and the Synderesis floor.
-
-GOVERNANCE_BACKLOG 83. The unit tests in test_pii_validators.py cover the
-detectors. These cover the three things that make them a governance control:
-
-  1. Phase Zero refuses the prompt BEFORE the Intellect is called, so the value
-     never reaches the drafting model.
-  2. The Will refuses a DRAFT containing an identifier, which is the half that
-     matters once agents hold tools and can read an account number out of a
-     document and repeat it.
-  3. The org's list is a FLOOR: Synderesis unions it, so an agent can add a
-     validator and cannot remove one.
-
-Plus the invariant the whole feature rests on: with nothing configured, every
-one of these is inert.
-
-No model is involved in any path tested here.
-
-Run:  python tests/test_pii_gate.py
-"""
 import sys
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from safi_app.core.faculties.phase_zero import PhaseZeroGate  # noqa: E402
-from safi_app.core.faculties.will import WillGate  # noqa: E402
-from safi_app.core.faculties import synderesis  # noqa: E402
-from safi_app.security_policy import PII_CATALOGUE  # noqa: E402
+from safi_app.core.faculties.phase_zero import PhaseZeroGate
+from safi_app.core.faculties.will import WillGate
+from safi_app.core.faculties import synderesis
+from safi_app.security_policy import PII_CATALOGUE
 
 SSN = "123-45-6789"
 CARD = "4111111111111111"
@@ -44,13 +24,11 @@ class PhaseZeroStopsItBeforeTheModel(unittest.TestCase):
         self.assertEqual(reason, "pii_detected")
 
     def test_the_reason_never_carries_the_value(self):
-        """The reason string is written to the governance record and the log."""
         _, reason = self.gate.evaluate_prompt("ssn %s" % SSN, None, ["ssn"])
         self.assertNotIn(SSN, reason)
         self.assertNotIn("6789", reason)
 
     def test_nothing_enabled_means_the_prompt_passes(self):
-        """The default. An org that never opens the settings tab is unaffected."""
         for cfg in (None, []):
             with self.subTest(cfg=cfg):
                 ok, reason = self.gate.evaluate_prompt("my ssn is %s" % SSN, None, cfg)
@@ -71,8 +49,6 @@ class PhaseZeroStopsItBeforeTheModel(unittest.TestCase):
 class TheWillStopsItLeavingInADraft(unittest.TestCase):
 
     def _gate(self, validators=None):
-        # llm_provider is positional and deliberately unused inside WillGate
-        # (see its constructor comment), so None is the honest value here.
         return WillGate(
             None,
             values=[],
@@ -93,8 +69,6 @@ class TheWillStopsItLeavingInADraft(unittest.TestCase):
         self.assertTrue(ok)
 
     def test_nothing_configured_means_no_check(self):
-        """A draft full of identifiers passes when the org enabled nothing.
-        This is the default state and must stay inert."""
         for cfg in (None, []):
             with self.subTest(cfg=cfg):
                 ok, _ = self._gate(cfg).evaluate_draft_structure(
@@ -103,9 +77,6 @@ class TheWillStopsItLeavingInADraft(unittest.TestCase):
 
 
 class TheOrgListIsAFloor(unittest.TestCase):
-    """Synderesis unions the org's AI Standards into will_rules. A union cannot
-    subtract, which is what makes the floor structural rather than something the
-    settings UI has to police."""
 
     def _merge(self, org_list, agent_list):
         profile = {"will_rules": {"structural_requirements":
@@ -135,15 +106,6 @@ class TheOrgListIsAFloor(unittest.TestCase):
 
 
 class TheFloorFollowsTheActingUser(unittest.TestCase):
-    """GOVERNANCE_BACKLOG 84. _pii_enabled unions the compiled profile with the
-    ACTING USER'S org standards, so the five agents SAFi ships stop being exempt.
-
-    Source-level: the union itself is exercised by TheOrgListIsAFloor above, and
-    constructing a real SAFi instance needs a database, four model clients and a
-    vector store. What can regress here is the wiring — a call site that forgets
-    to pass org_id silently reverts every built-in agent to uncovered, which is
-    exactly the failure this item was opened for.
-    """
 
     @classmethod
     def setUpClass(cls):
@@ -161,18 +123,12 @@ class TheFloorFollowsTheActingUser(unittest.TestCase):
                       "the acting user's org floor must be looked up per turn")
 
     def test_every_call_site_passes_org_id(self):
-        """A bare _pii_enabled() or _redact_pii(x) is the regression: it compiles,
-        it passes every other test, and it quietly un-covers the built-ins."""
         self.assertNotIn("self._pii_enabled()", self.src)
         self.assertNotIn("self._redact_pii(original_prompt)", self.src)
         self.assertNotIn('self._redact_pii(blocked_draft or "")', self.src)
         self.assertGreaterEqual(self.src.count("self._pii_enabled(org_id)"), 2)
 
     def test_a_failed_lookup_does_not_take_down_the_turn(self):
-        """Opposite of the Will's outbound check, deliberately. There a control
-        IS configured and cannot be evaluated, so it fails closed. Here we are
-        still asking whether one is configured, and an unreachable org row must
-        not block every request."""
         i = self.src.index("def _pii_enabled")
         body = self.src[i:i + 3000]
         self.assertIn("except Exception", body)
@@ -181,16 +137,7 @@ class TheFloorFollowsTheActingUser(unittest.TestCase):
 
 
 class TheDeterministicTierStaysDeterministic(unittest.TestCase):
-    """CLAUDE.md's load-bearing invariant. This feature adds enforcement, and
-    enforcement may never acquire a model call."""
 
-    # An actual model CALL, not the word "llm_provider". will.py deliberately
-    # retains an unused llm_provider parameter for interface symmetry with the
-    # other faculties, and CLAUDE.md documents that: "will.py holds an unused
-    # llm_provider for interface symmetry and its one async def awaits nothing."
-    # Asserting the identifier's absence would fail on intended design and
-    # tempt someone to delete a parameter the docs say to keep. What must never
-    # appear is an invocation.
     FACULTIES = ("phase_zero", "will", "synderesis")
     FORBIDDEN_CALLS = ("run_intellect", "run_conscience", "AsyncOpenAI",
                        "AsyncAnthropic", "chat.completions",
@@ -206,8 +153,6 @@ class TheDeterministicTierStaysDeterministic(unittest.TestCase):
                                      "%s.py must never invoke a model" % name)
 
     def test_phase_zero_and_synderesis_hold_no_provider_at_all(self):
-        """Stricter than will.py, and correct: neither has an interface reason
-        to carry the parameter, so the identifier should not appear either."""
         root = Path(__file__).resolve().parent.parent / "safi_app" / "core" / "faculties"
         for name in ("phase_zero", "synderesis"):
             src = (root / ("%s.py" % name)).read_text(encoding="utf-8")
@@ -215,8 +160,6 @@ class TheDeterministicTierStaysDeterministic(unittest.TestCase):
                 self.assertNotIn("llm_provider", src)
 
     def test_the_validators_live_outside_the_faculties(self):
-        """Adding a detector must never
-        require editing a faculty."""
         core = Path(__file__).resolve().parent.parent / "safi_app" / "core"
         self.assertTrue((core / "pii_validators.py").exists())
         self.assertFalse((core / "faculties" / "pii_validators.py").exists())

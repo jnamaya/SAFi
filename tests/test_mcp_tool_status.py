@@ -1,19 +1,3 @@
-"""
-The Tool Servers screen reports real status, not a fixed sentence (backlog 48d).
-
-The bug this exists to prevent: the screen printed "Inactive. Enable the ones you
-want in a policy" as static text, so it went on saying that after a policy
-enabled the tool. That is the one moment the reader is looking for confirmation,
-and the page answered with a claim it had never checked.
-
-Status is therefore read from the same place enforcement reads it. A policy's
-`will_rules.allowed_tools` may name a connector or an individual function, and
-both authorize the function, so the endpoint expands through `expand_connectors`
-exactly as Synderesis does. Anything else would drift into a second opinion
-about what a policy allows.
-
-Run:  venv/bin/python tests/test_mcp_tool_status.py
-"""
 import json
 import sys
 import unittest
@@ -73,7 +57,6 @@ class ToolStatusTests(unittest.TestCase):
                json.dumps({"allowed_tools": allowed}), json.dumps([]), json.dumps({})))
 
     def _tools(self):
-        """Every tool the endpoint reports, keyed by name."""
         body = self._client().get('/api/mcp/servers').get_json()
         self.assertTrue(body["ok"])
         return {
@@ -83,7 +66,6 @@ class ToolStatusTests(unittest.TestCase):
         }
 
     def test_endpoint_reports_policy_usage_per_tool(self):
-        """The whole point: enabling a tool changes what this says."""
         self._policy(["web_search"])
         tools = self._tools()
         if "web_search" not in tools:
@@ -99,8 +81,6 @@ class ToolStatusTests(unittest.TestCase):
                                  f"{name} should not be reported as enabled")
 
     def test_shape_is_present_even_with_no_servers(self):
-        """With no MCP server installed the endpoint still answers cleanly, so
-        the screen renders an empty state rather than an error."""
         body = self._client().get('/api/mcp/servers').get_json()
         self.assertTrue(body["ok"])
         self.assertIsInstance(body["servers"], list)
@@ -111,8 +91,6 @@ class ToolStatusTests(unittest.TestCase):
                 self.assertIn("agents", tool)
 
     def test_the_tools_endpoint_marks_what_a_policy_authorizes(self):
-        """The ceiling used to be applied only in the browser, so every way that
-        client-side lookup could fail put the full catalogue on screen."""
         self._policy(["web_search"])
         policy_id = self._only_policy_id()
         body = self._client().get(f'/api/agents/tools?policy_id={policy_id}').get_json()
@@ -127,14 +105,6 @@ class ToolStatusTests(unittest.TestCase):
                 self.assertFalse(allowed, f"{name} should not be marked authorized")
 
     def test_a_policy_naming_a_SERVER_authorizes_its_tools(self):
-        """The bug Nelson hit: an agent saw none of a server's tools even though
-        its policy authorized the whole server.
-
-        A policy may store the connector name (`demo_server`) while the picker
-        cards are function names (`demo_echo`). The browser compared those raw
-        strings, matched nothing, and hid every tool. The ceiling has to be
-        expanded exactly as the compiler expands it, which is what this pins.
-        """
         from safi_app.api.agent_api_routes import policy_tool_ceiling
         from safi_app.core.tool_connectors import (
             clear_discovered_connectors, expand_connectors, register_discovered_connector,
@@ -147,7 +117,6 @@ class ToolStatusTests(unittest.TestCase):
         ceiling = policy_tool_ceiling(self._only_policy_id())
         self.assertEqual(ceiling, {"probe_echo", "probe_add"})
 
-        # Which is what the per-tool cards are checked against.
         for card in ("probe_echo", "probe_add"):
             self.assertTrue(set(expand_connectors([card])) <= ceiling,
                             f"{card} should be authorized by a policy naming its server")
@@ -164,8 +133,6 @@ class ToolStatusTests(unittest.TestCase):
         self.assertEqual(policy_tool_ceiling(self._only_policy_id()), {"probe_echo"})
 
     def test_an_absent_allowed_tools_key_does_not_narrow(self):
-        """Absent is not the same as empty: a policy written before tool
-        authorization existed must keep working."""
         from safi_app.api.agent_api_routes import policy_tool_ceiling
         _exec("""INSERT INTO policies
                  (id, name, org_id, created_by, worldview, will_rules, values_weights, policy_config)
@@ -212,11 +179,6 @@ class ToolStatusTests(unittest.TestCase):
             conn.close()
 
     def test_a_guest_is_offered_no_installed_tools(self):
-        """A demo login is made ADMIN of a throwaway org (api/auth.py), which is
-        fine for exploring and is not a basis for reaching a server the operator
-        installed with one real credential. Regression: for one release the
-        catalogue was deployment-wide, so a guest could enable any installed
-        tool in their sandbox policy and call it."""
         from safi_app.core.services.mcp_manager import MCPManager, is_guest
 
         self.assertTrue(is_guest("demo_abc123"))
@@ -231,7 +193,6 @@ class ToolStatusTests(unittest.TestCase):
 
         offered = MCPManager.known_connectors(self.org, guest=True)
         self.assertNotIn("probe_server", offered)
-        # Built-ins are unaffected: they are per-user OAuth or public services.
         self.assertIn("web_search", offered)
 
     def test_a_guest_cannot_save_an_agent_with_an_installed_tool(self):

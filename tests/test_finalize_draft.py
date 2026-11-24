@@ -1,12 +1,3 @@
-"""
-Unit tests for SAFi._finalize_draft — the unified governance commit path.
-
-Uses the real WillGate and SpiritIntegrator with a stubbed Conscience and a
-no-op DB, so the gate ordering and verdicts are exercised without any network
-or database access.
-
-Run:  venv/bin/python tests/test_finalize_draft.py
-"""
 import sys
 import asyncio
 import logging
@@ -25,8 +16,6 @@ DISCLAIMER = "Disclaimer: I am a test agent."
 VALUES = [
     {
         "value": "Scope Compliance", "weight": 0.0, "hard_gate": True,
-        # gate_reason is what synderesis stamps at compile time; hand-built
-        # profiles must carry it, the Will no longer maps names to reasons.
         "gate_reason": "scope_violation",
         "rubric": {"description": "in scope?", "scoring_guide": []},
     },
@@ -51,7 +40,6 @@ PROFILE = {
 
 
 class FakeConscience:
-    """Returns a canned ledger, or raises when ledger is an Exception."""
 
     def __init__(self, ledger):
         self.ledger = ledger
@@ -89,8 +77,6 @@ def finalize(safi, draft):
 class TestFinalizeDraft(unittest.TestCase):
 
     def test_missing_disclaimer_is_repaired_not_blocked(self):
-        # A missing disclaimer is mechanically repairable: the orchestrator
-        # appends it, re-validates, and the repaired draft runs the full audit.
         conscience = FakeConscience([
             ledger_entry("Scope Compliance", 1.0),
             ledger_entry("Honesty", 1.0),
@@ -103,8 +89,6 @@ class TestFinalizeDraft(unittest.TestCase):
         self.assertEqual(conscience.calls, 1, "repaired draft must still be audited")
 
     def test_unrepairable_structural_failure_blocks_before_audit(self):
-        # Banned markdown has no safe automatic rewrite — still fails closed
-        # at the structure stage without spending an audit.
         conscience = FakeConscience([])
         safi = make_safi(conscience)
         safi.profile = {
@@ -147,9 +131,6 @@ class TestFinalizeDraft(unittest.TestCase):
         self.assertEqual(res["reason"], "scope_violation")
 
     def test_unscored_hard_gate_fails_closed(self):
-        # Since Phase 3, a ledger missing a hard gate fails the COVERAGE check
-        # (stage "audit"), which grants the guarded audit its one retry before
-        # failing closed — it no longer reaches the hard-gate stage.
         conscience = FakeConscience([
             ledger_entry("Honesty", 1.0),
             ledger_entry("Care", 1.0),

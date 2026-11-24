@@ -1,15 +1,4 @@
 #!/usr/bin/env python3
-"""Regression tests for KV-cache prefix stability in the agentic loop.
-
-The tool catalogue lives at the very start of the system prompt. If any part of
-the system prompt varies between the steps of a single governed turn, the
-llama-server discards its KV cache and re-evaluates the whole prompt on every
-step (observed: a ~9.5k-token prompt re-evaluated at ~9.3s with LCP similarity
-0.357). The fix keeps the system prompt byte-identical and moves the per-step
-"results are already present" reminder into the appended USER turn.
-
-These tests assert the invariant directly on the prompts handed to the provider.
-"""
 import asyncio
 import sys
 import unittest
@@ -21,7 +10,6 @@ from safi_app.core.faculties.intellect import IntellectEngine
 
 
 class _CapturingLLM:
-    """Stands in for LLMProvider, recording the prompts it is asked to run."""
 
     def __init__(self):
         self.calls = []

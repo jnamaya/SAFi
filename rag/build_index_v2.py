@@ -8,12 +8,7 @@ import argparse
 from typing import List, Dict, Any
 from collections import defaultdict
 
-# --- ENVIRONMENT SETUP ---
-# Paths derive from the repo layout (this file lives in <repo>/rag/) and can be
-# overridden via env, so the script works on any checkout — bare metal or Docker.
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-# Run as a script, sys.path[0] is rag/, not the repo root — so the shared
-# chunker below is unimportable without this line.
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 CACHE_DIR = os.environ.get("SAFI_MODEL_CACHE_DIR", os.path.join(_REPO_ROOT, "cache"))
@@ -21,22 +16,16 @@ os.environ["NLTK_DATA"] = CACHE_DIR
 os.environ["SENTENCE_TRANSFORMERS_HOME"] = CACHE_DIR
 os.environ["HF_HUB_CACHE"] = CACHE_DIR
 os.makedirs(CACHE_DIR, exist_ok=True)
-# ----------------------------->
 
 from fastembed import TextEmbedding
 
-# --- CONFIGURATION ---
 VECTOR_STORE_PATH = os.environ.get("SAFI_VECTOR_STORE_PATH", os.path.join(_REPO_ROOT, "vector_store"))
 EMBEDDING_MODEL = 'all-MiniLM-L6-v2'
 
-# The heading-aware chunker now lives in safi_app/core/services/chunking.py so
-# this CLI and the live KB indexer cannot drift apart. Imported under the old
-# private name to keep the call site below unchanged.
 from safi_app.core.services.chunking import chunk_markdown as _chunk_markdown
 
 
 def process_raw_documents(source_dir: str) -> List[Dict[str, Any]]:
-    """Processes all files in a directory, chunks them, and returns metadata."""
     print(f"--- Processing raw documents from: {source_dir} ---")
     if not os.path.exists(source_dir) or not os.listdir(source_dir):
         print(f"Error: The directory '{source_dir}' is empty or does not exist.")
@@ -48,13 +37,9 @@ def process_raw_documents(source_dir: str) -> List[Dict[str, Any]]:
         if os.path.isfile(filepath):
             try:
                 if filename.lower().endswith((".md", ".txt")):
-                    # Markdown/plain text: dependency-free heading-aware chunker.
                     with open(filepath, "r", encoding="utf-8") as f:
                         chunks = _chunk_markdown(f.read())
                 else:
-                    # Other formats (pdf, docx, …) need the optional
-                    # `unstructured` package — imported lazily so md-only
-                    # corpora (like rag/docs) build without it.
                     from unstructured.partition.auto import partition
                     from unstructured.chunking.title import chunk_by_title
                     print(f"Partitioning file: {filename}")
@@ -67,8 +52,6 @@ def process_raw_documents(source_dir: str) -> List[Dict[str, Any]]:
                         "source": filename,
                         "chunk_id": f"{filename}-chunk-{i}"
                     }
-                    # IMPORTANT: For this flow, we create a list of dicts 
-                    # that INCLUDE the text_chunk.
                     docs_with_sources.append({
                         "text_chunk": str(chunk),
                         "metadata": meta
@@ -82,11 +65,6 @@ def process_raw_documents(source_dir: str) -> List[Dict[str, Any]]:
 
 
 def load_from_json(source_json_paths: List[str]) -> (List[str], List[Dict[str, Any]]):
-    """
-    Loads text chunks and their full metadata from pre-processed JSON files.
-    
-    *** THIS IS THE MODIFIED FUNCTION V3 ***
-    """
     all_texts = []
     all_metadata = []
     print(f"--- Loading from pre-processed JSON files: {source_json_paths} ---")
@@ -111,17 +89,9 @@ def load_from_json(source_json_paths: List[str]) -> (List[str], List[Dict[str, A
                 if text_chunk:
                     all_texts.append(text_chunk)
                     
-                    # Copy the entire item to be our metadata packet.
-                    # This item ALREADY contains 'id', 'reference', 
-                    # 'text_chunk', and the nested 'metadata' object.
                     meta_packet = item.copy()
                     
-                    # *** BUG FIX ***
-                    # We are NO LONGER removing the 'text_chunk'
-                    # meta_packet.pop("text_chunk", None) # <-- THIS LINE IS REMOVED
                     
-                    # Now, the metadata packet saved to the .pkl file
-                    # will contain the text chunk, making it retrievable.
                     all_metadata.append(meta_packet)
                 else:
                     print(f"Warning: Item in {path} missing 'text_chunk'. Skipping item.")
@@ -136,7 +106,6 @@ def load_from_json(source_json_paths: List[str]) -> (List[str], List[Dict[str, A
 
 
 def build_index(text_chunks: List[str], metadata_list: List[Dict[str, Any]], output_name: str):
-    """Builds and saves a FAISS index and corresponding metadata."""
     if not text_chunks:
         print("Error: No text chunks to index.")
         return
@@ -153,9 +122,6 @@ def build_index(text_chunks: List[str], metadata_list: List[Dict[str, Any]], out
 
     print("Encoding text chunks... This may take a while.")
     try:
-        # fastembed yields a generator of unit-normalised vectors; FAISS needs a
-        # float32 matrix. Same values sentence-transformers produced for this
-        # model, so IndexFlatIP remains cosine and old indexes stay valid.
         embeddings = np.array(list(model.embed(text_chunks)), dtype='float32')
     except Exception as e:
         print(f"Fatal Error: Could not encode text chunks. {e}")
@@ -174,7 +140,6 @@ def build_index(text_chunks: List[str], metadata_list: List[Dict[str, Any]], out
     faiss.write_index(index, index_path)
     print(f"Successfully saved FAISS index to '{index_path}'")
     
-    # Save the *full* metadata list (which now includes 'text_chunk')
     with open(metadata_path, "wb") as f:
         pickle.dump(metadata_list, f)
     print(f"Successfully saved metadata to '{metadata_path}'")
@@ -195,15 +160,11 @@ def main():
     all_metadata = []
 
     if args.source_dir:
-        # This path now returns a list of dicts that include the text_chunk
         processed_data = process_raw_documents(args.source_dir)
-        # We need to separate them for the build_index function
         all_texts = [item['text_chunk'] for item in processed_data]
-        # And the metadata list *also* contains the text_chunk
         all_metadata = processed_data 
     
     elif args.source_json:
-        # This path now correctly keeps 'text_chunk' in the metadata list
         all_texts, all_metadata = load_from_json(args.source_json)
     
     if all_texts and all_metadata:

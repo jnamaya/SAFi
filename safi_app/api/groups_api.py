@@ -1,12 +1,3 @@
-"""
-Custom groups (backlog 55): named sets of org members used as sharing
-grantees.
-
-Group management is admin-only in v1. Membership is data, not authority: a
-group confers nothing by itself; it only aggregates who a per-agent grant
-reaches, and grants confer 'can_use' only. Every change appends compliance
-evidence, same as member and role changes.
-"""
 from flask import Blueprint, request, jsonify, session, current_app
 
 from ..persistence import database as db
@@ -25,8 +16,6 @@ def _actor():
 
 
 def _org_group_or_404(group_id):
-    """The group, if it belongs to the caller's org; None otherwise. A foreign
-    org's group answers 404, never 403, so ids are not confirmable."""
     org_id = get_current_org_id()
     if not org_id:
         return None

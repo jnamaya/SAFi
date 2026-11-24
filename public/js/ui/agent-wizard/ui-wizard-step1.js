@@ -91,22 +91,16 @@ export async function renderIdentityStep(container, agentData) {
         </div>
     `;
 
-    // Bind Auto-Save Events
     attachListeners(agentData);
 
-    // Load Policies & Access Control
     await Promise.all([
         loadPolicies(agentData),
         loadAccessControl(agentData)
     ]);
 
-    // Resolve charter status so we can warn early if the agent would be ungoverned
     await refreshCharterStatus(agentData);
 }
 
-// An agent must inherit governance from either a Policy or the org Charter.
-// Mirror the backend guard (agent_api_routes.py) so we fail fast on Step 1
-// instead of at save time.
 async function refreshCharterStatus(agentData) {
     try {
         const orgRes = await api.getMyOrganization();
@@ -118,7 +112,6 @@ async function refreshCharterStatus(agentData) {
             agentData._hasCharter = false;
         }
     } catch (e) {
-        // Unknown - leave undefined so we neither warn nor block prematurely.
         agentData._hasCharter = undefined;
     }
     updateGovernanceWarning(agentData);
@@ -160,10 +153,8 @@ async function loadPolicies(agentData) {
                 select.appendChild(opt);
             });
 
-            // Set current value
             select.value = agentData.policy_id || "standalone";
 
-            // Change Listener
             select.addEventListener('change', () => {
                 agentData.policy_id = select.value;
                 const pid = select.value;
@@ -180,7 +171,7 @@ async function loadPolicies(agentData) {
 
                 const policy = policies.find(p => p.id === pid);
                 if (policy) {
-                    agentData._policyData = policy; // Store for Values step to read
+                    agentData._policyData = policy;
 
                     const missionSnippet = policy.worldview
                         ? policy.worldview.replace(/<!-- CONTEXT:[\s\S]*?-->\n?/g, '').trim().substring(0, 120) + '…'
@@ -211,7 +202,6 @@ async function loadPolicies(agentData) {
                 }
             });
 
-            // Trigger once
             select.dispatchEvent(new Event('change'));
         }
 
@@ -243,7 +233,6 @@ async function loadAccessControl(agentData) {
 
     agentData.grants = agentData.grants || [];
 
-    // If agentData had shared_groups but no grants, bridge them
     if (agentData.shared_groups && agentData.shared_groups.length && !agentData.grants.length) {
         agentData.grants = agentData.shared_groups.map(gid => {
             const grp = groups.find(g => g.id === gid);

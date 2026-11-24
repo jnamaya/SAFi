@@ -1,4 +1,3 @@
-"""Security Engineering & Penetration Testing Policy."""
 from typing import Any, Dict, List
 
 from ...agents.security_engineer import SECURITY_ENGINEER_AGENT

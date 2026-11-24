@@ -1,16 +1,3 @@
-"""
-E2E tests for LDAP/AD Phase 2: org toggles, JIT provisioning, and
-directory group -> role mapping.
-
-Directory interactions are mocked (ldap_client.authenticate / get_groups),
-same as tests/test_ldap_login.py — the unit under test is SAFi's logic:
-  * ldap_enabled / ldap_auto_provision identity config round-trip via API
-  * JIT provisioning on invitation or verified domain, only when opted in
-  * group mapping CRUD + highest-ranked role resolution at login time
-  * directory outage during group lookup keeps the current role
-
-Run:  venv/bin/python tests/test_ldap_phase2.py
-"""
 import sys
 import unittest
 import uuid
@@ -78,7 +65,6 @@ class TestLdapPhase2(unittest.TestCase):
             conn.close()
 
     def _login(self, groups=None, email=EMAIL):
-        """Drive POST /api/login/ldap with mocked bind + memberOf."""
         saved_auth, saved_groups = ldap_client.authenticate, ldap_client.get_groups
         ldap_client.authenticate = _bind_ok(email)
         ldap_client.get_groups = lambda dn: groups
@@ -88,10 +74,8 @@ class TestLdapPhase2(unittest.TestCase):
         finally:
             ldap_client.authenticate, ldap_client.get_groups = saved_auth, saved_groups
 
-    # -- identity config toggles ------------------------------------------------
 
     def test_identity_config_ldap_fields_roundtrip(self):
-        # PUT route accepts and persists ldap_enabled / ldap_auto_provision.
         cfg = db.get_org_identity_config(self.org_id)
         self.assertTrue(cfg.get("ldap_enabled"))
         self.assertFalse(cfg.get("ldap_auto_provision"))
@@ -102,7 +86,6 @@ class TestLdapPhase2(unittest.TestCase):
             db.set_org_identity_config(self.org_id,
                                        {"ldap_auto_provision": "yes"}, "test")
 
-    # -- JIT provisioning ------------------------------------------------
 
     def test_no_account_no_jit_flag_is_403(self):
         r = self._login(email=f"nobody-{uuid.uuid4().hex[:6]}@test.local")
@@ -122,23 +105,19 @@ class TestLdapPhase2(unittest.TestCase):
         user = db.get_user_by_email(email)
         self.assertIsNotNone(user)
         self._created_users.append(user["id"])
-        self.assertEqual(user["role"], "admin")  # invitation role honored
+        self.assertEqual(user["role"], "admin")
         self.assertEqual(user["org_id"], self.org_id)
 
-    # -- group -> role mapping -------------------------------------------
 
     def test_group_mapping_crud_and_resolution(self):
         m = db.upsert_ldap_group_mapping(self.org_id, ADMIN_GROUP, "admin", "test")
         self.assertEqual(m["role"], "admin")
         rows = db.list_ldap_group_mappings(self.org_id)
         self.assertEqual(len(rows), 1)
-        # case-insensitive DN match
         self.assertEqual(
             db.resolve_ldap_role(self.org_id, [ADMIN_GROUP.upper()]), "admin")
-        # unmapped group -> member
         self.assertEqual(
             db.resolve_ldap_role(self.org_id, ["CN=Other,DC=test,DC=local"]), "member")
-        # highest-ranked wins
         db.upsert_ldap_group_mapping(self.org_id, ADMIN_GROUP, "member", "test")
         self.assertEqual(
             db.resolve_ldap_role(self.org_id, [ADMIN_GROUP]), "member")
@@ -162,13 +141,12 @@ class TestLdapPhase2(unittest.TestCase):
         self._created_users.append(user_id)
         db.upsert_ldap_group_mapping(self.org_id, ADMIN_GROUP, "member", "test")
         saved = ldap_client.get_groups
-        ldap_client.get_groups = lambda dn: None  # unreachable directory
+        ldap_client.get_groups = lambda dn: None
         try:
             r = self._login()
             self.assertEqual(r.status_code, 200)
         finally:
             ldap_client.get_groups = saved
-        # outage must NOT demote the admin
         self.assertEqual(db.get_user_by_email(EMAIL)["role"], "admin")
 
 

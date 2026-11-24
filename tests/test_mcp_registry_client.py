@@ -1,26 +1,3 @@
-"""
-The registry client, used by the operator CLI (GOVERNANCE_BACKLOG 48d).
-
-Browser installation was removed: a server now arrives one way, from the
-operator's file, usually written by scripts/safi_mcp.py. The registry client
-survives that change because `safi_mcp.py search` and `add <registry-name>` use
-it to find servers and to pin the exact version the registry published.
-
-What is still worth testing here:
-
-  * the wire shape, which is wrapped and cost us an empty catalogue once,
-  * the URL rules, which still guard `add --url`: an endpoint must be https and
-    must not resolve into this deployment's own network,
-  * connector keys, which become strings in agents' tool lists and must never
-    collide with a built-in,
-  * the tool-description scan, which reports third-party text that will end up
-    in a model's context.
-
-No network is touched: payloads are captured shapes, and the resolver checks use
-DNS names that are stable (localhost, and an unresolvable .invalid name).
-
-Run:  venv/bin/python tests/test_mcp_registry_client.py
-"""
 import sys
 import unittest
 from pathlib import Path
@@ -35,15 +12,6 @@ class FakeConfig:
     MCP_REGISTRY_URL = "https://registry.modelcontextprotocol.io"
 
 
-# The real wire shape, captured from GET /v0/servers on 2026-08-14. Every entry
-# is WRAPPED: the descriptive fields live under "server" and the registry's own
-# status under a sibling "_meta".
-#
-# This wrapper is why the first version of the feature returned an empty
-# catalogue with no error: the parser read `name` off the outer object, found
-# nothing, and dropped every entry as malformed. Defensive parsing turned a
-# schema mismatch into silence. The tests below use the wrapped shape for that
-# reason, and one asserts the unwrapped shape still works.
 WRAPPED_REMOTE_ENTRY = {
     "server": {
         "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
@@ -57,8 +25,6 @@ WRAPPED_REMOTE_ENTRY = {
         "status": "active", "isLatest": True, "publishedAt": "2026-01-01T00:00:00Z"}},
 }
 
-# The same entry unwrapped, which is what a single-server read or a mirror may
-# hand back.
 REMOTE_ENTRY = {
     "name": "com.example/billing",
     "title": "Billing API",
@@ -85,8 +51,6 @@ PACKAGE_ENTRY = {
 
 
 class WireShapeTests(unittest.TestCase):
-    """The regression that shipped: entries arrive wrapped, and reading the
-    outer object silently produced an empty catalogue."""
 
     def test_wrapped_entry_is_parsed(self):
         entry = mcp_registry._normalize_server(WRAPPED_REMOTE_ENTRY)
@@ -144,8 +108,6 @@ class NormalizationTests(unittest.TestCase):
 
 
 class UrlSafetyTests(unittest.TestCase):
-    """Fail closed. Every one of these would otherwise be an SSRF or a
-    plaintext leak initiated by our own server on an admin's say-so."""
 
     def test_https_is_required(self):
         ok, why = mcp_registry.validate_remote_url("http://mcp.example.com/mcp")
@@ -162,7 +124,6 @@ class UrlSafetyTests(unittest.TestCase):
         self.assertFalse(ok)
 
     def test_cloud_metadata_address_is_refused(self):
-        # The one every SSRF write-up starts with.
         ok, _ = mcp_registry.validate_remote_url("https://169.254.169.254/latest/meta-data/")
         self.assertFalse(ok)
 
@@ -190,8 +151,6 @@ class ConnectorKeyTests(unittest.TestCase):
 
 
 class UrlKeyDerivationTests(unittest.TestCase):
-    """A connector key becomes a string in agents' tools_json, so it has to
-    mean something to a policy author. `mcp` and `api` do not."""
 
     def test_generic_labels_are_stripped(self):
         self.assertEqual(
@@ -213,9 +172,6 @@ class UrlKeyDerivationTests(unittest.TestCase):
 
 
 class DescriptionScanTests(unittest.TestCase):
-    """Tool descriptions are third-party text that becomes model instructions.
-    For a registry install the publisher is not someone the operator chose, so
-    the text gets the same signature list Phase Zero already owns."""
 
     def test_clean_descriptions_produce_no_findings(self):
         tools = {"billing_get": {"server": "acme", "description": "Fetch an invoice by id."}}
@@ -235,10 +191,6 @@ class DescriptionScanTests(unittest.TestCase):
 
 
 class ExceptionUnwrappingTests(unittest.TestCase):
-    """The SDK raises ExceptionGroup for every transport failure, so str(e) is
-    "unhandled errors in a TaskGroup (1 sub-exception)" and an admin learns
-    nothing. Three real causes hid behind that message: auth, a moved endpoint,
-    and DNS."""
 
     def test_nested_group_is_flattened_to_the_leaf(self):
         from safi_app.core.mcp_runtime import describe_exception
@@ -264,10 +216,6 @@ class ExceptionUnwrappingTests(unittest.TestCase):
         self.assertIn("no longer be hosted", describe_exception(group))
 
     def test_a_dead_stdio_command_says_what_actually_happened(self):
-        """"Connection closed" is what a stdio server that died on startup looks
-        like, and it says nothing about why. The common cause is that the file
-        the definition names is gone, which can happen without the definition
-        changing at all."""
         from safi_app.core.mcp_runtime import describe_exception
         group = ExceptionGroup("g", [RuntimeError("Connection closed")])
         message = describe_exception(group, transport="stdio")

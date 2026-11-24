@@ -1,9 +1,3 @@
-"""Application adapter for profile catalogs and persisted governance data.
-
-This module owns user-land resolution: built-in and extension catalogs,
-database reads, connector metadata, and display-only labels. It passes plain
-data to the pure Synderesis compiler in ``core.faculties.synderesis``.
-"""
 from __future__ import annotations
 
 import importlib
@@ -131,7 +125,6 @@ def _tool_catalog() -> Dict[str, tuple]:
 
 
 def _stamp_legacy_gate_reasons(values):
-    """Translate old persisted gate labels at the data boundary."""
     legacy = {
         "scope compliance": "scope_violation",
         "grounding fidelity": "grounding_violation",
@@ -163,22 +156,13 @@ def get_profile(
     policy_id: Optional[str] = None,
     org_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Resolve persisted/content inputs, then call the pure profile compiler."""
     raw_agent = _load_profile(name)
     if not raw_agent:
         raise KeyError(f"Unknown profile '{name}'.")
-    # Round-trip through JSON to get a private copy that is also guaranteed to
-    # be JSON-clean, since callers (e.g. /api/me) return this dict directly to
-    # the client. DB-sourced agents carry datetime metadata (created_at,
-    # updated_at) that plain json.dumps rejects, which broke profile
-    # resolution for any DB-backed agent. Coerce non-JSON types to their string
-    # form rather than failing the whole profile.
     agent = json.loads(json.dumps(raw_agent, default=str))
     _stamp_legacy_gate_reasons(agent.get("values"))
 
     effective_policy_id = policy_id or agent.get("policy_id")
-    # Built-in agents and seeded demo policies carry org_id=None, so fall back
-    # to the caller's org_id when neither the agent nor policy specifies one.
     resolved_org_id = agent.get("org_id") or org_id
     policy_values: List[Dict[str, Any]] = []
     policy_config: Dict[str, Any] = {}

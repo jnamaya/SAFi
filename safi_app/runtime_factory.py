@@ -1,4 +1,3 @@
-"""Host-side assembly of model, retrieval, connector, and storage adapters."""
 from __future__ import annotations
 
 import json
@@ -14,7 +13,6 @@ from .persistence import database
 
 
 class ApplicationSAFi(SAFi, BackgroundTasksMixin):
-    """Host-layer feature composition around the neutral request pipeline."""
 
     def __init__(self, **kwargs):
         kwargs["context_budgeter"] = apply_memory_budget
@@ -45,16 +43,6 @@ class ApplicationSAFi(SAFi, BackgroundTasksMixin):
 
 
 def build_conscience_route(config, conscience_model: str) -> dict:
-    """The Conscience route: provider, model, and optional dedicated base_url.
-
-    The Conscience may run on its own local endpoint
-    (SAFI_CONSCIENCE_BASE_URL), separate from the Intellect's model server, so a
-    deployment can pair a strong answering model with a cheaper, faster judge.
-    The override applies only when the Conscience resolves to the local
-    provider: it relocates a transport address, it never changes which provider
-    is chosen, so a cloud Conscience keeps its provider's own endpoint — an
-    override must not silently move a hosted audit off its configured provider.
-    """
     provider = getattr(config, "CONSCIENCE_PROVIDER", detect_provider(conscience_model))
     route = {"provider": provider, "model": conscience_model}
     if provider == "local":
@@ -65,7 +53,6 @@ def build_conscience_route(config, conscience_model: str) -> dict:
 
 
 def _resolve_live_local_model_id(base_url: str, requested: str) -> Optional[str]:
-    """Query a local llama-server /models endpoint for the concrete loaded model id."""
     if not base_url:
         return None
     generic = {"safi-conscience", "safi-intellect", "local", "@local", "serving", "@serving"}
@@ -90,9 +77,6 @@ def _resolve_live_local_model_id(base_url: str, requested: str) -> Optional[str]
 
 
 def _enrich_model_attribution(provider: str, model_name: str, base_url: Optional[str] = None) -> str:
-    """Enrich an alias (like 'safi-intellect' or 'safi-conscience') with its concrete
-    underlying model id and weights artifact from the live llama-server (when
-    reachable) and local-models.json for accurate audit trail attribution."""
     if not model_name:
         return f"{provider}/"
     if provider == "local" or model_name.startswith("safi-"):
@@ -132,7 +116,6 @@ def build_safi(
     conscience_model=None,
     spirit_beta=None,
 ):
-    """Wire user-land adapters into the generic governance pipeline."""
     intellect_model = intellect_model or getattr(config, "INTELLECT_MODEL")
     conscience_model = conscience_model or getattr(config, "CONSCIENCE_MODEL")
 

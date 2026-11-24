@@ -1,10 +1,3 @@
-"""Re-exports every faculty so callers import them from one surface.
-
-Pipeline order: PhaseZeroGate gates the raw prompt, IntellectEngine drafts,
-ConscienceAuditor scores the draft against Synderesis-compiled values,
-SpiritIntegrator aggregates, and WillGate is the only thing that may approve
-or block. Synderesis itself is the compiler that builds those values.
-"""
 from __future__ import annotations
 from .intellect import IntellectEngine
 from .will import WillGate

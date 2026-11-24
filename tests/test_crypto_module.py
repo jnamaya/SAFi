@@ -1,12 +1,3 @@
-"""
-Unit tests for safi_app.persistence.crypto (no DB required).
-
-Covers: passthrough mode, enabled round-trips, dual-read of legacy plaintext,
-idempotent double-encrypt guard, InvalidToken fallback, and MultiFernet key
-rotation (old key still decrypts).
-
-Run:  venv/bin/python tests/test_crypto_module.py
-"""
 import sys
 import unittest
 from pathlib import Path
@@ -74,7 +65,7 @@ class TestEnabled(CryptoTestBase):
     def test_foreign_key_token_returns_raw(self):
         self.set_key(Fernet.generate_key().decode())
         token = crypto.encrypt_value("secret")
-        self.set_key(Fernet.generate_key().decode())  # different key entirely
+        self.set_key(Fernet.generate_key().decode())
         self.assertEqual(crypto.decrypt_value(token), token)
 
     def test_rotation_old_key_still_decrypts(self):
@@ -84,7 +75,6 @@ class TestEnabled(CryptoTestBase):
         new = Fernet.generate_key().decode()
         self.set_key(f"{new},{old}")
         self.assertEqual(crypto.decrypt_value(token), "rotate me")
-        # New writes use the first (new) key
         token2 = crypto.encrypt_value("fresh")
         self.set_key(new)
         self.assertEqual(crypto.decrypt_value(token2), "fresh")

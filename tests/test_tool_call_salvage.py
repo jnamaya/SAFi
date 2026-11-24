@@ -1,10 +1,3 @@
-"""
-Unit tests for tool call salvage parsing in parsing_utils.
-
-Guards against regressions when open-source LLMs (such as Qwen 2.5 / Hermes)
-leak internal XML tool calling tokens (<tool_call><function=...><parameter=...>...</tool_call>)
-or embedded JSON into message text during deep-context attention drift.
-"""
 import sys
 import unittest
 from pathlib import Path
@@ -95,7 +88,6 @@ class TestToolCallSalvage(unittest.TestCase):
         )
 
     def test_unclosed_xml_tags(self):
-        # Format drift occasionally omits closing </parameter> or </function>
         raw = (
             "<tool_call>\n"
             "<function=bash>\n"
@@ -121,7 +113,6 @@ class TestToolCallSalvage(unittest.TestCase):
         )
 
     def test_embedded_json_alternate_keys(self):
-        # Testing "function" and "parameters" keys
         raw = (
             '<tool_call>\n'
             '{"function": "search_docs", "parameters": {"q": "tamper evident"}}\n'
@@ -133,7 +124,6 @@ class TestToolCallSalvage(unittest.TestCase):
         self.assertEqual(calls[0]["arguments"], {"q": "tamper evident"})
 
     def test_json_value_inside_xml_parameter(self):
-        # Parameters that serialize arrays or objects
         raw = (
             "<tool_call>\n"
             "<function=batch_run>\n"
@@ -167,7 +157,6 @@ class TestToolCallSalvage(unittest.TestCase):
         self.assertEqual(calls[1]["arguments"], {"path": "file_b.txt"})
 
     def test_mini_pc_exact_reproduction(self):
-        # Exact reproduction of the leaked format observed on the Mini-PC
         raw = (
             "<tool_call>\n"
             "<function=bash>\n"
@@ -226,12 +215,10 @@ class TestToolCallSalvage(unittest.TestCase):
         self.assertEqual(res["command"], 'python3 -c "import ssl; print(ssl.OPENSSL_VERSION)"')
 
     def test_salvage_read_file(self):
-        # Raw path without JSON
         res1 = salvage_tool_call_arguments("read", "docs/LDAP_LOGIN_GUIDE.md")
         self.assertIsNotNone(res1)
         self.assertEqual(res1["path"], "docs/LDAP_LOGIN_GUIDE.md")
 
-        # Broken JSON
         res2 = salvage_tool_call_arguments("read", '{"path": "safi_app/core/orchestrator.py"')
         self.assertIsNotNone(res2)
         self.assertEqual(res2["path"], "safi_app/core/orchestrator.py")
@@ -252,8 +239,6 @@ class TestToolCallSalvage(unittest.TestCase):
         self.assertEqual(res["newString"], "bar")
 
     def test_robust_json_parse_with_internal_code_blocks(self):
-        # Exact reproduction of the failure mode where content/newString
-        # embeds markdown code blocks and template variables like {login}.
         import logging
         logger = logging.getLogger("test")
         raw = (
@@ -292,7 +277,6 @@ class TestToolCallSalvage(unittest.TestCase):
         self.assertEqual(res_grep["path"], "safi_app")
 
     def test_explain_provider_error_distinction(self):
-        # 1. Truncated at token cap
         exc_trunc = RuntimeError(
             "the model's tool call arguments were not valid JSON (JSONDecodeError); "
             "the generation was truncated at the output-token cap before the arguments closed"
@@ -301,7 +285,6 @@ class TestToolCallSalvage(unittest.TestCase):
         self.assertIn("truncated at the output-token cap", msg_trunc)
         self.assertIn("Raise SAFI_LOCAL_INTELLECT_MAX_TOKENS", msg_trunc)
 
-        # 2. Malformed JSON (not token truncation)
         exc_malformed = RuntimeError(
             "the model's tool call arguments were not valid JSON (JSONDecodeError); "
             "the model emitted malformed tool-call JSON"

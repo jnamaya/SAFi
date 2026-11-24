@@ -1,10 +1,3 @@
-"""Tests for safi-model-fetch, the appliance-side model downloader.
-
-safi-model-fetch has no .py extension and lives outside the app package, so it is
-loaded by path. The import inside it resolves safi_local from
-/usr/local/lib/safi_local.py, which does not exist on a build host, so
-SAFI_LOCAL_MODULE is pointed at the staged source before loading.
-"""
 import hashlib
 import importlib.util
 import json
@@ -46,10 +39,6 @@ def catalogue():
     return safi_local.load_catalogue(CATALOGUE)
 
 
-# --------------------------------------------------------------------------
-# plan
-# --------------------------------------------------------------------------
-
 def test_cpu_plan_is_the_model_alone(catalogue):
     model = safi_local.model_by_id(catalogue, "qwen3-8b")
     plan = fetch.build_plan(catalogue, model, catalogue["backends"]["cpu"])
@@ -81,16 +70,10 @@ def test_plan_total_matches_the_sum_of_steps(catalogue):
 
 
 def test_gpu_boxes_are_asked_to_download_the_full_cuda_pair(catalogue):
-    # 171 MB would be the wrong number to show an operator: the cudart archive
-    # is what makes the backend loadable.
     model = safi_local.model_by_id(catalogue, "qwen3-32b")
     plan = fetch.build_plan(catalogue, model, catalogue["backends"]["cuda-12.8"])
     assert fetch.plan_total_bytes(plan) > model["size"] + 700_000_000
 
-
-# --------------------------------------------------------------------------
-# verification
-# --------------------------------------------------------------------------
 
 def test_verify_accepts_a_matching_digest(tmp_path):
     blob = tmp_path / "blob.bin"
@@ -104,8 +87,6 @@ def test_verify_rejects_and_deletes_a_corrupt_file(tmp_path):
     with pytest.raises(fetch.FetchError) as exc:
         fetch.verify(blob, "0" * 64)
     assert "checksum mismatch" in str(exc.value)
-    # Kept, the next attempt would resume onto the corrupt prefix and fail
-    # forever.
     assert not blob.exists()
 
 
@@ -114,10 +95,6 @@ def test_sha256_file_matches_hashlib(tmp_path):
     blob.write_bytes(os.urandom(3_000_000))
     assert fetch.sha256_file(blob) == hashlib.sha256(blob.read_bytes()).hexdigest()
 
-
-# --------------------------------------------------------------------------
-# unit + env rendering
-# --------------------------------------------------------------------------
 
 def test_cpu_unit_pins_the_cpu_binary_and_zero_gpu_layers(catalogue):
     env = fetch.render_env_file(catalogue, catalogue["backends"]["cpu"])
@@ -133,10 +110,6 @@ def test_cpu_unit_pins_the_cpu_binary_and_zero_gpu_layers(catalogue):
 
 
 def test_threads_is_a_physical_core_count_never_the_all_logical_default(catalogue):
-    # 0 would mean "every logical CPU". On an SMT host llama.cpp hands the work
-    # to sibling cores that share one physical core's FP units, which measured
-    # at roughly half the decode throughput of the physical core count on the
-    # 12-core/16-thread development host.
     env = fetch.render_env_file(catalogue, catalogue["backends"]["cpu"])
     threads = int(
         next(l for l in env.splitlines() if l.startswith("SAFI_LOCAL_MODEL_THREADS=")).split("=")[1]
@@ -152,9 +125,6 @@ def test_physical_core_count_never_exceeds_the_logical_count_and_never_zero():
 
 
 def test_physical_core_count_falls_back_when_sysfs_has_no_topology(monkeypatch):
-    # Containers and some virtualised guests expose no thread_siblings_list.
-    # Degrading to the logical count is the old behaviour, so a missing
-    # topology tree must not raise or invent a core.
     import pathlib
 
     monkeypatch.setattr(pathlib.Path, "glob", lambda self, pat: iter(()))
@@ -184,9 +154,6 @@ def test_unit_keeps_the_loopback_only_posture(catalogue):
 
 
 def test_tuned_amd_model_gets_the_vulkan_tree_and_flags(catalogue):
-    # The EVO-X2 flagship must land in /opt/safi/vulkan with its per-model
-    # context (64K via YaRN), the verified b11205 MTP/flash/Q8-KV flags, and
-    # its reasoning settings read from the catalogue rather than hardcoded.
     model = safi_local.model_by_id(catalogue, "qwen3.8-27b")
     backend = catalogue["backends"]["vulkan"]
     env = fetch.render_env_file(catalogue, backend, model)
@@ -208,8 +175,6 @@ def test_tuned_amd_model_gets_the_vulkan_tree_and_flags(catalogue):
 
 
 def test_unit_alias_is_the_detect_provider_prefix(catalogue):
-    # Phase 1 made detect_provider route the whole safi- prefix to local. A unit
-    # published under any other alias would silently be sent to groq.
     for model_id in ("qwen3-4b", "qwen3-8b", "qwen3-14b", "qwen3-32b"):
         model = safi_local.model_by_id(catalogue, model_id)
         assert model["alias"].startswith("safi-")
@@ -218,8 +183,6 @@ def test_unit_alias_is_the_detect_provider_prefix(catalogue):
 
 
 def test_unit_keeps_a_readiness_probe(catalogue):
-    # A 20 GB model takes minutes to load; without the probe systemd reports
-    # success for a server that is not answering yet.
     unit = fetch.render_unit("/b", "/l", "/m.gguf", "safi-qwen3-8b")
     assert "ExecStartPost=" in unit
     assert "/v1/models" in unit
@@ -234,8 +197,6 @@ def test_unit_expands_context_from_the_env_file(catalogue):
 
 
 def test_reasoning_is_off_unless_the_catalogue_turns_it_on(catalogue):
-    # Thinking costs tokens on every answer, so off is the default, and a
-    # stale effort field must not smuggle reasoning flags in while off.
     unit = fetch.render_unit("/b", "/l", "/m.gguf", "safi-qwen3-8b")
     assert "--reasoning off" in unit
     assert "--reasoning-effort" not in unit
@@ -247,10 +208,6 @@ def test_reasoning_is_off_unless_the_catalogue_turns_it_on(catalogue):
                              reasoning="on", reasoning_effort="high")
     assert "--reasoning on --reasoning-effort high" in unit
 
-
-# --------------------------------------------------------------------------
-# backend install
-# --------------------------------------------------------------------------
 
 def _make_archive(path: Path, layout: dict) -> Path:
     with tarfile.open(path, "w:gz") as tar:
@@ -276,9 +233,6 @@ def test_install_backend_flattens_server_and_libraries(tmp_path):
 
 
 def test_install_backend_never_writes_the_live_path_in_place(tmp_path, monkeypatch):
-    # Re-activating the backend that is currently serving must not open the
-    # live binary (or its mapped .so files) for writing: that raises ETXTBSY.
-    # The new files land via a temp name and os.replace instead.
     dest = tmp_path / "out"
     dest.mkdir()
     (dest / "llama-server").write_bytes(b"old")
@@ -302,8 +256,6 @@ def test_install_backend_never_writes_the_live_path_in_place(tmp_path, monkeypat
 
 
 def test_install_backend_collects_libraries_from_a_sibling_tree(tmp_path):
-    # The cudart archive is a separate tarball and may not put libcudart
-    # next to the server, so every .so under the archive has to be collected.
     archive = _make_archive(tmp_path / "cudart.tar.gz", {
         "build/bin/llama-server": b"server",
         "build/lib/libcudart.so.12": b"cudart",
@@ -332,10 +284,6 @@ def test_install_backend_refuses_a_traversal_path(tmp_path):
         fetch.install_backend(archive, tmp_path / "out")
     assert "unsafe path" in str(exc.value)
 
-
-# --------------------------------------------------------------------------
-# request handling
-# --------------------------------------------------------------------------
 
 def test_resolve_rejects_an_unknown_model(catalogue, tmp_path, monkeypatch):
     monkeypatch.setattr(fetch, "CHOICE_PATH", tmp_path / "choice.json")
@@ -382,9 +330,6 @@ def test_download_choice_does_not_require_activation(catalogue, tmp_path, monkey
 
 
 def test_a_fetch_without_an_activate_key_still_activates(catalogue, tmp_path, monkeypatch):
-    # The setup wizard writes {"model", "backend"} with no activate key. That
-    # is the first-boot path, and it must end with the model server running: a
-    # default of False here left a downloaded model with no unit on disk.
     monkeypatch.setattr(fetch, "CHOICE_PATH", tmp_path / "choice.json")
     (tmp_path / "choice.json").write_text(json.dumps({
         "model": "qwen3-8b", "backend": "cpu",
@@ -408,20 +353,15 @@ def test_resolve_rejects_corrupt_choice_json(catalogue, tmp_path, monkeypatch):
     assert "not valid JSON" in str(exc.value)
 
 
-# --------------------------------------------------------------------------
-# re-activation must not re-download
-# --------------------------------------------------------------------------
-
 def test_an_installed_model_is_recognised(catalogue, tmp_path):
     model = safi_local.model_by_id(catalogue, "phi4-mini")
     target = tmp_path / model["id"] / model["file"]
     target.parent.mkdir(parents=True)
     target.write_bytes(b"\0" * 4)
-    # A short file is not an installed model.
     catalogue = dict(catalogue, model_root=str(tmp_path))
     assert fetch.installed_model_path(model, catalogue) is None
 
-    with open(target, "wb") as handle:  # sparse stand-in for 2.5 GB
+    with open(target, "wb") as handle:
         handle.truncate(int(model["size"]))
     assert fetch.installed_model_path(model, catalogue) == target
 
@@ -433,15 +373,11 @@ def test_a_short_or_missing_file_is_not_treated_as_installed(catalogue, tmp_path
 
 
 def test_activating_an_already_downloaded_model_downloads_nothing(tmp_path, monkeypatch):
-    """The bug: install_model() moves the cache file away, so every switch back
-    to a model re-fetched the full weights. The installed path must short-circuit
-    the download step, and activation must still happen."""
     catalogue = safi_local.load_catalogue(CATALOGUE)
     model = safi_local.model_by_id(catalogue, "phi4-mini")
     root = tmp_path / "models"
     target = root / model["id"] / model["file"]
     target.parent.mkdir(parents=True)
-    # A sparse file stands in for 2.5 GB of weights.
     with open(target, "wb") as handle:
         handle.truncate(int(model["size"]))
     catalogue = dict(catalogue, model_root=str(root))
@@ -468,8 +404,6 @@ def test_activating_an_already_downloaded_model_downloads_nothing(tmp_path, monk
     cpu_home = tmp_path / "opt/bin"
     cpu_home.mkdir(parents=True)
     (cpu_home / "llama-server").write_text("#!/bin/sh\n")
-    # install_unit resolves the install home from the backend's catalogue field
-    # now, so the test's temp tree must be the home the catalogue declares.
     catalogue["backends"]["cpu"]["home"] = str(cpu_home)
     monkeypatch.setattr(fetch, "CPU_HOME", cpu_home)
 
@@ -481,12 +415,10 @@ def test_activating_an_already_downloaded_model_downloads_nothing(tmp_path, monk
 
     rc = fetch.main(["--model", "phi4-mini", "--backend", "cpu"])
     assert rc == 0
-    # Nothing was fetched, and the unit still points at the model.
     assert list(cache.iterdir()) == []
     body = unit.read_text()
     assert f"--alias {model['alias']}" in body
     assert model["file"] in body
-    # The weights were left exactly where they were.
     assert target.exists()
     assert json.loads(status.read_text())["activated"] is True
 
@@ -525,21 +457,14 @@ def test_an_uninstalled_model_still_downloads(tmp_path, monkeypatch):
 
     rc = fetch.main(["--model", "phi4-mini", "--backend", "cpu"])
     assert rc == 0
-    # The weights were fetched and installed, and nothing was activated.
     assert (root / model["id"] / model["file"]).exists()
     assert not (tmp_path / "safi-llama-server.service").exists()
 
-
-# --------------------------------------------------------------------------
-# status file
-# --------------------------------------------------------------------------
 
 def test_status_round_trips_and_survives_a_corrupt_file(tmp_path, monkeypatch):
     monkeypatch.setattr(fetch, "STATUS_PATH", tmp_path / "status.json")
     fetch.write_status(state="running", percent=42)
     assert fetch.read_status()["percent"] == 42
-    # A poll must never see a half-written document, and a truncated file from
-    # a power cut must not take the progress page down.
     (tmp_path / "status.json").write_text("{ truncated")
     assert fetch.read_status() == {}
 
@@ -552,14 +477,6 @@ def test_status_update_merges_rather_than_replaces(tmp_path, monkeypatch):
     assert status["model"] == "qwen3-32b"
     assert status["percent"] == 55
 
-
-# --------------------------------------------------------------------------
-# install_model: where the weights actually land
-# --------------------------------------------------------------------------
-#
-# This is the function that decides the on-disk layout, and it is the one the
-# app's model picker reads back. Its path convention therefore has to come from
-# the catalogue, not from a constant in either file.
 
 def test_install_lands_the_weights_where_the_catalogue_says(catalogue, tmp_path):
     payload = dict(catalogue, model_root=str(tmp_path / "models"))
@@ -575,9 +492,6 @@ def test_install_lands_the_weights_where_the_catalogue_says(catalogue, tmp_path)
 
 
 def test_install_prefers_the_catalogue_filename_over_the_url(catalogue, tmp_path):
-    # The catalogue states 'file'. Deriving it from the url would make the
-    # picker and the downloader disagree the moment a model is republished
-    # under a different asset name.
     payload = dict(catalogue, model_root=str(tmp_path / "models"))
     model = dict(next(m for m in catalogue["models"] if m["id"] == "qwen3-8b"))
     model["url"] = "https://huggingface.co/x/renamed-8B.gguf"
@@ -603,7 +517,6 @@ def test_install_falls_back_to_the_url_when_the_catalogue_omits_file(catalogue, 
 
 
 def test_install_is_safe_to_repeat(catalogue, tmp_path):
-    # The wizard's retry button can re-run a fetch that already placed weights.
     payload = dict(catalogue, model_root=str(tmp_path / "models"))
     model = dict(next(m for m in catalogue["models"] if m["id"] == "qwen3-8b"), size=9)
     for _ in range(2):
@@ -615,8 +528,6 @@ def test_install_is_safe_to_repeat(catalogue, tmp_path):
 
 
 def test_installed_weights_are_world_readable(catalogue, tmp_path):
-    # The app runs as the safi user and reads this file to decide what to
-    # offer, so it cannot be root-only.
     payload = dict(catalogue, model_root=str(tmp_path / "models"))
     model = next(m for m in catalogue["models"] if m["id"] == "qwen3-8b")
     cached = tmp_path / "cached.gguf"
@@ -626,13 +537,9 @@ def test_installed_weights_are_world_readable(catalogue, tmp_path):
 
 
 def test_the_catalogue_layout_matches_what_the_app_reads(catalogue, tmp_path, monkeypatch):
-    # The picker's presence check is <model_root>/<id>/<file> with an exact
-    # size. If install_model wrote anywhere else, the picker would show nothing
-    # after a successful download.
     from safi_app.core.services import provider_governance as pg
     from safi_app import config as cm
 
-    # The fetcher has activated the model, so the app treats it as served.
     monkeypatch.setattr(cm, "active_local_model", lambda: "safi-qwen3-8b")
     payload = dict(catalogue, model_root=str(tmp_path / "models"))
     root = tmp_path / "models"
@@ -640,8 +547,6 @@ def test_the_catalogue_layout_matches_what_the_app_reads(catalogue, tmp_path, mo
     path = tmp_path / "local-models.json"
     path.write_text(json.dumps(payload))
 
-    # A real 5 GB file is not needed to prove the paths agree; shrink the model
-    # in the catalogue itself so the size check is meaningful.
     model = next(m for m in catalogue["models"] if m["id"] == "qwen3-8b")
     small = dict(model, size=len(b"weights"))
     payload["models"] = [small if m["id"] == "qwen3-8b" else m
@@ -653,6 +558,3 @@ def test_the_catalogue_layout_matches_what_the_app_reads(catalogue, tmp_path, mo
 
     offered = pg.installed_local_models(str(path))
     assert [m["id"] for m in offered] == [model["alias"]]
-
-
-

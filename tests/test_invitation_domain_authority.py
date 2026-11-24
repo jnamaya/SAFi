@@ -1,26 +1,3 @@
-"""
-A verified domain outranks another org's invitation (backlog 75).
-
-WHY. Invitations are deliberately open to any address, so an org can bring in a
-contractor. But before this rule, inviting someone at ANOTHER org's verified
-domain before that person had ever signed in would place them in the INVITING
-org: the invitation was checked first at login and returned early, so domain
-auto-join never ran. No data of the domain owner leaked, but the person's turns
-were then scored against the wrong charter and landed in the wrong audit trail,
-and the org that had proven ownership of the domain never saw them. Domain
-verification has to mean something, so it wins.
-
-The rule is enforced twice on purpose:
-  1. at creation, so the mistake is refused at the door, and
-  2. at login, because an invitation can predate the domain verification and the
-     decision point must not depend on when the invite was written.
-
-What is deliberately NOT changed: an invite for an UNCLAIMED domain still works
-(the contractor case), and an invite from the domain owner itself still works.
-
-Needs the disposable stack:
-    docker compose -f docker-compose.test.yml run --rm tests -k invitation_domain
-"""
 import sys
 import uuid
 import unittest
@@ -36,7 +13,6 @@ from support import new_user
 
 
 def _verify_domain(org_id, domain):
-    """Mark an org's domain as verified, the state domain ownership rests on."""
     conn = db.get_db_connection()
     cur = conn.cursor()
     try:
@@ -49,8 +25,6 @@ def _verify_domain(org_id, domain):
 
 
 def _set_join_policy(org_id, policy):
-    """join_policy lives in organizations.settings JSON, so go through the setter
-    rather than inventing a column."""
     db.set_org_identity_config(org_id, {"join_policy": policy}, "user:test-admin")
 
 
@@ -58,19 +32,15 @@ class InvitationVersusVerifiedDomain(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        # _resolve_membership logs through current_app, so it needs an app context.
         cls.app = create_app()
 
     def setUp(self):
         tag = uuid.uuid4().hex[:8]
         self.owner_domain = f"owner{tag}.example"
         self.other_domain = f"other{tag}.example"
-        self.org_owner = db.create_organization(f"Domain Owner {tag}")   # owns owner_domain
-        self.org_other = db.create_organization(f"Other Org {tag}")      # the inviter
+        self.org_owner = db.create_organization(f"Domain Owner {tag}")
+        self.org_other = db.create_organization(f"Other Org {tag}")
         _verify_domain(self.org_owner, self.owner_domain)
-        # The inviter has a verified domain of its own, which is what makes the
-        # external_domain flag meaningful: it is computed against the INVITING
-        # org's verified domain, so an org with none flags nothing as external.
         _verify_domain(self.org_other, self.other_domain)
         self.actor = "user:test-admin"
 
@@ -88,7 +58,6 @@ class InvitationVersusVerifiedDomain(unittest.TestCase):
             cur.close()
             conn.close()
 
-    # ---- 1. refused at the door ----
 
     def test_cannot_invite_into_another_orgs_verified_domain(self):
         with self.assertRaises(ValueError) as ctx:
@@ -106,8 +75,6 @@ class InvitationVersusVerifiedDomain(unittest.TestCase):
         inv = db.create_org_invitation(self.org_other, "consultant@unclaimed-vendor.example",
                                        "member", self.actor)
         self.assertEqual(inv["org_id"], self.org_other)
-        # external_domain is measured against the INVITING org's verified domain,
-        # so a contractor outside it stays flagged in the evidence.
         self.assertTrue(inv["external_domain"], "off-domain invites stay flagged in evidence")
 
     def test_own_domain_invite_is_not_flagged_external(self):
@@ -115,10 +82,8 @@ class InvitationVersusVerifiedDomain(unittest.TestCase):
                                        "member", self.actor)
         self.assertFalse(inv["external_domain"])
 
-    # ---- 2. enforced again at login ----
 
     def _resolve(self, email):
-        """Run the login-time membership decision for a fresh org-less user."""
         uid = f"invtest-{uuid.uuid4().hex[:8]}"
         new_user(user_id=uid, email=email)
         details = {"id": uid, "email": email}
@@ -127,8 +92,6 @@ class InvitationVersusVerifiedDomain(unittest.TestCase):
         return uid, details
 
     def _force_invite(self, org_id, email, role="member"):
-        """Write a pending invite directly, bypassing the creation-time guard, to
-        model an invitation that predates the domain verification."""
         conn = db.get_db_connection()
         cur = conn.cursor()
         try:
@@ -174,7 +137,6 @@ class InvitationVersusVerifiedDomain(unittest.TestCase):
             conn.close()
 
     def test_invite_only_domain_owner_leaves_the_user_org_less(self):
-        # The safe outcome: not the wrong tenant. The domain owner must invite them.
         _set_join_policy(self.org_owner, "invite_only")
         email = f"erin@{self.owner_domain}"
         self._force_invite(self.org_other, email)

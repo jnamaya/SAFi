@@ -1,4 +1,3 @@
-"""Demo-only lifecycle and usage accounting, separate from core persistence."""
 from __future__ import annotations
 
 import logging
@@ -83,7 +82,6 @@ def cleanup_orphaned_public_users():
 
 
 def cleanup_old_demo_users():
-    """Expire disposable demo work while retaining authentication evidence."""
     conn = db.get_db_connection()
     cursor = conn.cursor()
     try:

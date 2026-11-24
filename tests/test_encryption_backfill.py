@@ -1,14 +1,3 @@
-"""
-DB-backed test for scripts/backfill_encryption.py.
-
-Seeds legacy plaintext rows via raw SQL, runs the backfill twice, and asserts:
-encrypted exactly once (idempotent), audit-trail marker entries appended once
-and contain no plaintext, hash chain still valid, and reads return plaintext.
-
-Requires local MySQL. Skips if SAFI_ENCRYPTION_KEY is not set.
-
-Run:  venv/bin/python tests/test_encryption_backfill.py
-"""
 import sys
 import uuid
 import unittest
@@ -39,7 +28,6 @@ class TestBackfill(unittest.TestCase):
         cur.close()
         conn.close()
         cls.cid = db.create_conversation(cls.uid)["id"]
-        # Seed a legacy plaintext AI row + oauth token via raw SQL
         conn = db.get_db_connection()
         cur = conn.cursor()
         cls.msg_id = str(uuid.uuid4())
@@ -78,7 +66,6 @@ class TestBackfill(unittest.TestCase):
         return row["c"]
 
     def test_backfill_idempotent(self):
-        # First run encrypts
         bf.backfill_table("chat_history", ("id",),
                           ("content", "spirit_note", "conscience_ledger", "reasoning_log"),
                           True, batch_size=500)
@@ -93,13 +80,11 @@ class TestBackfill(unittest.TestCase):
         self.assertTrue(crypto.is_token(tok["access_token"]))
         self.assertEqual(self.trail_count(), 1)
 
-        # Marker entry contains no plaintext
         marker = self.raw_one("SELECT state FROM chat_audit_trail WHERE message_pk=%s "
                               "AND actor='system:encryption-backfill'", (self.row_pk,))
         self.assertNotIn(SECRET, marker["state"])
         self.assertIn("fernet-encrypt", marker["state"])
 
-        # Second run is a no-op
         first_ct = row["content"]
         bf.backfill_table("chat_history", ("id",),
                           ("content", "spirit_note", "conscience_ledger", "reasoning_log"),
@@ -108,7 +93,6 @@ class TestBackfill(unittest.TestCase):
         self.assertEqual(row2["content"], first_ct)
         self.assertEqual(self.trail_count(), 1)
 
-        # Chain valid; read path returns plaintext
         self.assertTrue(db.verify_message_audit_trail(self.row_pk)["valid"])
         hist = db.fetch_chat_history_for_conversation(self.cid, user_id=self.uid)
         self.assertEqual(hist[-1]["content"], SECRET)

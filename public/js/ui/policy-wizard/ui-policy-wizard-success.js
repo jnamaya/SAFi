@@ -10,11 +10,8 @@ export function renderSuccessStep(container, policyData, generatedCredentials) {
 
     const { policy_id, api_key } = generatedCredentials;
 
-    // Comes from the server (Config.WEB_BASE_URL), never hardcoded. The
-    // fallback is only for a response predating this field.
     const endpointUrl = generatedCredentials.endpoint_url
         || `${window.location.origin}/api/bot/process_prompt`;
-    // Correct-but-unreachable is the confusing case worth naming out loud.
     const isLocal = generatedCredentials.is_public_url === false;
 
     const isMasked = api_key.includes('*');
@@ -257,7 +254,6 @@ if __name__ == "__main__":
         </div>
     `;
 
-    // --- EVENT LISTENERS ---
     const copyBtn = document.getElementById('btn-copy-key');
     if (copyBtn) {
         copyBtn.addEventListener('click', () => {
@@ -293,13 +289,11 @@ if __name__ == "__main__":
             rotateBtn.innerText = "Generating...";
 
             try {
-                // Use imported api client
                 const resp = await api.rotateKey(policy_id);
 
                 if (resp.ok && resp.credentials) {
                     const newKey = resp.credentials.api_key;
 
-                    // 1. Update Display
                     const display = document.getElementById('display-api-key');
                     if (display) {
                         display.innerText = newKey;
@@ -307,28 +301,20 @@ if __name__ == "__main__":
                         setTimeout(() => display.classList.remove('bg-green-50', 'text-green-700'), 500);
                     }
 
-                    // 2. Remove Warning
                     const warning = document.getElementById('key-warning');
                     if (warning) warning.remove();
 
-                    // 3. Update Python Code Snippet
                     const codeBlock = document.getElementById('py-code-content');
                     if (codeBlock) {
-                        // Regex to replace the value in SAFI_BOT_SECRET line
                         codeBlock.innerText = codeBlock.innerText.replace(/SAFI_BOT_SECRET = os\.environ\.get\("SAFI_BOT_SECRET", ".*?"\)/, `SAFI_BOT_SECRET = os.environ.get("SAFI_BOT_SECRET", "${newKey}")`);
                     }
 
-                    // 3b. And the curl command. Missing this was the whole point
-                    // of rotating: the reader copies the test command, gets a
-                    // 401 from the key they just replaced, and concludes the
-                    // rotation broke something.
                     const curlBlock = document.getElementById('curl-content');
                     if (curlBlock) {
                         curlBlock.innerText = curlBlock.innerText.replace(
                             /X-API-KEY: [^"]*/, `X-API-KEY: ${newKey}`);
                     }
 
-                    // 3c. The masked-key notices are now wrong — a real key exists.
                     document.querySelectorAll('[data-masked-notice]')
                         .forEach(el => el.remove());
 

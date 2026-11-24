@@ -1,22 +1,3 @@
-"""
-Per-org provider API keys (backlog 64): BYOK layered over .env.
-
-The contract, pinned here:
-
-- A stored key is Fernet-encrypted at rest; the display read path returns
-  provider + last4 only and can never leak the key; the dispatch read path
-  decrypts.
-- The overlay is per org: org B never sees org A's keys, and no org context
-  means no override (deployment default).
-- LLMProvider prefers a client bound to the active org's key, and can build
-  one for a provider that has NO deployment key at all — that is what makes
-  org-only providers work.
-- The model catalog treats an org-key provider as configured, so its models
-  are offered to that org even when the deployment has no .env key.
-
-Needs the disposable stack (it writes and deletes rows):
-    docker compose -f docker-compose.test.yml run --rm tests -k provider_keys
-"""
 import sys
 import unittest
 import uuid
@@ -99,8 +80,6 @@ class DispatchPrefersTheOrgClient(unittest.TestCase):
     def setUp(self):
         self.org = str(uuid.uuid4())
         self.key = "sk-live-" + uuid.uuid4().hex
-        # anthropic deliberately has NO deployment key in this config: the
-        # org's key must be sufficient on its own.
         from safi_app.core.services.llm_provider import LLMProvider
         self.provider = LLMProvider({
             "providers": {
@@ -156,8 +135,6 @@ class OrgKeyProvidersExtendTheCatalog(unittest.TestCase):
         ok.invalidate_org_keys_cache()
 
     def test_models_appear_for_an_org_key_only_provider(self):
-        """Deployment has no keys at all (mocked empty); the org's anthropic
-        key alone must surface the built-in Claude model."""
         with mock.patch.object(pg, "configured_providers", return_value=frozenset()):
             models = pg.list_models_for_org(self.org)
         providers = {m["provider"] for m in models}

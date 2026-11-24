@@ -1,16 +1,3 @@
-"""Regression guard for the "Event loop is closed" outage.
-
-The appliance runs Flask under gunicorn's `gthread` worker. Flask bridges each
-`async def` view through asgiref, which runs the request on a NEW event loop in
-a NEW thread and closes that loop when the request ends. `LLMProvider` caches
-its SDK clients for the life of the process, so an async client's httpx pool
-bound to the first request's loop was dead for every later request: ~90% of
-Intellect attempts failed instantly with RuntimeError("Event loop is closed").
-
-The fix uses the sync SDK clients through `asyncio.to_thread`. These tests pin
-the two properties that make it correct: the cached client is sync (owns no
-event loop), and it keeps working when reused across separate event loops.
-"""
 import asyncio
 import logging
 import sys
@@ -27,7 +14,6 @@ from safi_app.core.services.llm_provider import LLMProvider
 
 
 class _ThreadRecordingCompletions:
-    """Records the thread each call runs on, so we can prove `to_thread`."""
 
     def __init__(self, content="ok"):
         self._content = content
@@ -87,9 +73,6 @@ def test_initialized_clients_are_the_sync_sdk():
 
 
 def test_a_cached_client_survives_reuse_across_event_loops():
-    # Two separate asyncio.run() calls == two separate, sequentially closed
-    # event loops. With the old async client the second call raised
-    # RuntimeError("Event loop is closed"); the sync client has no such tie.
     completions = _ThreadRecordingCompletions()
     provider = _provider(completions)
 
@@ -99,8 +82,6 @@ def test_a_cached_client_survives_reuse_across_event_loops():
 
 
 def test_the_blocking_call_runs_off_the_event_loop_thread():
-    # Proves the call is dispatched through asyncio.to_thread rather than
-    # blocking the request's loop inline.
     completions = _ThreadRecordingCompletions()
     provider = _provider(completions)
 

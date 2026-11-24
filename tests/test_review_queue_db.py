@@ -1,11 +1,3 @@
-"""
-DB integration tests for the review queue (Phase E1): set_org_review_config
-evidence logging, and the transactional sampling hook inside
-update_audit_results (enqueue, will-provenance columns, trail org stamp,
-no-enqueue when disabled or ungoverned).
-
-Run:  venv/bin/python tests/test_review_queue_db.py
-"""
 import json
 import sys
 import uuid
@@ -64,8 +56,6 @@ class ReviewQueueDbTest(unittest.TestCase):
         provider_governance.activate_org(None)
 
     def _make_turn(self):
-        """Insert a conversation + turn (user row / AI placeholder) and return
-        (conversation_id, message_id)."""
         cid = str(uuid.uuid4())
         mid = str(uuid.uuid4())
         _exec("INSERT INTO conversations (id, user_id, title) VALUES (%s, %s, 'review test')",
@@ -94,7 +84,7 @@ class ReviewQueueDbTest(unittest.TestCase):
 
     def test_02_noop_config_change_logs_nothing(self):
         before = len(db.list_compliance_log(self.org_id, 50))
-        db.set_org_review_config(self.org_id, {"enabled": True}, ACTOR)  # already true
+        db.set_org_review_config(self.org_id, {"enabled": True}, ACTOR)
         self.assertEqual(len(db.list_compliance_log(self.org_id, 50)), before)
 
     def test_03_low_alignment_turn_enqueues_with_provenance(self):
@@ -109,11 +99,9 @@ class ReviewQueueDbTest(unittest.TestCase):
         detail = json.loads(row["trigger_detail"])
         self.assertEqual(detail["spirit_score"], 3)
         self.assertEqual(detail["will_decision"], "approve")
-        # will provenance landed on chat_history
         ch = _fetchone("SELECT will_decision, will_stage FROM chat_history WHERE message_id=%s", (mid,))
         self.assertEqual(ch["will_decision"], "approve")
         self.assertEqual(ch["will_stage"], "spirit")
-        # trail 'update' entry carries the org stamp and the chain verifies
         tr = _fetchone("SELECT org_id, message_pk FROM chat_audit_trail "
                        "WHERE message_id=%s AND action='update' ORDER BY id DESC LIMIT 1", (mid,))
         self.assertEqual(tr["org_id"], self.org_id)
@@ -152,7 +140,7 @@ class ReviewQueueDbTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             db.set_org_review_config(self.org_id, {"random_sample_pct": 200}, ACTOR)
         with self.assertRaises(ValueError):
-            db.set_org_review_config(str(uuid.uuid4()), {"enabled": True}, ACTOR)  # unknown org
+            db.set_org_review_config(str(uuid.uuid4()), {"enabled": True}, ACTOR)
 
 
 if __name__ == "__main__":

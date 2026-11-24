@@ -1,21 +1,3 @@
-"""
-Unit tests for hard-gate violation reasons as compiled data (backlog 49b).
-
-The Will must never derive a gate's failure reason from the value's NAME.
-The reason is per-value data (gate_reason), stamped into the compiled
-profile by synderesis:
-
-- WillGate.evaluate_hard_gates reads gate_reason from the failing value and
-  collapses anything outside ALLOWED_GATE_REASONS to hard_gate_violation.
-- _stamp_gate_reasons gives every hard gate an explicit reason at compile
-  time: explicit valid key wins, the legacy name map covers DB policies
-  written before the key existed, everything else gets the generic reason.
-- apply_charter's gate dedupe carries gate_reason across duplicates, so an
-  agent-defined gate keeps its reason even when a stale policy row copy of
-  the same gate is the one that survives (or vice versa).
-
-Run:  venv/bin/python tests/test_hard_gate_reasons.py
-"""
 import json
 import sys
 import unittest
@@ -62,10 +44,6 @@ class ReasonComesFromTheValue(unittest.TestCase):
         self.assertEqual(reason, "hard_gate_violation")
 
     def test_the_name_alone_no_longer_maps(self):
-        # The historical name-based mapping is gone from the Will: a gate
-        # named like the old table entries but lacking gate_reason gets the
-        # generic reason. Compile-time stamping is what preserves behavior
-        # for real profiles.
         values = [{"value": "Grounding Fidelity", "hard_gate": True}]
         verdict, reason = gate_with(values).evaluate_hard_gates(
             failing_ledger("Grounding Fidelity"))
@@ -165,9 +143,6 @@ class DedupeCarriesTheReason(unittest.TestCase):
         return apply_charter(profile, None, policy_values=[policy_gate])
 
     def test_agent_reason_survives_a_stale_policy_copy(self):
-        # The agent's definition carries gate_reason; the policy row is a
-        # copy seeded before the key existed. Exactly the shipped demo
-        # policy situation observed in the dev database.
         out = self._merge(
             {"value": "Answer Quality", "hard_gate": True,
              "gate_reason": "ethical_violation"},

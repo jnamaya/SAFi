@@ -1,24 +1,3 @@
-"""
-Tool-grant approvals (backlog 57b): additions to an org agent's tool list
-wait for a second person; removals never do.
-
-The tool list is the capability boundary: prose is advice and values are
-scored, but a tool is something the agent can DO. Widening that boundary is
-the one agent edit that gets a request-and-approve workflow, on the KB
-sign-off model: the author may not approve their own change, and a sole
-eligible reviewer may self-approve with the non-independence recorded on the
-row itself (same reasoning as knowledge_base_documents.self_approved: an
-examiner reading the request's own record must see the review was not
-independent without cross-referencing another table).
-
-WHY IT IS NOT IN database.py: same boundary as the other stores. This table
-is workflow state, not audit ledger; the evidence rows it produces go to
-org_compliance_log, and the applied change lands on the agents row.
-
-Writing agents.tools_json happens HERE (apply_tools) rather than through a
-new helper in database.py, which is manifest-covered. The file is the TCB
-boundary, not the table.
-"""
 from __future__ import annotations
 
 import json
@@ -32,9 +11,6 @@ log = logging.getLogger(__name__)
 
 
 def init_schema() -> None:
-    """Create the request table if absent, collation-matched to `agents`
-    (the 3e0f0ee lesson: a charset without a collation takes the server
-    default and breaks the first join against the legacy schema)."""
     conn = db.get_db_connection()
     cursor = conn.cursor()
     try:
@@ -69,17 +45,10 @@ def init_schema() -> None:
                         row[0], coll)
             cursor.execute(
                 f"ALTER TABLE agent_tool_requests CONVERT TO CHARACTER SET {charset} COLLATE {coll}")
-        # Requester acknowledgment (backlog 57c): NULL until the requester
-        # dismisses the outcome from their inbox. Workflow state on the
-        # workflow row, so the inbox stays derived.
         cursor.execute("SHOW COLUMNS FROM agent_tool_requests LIKE 'acknowledged_at'")
         if not cursor.fetchone():
             cursor.execute(
                 "ALTER TABLE agent_tool_requests ADD COLUMN acknowledged_at TIMESTAMP NULL")
-        # Policy-widening requests (backlog 57d): the same workflow, aimed at
-        # a policy's declared allowed_tools instead of an agent's list.
-        # agent_key becomes nullable; exactly one of agent_key / policy_id is
-        # set per row. target_tools holds the requested final declared list.
         cursor.execute("SHOW COLUMNS FROM agent_tool_requests LIKE 'request_type'")
         if not cursor.fetchone():
             cursor.execute("ALTER TABLE agent_tool_requests MODIFY agent_key VARCHAR(100) NULL")
@@ -87,9 +56,6 @@ def init_schema() -> None:
                            "ADD COLUMN request_type ENUM('agent','policy') NOT NULL DEFAULT 'agent'")
             cursor.execute("ALTER TABLE agent_tool_requests ADD COLUMN policy_id VARCHAR(255) NULL")
             cursor.execute("ALTER TABLE agent_tool_requests ADD COLUMN target_tools JSON NULL")
-        # Named approvers (backlog 57e): the org may designate one group as
-        # the tool-approval reviewer set; unset or empty falls back to
-        # the role set supplied by the application configuration.
         cursor.execute(f"""
             CREATE TABLE IF NOT EXISTS approval_settings (
                 org_id CHAR(36) PRIMARY KEY,
@@ -98,16 +64,10 @@ def init_schema() -> None:
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             ) ENGINE=InnoDB DEFAULT CHARSET={charset} COLLATE={coll}
         """)
-        # Policy approvers are a separate designation from tool approvers.
         cursor.execute("SHOW COLUMNS FROM approval_settings LIKE 'policy_approver_group_id'")
         if not cursor.fetchone():
             cursor.execute("ALTER TABLE approval_settings "
                            "ADD COLUMN policy_approver_group_id CHAR(36) NULL")
-        # Policy-content change requests (backlog 57f): the policies row
-        # always holds the APPROVED content (the compiler reads that row and
-        # the compiler is TCB, so the pending state must live off-row); the
-        # submitted payload waits here until a policy approver applies it
-        # through db.update_policy, which also writes the version history.
         cursor.execute(f"""
             CREATE TABLE IF NOT EXISTS policy_change_requests (
                 id CHAR(36) PRIMARY KEY,
@@ -136,10 +96,6 @@ def init_schema() -> None:
 
 
 def create_request(agent_key, org_id, requested_by, added, requested_tools) -> str:
-    """Open a pending agent-level request, superseding any earlier pending
-    request for the same agent: the latest ask is the only live one, or a
-    reviewer could approve a stale widening the requester already walked
-    back."""
     request_id = str(uuid.uuid4())
     conn = db.get_db_connection()
     cursor = conn.cursor()
@@ -161,9 +117,6 @@ def create_request(agent_key, org_id, requested_by, added, requested_tools) -> s
 
 
 def create_policy_request(policy_id, org_id, requested_by, added, target_tools) -> str:
-    """Open a pending policy-widening request (backlog 57d): the policy's
-    declared allowed_tools stays at its approved value until a reviewer
-    applies target_tools. Same supersede rule, keyed by policy."""
     request_id = str(uuid.uuid4())
     conn = db.get_db_connection()
     cursor = conn.cursor()
@@ -209,8 +162,6 @@ def get_request(request_id):
 
 
 def list_requests(org_id, status='pending'):
-    """Requests for the reviewer view, newest last so the oldest ask is
-    read first, with requester and agent display names resolved."""
     conn = db.get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
@@ -249,7 +200,6 @@ def resolve_request(request_id, status, reviewer_id, reviewer_email,
 
 
 def apply_tools(agent_key, tools) -> None:
-    """The approved widening, applied to the agents row directly."""
     conn = db.get_db_connection()
     cursor = conn.cursor()
     try:
@@ -262,11 +212,6 @@ def apply_tools(agent_key, tools) -> None:
 
 
 def apply_policy_tools(policy_id, target_tools) -> bool:
-    """The approved policy widening: set the declared allowed_tools on the
-    policy's will_rules. Returns False when the policy is gone or its
-    will_rules is no longer the structured dict shape the request assumed
-    (legacy list policies carry no declared ceiling), so the caller can
-    close the request instead of corrupting the shape."""
     conn = db.get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
@@ -294,15 +239,10 @@ def apply_policy_tools(policy_id, target_tools) -> bool:
         conn.close()
 
 
-# Which approval_settings column holds each domain's designation. Fixed map,
-# never user input: the column name is interpolated into SQL.
 _APPROVER_COLS = {'tools': 'approver_group_id', 'policy': 'policy_approver_group_id'}
 
 
 def get_approver_group(org_id, kind='tools'):
-    """The designated approver group's id for this domain, or None. A
-    designation pointing at a deleted or empty group counts as None: the
-    fallback must engage rather than deadlock approvals (backlog 57e)."""
     col = _APPROVER_COLS[kind]
     conn = db.get_db_connection()
     cursor = conn.cursor()
@@ -321,8 +261,6 @@ def get_approver_group(org_id, kind='tools'):
 
 
 def get_approver_setting(org_id, kind='tools'):
-    """The raw designation for the settings UI, without the empty-group
-    fallback that get_approver_group applies for enforcement."""
     col = _APPROVER_COLS[kind]
     conn = db.get_db_connection()
     cursor = conn.cursor()
@@ -353,9 +291,6 @@ def set_approver_group(org_id, group_id, actor, kind='tools') -> None:
 
 
 def is_reviewer(org_id, user_id, role, kind='tools', reviewer_roles=None) -> bool:
-    """May this person decide requests of this kind in this org? A
-    designated (and non-empty) approver group REPLACES the role fallback:
-    an explicit group designation replaces the configured reviewer set."""
     if not org_id or not user_id:
         return False
     group_id = get_approver_group(org_id, kind)
@@ -374,10 +309,6 @@ def is_reviewer(org_id, user_id, role, kind='tools', reviewer_roles=None) -> boo
 
 
 def other_reviewer_exists(org_id, exclude_user_id, kind='tools', reviewer_roles=None) -> bool:
-    """Is there an eligible reviewer besides this person, against the ACTIVE
-    set (the designated group when one exists, the role fallback otherwise)?
-    When not, the sole-approver exception applies and self-approval is
-    recorded as non-independent rather than being a deadlock."""
     conn = db.get_db_connection()
     cursor = conn.cursor()
     try:
@@ -400,14 +331,7 @@ def other_reviewer_exists(org_id, exclude_user_id, kind='tools', reviewer_roles=
         conn.close()
 
 
-# ---------------------------------------------------------------------------
-# Policy-content change requests (backlog 57f)
-# ---------------------------------------------------------------------------
-
 def create_policy_change(policy_id, org_id, requested_by, payload, changed) -> str:
-    """Hold a full policy update for the policy approvers. Supersedes any
-    earlier pending change for the same policy: the latest submission is
-    the only live one."""
     request_id = str(uuid.uuid4())
     conn = db.get_db_connection()
     cursor = conn.cursor()
@@ -522,11 +446,6 @@ def pending_summary(org_id):
 
 
 def pending_own_requests(user_id):
-    """The caller's own requests still awaiting review, across BOTH request
-    kinds, for their inbox: the submission should be as visible to the
-    requester as the outcome. Purely derived; each row
-    leaves on its own when a reviewer decides, at which point the outcome
-    row replaces it."""
     conn = db.get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
@@ -561,10 +480,6 @@ def pending_own_requests(user_id):
 
 
 def unacknowledged_outcomes(user_id):
-    """The caller's own decided requests they have not dismissed yet, for
-    the inbox (backlog 57c). Two exclusions: superseded (the requester
-    caused those themselves by filing a newer ask) and decisions the
-    requester made themselves."""
     conn = db.get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
@@ -613,9 +528,6 @@ def unacknowledged_outcomes(user_id):
 
 
 def acknowledge_outcomes(user_id) -> int:
-    """Dismiss all of the caller's decided-and-unseen outcomes, across both
-    request kinds. Scoped to requested_by, so nobody can clear anyone
-    else's inbox."""
     conn = db.get_db_connection()
     cursor = conn.cursor()
     try:

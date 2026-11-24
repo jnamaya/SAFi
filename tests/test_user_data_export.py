@@ -1,11 +1,3 @@
-"""
-Tests for the right-of-access export (Phase H — GDPR Art. 15 / HIPAA
-§164.524): self-scoped decrypted export via GET /api/me/export, strict user
-isolation, credential material never included, custody logging (org log for
-org members, global otherwise), and 401 for anonymous callers.
-
-Requires local MySQL. Run:  venv/bin/python tests/test_user_data_export.py
-"""
 import json
 import sys
 import uuid
@@ -44,7 +36,6 @@ class TestUserDataExport(unittest.TestCase):
               (cls.uid, f"{cls.uid}@example.test", cls.org_id))
         _exec("INSERT INTO users (id, email, name) VALUES (%s, %s, 'RAE Other')",
               (cls.other, f"{cls.other}@example.test"))
-        # One conversation each; titles/content encrypted like production writes
         cls.cid = str(uuid.uuid4())
         cls.other_cid = str(uuid.uuid4())
         _exec("INSERT INTO conversations (id, user_id, title) VALUES (%s, %s, %s)",

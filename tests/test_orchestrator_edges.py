@@ -1,14 +1,3 @@
-"""
-Unit tests for the second-pass edge fixes:
-
-- #1: process_prompt's Phase-0 blacklist read tolerates a legacy list-shaped
-  will_rules instead of crashing on list.get().
-- #2: a redirect that fails the structural gate on a missing disclaimer is
-  repaired deterministically (the mandatory substring is appended) since the
-  redirect path is terminal and cannot recurse.
-
-Run:  venv/bin/python tests/test_orchestrator_edges.py
-"""
 import sys
 import logging
 import unittest
@@ -32,8 +21,6 @@ def make_safi(profile):
 
 
 class TestListWillRulesGuard(unittest.TestCase):
-    """#1 — the read pattern (self.profile or {}).get('will_rules', {}) must not
-    crash when will_rules is a list. Mirrors orchestrator.py Phase 0."""
 
     def _blacklist(self, profile):
         wr = (profile or {}).get("will_rules", {})
@@ -51,7 +38,6 @@ class TestListWillRulesGuard(unittest.TestCase):
 
 
 class TestRedirectStructureRepair(unittest.TestCase):
-    """#2 — _enforce_redirect_structure repairs a missing disclaimer."""
 
     def _profile(self, require=True, substring=DISCLAIMER):
         return {"will_rules": {"structural_requirements": {
@@ -76,13 +62,11 @@ class TestRedirectStructureRepair(unittest.TestCase):
         self.assertEqual(safi._enforce_redirect_structure(text), text)
 
     def test_rule_on_but_blank_substring_ships_as_is(self):
-        # will.py skips the check when the substring is blank; nothing to append.
         safi = make_safi(self._profile(substring="   "))
         text = "A refusal."
         self.assertEqual(safi._enforce_redirect_structure(text), text)
 
     def test_list_will_rules_redirect_is_noop(self):
-        # Legacy list shape with no disclaimer style text — must not crash.
         safi = make_safi({"will_rules": [], "style": ""})
         text = "A refusal."
         self.assertEqual(safi._enforce_redirect_structure(text), text)

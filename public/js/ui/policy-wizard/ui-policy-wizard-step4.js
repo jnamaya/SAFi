@@ -61,7 +61,6 @@ export function renderValuesStep(container, policyData) {
     renderValuesList(policyData);
     loadCharterNote();
 
-    // Bind Auto-Gen Handler
     document.getElementById('btn-gen-values')?.addEventListener('click', async (e) => {
         const btn = e.currentTarget;
         const original = btn.innerHTML;
@@ -92,17 +91,12 @@ export function renderValuesStep(container, policyData) {
         btn.disabled = false;
     });
 
-    // Add Value Btn
     document.getElementById('btn-add-value').addEventListener('click', () => {
         policyData.values.push({ name: "New Value", description: "", weight: 0.2, hard_gate: false, rubric: { scoring_guide: [] } });
         renderValuesList(policyData);
     });
 }
 
-// If the org has a Charter, its core values take a fixed share of every score
-// (settings.governance_split, default 40%) and the standards on this policy
-// share the rest. Without this note, authors read "every response is scored
-// against these" and assume 100%.
 async function loadCharterNote() {
     try {
         const orgRes = await api.getMyOrganization();
@@ -118,7 +112,7 @@ async function loadCharterNote() {
             try { coreValues = JSON.parse(coreValues); } catch (_) { coreValues = []; }
         }
         const scoredCount = coreValues.filter(v => !v.hard_gate).length;
-        if (scoredCount === 0) return; // gate-only charter: no share of the score
+        if (scoredCount === 0) return;
 
         let settings = org.settings || {};
         if (typeof settings === 'string') {
@@ -128,18 +122,14 @@ async function loadCharterNote() {
         const charterPct = Math.round((isFinite(split) && split > 0 ? split : 0.40) * 100);
 
         const note = document.getElementById('pw-charter-note');
-        if (!note) return; // user navigated away
+        if (!note) return;
         note.innerHTML = `
             <strong class="block text-green-800 dark:text-green-300 mb-1">Your organization has a Charter</strong>
             Its ${scoredCount} core value${scoredCount === 1 ? '' : 's'} automatically take <strong>${charterPct}%</strong> of every score for agents under this policy. The standards you define here share the remaining <strong>${100 - charterPct}%</strong>.`;
         note.classList.remove('hidden');
-    } catch (_) { /* note is informational — never block the step on it */ }
+    } catch (_) {   }
 }
 
-// Weight is stored as a 0..1 float (legacy rows may hold a 0..100 percent).
-// A stored 0 MUST render as 0 — the old `(v.weight && ...) : (v.weight || 20)`
-// fallback displayed zero-weight standards as a healthy-looking 20%, hiding
-// values that in fact never affect scoring.
 function weightToPct(weight) {
     if (typeof weight !== 'number' || !isFinite(weight)) return 20;
     if (weight <= 1.0) return Math.round(weight * 100);
@@ -161,7 +151,6 @@ function renderValuesList(policyData) {
     }
 
     policyData.values.forEach((v, idx) => {
-        // Check for Rubric
         let hasRubric = false;
         if (v.rubric) {
             if (v.rubric.scoring_guide && Array.isArray(v.rubric.scoring_guide)) {
@@ -228,14 +217,11 @@ function renderValuesList(policyData) {
         `;
         list.appendChild(card);
 
-        // Bind Inputs
         card.querySelector(`#${nameId}`).addEventListener('change', (e) => policyData.values[idx].name = e.target.value);
         card.querySelector(`#${descId}`).addEventListener('change', (e) => policyData.values[idx].description = e.target.value);
 
-        // --- RUBRIC BUILDER LOGIC (FIXED 3-POINT) ---
         const rowsContainer = document.getElementById(`rubric-rows-${idx}`);
 
-        // Ensure rubric structure
         if (!policyData.values[idx].rubric) policyData.values[idx].rubric = { scoring_guide: [] };
         if (Array.isArray(policyData.values[idx].rubric)) {
             policyData.values[idx].rubric = { scoring_guide: policyData.values[idx].rubric };
@@ -246,17 +232,13 @@ function renderValuesList(policyData) {
             rowsContainer.innerHTML = '';
             const guide = policyData.values[idx].rubric.scoring_guide;
 
-            // Helper to get text for a specific score
             const getCriteria = (targetScore) => {
                 const item = guide.find(g => Math.abs(g.score - targetScore) < 0.1);
                 return item ? (item.criteria || item.descriptor || '') : '';
             };
 
-            // Helper to update the guide
             const updateCriteria = (targetScore, text) => {
-                // Remove existing
                 policyData.values[idx].rubric.scoring_guide = policyData.values[idx].rubric.scoring_guide.filter(g => Math.abs(g.score - targetScore) >= 0.1);
-                // Add new
                 if (text && text.trim()) {
                     policyData.values[idx].rubric.scoring_guide.push({ score: targetScore, criteria: text.trim() });
                 }
@@ -302,7 +284,6 @@ function renderValuesList(policyData) {
 
         renderFixedRows();
 
-        // Slider Logic — normalize back to 0..1 float so the engine sees consistent shape
         const slider = card.querySelector(`input[type="range"]`);
         const label = card.querySelector(`#pw-weight-lbl-${idx}`);
         if (slider) {
@@ -317,9 +298,6 @@ function renderValuesList(policyData) {
             });
         }
 
-        // Hard gate toggle — the engine ignores weight for non-negotiables
-        // (they block on violation instead of contributing to the score), so
-        // disable the Importance control rather than let it suggest otherwise.
         const hg = card.querySelector(`#pw-hardgate-${idx}`);
         const weightWrap = card.querySelector(`#pw-weight-wrap-${idx}`);
         if (hg) {
@@ -337,19 +315,12 @@ function renderValuesList(policyData) {
         }
     });
 
-    // Window global for remove (legacy pattern)
     window.removePolicyValue = (idx) => {
         policyData.values.splice(idx, 1);
         renderValuesList(policyData);
     };
 }
 
-// Mirrors the engine's compile-time contract (synderesis._validate_value_rubrics
-// and the save-time checks in policy_api_routes.validate_policy_data): a
-// rubric-less non-negotiable blocks every response; a rubric-less ordinary
-// standard is silently stripped; a zero-weight ordinary standard never counts.
-// Catch all three here, on the step where the fix is, instead of at save or —
-// worse — at a user's first chat.
 function hasUsableCriteria(v) {
     const rub = v.rubric;
     if (Array.isArray(rub)) return rub.length > 0;

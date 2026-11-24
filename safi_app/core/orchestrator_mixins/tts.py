@@ -1,9 +1,3 @@
-"""
-TTS delivery. Audio renders an answer that already passed Phases 0-5, so
-nothing here is gated: the text spoken was governed before it got here. The
-model prefix in TTS_MODEL picks the provider (edge-tts, OpenAI or Gemini), and
-the MP3 cache is TTL-swept on access because derived audio is data at rest.
-"""
 from __future__ import annotations
 from typing import Optional
 from pathlib import Path
@@ -14,10 +8,6 @@ import time
 
 class TtsMixin:
     def _sweep_tts_cache(self, cache_dir, ttl_days: int):
-        """Deletes cached MP3s older than the TTL (data-at-rest hygiene:
-        the audio is derived from AI responses). Runs opportunistically on
-        cache access — the directory stays small, so a listing is cheap.
-        Failures are logged and ignored; the sweep must never break TTS."""
         if ttl_days <= 0:
             return
         cutoff = time.time() - ttl_days * 86400
@@ -29,8 +19,6 @@ class TtsMixin:
             self.log.warning(f"TTS cache sweep failed: {e}")
 
     def generate_speech_audio(self, text: str) -> Optional[bytes]:
-        """MP3 bytes for `text`, or None. Sync clients, so a background thread
-        can call it."""
         tts_model = getattr(self.config, "TTS_MODEL", "edge-tts")
         cache_dir = getattr(self.config, "TTS_CACHE_DIR", "tts_cache")
         log = self.log
@@ -49,7 +37,6 @@ class TtsMixin:
         if provider == "gemini":
             tts_voice = getattr(self.config, "GEMINI_TTS_VOICE", "Puck")
 
-        # TTL-bounded; 0 disables disk caching entirely
         ttl_days = getattr(self.config, "TTS_CACHE_TTL_DAYS", 7)
         if Path(cache_dir).is_dir():
             self._sweep_tts_cache(cache_dir, ttl_days)

@@ -1,4 +1,3 @@
-"""Optional incident-management persistence, outside the governance TCB."""
 from __future__ import annotations
 
 import json

@@ -1,30 +1,3 @@
-"""
-The branding palette: green, black->white, and semantics — nothing else.
-
-WHY. Standardized 2026-08-13 ("green as the New Conversation button should be
-the main color... green, black, and white, and whatever shades come up").
-Before the sweep the UI carried 383 off-palette utilities — blue info boxes,
-purple wizard steps, a teal/pink/indigo rainbow in the help center, a purple
-avatar placeholder — each one a local decision that read as a different
-product. The palette is now:
-
-    green-*                the one brand accent
-    neutral-*/gray-*       the black->white axis (canvas #f9f9f9 / #000)
-    red-* / amber-* /      MEANING only: error/destructive, warning/caution,
-    yellow-* / green-*     approved. Never decoration.
-
-EXEMPT, deliberately — function, not chrome (see the styles.css palette block):
-    ui-agent-mark.js  — MARK_FILLS is a categorical palette for telling agents
-                        apart, contrast-verified, engineered NOT to collide
-                        with the outcome ring hues. One green would destroy
-                        both properties.
-    connector logos   — Google/Microsoft/GitHub SVG fills are their marks.
-
-This test is the enforcement half: a banned hue anywhere in the UI fails CI,
-so the palette cannot drift back one "quick blue info box" at a time.
-
-Run:  docker compose -f docker-compose.test.yml run --rm tests -k brand
-"""
 import re
 import sys
 import unittest
@@ -40,12 +13,10 @@ BANNED_HUES = ("blue", "indigo", "purple", "violet", "sky", "cyan", "teal",
                "pink", "fuchsia", "rose", "emerald", "orange")
 BANNED_RE = re.compile(r"\b(" + "|".join(BANNED_HUES) + r")-(\d{2,3})\b")
 
-# Off-palette hexes that were swept and must not return. The old purple
-# avatar placeholder is the canary: it was the most-copied single value.
 BANNED_HEXES = ("7e22ce", "2563eb", "3b82f6", "8b5cf6", "a855f7", "6366f1",
                 "0ea5e9", "06b6d4", "ec4899", "10b981", "34d399")
 
-EXEMPT_FILES = {"ui-agent-mark.js"}  # categorical monogram palette, see docstring
+EXEMPT_FILES = {"ui-agent-mark.js"}
 
 
 def ui_files():
@@ -85,8 +56,6 @@ class TheBrandTokensExist(unittest.TestCase):
             self.assertIn(f"{token}: {value}", CSS)
 
     def test_the_accent_derives_from_the_tokens(self):
-        """--accent hardcoded to a hex is how the palette forks: one edit to
-        the token must move everything that claims to be brand-colored."""
         self.assertIn("--accent: var(--brand-600)", CSS)
         self.assertIn("--accent: var(--brand-500)", CSS)
 
@@ -94,8 +63,6 @@ class TheBrandTokensExist(unittest.TestCase):
         self.assertRegex(CSS, r"--user-bg: #16a34a")
 
     def test_the_exemptions_are_documented_where_the_palette_is(self):
-        """An exemption that isn't written down reads as a violation to the
-        next person, who then 'fixes' the monogram palette."""
         block = CSS[:CSS.index(":root")]
         self.assertIn("MARK_FILLS", block)
         self.assertIn("third-party logos", block)
@@ -104,9 +71,6 @@ class TheBrandTokensExist(unittest.TestCase):
 class TheExemptionIsRealNotForgotten(unittest.TestCase):
 
     def test_the_monogram_palette_is_still_categorical(self):
-        """Three distinct hues, on purpose. If someone sweeps this file too,
-        agents become indistinguishable AND the fills start colliding with the
-        green/amber/red outcome rings — the exact blend its comment warns of."""
         mark = (PUBLIC / "js" / "ui" / "ui-agent-mark.js").read_text(encoding="utf-8")
         m = re.search(r"MARK_FILLS\s*=\s*\[([^\]]+)\]", mark)
         self.assertIsNotNone(m)
@@ -116,11 +80,6 @@ class TheExemptionIsRealNotForgotten(unittest.TestCase):
 
 
 class OnePrimaryButtonLanguage(unittest.TestCase):
-    """Two solid button colors = two meanings. Green is the primary action;
-    black is a surface color, not a button role. Seven Save buttons and Invite
-    wore an inverted bg-gray-900/dark:bg-white primary until 2026-08-13 —
-    which is exactly the 'why are some buttons black and others green?'
-    question this class prevents from coming back."""
 
     INVERTED = re.compile(
         r"bg-(?:gray|neutral)-9\d\d dark:bg-white text-white")
@@ -140,11 +99,6 @@ class OnePrimaryButtonLanguage(unittest.TestCase):
 
 
 class NoCollapsedColorSwaps(unittest.TestCase):
-    """The failure mode the 2026-08-13 sweep actually caused: code that SWAPPED
-    two colors (blue for Next, green for Create) collapsed into adding and
-    then REMOVING the same green classes — net effect, the primary button lost
-    its background and Next was white-on-white in the light theme. A palette
-    is enforced in class strings; this guards the class *mutations*."""
 
     PAIR = re.compile(
         r"classList\.(add|remove)\(([^)]*green[^)]*)\)\s*;?\s*\n\s*"
@@ -168,8 +122,6 @@ class NoCollapsedColorSwaps(unittest.TestCase):
 class NewConversationButtonIsTheReference(unittest.TestCase):
 
     def test_the_reference_button_uses_the_brand_green(self):
-        """The user named this button as the standard; if it drifts, the
-        'standard' is whatever it drifted to."""
         sidebar = (PUBLIC / "js" / "ui" / "ui-auth-sidebar.js").read_text(encoding="utf-8")
         btn = sidebar[sidebar.index('id="new-chat-button"'):]
         btn = btn[:btn.index("</button>")]

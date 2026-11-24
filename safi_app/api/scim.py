@@ -1,24 +1,3 @@
-"""
-SCIM 2.0 provisioning endpoints (backlog 68), served at /scim/v2.
-
-An identity provider (Okta, Entra, etc.) authenticates with a per-org bearer
-token and pushes Users and Groups. This layer translates those into SAFi
-membership by CALLING the existing member/invitation functions, so all the
-governance-bearing logic keeps living where it already does:
-
-- Provision an existing SAFi user  -> add to org / set role.
-- Provision a not-yet-logged-in user -> a long-lived invitation, which the
-  normal SSO login path already accepts by email (no login change needed).
-- Deprovision (active=false / DELETE) -> the same off-boarding the manual
-  member-remove performs: revoke MCP tool tokens, drop OAuth tokens, remove
-  membership, strip sharing, log evidence; plus revoke any pending invite.
-- Group membership -> role via the admin-configured group->role map.
-
-Fully userland: no faculty, database.py, or rbac.py edits.
-
-Deferred by design (documented in backlog 68): bulk operations, complex PATCH
-filter paths (e.g. members[value eq ...]), and ETag concurrency.
-"""
 from __future__ import annotations
 
 import logging
@@ -60,15 +39,6 @@ def _scim_json(body, status=200):
 
 
 def require_scim_token(f):
-    """Enforce HTTPS, then resolve the org from the Bearer token.
-
-    HTTPS is checked FIRST, before the token is even read: the bearer token
-    authenticates the IdP, and accepting it over plain HTTP would expose it to
-    anyone on the path. On a deployment that declares an https public URL
-    (WEB_BASE_URL), a request that did not arrive over TLS is refused. The
-    check honors the reverse proxy via ProxyFix (request.is_secure reflects
-    X-Forwarded-Proto). A localhost/plain-http deployment (dev, the test
-    client, plain-HTTP self-host) declares http and is left alone."""
     @wraps(f)
     def wrapper(*args, **kwargs):
         from ..config import Config
@@ -84,14 +54,11 @@ def require_scim_token(f):
     return wrapper
 
 
-
 def _actor(org_id):
     return f"scim:{org_id}"
 
 
 def _apply_membership(org_id, email, role):
-    """Bring one person to `role` in `org_id`. Existing SAFi user -> membership
-    row; otherwise a long-lived invitation the SSO login path will accept."""
     if role not in scim_store.VALID_ROLES:
         role = "member"
     user = db.get_user_by_email(email)
@@ -106,12 +73,10 @@ def _apply_membership(org_id, email, role):
                     administrator_roles=ROLE_CONFIG["organization_admin_roles"],
                 )
         except db.LastAuthorityRoleError:
-            # Never strip the final admin via a directory sync; leave as-is.
             current_app.logger.warning("SCIM role change skipped: would remove last admin (%s)", email)
         db.append_compliance_log(org_id, "scim_user_provisioned", _actor(org_id),
                                  {"email": email, "role": role, "linked": True})
     else:
-        # expires far out: a SCIM-provisioned invite persists until deprovisioned.
         db.create_org_invitation(
             org_id, email, role, invited_by=_actor(org_id), expires_days=3650,
             allowed_roles=ROLE_CONFIG["levels"].keys(),
@@ -121,8 +86,6 @@ def _apply_membership(org_id, email, role):
 
 
 def _deprovision(org_id, email):
-    """Off-board one person: the same sequence the manual member-remove runs,
-    plus revoking any pending invitation. Best-effort and idempotent."""
     user = db.get_user_by_email(email)
     if user and str(user.get("org_id")) == str(org_id):
         uid = user["id"]
@@ -146,7 +109,6 @@ def _deprovision(org_id, email):
             return
         db.append_compliance_log(org_id, "scim_user_deprovisioned", _actor(org_id),
                                  {"email": email, "tool_tokens_revoked": revoked})
-    # Revoke a still-pending invitation, whether or not a user row existed.
     for inv in db.list_org_invitations(org_id, pending_only=True):
         if (inv.get("email") or "").lower() == email.lower():
             db.revoke_org_invitation(org_id, inv["id"], _actor(org_id))
@@ -155,13 +117,10 @@ def _deprovision(org_id, email):
 
 
 def _reconcile_resource_role(org_id, res):
-    """Recompute a resource's effective role from its groups and apply it,
-    unless it is inactive (deprovisioned)."""
     if not res or not res.get("active"):
         return
     role = scim_store.effective_role(org_id, res["scim_id"], res.get("base_role", "member"))
     _apply_membership(org_id, res["email"], role)
-
 
 
 def _user_to_scim(res):
@@ -206,7 +165,6 @@ def _iso(dt):
         return None
 
 
-
 @scim_bp.route("/ServiceProviderConfig", methods=["GET"])
 @require_scim_token
 def service_provider_config():
@@ -247,7 +205,6 @@ def schemas():
                        "Resources": core, "startIndex": 1, "itemsPerPage": len(core)})
 
 
-
 def _extract_email(body):
     email = (body.get("userName") or "").strip().lower()
     if not email:
@@ -276,7 +233,6 @@ def list_users():
     email_filter = None
     flt = request.args.get("filter")
     if flt:
-        # Support the one filter IdPs actually send on Users: userName eq "x".
         import re
         m = re.search(r'userName\s+eq\s+"([^"]+)"', flt, re.IGNORECASE)
         if m:
@@ -324,7 +280,6 @@ def create_user():
 
     existing = scim_store.get_resource_by_email(org_id, email)
     if existing:
-        # SCIM convention: duplicate create is a 409.
         return _scim_error(409, "User already exists.", "uniqueness")
 
     active = body.get("active", True)
@@ -379,7 +334,6 @@ def patch_user(scim_id):
         elif path in ("displayname", "name.formatted"):
             new_name = val if isinstance(val, str) else new_name
         elif path == "" and isinstance(val, dict):
-            # Pathless replace: attributes live inside the value object.
             if "active" in val:
                 new_active = _as_bool(val["active"])
             if "displayName" in val:
@@ -411,7 +365,6 @@ def _as_bool(v):
     if isinstance(v, str):
         return v.strip().lower() in ("true", "1", "yes")
     return bool(v)
-
 
 
 @scim_bp.route("/Groups", methods=["GET"])
@@ -471,7 +424,6 @@ def patch_group(scim_id):
             if opname in ("add",):
                 members.update(ids); touched.update(ids)
             elif opname == "remove":
-                # No filter path support: remove the listed members, or clear all.
                 if ids:
                     members.difference_update(ids); touched.update(ids)
                 else:
@@ -503,8 +455,6 @@ def delete_group(scim_id):
 
 
 def _recompute_members(org_id, member_ids):
-    """After a group change, re-apply the effective role of each affected
-    resource (their group memberships may now map to a different role)."""
     for sid in set(member_ids or []):
         res = scim_store.get_resource(org_id, sid)
         if res:

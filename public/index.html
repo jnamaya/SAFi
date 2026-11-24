@@ -3,9 +3,7 @@
 
 <head>
   <meta charset="UTF-8" />
-  <!-- The description is the search snippet, so it says what the title cannot:
-       the differentiator, not the category. It used to duplicate the title
-       verbatim, which spent ~155 available characters repeating the name. -->
+  
   <meta name="description"
     content="Every AI response is checked against a declared policy before it reaches the user, and every decision is recorded in a tamper-evident audit trail." />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -14,51 +12,23 @@
   <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg" />
   <link rel="apple-touch-icon" href="/assets/icon-512.png?v=20260908.1" />
 
-  <!-- Installable web app. The manifest gives a dock icon, a standalone window
-       and a jump list; there is deliberately NO service worker, so nothing is
-       cached and the org's offline_enabled kill switch keeps meaning what it
-       says. Consequence: Safari "Add to Dock" and Android "Add to Home Screen"
-       work, Chrome's install button does not (it requires a fetch handler).
-       Relative href, like every other asset here, served same-origin. -->
+  
   <link rel="manifest" href="manifest.json">
-  <!-- Two values because the app itself is theme-aware (dark:bg-black); a
-       single light value leaves a white title bar above a black UI. -->
+  
   <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
   <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000">
-  <!-- iOS ignores the manifest's icons for Add to Home Screen, and composites
-       whatever it gets onto WHITE before applying its own rounding, so the
-       icon it is pointed at must be opaque. That is the same padded square
-       the manifest uses, which is why there is one icon file here and not
-       four: it is safe under a mask, opaque for iOS, and legible unmasked. -->
+  
   <link rel="apple-touch-icon" href="assets/icon-512.png?v=20260908.1">
-  <!-- Both: Chrome deprecated the apple- prefixed one and warns in console,
-       but iOS below 17.4 still reads only that spelling. -->
+  
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="SAFi">
-
-  <!-- All four are `defer`: none is needed to paint, and as plain synchronous
-       scripts they blocked the parser for ~53KB gzipped on every load. Deferred
-       classic scripts still execute in document order and still run before the
-       module script below, so marked/purify/hljs/QRCode are defined by the time
-       app.js evaluates. qrcode.js is MFA setup only and highlight.min.js only
-       fires on a response containing a code block; both are candidates for
-       loading on demand if the head ever needs trimming again. -->
-  <script defer src="js/lib/marked.min.js"></script>
-  <script defer src="js/lib/purify.min.js"></script>
-  <!-- MIT licensed, vendored verbatim from
-       github.com/kazuhikoarase/qrcode-generator (js/dist/qrcode.js). Renders
-       the MFA setup otpauth:// URI as a scannable QR code (backlog 51/MFA). -->
-  <script defer src="js/lib/qrcode.js"></script>
-  <link rel="stylesheet" href="css/highlight-theme.css">
-  <!-- Inter is self-hosted (see @font-face in css/styles.css) — no
-       fonts.googleapis.com callout; the app loads zero external resources. -->
+<script defer src="js/lib/marked.min.js"></script><script defer src="js/lib/purify.min.js"></script><script defer src="js/lib/qrcode.js"></script>  <link rel="stylesheet" href="css/highlight-theme.css">
+  
   <link rel="preload" href="assets/fonts/InterVariable.woff2" as="font" type="font/woff2" crossorigin>
-  <script defer src="js/lib/highlight.min.js"></script>
-  <!-- Bump ?v= after every Tailwind rebuild so browsers drop the cached copy -->
-  <link href="css/main.css?v=20261122.1" rel="stylesheet">
+<script defer src="js/lib/highlight.min.js"></script>  <link href="css/main.css?v=20261122.1" rel="stylesheet">
   <link rel="stylesheet" href="css/styles.css?v=20261122.2">
-  <script>
+<script>
     const theme = localStorage.theme;
     if (theme === 'dark' || (!theme && theme !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
       document.documentElement.classList.add('dark');
@@ -69,10 +39,7 @@
     if (localStorage.getItem('sidebarCollapsed') === '1') {
       document.documentElement.classList.add('sidebar-collapsed');
     }
-  </script>
-
-
-  <style>
+  </script><style>
     .no-scrollbar::-webkit-scrollbar {
       display: none;
     }
@@ -119,8 +86,7 @@
         border-radius: 0 !important;
       }
     }
-  </style>
-</head>
+  </style></head>
 
 <body class="bg-white dark:bg-black text-black dark:text-white transition-colors duration-300 overflow-hidden">
 
@@ -131,18 +97,14 @@
 
   <main id="app-container" class="w-full h-full overflow-hidden flex">
     <div id="sidebar-container">
-      <!-- Sidebar dynamically generated -->
+      
     </div>
 
-    <!-- This wrapper's left offset is CSS's, keyed on html.has-sidebar, which
-         updateUIForAuthState() sets once a user is logged in — logged out there is
-         no sidebar, so the login view centers on the full viewport. The width
-         itself is --sidebar-w in styles.css; do not reintroduce a md:ml-* utility
-         here, which is how it came to live in seven places at once. -->
+    
     <div id="main-layout-wrapper" class="flex flex-col h-full w-full overflow-hidden relative">
       <section class="w-full flex flex-col flex-1 min-h-0 px-0 overflow-hidden">
 
-        <!-- Login View -->
+        
         <div id="login-view" class="w-full h-full flex flex-col items-center overflow-y-auto p-6 pt-16">
           <div class="w-full max-w-4xl mx-auto flex flex-col items-center">
             <div class="flex items-center justify-center gap-2 mb-1 shrink-0">
@@ -173,7 +135,7 @@
               Sign in with Google
             </button>
 
-            <!-- Microsoft Login (Link) -->
+            
             <a href="/api/login/microsoft" id="login-microsoft-button"
               class="mt-4 flex items-center justify-center gap-3 bg-neutral-100 dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 font-semibold px-6 py-3 rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-800 transition w-full max-w-xs shrink-0 no-underline text-current">
               <svg class="w-5 h-5" viewBox="0 0 23 23" aria-hidden="true">
@@ -185,7 +147,7 @@
               Sign in with Microsoft
             </a>
 
-            <!-- Demo Login Button -->
+            
             <a href="/api/login/demo" id="login-demo-button"
               class="mt-4 flex items-center justify-center gap-3 bg-white dark:bg-black border border-neutral-300 dark:border-neutral-700 font-medium text-neutral-600 dark:text-neutral-400 px-6 py-3 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-900 transition w-full max-w-xs shrink-0 no-underline text-current">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -197,10 +159,10 @@
               Sign in as Guest
             </a>
 
-            <!-- Login error banner (e.g. org tenant policy denials) -->
+            
             <p id="login-error-banner" class="hidden mt-3 text-xs text-red-600 dark:text-red-400 text-center max-w-xs"></p>
 
-            <!-- Local Admin Login (shown only when SAFI_LOCAL_ADMIN_* vars are set) -->
+            
             <div id="local-login-section" class="hidden w-full max-w-xs mt-2">
               <div class="flex items-center gap-3 my-3">
                 <div class="flex-1 h-px bg-neutral-200 dark:bg-neutral-800"></div>
@@ -211,7 +173,7 @@
                   class="w-full px-4 py-2.5 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 dark:text-white" />
                 <input id="local-password" type="password" placeholder="Password" required autocomplete="current-password"
                   class="w-full px-4 py-2.5 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 dark:text-white" />
-                <!-- AD mode toggle (revealed by app-config when LDAP is enabled) -->
+                
                 <label id="ad-login-toggle" class="hidden flex items-center gap-2 text-xs text-neutral-600 dark:text-neutral-300 cursor-pointer select-none">
                   <input id="use-ad-login" type="checkbox"
                     class="w-4 h-4 accent-green-600" />
@@ -228,7 +190,7 @@
               </form>
             </div>
 
-            <!-- Accept Invitation (shown only when the URL carries an emailed claim token) -->
+            
             <div id="invite-claim-section" class="hidden w-full max-w-xs mt-2">
               <p class="text-sm text-neutral-600 dark:text-neutral-300 text-center mb-3">
                 Set your name and a password to accept your invitation.
@@ -253,12 +215,11 @@
           </div>
         </div>
 
-        <!-- Chat View -->
+        
         <div id="chat-view"
           class="w-full hidden flex flex-col flex-1 min-h-0 bg-white dark:bg-black relative md:z-auto z-45 overflow-hidden">
 
 
-          <!-- Mobile header (visible only on mobile) -->
           <header
             class="w-full border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-black z-20 shrink-0 md:hidden">
             <div class="w-full max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
@@ -277,25 +238,22 @@
                   Loading Agent...
                 </button>
               </div>
-              <div class="w-10"> <!-- Spacer for balance --> </div>
+              <div class="w-10">  </div>
             </div>
           </header>
 
           <div id="chat-window"
             class="flex-1 min-h-0 overflow-y-auto custom-scrollbar pt-2 md:pt-10 pb-4 flex flex-col justify-start gap-3 md:gap-5">
-            <!-- Chat messages dynamically generated -->
+            
           </div>
 
           <div
             class="shrink-0 bg-gradient-to-t from-white via-white/90 to-transparent dark:from-black dark:via-black/90 dark:to-transparent w-full flex justify-center z-20 composer-bg-wrapper pb-3 md:pb-4 pt-4 md:pt-8 px-2 md:px-0">
-            <!-- Desktop left padding lines the capsule up with the agent's
-                 response text, which is indented past the avatar (16px column
-                 padding + 42px avatar + 16px gap = 74px). Right edge and the
-                 mobile full-width layout stay as they were. -->
+            
             <footer id="composer-footer" class="w-full max-w-3xl px-4 md:pr-4 md:pl-[74px]">
               <div class="relative w-full">
 
-                <!-- Scroll to latest button (appears when scrolled away from the bottom) -->
+                
                 <button id="scroll-to-bottom-btn" type="button" aria-label="Scroll to latest messages"
                   class="s2b-hidden absolute -top-14 z-30 w-9 h-9 rounded-full bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 shadow-md flex items-center justify-center text-neutral-600 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-700">
                   <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
@@ -303,44 +261,23 @@
                   </svg>
                 </button>
 
-                <!-- Capsule Container -->
+                
                 <div id="composer-capsule"
                   class="bg-white dark:bg-neutral-800 rounded-[30px] px-2 py-2.5 transition-all duration-200 border border-gray-200 dark:border-transparent focus-within:bg-white dark:focus-within:bg-neutral-900 focus-within:shadow-lg focus-within:border-gray-300 dark:focus-within:border-neutral-700">
 
-                  <!-- File Chip Area (shown when a file is attached) -->
+                  
                   <div id="file-chip-area" class="hidden px-3 pt-1"></div>
 
-                  <!-- Hidden File Input -->
+                  
                   <input type="file" id="file-upload-input" class="hidden"
                     accept=".txt,.md,.pdf,.docx,.xlsx,.csv,.png,.jpg,.jpeg,.tiff,.tif,.webp,.bmp" multiple />
 
-                  <!-- One row: + | textarea | send. The toolbar used to be a second
-                       row beneath the textarea, which cost ~40px of height for two
-                       buttons.
-
-                       Height comes from the CAPSULE's py, never from the row: the
-                       row must stay exactly button-height or the centring below
-                       drifts. To make the composer taller or shorter, change the
-                       capsule padding and leave min-h-10/md:min-h-9 alone.
-
-                       items-end on the row, and the textarea wrapper carries a
-                       min-height equal to the button box and centres its own
-                       content. On one line the wrapper is exactly button-height so
-                       text and buttons read as centred together; once the text
-                       wraps the wrapper grows and end-alignment drops the buttons
-                       to the bottom.
-
-                       Deliberately NOT matched by padding arithmetic, which is
-                       what the previous attempt did: the textarea's height is set
-                       from two places that disagreed (min-height:24px in the markup,
-                       height='28px' in autoSize when empty), so a computed match
-                       held after typing and broke on first paint. A min-height plus
-                       items-center is correct whatever height the textarea reports. -->
+                  
                   <div class="flex items-end gap-1">
 
                     <div class="relative flex items-center gap-1.5" id="composer-plus-container">
 
-                      <!-- + Button -->
+                      
                       <button type="button" id="composer-plus-btn" aria-haspopup="menu" aria-expanded="false"
                         class="flex items-center justify-center w-10 h-10 md:w-9 md:h-9 text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white transition-colors rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800"
                         title="Actions">
@@ -349,28 +286,11 @@
                         </svg>
                       </button>
 
-                      <!-- Action menu: a short panel of categories, each opening a flyout.
-
-                           Listing every agent, model and connector inline made the panel taller
-                           than the models list alone justified. Categories now open a submenu on
-                           hover (desktop) or tap (everywhere), so the panel stays four rows tall
-                           and only the open list scrolls.
-
-                           NOTE the panel must NOT have overflow-y-auto on desktop: it would clip
-                           the absolutely-positioned flyouts it is meant to reveal. Below md the
-                           flyout has nowhere to go sideways, so it becomes an inline accordion
-                           and the panel scrolls again — the same JS drives both.
-
-                           Attach File stays a plain action: it opens the OS file picker and has
-                           no list to show.
-
-                           The list containers keep their original ids, so ui-auth-sidebar,
-                           ui-model-selector and ui-data-sources render into what they always
-                           did. -->
+                      
                       <div id="composer-plus-menu" role="menu" aria-label="Composer actions"
                         class="hidden absolute bottom-full left-0 mb-2 w-72 max-h-[60vh] overflow-y-auto md:max-h-none md:overflow-visible custom-scrollbar bg-white dark:bg-neutral-900 rounded-2xl shadow-xl border border-neutral-200 dark:border-neutral-700 z-50 p-1.5">
 
-                        <!-- Attach File -->
+                        
                         <button id="plus-attach-btn" type="button" role="menuitem"
                           class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors text-left">
                           <div class="p-1.5 bg-gray-100 dark:bg-neutral-700 rounded-lg shrink-0">
@@ -448,7 +368,7 @@
                       </div>
                     </div>
 
-                    <!-- Text Area -->
+                    
                     <div class="relative flex-1 min-w-0 flex items-center min-h-10 md:min-h-9">
                       <textarea id="message-input" rows="1" placeholder="Message your agent..."
                         class="w-full bg-transparent border-none focus:outline-none outline-none focus:ring-0 shadow-none text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 text-base resize-none max-h-32 py-0 custom-scrollbar input-scrollbar"
@@ -456,12 +376,7 @@
                     </div>
 
                     <div class="relative flex items-center" id="composer-actions-container">
-                      <!-- Mic (voice input). Occupies the send button's slot when
-                           the composer is empty and voice_input_enabled is on. Hold
-                           to talk, release to transcribe and send. Hidden until
-                           /api/app-config reports the feature on, and swapped out
-                           for the send button the moment the user types. Audio is
-                           transcribed to text that flows through the normal pipeline. -->
+                      
                       <button id="composer-mic-btn" type="button" aria-label="Hold to talk" title="Hold to talk"
                         class="hidden select-none touch-none">
                         <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
@@ -469,7 +384,7 @@
                           <path stroke-linecap="round" stroke-linejoin="round" d="M5 10.5a7 7 0 0014 0M12 17.5v3"/>
                         </svg>
                       </button>
-                      <!-- Send Button -->
+                      
                       <button id="send-button" type="submit" aria-label="Send message"
                         class="w-10 h-10 md:w-9 md:h-9 rounded-full flex items-center justify-center transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-neutral-100 dark:hover:bg-neutral-800"
                         disabled>
@@ -486,12 +401,7 @@
                   </div>
                 </div>
 
-                <!-- AI disclosure (EU AI Act Art. 50(1)) — platform-level, not operator-configurable.
-                     Kept inside .relative wrapper: #composer-footer is display:flex (styles.css),
-                     a direct child would sit beside the capsule, not below it.
-                     When the active agent is policy-governed, updateAiDisclosure() replaces this
-                     text with a "this policy" link that opens the policy details modal; the static
-                     sentence below is the fallback for standalone agents / pre-auth. -->
+                
                 <p id="ai-disclosure" class="text-xs text-center text-neutral-400 dark:text-neutral-500 pt-2 px-2">
                   You are in a conversation with an AI agent. Responses are AI-generated and governed by your
                   organization's policy.
@@ -501,15 +411,15 @@
           </div>
         </div>
 
-        <!-- Control Panel View -->
+        
         <div id="control-panel-view"
           class="w-full h-full max-w-none hidden flex bg-gray-50 dark:bg-black relative z-50 overflow-hidden">
 
-          <!-- SIDEBAR (Desktop) -->
+          
           <aside
             class="hidden md:flex flex-col bg-white dark:bg-black border-r border-gray-200 dark:border-gray-800 h-full flex-shrink-0">
 
-            <!-- Header -->
+            
             <div class="h-16 flex items-center px-6 border-b border-gray-100 dark:border-gray-800">
               <div class="flex items-center gap-2">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="29 29 42 42" class="w-7 h-7 text-neutral-900 dark:text-white">
@@ -524,7 +434,7 @@
               </div>
             </div>
 
-            <!-- Navigation -->
+            
             <nav class="flex-1 overflow-y-auto custom-scrollbar py-4" id="sidebar-nav">
 
               <div class="px-6 mb-4">
@@ -538,7 +448,7 @@
                 </button>
               </div>
 
-              <!-- Group: Workspace -->
+              
               <div class="mb-6">
                 <h3 class="px-6 mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Workspace</h3>
                 <ul class="space-y-0.5">
@@ -556,9 +466,7 @@
                 </ul>
               </div>
 
-              <!-- Group: Organization — everything role-gated to
-                   admin/editor/auditor. The div's id is nav-group-management;
-                   app.js and tests target it. -->
+              
               <div class="mb-6" id="nav-group-management">
                 <h3 class="px-6 mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Organization</h3>
                     <ul class="space-y-0.5">
@@ -574,10 +482,7 @@
                         </button>
                       </li>
                       <li>
-                        <!-- Identity & Access (backlog 68 follow-up): members,
-                             roles, groups, approvers, domain verification, and
-                             SCIM. Split out of the org Settings tab. Revealed
-                             by role in app.js, same audience as Settings. -->
+                        
                         <button data-tab="identity" id="nav-identity"
                           class="sidebar-item hidden w-full flex items-center gap-3 px-6 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:text-gray-900 dark:hover:text-white transition-colors">
                           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -589,11 +494,7 @@
                         </button>
                       </li>
                       <li>
-                        <!-- Knowledge bases. Hidden by default and revealed by
-                             role in app.js (admin/editor/auditor); members
-                             never see it, which is why it lives in this group.
-                             Defaulting to hidden means a failed check leaves
-                             the tab absent rather than flashing an empty one. -->
+                        
                         <button data-tab="knowledge" id="nav-knowledge"
                           class="sidebar-item hidden w-full flex items-center gap-3 px-6 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:text-gray-900 dark:hover:text-white transition-colors">
                           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -639,9 +540,7 @@
                         </button>
                       </li>
                       <li>
-                        <!-- Models & Usage. Admin-only (the endpoint behind it is
-                             require_role('admin')); hidden here and revealed by
-                             role in app.js, same contract as Tools Catalog. -->
+                        
                         <button data-tab="usage" id="nav-usage"
                           class="sidebar-item hidden w-full flex items-center gap-3 px-6 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:text-gray-900 dark:hover:text-white transition-colors">
                           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -666,14 +565,12 @@
                     </ul>
                   </div>
 
-                  <!-- Group: Account -->
+                  
                   <div class="mb-6">
                     <h3 class="px-6 mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Account</h3>
                     <ul class="space-y-0.5">
                       <li>
-                        <!-- Inbox (backlog 57): everything waiting on this user.
-                             The pill is a to-do count kept fresh by ui-attention.js;
-                             the tab lists categories and deep-links each one. -->
+                        
                         <button data-tab="inbox" id="nav-inbox"
                           class="sidebar-item w-full flex items-center gap-3 px-6 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-neutral-800 hover:text-gray-900 dark:hover:text-white transition-colors">
                           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -744,10 +641,9 @@
           </aside>
 
 
-          <!-- MAIN CONTENT AREA -->
           <main class="flex-1 flex flex-col h-full overflow-hidden bg-white dark:bg-black relative">
 
-            <!-- Top Mobile Header -->
+            
             <header
               class="md:hidden flex items-center justify-between px-4 h-16 bg-white dark:bg-black border-b border-gray-200 dark:border-gray-800 shrink-0">
               <span class="font-bold text-lg">Control Panel</span>
@@ -757,7 +653,7 @@
                   </path>
                 </svg>
               </button>
-              <!-- Small back button for mobile -->
+              
               <button id="mobile-back-to-chat" class="p-2 text-gray-500" aria-label="Exit Control Panel">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
@@ -765,34 +661,34 @@
               </button>
             </header>
 
-            <!-- Content Scroll Area -->
+            
             <div class="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-8 relative">
               <div class="max-w-5xl w-full h-full flex flex-col">
 
-                <!-- DYNAMIC CONTENT: Agents Tab (Active Default) -->
+                
                 <div id="tab-agents" class="tab-content">
                   <h1 class="text-2xl font-bold mb-4">Agents</h1>
-                  <!-- Content injected by JS -->
+                  
                 </div>
 
-                <!-- DYNAMIC CONTENT: Knowledge Tab -->
+                
                 <div id="tab-tools" class="tab-content hidden"></div>
 
                 <div id="tab-knowledge" class="tab-content hidden">
-                  <!-- Content injected by renderSettingsKnowledgeTab() -->
+                  
                 </div>
 
-                <!-- DYNAMIC CONTENT: Governance Tab -->
+                
                 <div id="tab-governance" class="tab-content hidden">
                   <h1 class="text-2xl font-bold mb-4">Governance & Safety</h1>
-                  <!-- Content injected by JS -->
+                  
                 </div>
 
                 <div id="tab-organization" class="tab-content hidden">
                   <h1 class="text-2xl font-bold mb-4">Settings</h1>
                 </div>
                 <div id="tab-identity" class="tab-content hidden">
-                  <!-- Content injected by renderSettingsIdentityTab() -->
+                  
                 </div>
                 <div id="tab-compliance" class="tab-content hidden">
                   <h1 class="text-2xl font-bold mb-4">Compliance</h1>
@@ -806,13 +702,13 @@
                   <div id="review-content"></div>
                 </div>
                 <div id="tab-dashboard" class="tab-content hidden">
-                  <!-- Content injected by JS -->
+                  
                 </div>
                 <div id="tab-usage" class="tab-content hidden">
-                  <!-- Content injected by renderSettingsUsageTab() -->
+                  
                 </div>
                 <div id="tab-inbox" class="tab-content hidden">
-                  <!-- Content injected by renderSettingsInboxTab() -->
+                  
                 </div>
                 <div id="tab-profile" class="tab-content hidden">
                   <h1 class="text-2xl font-bold mb-4">My Profile</h1>
@@ -823,17 +719,17 @@
                   <h1 class="text-2xl font-bold mb-4">Application Settings</h1>
                 </div>
                 <div id="tab-help" class="tab-content hidden">
-                  <!-- Content injected by renderSettingsHelpTab() -->
+                  
                 </div>
 
-                <!-- INLINE WIZARD CONTAINER -->
+                
                 <div id="agent-wizard-view" class="absolute inset-0 z-50 bg-white dark:bg-black hidden flex-col">
-                  <!-- Wizard injected here -->
+                  
                 </div>
 
-                <!-- INLINE POLICY WIZARD CONTAINER -->
+                
                 <div id="policy-wizard-view" class="absolute inset-0 z-50 bg-white dark:bg-black hidden flex-col">
-                  <!-- Policy Wizard injected here -->
+                  
                 </div>
 
               </div>
@@ -841,7 +737,7 @@
           </main>
         </div>
 
-        <!-- Mobile Drawer (Backdrop + Sidebar clone) -->
+        
         <div id="mobile-menu-backdrop" class="fixed inset-0 bg-black/50 z-[60] hidden transition-opacity"></div>
         <div id="mobile-menu"
           class="fixed inset-y-0 left-0 w-full bg-white dark:bg-neutral-900 z-[70] transform -translate-x-full transition-transform duration-300 ease-in-out md:hidden flex flex-col">
@@ -852,20 +748,17 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
               </svg></button>
           </div>
-          <!-- flex-1 + overflow-y-auto so a tall nav scrolls instead of being
-               clipped. Populated at runtime by app.js (clones the desktop
-               control-panel nav, RBAC-filtered). -->
+          
           <div class="flex-1 overflow-y-auto custom-scrollbar p-4" id="mobile-nav-links"></div>
         </div>
 
 
-
   </main>
 
-  <!-- Audio Player (round floating) -->
+  
   <div id="audio-player" class="fixed top-4 left-1/2 -translate-x-1/2 sm:top-auto sm:left-auto sm:translate-x-0 sm:bottom-6 sm:right-6 z-50 scale-75 opacity-0 pointer-events-none transition-all duration-300 ease-out">
 
-    <!-- Loading state -->
+    
     <div id="audio-player-loading" class="relative w-40 h-40">
       <div class="absolute inset-0 rounded-full bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 shadow-2xl flex flex-col items-center justify-center gap-2">
         <div class="w-7 h-7 border-[3px] border-neutral-200 dark:border-neutral-700 border-t-green-500 rounded-full animate-spin"></div>
@@ -876,15 +769,15 @@
       </button>
     </div>
 
-    <!-- Playback state -->
+    
     <div id="audio-player-controls" class="hidden relative w-40 h-40">
-      <!-- Progress ring -->
+      
       <svg class="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 160 160">
         <circle cx="80" cy="80" r="70" fill="none" stroke-width="5" class="stroke-neutral-200 dark:stroke-neutral-700"/>
         <circle id="audio-player-ring" cx="80" cy="80" r="70" fill="none" stroke-width="5" stroke-linecap="round"
                 class="stroke-green-500" style="stroke-dasharray:439.8;stroke-dashoffset:439.8"/>
       </svg>
-      <!-- Inner disc -->
+      
       <div class="absolute rounded-full bg-white dark:bg-neutral-900 shadow-inner border border-neutral-100 dark:border-neutral-800 flex flex-col items-center justify-center" style="inset:14px">
         <button id="audio-player-playpause" class="flex items-center justify-center w-12 h-12 text-green-500 hover:text-green-600 transition-colors">
           <svg id="audio-pp-play-icon"  class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
@@ -896,7 +789,7 @@
           <span id="audio-player-duration">--:--</span>
         </div>
       </div>
-      <!-- Close -->
+      
       <button id="audio-player-close" class="absolute -top-1 -right-1 w-6 h-6 bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-600 rounded-full flex items-center justify-center text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-100 shadow transition-colors">
         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
       </button>
@@ -1080,11 +973,7 @@
       </button>
     </div>
   </div>
-
-  <script type="module" src="js/core/app.js?v=20260928.4"></script>
-
-  <!-- Login page feature flags + local account form handler -->
-  <script>
+<script type="module" src="js/core/app.js?v=20260928.4"></script><script>
     // PWA client (Capacitor retired 2026-08-19): same-origin, no native host.
     const _isNative = false;
     const _HOST = '';
@@ -1328,7 +1217,6 @@
         }
       };
     }
-  </script>
-</body>
+  </script></body>
 
 </html>

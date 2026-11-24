@@ -1,4 +1,3 @@
-"""Main agentic turn loop: tool proposals, resume budget, step ceiling."""
 from __future__ import annotations
 
 import json
@@ -25,7 +24,6 @@ _last_turn_result: Optional[Dict[str, Any]] = None
 
 
 def get_last_turn_result() -> Optional[Dict[str, Any]]:
-    """Return the last completed turn payload (for audit display)."""
     return _last_turn_result
 
 
@@ -42,7 +40,6 @@ def _handle_tool_proposal(
     tool_results: list,
     subagents_run_count: int,
 ) -> int:
-    """Execute one Will-approved tool proposal and record its result."""
     tool_name = proposal.get("tool_name") or proposal.get("tool") or ""
     args = proposal.get("parameters") or proposal.get("params") or proposal.get("arguments") or {}
     will_decision = proposal.get("willDecision") or proposal.get("decision") or "approve"
@@ -58,7 +55,6 @@ def _handle_tool_proposal(
         })
         return subagents_run_count
 
-    # Circuit breaker: prevent duplicate tool execution in the same turn
     def _args_equal(a: Any, b: Any) -> bool:
         if a == b:
             return True
@@ -185,7 +181,6 @@ def run_agent_turn(
     echo_prompt: bool = True,
     reasoning_effort: Optional[str] = None,
 ):
-    """Run an agentic loop until SAFi produces a final governed response."""
     global _last_turn_result
     tool_results = []
     subagents_run_count = 0
@@ -203,7 +198,6 @@ def run_agent_turn(
                 ui.console.print("\n[yellow]Turn cancelled by user.[/yellow]")
                 break
             turn_msg_id = str(uuid.uuid4())
-            # If the requested model is a standby local model, notify about the VRAM swap
             is_standby_local = False
             if model:
                 try:
@@ -396,7 +390,6 @@ def run_agent_turn(
                 last_tname = last_tr.get("tool_name") or ""
                 last_tpath = str((last_tr.get("arguments") or {}).get("path") or "")
                 last_tres = str(last_tr.get("result") or "")
-                # Only replenish resume budget if actual deliverable code was written, not on read/bash/scratchpad
                 if (
                     not last_tres.startswith("Error:")
                     and last_tname in ("edit", "write")

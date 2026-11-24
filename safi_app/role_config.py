@@ -1,4 +1,3 @@
-"""Default role names and assignments, separate from generic RBAC mechanics."""
 ROLE_CONFIG_VERSION = "default-role-config-1"
 
 ROLE_CONFIG = {

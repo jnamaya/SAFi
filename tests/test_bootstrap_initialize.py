@@ -1,4 +1,3 @@
-"""Regression test for bootstrap.initialize() on a fresh database."""
 from unittest.mock import MagicMock, patch
 
 from safi_app import bootstrap
@@ -17,6 +16,5 @@ def test_initialize_runs_demo_policies_and_local_admin_without_name_error():
          patch.object(bootstrap.Config, "LOCAL_ADMIN_PASSWORD", "secret"):
         bootstrap.initialize()
 
-    # Verify local_admin insert ran (was skipped before when SAFI_POLICY_ID raised NameError)
     sql_calls = [str(call.args[0]) for call in cursor.execute.call_args_list if call.args]
     assert any("INSERT INTO users" in s and "'local_admin'" in s for s in sql_calls)
