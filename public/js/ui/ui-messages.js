@@ -1231,7 +1231,7 @@ export function displayEmptyState(activeProfile, promptClickHandler, firstName =
             <button type="button" class="cli-copy-btn" data-copy="${serverOrigin}">${copyIconSvg}<span>Copy</span></button>
           </div>
           <p class="cli-step-hint">
-            Enter the URL above as the server URL, then authenticate with a local account, type <code class="cli-inline-code">sso</code> for Google/Microsoft browser login, or press Enter to use a Policy API key.
+            Enter the URL above as the server URL, then sign in with a local account, type <code class="cli-inline-code">sso</code>, or press Enter for a Policy API key. Review the full audit trail anytime in <strong>Control Panel &rarr; Audit Hub</strong>.
           </p>
         </div>
 
