@@ -83,12 +83,49 @@ def _run_with_terminal_input(fn):
             _INTERACTIVE_DONE.set()
 
 
+_UNICODE_SPACE_TRANS = str.maketrans({
+    "\u00a0": " ",   # non-breaking space
+    "\u202f": " ",   # narrow no-break space (commonly emitted by LLMs)
+    "\u2007": " ",   # figure space
+    "\u2008": " ",   # punctuation space
+    "\u2009": " ",   # thin space
+    "\u200a": " ",   # hair space
+    "\u2010": "-",   # hyphen
+    "\u2011": "-",   # non-breaking hyphen
+    "\u2012": "-",   # figure dash
+    "\u2013": "-",   # en dash
+    "\u2014": " - ", # em dash
+})
+
+
+def _sanitize_terminal_text(text: str) -> str:
+    """Normalize exotic Unicode spaces/dashes that render as '?' in legacy PowerShell."""
+    if not text:
+        return text
+    return text.translate(_UNICODE_SPACE_TRANS)
+
+
 class MarginedConsole(Console):
     """Console wrapper that applies left and right margins so output doesn't touch the terminal edges."""
 
     def print(self, *objects, **kwargs):
         pad_margin = kwargs.pop("pad_margin", True)
         interactive = getattr(self, "is_terminal", False)
+
+        # Normalize exotic spaces/dashes and brighten [dim] on dark terminals (especially
+        # default blue Windows PowerShell where SGR dim text is nearly invisible).
+        norm_objects = []
+        is_light = globals().get("IS_LIGHT_THEME", False)
+        for obj in objects:
+            if isinstance(obj, str):
+                s = _sanitize_terminal_text(obj)
+                if not is_light and "[dim]" in s:
+                    s = s.replace("[dim]", "[#cbd5e1]").replace("[/dim]", "[/#cbd5e1]")
+                norm_objects.append(s)
+            else:
+                norm_objects.append(obj)
+        objects = tuple(norm_objects)
+
         if not interactive or CLI_MARGIN <= 0 or not pad_margin or not objects or kwargs.get("end") == "":
             return super().print(*objects, **kwargs)
 
@@ -268,15 +305,15 @@ else:
         "COLOR_PASS": "#22c55e",
         "COLOR_WARN": "#eab308",
         "COLOR_FAIL": "#ef4444",
-        "COLOR_PENDING": "#a3a3a3",
-        "COLOR_MUTED": "#737373",
-        "COLOR_BORDER": "#27272a",
+        "COLOR_PENDING": "#e2e8f0",
+        "COLOR_MUTED": "#cbd5e1",
+        "COLOR_BORDER": "#64748b",
         "COLOR_USER_ACCENT": "#38bdf8",
         "COLOR_USER_BORDER": "#2563eb",
         "COLOR_USER_BADGE_BG": "#1e3a5f",
-        "COLOR_PROMPT_DIVIDER": "#334155",
+        "COLOR_PROMPT_DIVIDER": "#64748b",
         "COLOR_PROMPT_BRAND": "#4ade80",
-        "COLOR_PROMPT_AGENT": "#94a3b8",
+        "COLOR_PROMPT_AGENT": "#e2e8f0",
         "COLOR_PROMPT_CHEVRON": "#38bdf8",
         "COLOR_PROMPT_TEXT": "#f8fafc",
     }
@@ -1633,7 +1670,7 @@ def print_final_output(text: str, res: Dict[str, Any]):
         title_align = "center"
 
     response_panel = Panel(
-        Markdown(text),
+        Markdown(_sanitize_terminal_text(text)),
         title=top_title,
         title_align=title_align,
         border_style=COLOR_BRAND_600,
