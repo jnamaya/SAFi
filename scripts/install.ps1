@@ -75,12 +75,12 @@ try {
 
 # 4. Pre-install all Linux operational dependencies using WSL root bridge (no sudo password needed)
 # Note: Ubuntu WSL ships /etc/apt/apt.conf.d/20snapd.conf whose JSON hook (advise-snap) aborts
-# apt-get when snapd is not installed. Passing -o Dir::Etc::Parts=/tmp/safi-empty-apt bypasses
-# broken apt.conf.d hooks cleanly without modifying system files.
+# apt-get when snapd is not installed. Setting APT_CONFIG before apt-get parses /etc/apt/apt.conf.d/
+# cleanly bypasses broken hooks without modifying system files.
 Write-Host "Ensuring core operational utilities (ssh, sshpass, nmap, jq, curl, rsync, python3) in WSL..." -ForegroundColor Cyan
 $prevEap = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
-wsl.exe -u root -e sh -c 'mkdir -p /tmp/safi-empty-apt && apt-get -o Dir::Etc::Parts=/tmp/safi-empty-apt update -qq && DEBIAN_FRONTEND=noninteractive apt-get -o Dir::Etc::Parts=/tmp/safi-empty-apt install -y -qq python3 python3-pip python3-venv openssh-client sshpass nmap jq curl iputils-ping dnsutils rsync git; rc=$?; rmdir /tmp/safi-empty-apt 2>/dev/null || true; exit $rc'
+wsl.exe -u root -e sh -c 'mkdir -p /tmp/safi-empty-apt && printf "Dir::Etc::Parts \"/tmp/safi-empty-apt\";\n" > /tmp/safi-apt.conf && APT_CONFIG=/tmp/safi-apt.conf apt-get update -qq && APT_CONFIG=/tmp/safi-apt.conf DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3 python3-pip python3-venv openssh-client sshpass nmap jq curl iputils-ping dnsutils rsync git; rc=$?; rm -rf /tmp/safi-apt.conf /tmp/safi-empty-apt 2>/dev/null || true; exit $rc'
 $aptExit = $LASTEXITCODE
 $ErrorActionPreference = $prevEap
 if ($aptExit -ne 0) {
