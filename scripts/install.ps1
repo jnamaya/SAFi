@@ -82,21 +82,32 @@ $aptScript = @'
 set -u
 STASH_DIR=$(mktemp -d /tmp/safi-apt-stash.XXXXXX)
 restore_hooks() {
-    for f in "$STASH_DIR"/*; do
-        [ -e "$f" ] && mv "$f" "/etc/apt/apt.conf.d/$(basename "$f")" 2>/dev/null || true
+    for d in etc usr; do
+        if [ -d "$STASH_DIR/$d" ]; then
+            dest="/etc/apt/apt.conf.d"
+            [ "$d" = "usr" ] && dest="/usr/share/apt/apt.conf.d"
+            for f in "$STASH_DIR/$d"/*; do
+                [ -e "$f" ] && mv "$f" "$dest/$(basename "$f")" 2>/dev/null || true
+            done
+        fi
     done
-    rmdir "$STASH_DIR" 2>/dev/null || true
+    rm -rf "$STASH_DIR" 2>/dev/null || true
 }
 trap restore_hooks EXIT
 
-if [ -d /etc/apt/apt.conf.d ]; then
-    for f in /etc/apt/apt.conf.d/*; do
-        [ -f "$f" ] || continue
-        if grep -q "advise-snap" "$f" 2>/dev/null; then
-            mv "$f" "$STASH_DIR/" 2>/dev/null || true
-        fi
-    done
-fi
+for pair in "etc:/etc/apt/apt.conf.d" "usr:/usr/share/apt/apt.conf.d"; do
+    key="${pair%%:*}"
+    dir="${pair#*:}"
+    if [ -d "$dir" ]; then
+        mkdir -p "$STASH_DIR/$key"
+        for f in "$dir"/*; do
+            [ -f "$f" ] || continue
+            if grep -q "advise-snap" "$f" 2>/dev/null; then
+                mv "$f" "$STASH_DIR/$key/" 2>/dev/null || true
+            fi
+        done
+    fi
+done
 
 apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3 python3-pip python3-venv openssh-client sshpass nmap jq curl iputils-ping dnsutils rsync git
