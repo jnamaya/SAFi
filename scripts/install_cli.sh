@@ -41,10 +41,26 @@ else
     echo "Downloading safi_cli package from repository (${SAFI_BRANCH} branch)..."
     rm -rf "${INSTALL_DIR}/safi_cli"
     TMP_DIR=$(mktemp -d)
-    git clone --depth 1 --branch "${SAFI_BRANCH}" https://github.com/jnamaya/SAFi.git "${TMP_DIR}/safi-repo"
-    cp -r "${TMP_DIR}/safi-repo/safi_cli" "${INSTALL_DIR}/"
-    if [ -f "${TMP_DIR}/safi-repo/scripts/setup_ssh_key.sh" ]; then
-        cp "${TMP_DIR}/safi-repo/scripts/setup_ssh_key.sh" "${INSTALL_DIR}/setup_ssh_key.sh"
+    if command -v git &>/dev/null; then
+        git clone --depth 1 --branch "${SAFI_BRANCH}" https://github.com/jnamaya/SAFi.git "${TMP_DIR}/safi-repo"
+        SRC_REPO="${TMP_DIR}/safi-repo"
+    else
+        echo "git not found — downloading archive with Python..."
+        "${PYTHON_BIN}" - "${SAFI_BRANCH}" "${TMP_DIR}" << 'PYEOF'
+import io, os, sys, tarfile, urllib.request
+branch, tmp_dir = sys.argv[1], sys.argv[2]
+url = f"https://github.com/jnamaya/SAFi/archive/refs/heads/{branch}.tar.gz"
+req = urllib.request.Request(url, headers={"User-Agent": "safi-cli-installer"})
+with urllib.request.urlopen(req, timeout=60) as resp:
+    data = resp.read()
+with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tf:
+    tf.extractall(tmp_dir)
+PYEOF
+        SRC_REPO=$(find "${TMP_DIR}" -maxdepth 1 -mindepth 1 -type d | head -n 1)
+    fi
+    cp -r "${SRC_REPO}/safi_cli" "${INSTALL_DIR}/"
+    if [ -f "${SRC_REPO}/scripts/setup_ssh_key.sh" ]; then
+        cp "${SRC_REPO}/scripts/setup_ssh_key.sh" "${INSTALL_DIR}/setup_ssh_key.sh"
         chmod +x "${INSTALL_DIR}/setup_ssh_key.sh"
     fi
     rm -rf "${TMP_DIR}"
@@ -146,8 +162,22 @@ if [ "${USE_VENV}" -eq 0 ]; then
         if "${PYTHON_BIN}" -m pip install --user requests rich prompt_toolkit 2>/dev/null || "${PYTHON_BIN}" -m pip install --user --break-system-packages requests rich prompt_toolkit 2>/dev/null; then
             TARGET_PYTHON="${PYTHON_BIN}"
         else
-            echo "Warning: could not auto-install requests and rich."
-            echo "Hint: Install python3-venv with 'sudo apt update && sudo apt install -y python3-venv python3-pip' and re-run."
+            echo "pip not available — bootstrapping pip with Python..."
+            GET_PIP_URL="https://bootstrap.pypa.io/get-pip.py"
+            if [ "${PYTHON_VERSION}" = "3.8" ]; then
+                GET_PIP_URL="https://bootstrap.pypa.io/pip/3.8/get-pip.py"
+            fi
+            TMP_PIP=$(mktemp)
+            if "${PYTHON_BIN}" -c "import urllib.request, sys; urllib.request.urlretrieve(sys.argv[1], sys.argv[2])" "${GET_PIP_URL}" "${TMP_PIP}" 2>/dev/null \
+                && "${PYTHON_BIN}" "${TMP_PIP}" --user --quiet 2>/dev/null \
+                && ("${PYTHON_BIN}" -m pip install --user --quiet requests rich prompt_toolkit 2>/dev/null || "${PYTHON_BIN}" -m pip install --user --break-system-packages --quiet requests rich prompt_toolkit 2>/dev/null); then
+                TARGET_PYTHON="${PYTHON_BIN}"
+                echo "✓ Installed Python dependencies via bootstrapped pip."
+            else
+                echo "Warning: could not auto-install requests and rich."
+                echo "Hint: Install python3-venv with 'sudo apt update && sudo apt install -y python3-venv python3-pip' and re-run."
+            fi
+            rm -f "${TMP_PIP}"
         fi
     fi
 fi
