@@ -130,8 +130,13 @@ class Retriever:
                 with open(metadata_path, "r", encoding="utf-8") as f:
                     metadata = json.load(f)
             else:
+                class _RestrictedUnpickler(pickle.Unpickler):
+                    def find_class(self, module, name):
+                        raise pickle.UnpicklingError(
+                            f"Disallowed global '{module}.{name}' in KB metadata pickle"
+                        )
                 with open(metadata_path, "rb") as f:
-                    metadata = pickle.load(f)
+                    metadata = _RestrictedUnpickler(f).load()
 
             if index.ntotal != len(metadata):
                 self.log.warning(
