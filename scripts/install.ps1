@@ -2,6 +2,7 @@
 # Installs and bridges safi-cli, saficli, sys-exec, and safi-setup-key into Windows
 
 $ErrorActionPreference = "Stop"
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 
 Write-Host "=== SAFi Governed Agent Interface - Windows CLI Installer ===" -ForegroundColor Cyan
 
@@ -161,7 +162,7 @@ if (-not (Test-Path $localBin)) {
 
 $tools = @("safi-cli", "saficli", "sys-exec", "safi-setup-key")
 foreach ($t in $tools) {
-    $cmdContent = "@echo off`r`nwsl.exe -e bash -lic `"exec $t \""`$@\""`" bash %*`r`nexit /b %ERRORLEVEL%`r`n"
+    $cmdContent = "@echo off`r`nchcp 65001 >nul 2>&1`r`nwsl.exe -e bash -lic `"LANG=C.UTF-8 LC_ALL=C.UTF-8 exec $t \""`$@\""`" bash %*`r`nexit /b %ERRORLEVEL%`r`n"
     $cmdPath = Join-Path $localBin "$t.cmd"
     [System.IO.File]::WriteAllText($cmdPath, $cmdContent, [System.Text.Encoding]::ASCII)
 }
@@ -170,7 +171,7 @@ foreach ($t in $tools) {
 $winAppsDir = Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps"
 if (Test-Path $winAppsDir) {
     foreach ($t in $tools) {
-        $cmdContent = "@echo off`r`nwsl.exe -e bash -lic `"exec $t \""`$@\""`" bash %*`r`nexit /b %ERRORLEVEL%`r`n"
+        $cmdContent = "@echo off`r`nchcp 65001 >nul 2>&1`r`nwsl.exe -e bash -lic `"LANG=C.UTF-8 LC_ALL=C.UTF-8 exec $t \""`$@\""`" bash %*`r`nexit /b %ERRORLEVEL%`r`n"
         $cmdPath = Join-Path $winAppsDir "$t.cmd"
         try {
             [System.IO.File]::WriteAllText($cmdPath, $cmdContent, [System.Text.Encoding]::ASCII)

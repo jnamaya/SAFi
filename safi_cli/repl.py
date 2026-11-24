@@ -1472,8 +1472,9 @@ def run_setup_wizard() -> tuple[str, str, Optional[str]]:
     existing_url = str(config.load_config().get("api_url") or "").strip() or prior_url or "https://localhost"
     ui.console.print("\n[bold white]1. SAFi Appliance Endpoint[/]")
     ui.console.print(
-        "[dim]Enter the base URL of your SAFi server or appliance.\n"
-        "Examples: [cyan]https://safi.selfalignmentframework.com[/], [cyan]https://192.168.1.200[/], [cyan]https://localhost[/][/dim]"
+        f"[{ui.COLOR_MUTED}]Enter the base URL of your SAFi server or appliance.[/]\n"
+        f"[{ui.COLOR_MUTED}]Examples:[/] [bold bright_cyan]https://safi.selfalignmentframework.com[/], "
+        f"[bold bright_cyan]https://192.168.1.200[/], [bold bright_cyan]https://localhost[/]"
     )
 
     while True:
