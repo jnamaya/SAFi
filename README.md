@@ -110,7 +110,7 @@ The **SAFi Appliance** ([runsafi.com](https://runsafi.com)) brings software engi
 
 - **15-Minute Plug-and-Play Setup:** Connect power and Ethernet, log into the web portal, and pair `safi-cli` ([Quick Start Guide](https://runsafi.com/start)).
 - **Zero Cloud Liability & True Air-Gap:** Your data, credentials, and IP never leave your physical network. Pull the network cable and all models, agents, and governance tools still run 100% locally.
-- **3 Pre-Loaded Local Reasoning Models:** Ships ready on day one with **Qwen 27B**, **Qwen MoE 35B**, and **Gemma 4 (26B)** — zero cloud API keys or token meters, with zero artificial refusals on legitimate IT diagnostics (optional bring-your-own-key cloud providers supported).
+- **3 Pre-Loaded Local Reasoning Models:** Ships ready on day one with **Qwen 27B**, **GPT-OSS 20B**, and **Gemma 4 (26B)** — zero cloud API keys or token meters, with zero artificial refusals on legitimate IT diagnostics (optional bring-your-own-key cloud providers supported).
 - **Pre-Loaded IT Agent Triad:** **Software Engineering**, **Systems Administration**, and **Security** agents operating inside your written policies with Bubblewrap sandboxes and a tamper-evident local audit trail (plus unlimited custom agents via the web portal).
 - **Predictable Economics:** Whisper-quiet edge hardware (high-bandwidth unified memory, 16-Core / 32-Thread CPU with dedicated AI acceleration, 1 TB NVMe SSD, 2.5 GbE + Wi-Fi 7, <120W) — **$4,500 one-time**, zero cloud token bills, with a 1-year advance-replacement warranty.
 
