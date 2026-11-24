@@ -18,7 +18,6 @@
   <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
   <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000">
   
-  <link rel="apple-touch-icon" href="assets/icon-512.png?v=20260908.1">
   
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -29,18 +28,17 @@
 <script defer src="js/lib/highlight.min.js"></script>  <link href="css/main.css?v=20261122.1" rel="stylesheet">
   <link rel="stylesheet" href="css/styles.css?v=20261122.2">
 <script>
-    const theme = localStorage.theme;
+const theme = localStorage.theme;
     if (theme === 'dark' || (!theme && theme !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
       document.documentElement.classList.add('dark');
     } else {
       document.documentElement.classList.remove('dark');
     }
-    // Restore the desktop sidebar collapsed preference before paint to avoid a layout flash.
     if (localStorage.getItem('sidebarCollapsed') === '1') {
       document.documentElement.classList.add('sidebar-collapsed');
     }
   </script><style>
-    .no-scrollbar::-webkit-scrollbar {
+.no-scrollbar::-webkit-scrollbar {
       display: none;
     }
 
@@ -49,31 +47,28 @@
       scrollbar-width: none;
     }
 
-    /* Force hide the Exit button on desktop (md breakpoint approx 768px) */
     @media (min-width: 768px) {
       #control-panel-back-btn {
         display: none !important;
       }
     }
 
-    /* Control Panel nav: give labels primacy and let icons recede to supporting glyphs */
     #sidebar-nav .sidebar-item {
-      font-size: 0.9375rem;   /* 15px label — a touch more legible than the icons */
+      font-size: 0.9375rem;
       line-height: 1.25rem;
     }
     #sidebar-nav .sidebar-item svg {
-      width: 1.125rem;        /* 18px (was 20px) */
+      width: 1.125rem;
       height: 1.125rem;
-      stroke-width: 1.5;      /* lighter than the default 2px stroke */
+      stroke-width: 1.5;
       flex-shrink: 0;
-      opacity: 0.65;          /* recede until hovered/active */
+      opacity: 0.65;
     }
     #sidebar-nav .sidebar-item:hover svg,
     #sidebar-nav .sidebar-item.active svg {
       opacity: 1;
     }
 
-    /* Force audit modal to true full-screen on mobile (iOS Safari inset-0 quirk) */
     @media (max-width: 639px) {
       #conscience-modal {
         top: 0 !important;
@@ -889,7 +884,6 @@
       <button id="confirm-delete-convo-btn" type="button" class="dialog-btn dialog-btn-danger">Delete</button>
     </div>
   </div>
-  </div>
 
   <div id="clear-all-convos-modal" role="dialog" aria-modal="true" aria-labelledby="clear-all-convos-modal-title"
     class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[calc(100%-2rem)] max-w-md z-50 hidden safi-dialog">
@@ -974,16 +968,11 @@
     </div>
   </div>
 <script type="module" src="js/core/app.js?v=20260928.4"></script><script>
-    // PWA client (Capacitor retired 2026-08-19): same-origin, no native host.
-    const _isNative = false;
+const _isNative = false;
     const _HOST = '';
 
-    // Read once, up front: the app-config fetch below is async and must not
-    // re-reveal the local-login section for this case (see its .then below) —
-    // a claim in progress should show only the claim form.
     const _inviteToken = new URLSearchParams(window.location.search).get('invite');
 
-    // Surface login errors passed back via redirect (?error=...&reason=...)
     (function () {
       const params = new URLSearchParams(window.location.search);
       const err = params.get('error');
@@ -1001,7 +990,6 @@
       if (banner.textContent) banner.classList.remove('hidden');
     })();
 
-    // Apply server-side feature flags to the login page
     fetch(`${_HOST}/api/app-config`)
       .then(r => r.json())
       .then(cfg => {
@@ -1009,10 +997,6 @@
           const btn = document.getElementById('login-demo-button');
           if (btn) btn.remove();
         }
-        // SAFI_SSO_ENABLED=false (the appliance): drop both federated sign-in
-        // buttons entirely rather than leaving dead ends. The endpoints 404 as
-        // well (see sso_required in api/auth.py) — this only keeps the page
-        // from offering something that cannot work.
         if (!cfg.google_login_enabled) {
           document.getElementById('login-button')?.remove();
         }
@@ -1020,8 +1004,6 @@
           document.getElementById('login-microsoft-button')?.remove();
         }
         if (_inviteToken) return;
-        // Show the single combined form if either local or LDAP login is
-        // available; the AD checkbox is only revealed when LDAP is enabled.
         if (cfg.local_login_enabled || cfg.ldap_login_enabled) {
           document.getElementById('local-login-section')?.classList.remove('hidden');
         }
@@ -1029,19 +1011,12 @@
           document.getElementById('ad-login-toggle')?.classList.remove('hidden');
         }
         if (!cfg.local_login_enabled && cfg.ldap_login_enabled) {
-          // LDAP-only deployment: default the checkbox on so users aren't
-          // forced to notice the toggle before the form works.
           const cb = document.getElementById('use-ad-login');
           if (cb) { cb.checked = true; cb.dispatchEvent(new Event('change')); }
         }
       })
-      .catch(() => {}); // fail silently — don't break the login page
+      .catch(() => {});
 
-    // Accept-invitation flow: the URL carries a one-time claim token,
-    // delivered only by email (backlog 51). There is deliberately no
-    // "copy invite link" path anywhere in the admin UI that could land a
-    // token here any other way — a link handed over through some other
-    // channel would prove nothing about who is actually claiming it.
     (function () {
       if (!_inviteToken) return;
 
@@ -1091,10 +1066,6 @@
       });
     })();
 
-    // Combined login form: one set of credential fields serves both local
-    // accounts and Active Directory binds. The "Login with Active Directory"
-    // checkbox (revealed only when cfg.ldap_login_enabled) switches the
-    // endpoint, placeholders, and MFA follow-up between the two flows.
     const _adToggle = document.getElementById('use-ad-login');
     function _isAdMode() { return !!(_adToggle && _adToggle.checked); }
 
@@ -1135,21 +1106,15 @@
         const data = await res.json().catch(() => ({}));
 
         if (res.ok && adMode && data.ok) {
-          // Session (or restricted enrollment session) established via cookie.
           window.location.reload();
         } else if (res.ok && data.mfa_required && data.mfa_token) {
-          // Two-factor step: swap the password form for a code prompt.
           showMfaCodeStep(data.mfa_token,
             adMode ? `${_HOST}/api/login/ldap/mfa` : undefined);
         } else if (res.ok && !adMode && data.token) {
-          // Server returned a bearer token — store it and reload
           const TOKEN_KEY = 'safi_auth_token';
           localStorage.setItem(TOKEN_KEY, data.token);
           window.location.reload();
         } else if (res.ok && !adMode) {
-          // Server may have used a cookie session (redirect-based flow).
-          // Verify it actually works before reloading, so we can show a clear
-          // error instead of silently bouncing back to the login screen.
           const meRes = await fetch(`${_HOST}/api/me`, { credentials: 'include' }).catch(() => null);
           if (meRes && meRes.ok) {
             window.location.reload();
@@ -1174,9 +1139,6 @@
       }
     });
 
-    // Second factor for TOTP-enrolled local accounts: replace the form
-    // contents with a one-time-code prompt bound to the short-lived
-    // mfa_pending token from step one.
     function showMfaCodeStep(mfaToken, endpoint = `${_HOST}/api/login/local/mfa`) {
       const form = document.getElementById('local-login-form');
       form.innerHTML = `
