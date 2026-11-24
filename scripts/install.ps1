@@ -115,7 +115,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3 python3-pip python
 $aptScriptLf = ($aptScript -replace "`r`n", "`n")
 $prevEap = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
-$aptScriptLf | wsl.exe -u root -e sh -s
+$aptScriptLf | wsl.exe -u root -e sh -c "tr -d '\r' | sh -s"
 $aptExit = $LASTEXITCODE
 $ErrorActionPreference = $prevEap
 if ($aptExit -ne 0) {
@@ -133,7 +133,7 @@ try {
 $installShLf = ($installSh -replace "`r`n", "`n")
 $prevEap = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
-$installShLf | wsl.exe -e bash -s
+$installShLf | wsl.exe -e sh -c "tr -d '\r' | bash -s"
 $wslInstallExit = $LASTEXITCODE
 $ErrorActionPreference = $prevEap
 if ($wslInstallExit -ne 0) {

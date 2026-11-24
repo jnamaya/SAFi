@@ -4,6 +4,7 @@ Turns silent ``KeyError``/``dict.get`` drift in main.py into a single,
 fail-loud normalization point: ``normalize_turn_response`` validates the
 server payload once and returns a well-formed dict every consumer can trust.
 """
+from __future__ import annotations
 
 import logging
 from typing import Any, Dict, List, Optional

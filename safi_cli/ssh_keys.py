@@ -1,4 +1,5 @@
 """SSH key management and deployment helper for SAFi managed infrastructure."""
+from __future__ import annotations
 
 import base64
 import json
@@ -371,7 +372,8 @@ def keygen_local() -> int:
         pass
 
     ui.console.print(f"\n[bold {ui.COLOR_BRAND_400}]SAFi local Ed25519 key[/]")
-    ui.console.print(f"  [dim]Private:[/] {pub_path.parent / pub_path.name.removesuffix('.pub')}")
+    priv_name = pub_path.name[:-4] if pub_path.name.endswith('.pub') else pub_path.name
+    ui.console.print(f"  [dim]Private:[/] {pub_path.parent / priv_name}")
     ui.console.print(f"  [dim]Public:[/] {pub_path}")
     if fingerprint:
         ui.console.print(f"  [dim]Fingerprint:[/] [cyan]{fingerprint}[/]")

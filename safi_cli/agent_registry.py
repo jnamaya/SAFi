@@ -1,4 +1,5 @@
 """Agent and model discovery/selection shared by the REPL and entrypoint."""
+from __future__ import annotations
 
 import glob
 import logging

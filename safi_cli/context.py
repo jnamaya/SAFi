@@ -5,6 +5,7 @@ shrink *result bodies only*, never drop entries, so server-side task-state
 counts and reconciliation stay structurally intact. Older results get a
 75/25 head+tail window; the newest results are preserved verbatim.
 """
+from __future__ import annotations
 
 import hashlib
 import logging

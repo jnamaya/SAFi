@@ -1,4 +1,5 @@
 """Configuration resolver and persistence for the SAFi CLI."""
+from __future__ import annotations
 
 import hashlib
 import json

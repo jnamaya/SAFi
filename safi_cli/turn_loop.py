@@ -1,4 +1,5 @@
 """Main agentic turn loop: tool proposals, resume budget, step ceiling."""
+from __future__ import annotations
 
 import json
 import logging
