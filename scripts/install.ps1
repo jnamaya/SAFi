@@ -74,12 +74,25 @@ try {
 }
 
 # 4. Pre-install all Linux operational dependencies using WSL root bridge (no sudo password needed)
+# Note: In Windows PowerShell 5.1, $ErrorActionPreference="Stop" turns any native stderr line
+# (such as Ubuntu WSL's harmless snapd advise-snap apt hook) into a terminating NativeCommandError.
 Write-Host "Ensuring core operational utilities (ssh, sshpass, nmap, jq, curl, rsync, python3) in WSL..." -ForegroundColor Cyan
-wsl.exe -u root -e sh -c "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3 python3-pip python3-venv ssh sshpass nmap jq curl iputils-ping dnsutils rsync git" 2>$null
+$prevEap = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+wsl.exe -u root -e sh -c "apt-get update -qq -o APT::Update::Post-Invoke-Success::= >/dev/null 2>&1 || true; DEBIAN_FRONTEND=noninteractive apt-get install -y -qq -o APT::Update::Post-Invoke-Success::= python3 python3-pip python3-venv ssh sshpass nmap jq curl iputils-ping dnsutils rsync git >/dev/null 2>&1 || true"
+$ErrorActionPreference = $prevEap
 
 # 5. Run the SAFi CLI installer inside WSL
 Write-Host "Installing SAFi CLI in WSL..." -ForegroundColor Cyan
+$prevEap = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
 wsl.exe -e bash -c "(curl -sSL https://runsafi.com/install.sh 2>/dev/null || curl -sSL https://raw.githubusercontent.com/jnamaya/SAFi/main/scripts/install_cli.sh) | bash"
+$wslInstallExit = $LASTEXITCODE
+$ErrorActionPreference = $prevEap
+if ($wslInstallExit -ne 0) {
+    Write-Error "SAFi CLI installation inside WSL failed (exit code $wslInstallExit)."
+    exit $wslInstallExit
+}
 
 # 6. Configure Windows Bridges (PowerShell & CMD wrappers)
 Write-Host "Configuring Windows bridges in user profile and PATH..." -ForegroundColor Cyan
