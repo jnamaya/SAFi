@@ -5,6 +5,7 @@ SAFi Color Palette Philosophy:
     - Dark Canvas / Neutral Axis: (#09090b, #18181b, #27272a, #737373, #ffffff)
     - Semantic Colors: Red (error/blocked/concern), Amber/Yellow (warning/caution), Green (approved/aligned)
 """
+from __future__ import annotations
 
 from datetime import datetime
 import difflib

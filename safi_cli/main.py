@@ -1,4 +1,5 @@
 """safi-cli entrypoint (thin): argument parsing, client bootstrap, dispatch."""
+from __future__ import annotations
 
 import argparse
 import getpass

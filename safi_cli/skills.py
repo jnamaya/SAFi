@@ -1,4 +1,5 @@
 """Discovery and execution for repository-local custom skills (.safi/skills/)."""
+from __future__ import annotations
 from pathlib import Path
 from typing import Dict
 

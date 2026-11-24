@@ -3,6 +3,7 @@
 These tools execute directly on the developer's local filesystem in the
 current working directory, under SAFi's Will Gate and path confinement.
 """
+from __future__ import annotations
 
 import fnmatch
 import logging

@@ -1,4 +1,5 @@
 """HTTP Client communicating directly with SAFi's governed agentic endpoint."""
+from __future__ import annotations
 
 import logging
 import os

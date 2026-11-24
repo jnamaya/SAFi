@@ -4,6 +4,7 @@ Provides governed, credential-safe administration across Microsoft 365 (Entra ID
 licenses, users, sign-in logs) and Azure Resource Manager (VMs, resource groups, resources)
 without leaking secrets into the model context.
 """
+from __future__ import annotations
 
 import json
 import logging

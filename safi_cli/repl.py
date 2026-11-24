@@ -1,4 +1,5 @@
 """Interactive REPL: command menu, completions, session setup wizard."""
+from __future__ import annotations
 
 import glob
 import logging

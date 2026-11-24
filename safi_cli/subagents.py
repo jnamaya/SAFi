@@ -1,4 +1,5 @@
 """Isolated subagent execution: role confinement and live-status tool runner."""
+from __future__ import annotations
 
 import logging
 import threading
