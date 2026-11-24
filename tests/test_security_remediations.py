@@ -1,12 +1,3 @@
-"""
-P1/P2/P3 remediation regression tests: login oracle collapse, internal-key
-auth on /api/public/process_prompt (warn vs enforce), 8 KB message cap,
-UUID conversation-id check, per-minute throttle.
-
-Requires no database — requests are rejected (or logged in warn mode) before
-any DB/LLM work. Run:
-    venv/bin/python tests/test_security_remediations.py
-"""
 import json
 import os
 import sys
@@ -27,7 +18,6 @@ def setUpModule():
     os.environ.setdefault("FLASK_ENV", "development")
     os.environ.setdefault("GROQ_API_KEY", "test-key-not-used")
     os.environ["SAFI_INTERNAL_KEYS"] = VALID_KEY
-    # Re-resolve config attributes that were frozen at first import.
     from safi_app.config import Config
     Config.SAFI_INTERNAL_KEYS = [VALID_KEY]
 
@@ -59,9 +49,7 @@ class InternalKeyBehavior(AppCase):
         Config.SAFI_ENFORCE_INTERNAL_KEY = self._orig
         keys_mod.clear_rate_state()
 
-    # BAD_ID keeps the request below the throttle but failing validation with
-    # 400, so no test ever needs a database or model backend.
-    BAD_ID = "wp_" + "a" * 32  # right length, not a UUID
+    BAD_ID = "wp_" + "a" * 32
 
     def test_01_warn_mode_serves_without_key(self):
         from safi_app.config import Config
@@ -100,7 +88,7 @@ class MessageAndIdValidation(AppCase):
         keys_mod.clear_rate_state()
 
     def test_05_non_uuid_conversation_id_rejected(self):
-        r = self._post_public("wp_" + "a" * 32)  # 35 chars, not a UUID
+        r = self._post_public("wp_" + "a" * 32)
         self.assertEqual(r.status_code, 400)
         self.assertEqual(r.get_json().get("code"), "CONVERSATION_ID_INVALID")
 

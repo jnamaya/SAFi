@@ -1,4 +1,3 @@
-"""Agent and model discovery/selection shared by the REPL and entrypoint."""
 from __future__ import annotations
 
 import glob
@@ -46,7 +45,6 @@ AVAILABLE_AGENTS = dict(DEFAULT_AGENTS)
 
 
 def fetch_remote_agents(client: SafiClient) -> Optional[Dict[str, Dict[str, Any]]]:
-    """Fetch agents directly from the backend, returning None if the server is unreachable or not live."""
     try:
         if hasattr(client, "get_available_agents") and callable(client.get_available_agents):
             remote_list = client.get_available_agents()
@@ -70,7 +68,6 @@ def fetch_remote_agents(client: SafiClient) -> Optional[Dict[str, Dict[str, Any]
 
 
 def discover_agents(client: Optional[SafiClient] = None) -> Dict[str, Dict[str, Any]]:
-    """Discover available agents dynamically from the server URL, falling back to local defaults."""
     if not client:
         return AVAILABLE_AGENTS
 
@@ -88,7 +85,6 @@ def prompt_switch_agent(
     workspace_root: Path,
     requested_agent: Optional[str] = None,
 ) -> tuple[str, str]:
-    """Interactively select or switch to an agent, prompting for its Policy API key if not yet configured."""
     from rich.table import Table
     from rich import box
 
@@ -216,22 +212,10 @@ AVAILABLE_MODELS: List[Dict[str, Any]] = []
 
 
 def _infer_provider(model_id: str) -> str:
-    """Deprecated no-op heuristic.
-
-    Provider labels come from the backend /models payload (which uses the
-    authoritative rules in model_routing.detect_provider). Keeping this shim
-    only so existing imports keep working; it never guesses a vendor anymore.
-    """
     return "Cloud Provider"
 
 
 def discover_models(client: SafiClient, force_refresh: bool = False) -> List[Dict[str, Any]]:
-    """Discover available AI models from the SAFi backend policy.
-
-    The backend is the single source of truth. If it returns nothing (no
-    configured providers, or the request is unauthorized), the list is empty;
-    we never fall back to a bundled/static catalog.
-    """
     global AVAILABLE_MODELS
     remote = client.get_available_models() if client else []
     seen = set()
@@ -255,16 +239,10 @@ SERVING_MODEL_ALIASES = frozenset({"local", "@local", "serving", "@serving", "au
 
 
 def is_serving_alias(value: Optional[str]) -> bool:
-    """True when a model preference is the 'follow the served model' sentinel."""
     return bool(value) and value.strip().lower() in SERVING_MODEL_ALIASES
 
 
 def serving_model_id(models: List[Dict[str, Any]]) -> Optional[str]:
-    """Id of the default/served model within an available-models list, else None.
-
-    Prefers GLM (glm-5.3-flash / glm-5.3) when offered by the server, falling
-    back to the active local model in VRAM.
-    """
     for m in (models or []):
         mid = str(m.get("id") or "").strip().lower()
         mlabel = str(m.get("label") or "").strip().lower()
@@ -280,7 +258,6 @@ def serving_model_id(models: List[Dict[str, Any]]) -> Optional[str]:
 
 
 def discover_serving_model(client: SafiClient, force_refresh: bool = False) -> Optional[str]:
-    """Fetch the available models and return the served local model's id."""
     return serving_model_id(discover_models(client, force_refresh=force_refresh))
 
 
@@ -290,7 +267,6 @@ def resolve_model_preference(
     explicit: Optional[str] = None,
     force_refresh: bool = False,
 ) -> Optional[str]:
-    """Concrete Intellect model id for this session."""
     resolved = config.resolve_intellect_model(agent, explicit)
     if resolved and not is_serving_alias(resolved):
         return resolved
@@ -311,7 +287,6 @@ def prompt_switch_model(
     requested_model: Optional[str] = None,
     current_agent: Optional[str] = None,
 ) -> Optional[str]:
-    """Interactively or directly select the LLM powering the Intellect faculty."""
     from rich.table import Table
     from rich import box
 
@@ -348,7 +323,6 @@ def prompt_switch_model(
             pref = serving_model_id(models)
         resolved_active = current_model or pref or "(policy default)"
 
-        # Option 0: Auto-follow whatever the appliance is actively serving
         table.add_row(
             "0",
             "local",
@@ -446,7 +420,6 @@ def prompt_switch_model(
         )
         return serving
 
-    # Check if target_model is a standby on-appliance GGUF model
     target_match = next((m for m in models if m.get("id") == target_model or m.get("label") == target_model), None)
     is_standby = bool(
         target_match
@@ -490,5 +463,3 @@ COMMAND_OPTIONS = [
     ("sessions", "Manage Sessions", "List, name, or resume stored conversation sessions"),
     ("setup-key", "Deploy SSH Key", "Deploy SSH public key to Linux or Windows target server"),
 ]
-
-

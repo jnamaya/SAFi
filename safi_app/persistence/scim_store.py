@@ -1,17 +1,3 @@
-"""
-SCIM 2.0 directory-sync state (backlog 68).
-
-Userland persistence for automated provisioning/deprovisioning. It holds the
-IdP-facing resource state (the /Users and /Groups an identity provider pushes),
-the per-org bearer token, and the group->role map. It does NOT change SAFi
-membership itself: the API layer applies changes by calling the existing
-member/invitation functions, so this module stays pure persistence and the
-governance-bearing membership logic keeps living where it already does.
-
-Deliberately outside the manifest-covered database.py: who is provisioned from
-a directory is Section III org configuration, the same class as sharing_store
-and tool_approval_store, not the governance ledger.
-"""
 from __future__ import annotations
 
 import hashlib
@@ -33,9 +19,6 @@ def _hash_token(token: str) -> str:
 
 
 def init_schema() -> None:
-    """Create the SCIM tables if absent, collation-matched to the legacy schema
-    (same lesson as the other userland stores: a bare charset takes the server
-    default and breaks joins/uniqueness against existing tables)."""
     conn = db.get_db_connection()
     cursor = conn.cursor()
     try:
@@ -43,7 +26,6 @@ def init_schema() -> None:
         charset = coll.split("_")[0]
         opts = f"ENGINE=InnoDB DEFAULT CHARSET={charset} COLLATE={coll}"
 
-        # Per-org SCIM config: the bearer token (hashed) and an enable flag.
         cursor.execute(f"""
             CREATE TABLE IF NOT EXISTS scim_config (
                 org_id CHAR(36) PRIMARY KEY,
@@ -55,8 +37,6 @@ def init_schema() -> None:
             ) {opts}
         """)
 
-        # IdP-facing user resources. email is the reconciliation key with SSO
-        # (login accepts invitations by email); scim_id is what the IdP sees.
         cursor.execute(f"""
             CREATE TABLE IF NOT EXISTS scim_resources (
                 scim_id CHAR(36) PRIMARY KEY,
@@ -77,7 +57,6 @@ def init_schema() -> None:
         if base_role_column and "varchar(20)" in str(base_role_column[1]).lower():
             cursor.execute("ALTER TABLE scim_resources MODIFY base_role VARCHAR(100) NULL")
 
-        # IdP-facing groups. members is a JSON array of scim resource ids.
         cursor.execute(f"""
             CREATE TABLE IF NOT EXISTS scim_groups (
                 scim_id CHAR(36) PRIMARY KEY,
@@ -91,7 +70,6 @@ def init_schema() -> None:
             ) {opts}
         """)
 
-        # Admin-configured: SCIM group displayName -> SAFi role.
         cursor.execute(f"""
             CREATE TABLE IF NOT EXISTS scim_group_role_map (
                 org_id CHAR(36) NOT NULL,
@@ -109,8 +87,6 @@ def init_schema() -> None:
         cursor.close()
         conn.close()
 
-
-# --- config / token ----------------------------------------------------------
 
 def get_config(org_id) -> Dict[str, Any]:
     conn = db.get_db_connection()
@@ -147,8 +123,6 @@ def set_enabled(org_id, enabled: bool) -> None:
 
 
 def rotate_token(org_id) -> str:
-    """Generate a new bearer token, store only its hash, enable SCIM, and
-    return the plaintext ONCE. Any previous token stops working immediately."""
     token = "scim_" + secrets.token_urlsafe(32)
     conn = db.get_db_connection()
     cursor = conn.cursor()
@@ -166,8 +140,6 @@ def rotate_token(org_id) -> str:
 
 
 def resolve_org_by_token(token: str) -> Optional[str]:
-    """The org a bearer token authenticates, or None. Only enabled configs
-    match, so disabling SCIM instantly closes the endpoint."""
     if not token:
         return None
     conn = db.get_db_connection()
@@ -183,8 +155,6 @@ def resolve_org_by_token(token: str) -> Optional[str]:
         cursor.close()
         conn.close()
 
-
-# --- user resources ----------------------------------------------------------
 
 def _res_row(cursor) -> Optional[dict]:
     row = cursor.fetchone()
@@ -285,8 +255,6 @@ def delete_resource(org_id, scim_id) -> bool:
         conn.close()
 
 
-# --- groups ------------------------------------------------------------------
-
 def create_group(org_id, display_name, external_id, member_ids) -> dict:
     scim_id = str(uuid.uuid4())
     conn = db.get_db_connection()
@@ -363,8 +331,6 @@ def delete_group(org_id, scim_id) -> bool:
         conn.close()
 
 
-# --- group -> role map + effective role --------------------------------------
-
 def list_group_role_map(org_id) -> List[dict]:
     conn = db.get_db_connection()
     cursor = conn.cursor(dictionary=True)
@@ -403,8 +369,6 @@ def delete_group_role(org_id, group_name) -> bool:
 
 
 def effective_role(org_id, scim_id, base_role=None) -> str:
-    """Highest-privilege role among the mapped groups this resource belongs to,
-    falling back to its base role. Pure computation over stored state."""
     mapping = {m["group_name"]: m["role"] for m in list_group_role_map(org_id)}
     base_role = base_role or ROLE_CONFIG["default_role"]
     best = base_role if base_role in ROLE_RANK else ROLE_CONFIG["default_role"]

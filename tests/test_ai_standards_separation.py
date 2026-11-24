@@ -1,32 +1,3 @@
-"""
-AI Standards are a separate artifact from the Charter.
-
-WHY. A charter is mission and core values — who the organization is, and
-something every organization has. AI standards say how its AI must behave: they
-are AI-specific, optional, and revised on a different cycle. Filing one as the
-other is not untidy, it is a behaviour change, because **charter values are
-SCORED**. That is exactly how this broke in production on 2026-08-09: importing
-an AI policy wrote a "GenAI Disclosure" entry into `core_values`, the Conscience
-scored it -1.0 on every response that did not carry a disclosure, and the Will
-redirected every turn.
-
-Two properties this pins:
-
-  * A standard is BLOCKING or SCORED, chosen per standard. Blocking ones are
-    hard gates at weight 0, outside the split. Scored ones join the
-    ORGANIZATION's share alongside the charter's values — not a third tier, so
-    the two-way split and $A_t$'s definition are untouched.
-
-    Scored is the default, and that is a safety property rather than a taste:
-    every blocking standard must appear in the Conscience ledger on EVERY turn
-    or the Will fails closed, so a tier where each addition is a gate becomes
-    more fragile the more it is used.
-  * They are OPTIONAL and independent. An org with a charter and no standards,
-    or standards and no charter, must compile cleanly — and dropping one must
-    not disturb the other.
-
-Run:  venv/bin/python tests/test_ai_standards_separation.py
-"""
 import sys
 import unittest
 from pathlib import Path
@@ -64,8 +35,6 @@ def base(will_rules=None):
 class StandardsAreGatesOnly(unittest.TestCase):
 
     def test_a_scored_standard_joins_the_organization_share(self):
-        """Not a third tier: a scored standard shares the org's slice with the
-        charter's values, so the split stays two-way and A_t is untouched."""
         mixed = {"values": [{"name": "Accuracy", "weight": 1.0, "hard_gate": False, "rubric": RUBRIC}]}
         policy = [{"name": "Helpfulness", "weight": 1.0,
                    "rubric": {"scoring_guide": [{"score": 1.0, "descriptor": "ok"}]}}]
@@ -73,7 +42,6 @@ class StandardsAreGatesOnly(unittest.TestCase):
                             charter_weight=0.40, ai_standards=mixed)
         scored = {v["value"]: v["weight"] for v in out["values"] if not v.get("hard_gate")}
         self.assertEqual(set(scored), {"Integrity", "Accuracy", "Helpfulness"})
-        # Charter value + scored standard divide the org's 40%; policy keeps 60%.
         self.assertAlmostEqual(scored["Integrity"] + scored["Accuracy"], 0.40, places=6)
         self.assertAlmostEqual(scored["Helpfulness"], 0.60, places=6)
         self.assertAlmostEqual(sum(scored.values()), 1.0, places=6)
@@ -95,9 +63,6 @@ class StandardsAreGatesOnly(unittest.TestCase):
         self.assertAlmostEqual(scored["Helpfulness"], 0.60, places=6)
 
     def test_adopting_BLOCKING_standards_does_not_move_the_scored_weights(self):
-        """A blocking standard sits outside the split, so switching one on must
-        not change what any existing agent scores. (A SCORED standard is meant
-        to change them — that is what choosing 'scored' asks for.)"""
         without = apply_charter(base(), CHARTER, policy_values=[], ai_standards=None)
         with_ = apply_charter(base(), CHARTER, policy_values=[], ai_standards=STANDARDS)
         pick = lambda p: {v["value"]: v["weight"] for v in p["values"] if not v.get("hard_gate")}
@@ -132,17 +97,11 @@ class DeterministicChecksReachTheWill(unittest.TestCase):
         self.assertIn("insider trading tips", wr["early_prompt_blacklist"])
 
     def test_the_disclaimer_is_a_literal_check_not_a_scored_one(self):
-        """Item 27's lesson. A mandated disclosure belongs to the structural
-        tier, which APPENDS the missing text and re-audits. Routed to a gate
-        instead, it blocks every response that omits it — and an obligation to
-        include something can only ever be violated by omission."""
         out = apply_charter(base(), CHARTER, policy_values=[], ai_standards=STANDARDS)
         will = WillGate(None, values=out["values"], profile=out)
         ok, reason = will.evaluate_draft_structure("Here is the answer.")
         self.assertFalse(ok)
         self.assertEqual(reason, "missing_disclaimer")
-        # missing_disclaimer is the repairable branch: the orchestrator appends
-        # the text and re-audits rather than redirecting the turn.
         ok, _ = will.evaluate_draft_structure("Here is the answer.\n\nAI-assisted.")
         self.assertTrue(ok)
 
@@ -152,16 +111,7 @@ class DeterministicChecksReachTheWill(unittest.TestCase):
         self.assertNotIn("genai disclosure", gate_names)
 
 
-
 class OmissionBasedStandardsAreRefused(unittest.TestCase):
-    """Item 27, guarded server-side rather than by asking the model nicely.
-
-    A rule that requires the response to INCLUDE something can only be broken by
-    omission, so as a hard gate it fires on every answer that never raised the
-    topic. That is not hypothetical: a "GenAI Disclosure" standard compiled this
-    way blocked every response an agent gave. The obligation belongs to the
-    disclaimer check, which APPENDS the missing text and re-audits.
-    """
 
     OMISSION_PHRASES = [
         "The response does not include a statement about GenAI use.",
@@ -181,8 +131,6 @@ class OmissionBasedStandardsAreRefused(unittest.TestCase):
                       "the rejection must point at the mechanism that DOES enforce it")
 
     def test_every_sample_phrase_is_matched_by_the_guard(self):
-        """The guard is a phrase list, so it is only as good as its coverage.
-        These are the shapes a model actually produced."""
         patterns = ("does not include", "does not contain", "does not disclose", "does not state",
                     "fails to include", "fails to mention", "fails to disclose", "fails to state",
                     "omits", "without disclosing", "lacks a", "no statement")
@@ -192,7 +140,6 @@ class OmissionBasedStandardsAreRefused(unittest.TestCase):
                                 f"no pattern catches: {phrase}")
 
     def test_commission_criteria_still_pass(self):
-        """The guard must not reject legitimate prohibitions."""
         patterns = ("does not include", "does not contain", "does not disclose", "does not state",
                     "fails to include", "fails to mention", "fails to disclose", "fails to state",
                     "omits", "without disclosing", "lacks a", "no statement")

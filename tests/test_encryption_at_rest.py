@@ -1,16 +1,3 @@
-"""
-DB-backed lifecycle test for encryption at rest.
-
-Verifies that a full chat turn stores ciphertext in chat_history AND in the
-chat_audit_trail state (no plaintext at rest), that every read path returns
-plaintext, that the read-modify-write reasoning log works over ciphertext,
-that the hash chain stays valid, and that legacy plaintext rows dual-read.
-
-Requires the local MySQL instance (throwaway user/conversation, cleaned up).
-Skips (exits 0 with a notice) if SAFI_ENCRYPTION_KEY is not set.
-
-Run:  venv/bin/python tests/test_encryption_at_rest.py
-"""
 import json
 import sys
 import uuid
@@ -64,7 +51,6 @@ class TestEncryptionAtRest(unittest.TestCase):
             conn.close()
 
     def test_lifecycle(self):
-        # 1. Turn insert: prompt is ciphertext in the DB and in the trail
         self.assertTrue(db.insert_turn_atomic(self.cid, PROMPT, self.msg_id))
         rows = self.raw("SELECT id, role, content FROM chat_history WHERE conversation_id=%s ORDER BY id", (self.cid,))
         user_row, ai_row = rows[0], rows[1]
@@ -72,11 +58,9 @@ class TestEncryptionAtRest(unittest.TestCase):
         trail = self.raw("SELECT state FROM chat_audit_trail WHERE message_pk=%s", (user_row["id"],))
         self.assertNotIn(PROMPT, trail[0]["state"])
 
-        # 2. Reasoning RMW twice over ciphertext
         db.update_message_reasoning(self.msg_id, "Analyzing your request...")
         db.update_message_reasoning(self.msg_id, "Drafting a response...", phase="gather")
 
-        # 3. Content + audit results stored encrypted
         db.update_message_content(self.msg_id, ANSWER, audit_status="complete")
         db.update_audit_results(self.msg_id, [{"value": "truth", "score": 1}], 9,
                                 "ENCTEST aligned note", "test", ["truth"], None, drift=0.42,
@@ -91,12 +75,10 @@ class TestEncryptionAtRest(unittest.TestCase):
         for col in ("content", "spirit_note", "conscience_ledger", "reasoning_log"):
             self.assertTrue(crypto.is_token(raw_ai[col]), f"{col} not encrypted at rest")
 
-        # 4. No plaintext anywhere in this message's trail
         trail = self.raw("SELECT state FROM chat_audit_trail WHERE message_pk=%s ORDER BY id", (ai_row["id"],))
         joined = " ".join(t["state"] or "" for t in trail)
         self.assertNotIn("ENCTEST", joined)
 
-        # 5. Read paths return plaintext
         hist = db.fetch_chat_history_for_conversation(self.cid, user_id=self.uid)
         self.assertEqual(hist[0]["content"], PROMPT)
         self.assertEqual(hist[1]["content"], ANSWER)
@@ -110,20 +92,17 @@ class TestEncryptionAtRest(unittest.TestCase):
         self.assertEqual(audit["final_output"], ANSWER)
         self.assertAlmostEqual(hist[1]["drift"], 0.42, places=5)
 
-        # 6. Hash chain valid over ciphertext states
         self.assertTrue(db.verify_message_audit_trail(ai_row["id"])["valid"])
         self.assertTrue(db.verify_message_audit_trail(user_row["id"])["valid"])
 
-        # 7. Saved content: copy stays ciphertext at rest, reads back plaintext
         saved = db.save_content(self.uid, self.msg_id)
         self.assertIsNotNone(saved)
         raw_saved = self.raw("SELECT content, title FROM saved_content WHERE id=%s", (saved["id"],))[0]
         self.assertTrue(crypto.is_token(raw_saved["content"]))
-        self.assertIn("capital of France", raw_saved["title"])  # title derived from plaintext
+        self.assertIn("capital of France", raw_saved["title"])
         fetched = db.fetch_saved_content(self.uid)
         self.assertEqual(fetched[0]["content"], ANSWER)
 
-        # 8. Summary / profile / agent-context round-trips, ciphertext at rest
         db.update_conversation_summary(self.cid, "ENCTEST summary")
         self.assertEqual(db.fetch_conversation_summary(self.cid), "ENCTEST summary")
         db.upsert_user_profile_memory(self.uid, '{"tone": "ENCTEST"}')
@@ -138,7 +117,6 @@ class TestEncryptionAtRest(unittest.TestCase):
             v = self.raw(f"SELECT {col} AS v FROM {table} WHERE {where}=%s", (param,))[0]["v"]
             self.assertTrue(crypto.is_token(v), f"{table}.{col} not encrypted at rest")
 
-        # 9. OAuth tokens encrypted at rest, transparent read
         db.upsert_oauth_token(self.uid, "github", "gho_secret_token", "refresh_xyz", None, "repo")
         raw_tok = self.raw("SELECT access_token, refresh_token FROM oauth_tokens "
                            "WHERE user_id=%s AND provider='github'", (self.uid,))[0]
@@ -148,7 +126,6 @@ class TestEncryptionAtRest(unittest.TestCase):
         self.assertEqual(tok["access_token"], "gho_secret_token")
         self.assertEqual(tok["refresh_token"], "refresh_xyz")
 
-        # 10. Legacy plaintext row dual-reads
         conn = db.get_db_connection()
         cur = conn.cursor()
         legacy_mid = str(uuid.uuid4())

@@ -1,4 +1,3 @@
-"""SSH key management and deployment helper for SAFi managed infrastructure."""
 from __future__ import annotations
 
 import base64
@@ -15,7 +14,6 @@ from . import config, ui
 
 
 def get_ssh_config_args() -> list[str]:
-    """Return SSH -F args to bypass corrupted or read-only /etc/ssh/ssh_config.d proxy files."""
     user_cfg = Path.home() / ".ssh" / "config"
     if user_cfg.is_file():
         try:
@@ -27,18 +25,15 @@ def get_ssh_config_args() -> list[str]:
 
 
 def get_default_key_paths() -> tuple[Path, Path]:
-    """Return paths to (private_key, public_key) in ~/.ssh/ (or Windows user .ssh if in WSL)."""
     ssh_dir = Path.home() / ".ssh"
     priv = ssh_dir / "id_ed25519"
     pub = ssh_dir / "id_ed25519.pub"
     if pub.is_file():
         return priv, pub
 
-    # Check for existing id_rsa in ~/.ssh
     if (ssh_dir / "id_rsa.pub").is_file():
         return ssh_dir / "id_rsa", ssh_dir / "id_rsa.pub"
 
-    # In WSL, check if keys exist in Windows user profile
     for win_ssh in sorted(Path("/mnt/c/Users").glob("*/.ssh")):
         if (win_ssh / "id_ed25519.pub").is_file():
             return win_ssh / "id_ed25519", win_ssh / "id_ed25519.pub"
@@ -49,7 +44,6 @@ def get_default_key_paths() -> tuple[Path, Path]:
 
 
 def find_setup_script() -> Optional[Path]:
-    """Locate the setup_ssh_key.sh script or safi-setup-key binary."""
     pkg_script = Path(__file__).resolve().parent / "setup_ssh_key.sh"
     if pkg_script.is_file() and os.access(pkg_script, os.X_OK):
         return pkg_script
@@ -74,7 +68,6 @@ def find_setup_script() -> Optional[Path]:
 
 
 def ensure_local_ssh_key() -> str:
-    """Ensure a local Ed25519 SSH key pair exists and return its public key content."""
     priv_path, pub_path = get_default_key_paths()
     ssh_dir = priv_path.parent
 
@@ -99,7 +92,6 @@ def ensure_local_ssh_key() -> str:
 
 
 def build_windows_ps_script(key_content: str) -> str:
-    """Build the PowerShell snippet for Windows OpenSSH authorized_keys with strict ACLs."""
     escaped_key = key_content.replace("'", "''")
     return f"""$ErrorActionPreference = 'Stop'
 $key = '{escaped_key}'
@@ -136,7 +128,6 @@ def deploy_key_native(
     port_override: Optional[int] = None,
     force_os: Optional[str] = None,
 ) -> int:
-    """Deploy SSH key natively using Python and standard SSH tools without external script dependencies."""
     priv_path, pub_path = get_default_key_paths()
 
     try:
@@ -148,7 +139,6 @@ def deploy_key_native(
     ui.console.print(f"\n[bold {ui.COLOR_BRAND_400}]=== SAFi SSH Key Deployment ===[/]")
     ui.console.print(f"  [dim]Local Public Key:[/] {pub_path}")
 
-    # Resolve target from inventory or direct user@host
     inventory = config.load_inventory()
     host = ""
     user = ""
@@ -193,7 +183,6 @@ def deploy_key_native(
 
     ssh_cfg_args = get_ssh_config_args()
 
-    # Step 1: Check existing passwordless connection
     ui.console.print("[dim]Checking existing passwordless connectivity... [/dim]", end="")
     check_cmd = [
         "ssh",
@@ -235,7 +224,6 @@ def deploy_key_native(
 
     ui.console.print("[dim yellow]needs installation.[/dim yellow]")
 
-    # Step 2: Deploy key
     if os_type == "windows":
         ui.console.print("\n[bold]Configuring Windows OpenSSH Server...[/]")
         ui.console.print("[dim]Windows OpenSSH requires strict NTFS permissions (ACLs) via icacls.[/dim]")
@@ -290,7 +278,6 @@ def deploy_key_native(
             ui.print_error(f"Failed to deploy key to Linux target {user}@{host} (exit code {ret}).")
             return ret
 
-    # Step 3: Final Verification
     ui.console.print("\n[dim]Verifying passwordless SSH connection... [/dim]", end="")
     verify_cmd = [
         "ssh",
@@ -341,13 +328,6 @@ def deploy_key_native(
 
 
 def keygen_local() -> int:
-    """Generate (or verify) the local SAFi Ed25519 key pair without deploying.
-
-    Thin standalone wrapper around ``ensure_local_ssh_key`` so an operator can
-    pre-create ``~/.ssh/id_ed25519[.pub]`` without touching a remote target.
-    Idempotent: if the public key already exists, it is left untouched and its
-    fingerprint is displayed.
-    """
     try:
         key_content = ensure_local_ssh_key()
     except Exception as exc:
@@ -365,7 +345,6 @@ def keygen_local() -> int:
         )
         if res.returncode == 0 and res.stdout:
             parts = res.stdout.split()
-            # Format: "<bits> <fingerprint> <comment> (<type>)"
             if len(parts) >= 2:
                 fingerprint = parts[1]
     except Exception:
@@ -383,7 +362,6 @@ def keygen_local() -> int:
 
 
 def run_setup_key(args: List[str]) -> int:
-    """Parse arguments and deploy SSH key natively."""
     import argparse
 
     parser = argparse.ArgumentParser(
@@ -412,7 +390,6 @@ def run_setup_key(args: List[str]) -> int:
 
 
 def interactive_setup_key(target_arg: Optional[str] = None) -> None:
-    """Interactive command handler for /setup-key [target]."""
     inventory = config.load_inventory()
 
     if target_arg and target_arg.strip():
@@ -473,7 +450,6 @@ def interactive_setup_key(target_arg: Optional[str] = None) -> None:
 
 
 def main():
-    """Standalone CLI entry point for safi-setup-key."""
     args = sys.argv[1:]
     try:
         code = run_setup_key(args)

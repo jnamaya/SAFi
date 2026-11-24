@@ -1,16 +1,3 @@
-"""
-Per-agent conversational history window persistence (backlog 92).
-
-The orchestrator already reads `history_turns` / `history_max_chars` from the
-agent profile to size the verbatim replay window (see _resolve_history_window).
-Before this change the UI never exposed them and the agents save path dropped
-them, so they were stuck at the deployment default. These tests pin the
-round-trip: the columns persist through create/update, surface on read, reach
-the compiled profile get_profile() reads at runtime, and appear in the API
-GET that prefills the Agent Wizard.
-
-Requires local MySQL. Run:  venv/bin/python tests/test_agent_history_window.py
-"""
 import sys
 import uuid
 import unittest
@@ -78,15 +65,11 @@ class HistoryWindowTest(unittest.TestCase):
         self.assertIsNone(got['history_max_chars'])
 
     def test_zero_round_trips_as_zero(self):
-        # 0 means "all turns", which must survive as 0, not collapse to null.
         _make_agent(self.agent_key, self.owner, self.org, history_turns=0, history_max_chars=None)
         got = db.get_agent(self.agent_key)
         self.assertEqual(got['history_turns'], 0)
 
     def test_profile_surfaces_fields(self):
-        # The runtime reads these from the compiled profile, so get_profile must
-        # carry them through untouched (they are agent operational settings, not
-        # governance values).
         _make_agent(self.agent_key, self.owner, self.org, history_turns=7, history_max_chars=15000)
         prof = get_profile(self.agent_key)
         self.assertEqual(prof.get('history_turns'), 7)

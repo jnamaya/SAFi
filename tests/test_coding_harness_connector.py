@@ -1,21 +1,4 @@
 #!/usr/bin/env python3
-"""Tests for the built-in coding_harness MCP connector.
-
-Two things need locking down here, because both fail silently otherwise:
-
-  1. Vocabulary completeness. WillGate matches tool names EXACTLY, so a name the
-     connector omits is a tool the agent can never use — it collects a refusal
-     every time it tries. The first real symptom was
-     `Tool 'task' is not authorized for this agent profile`. Adding a tool to
-     opencode without adding it here reintroduces that bug.
-
-  2. That declaring a tool is not claiming to run it. read/grep/glob/list run
-     inside SAFi; the other eleven are opencode's, and execute_tool must say so
-     instead of raising or silently returning nothing.
-
-Path confinement gets its own coverage because these tools read the repository
-from the app container; a missing check here is arbitrary file read.
-"""
 import asyncio
 import json
 import os
@@ -25,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, "/app")
 
-from safi_app.core.mcp_servers.coding_tools import (  # noqa: E402
+from safi_app.core.mcp_servers.coding_tools import (
     CODING_HARNESS_TOOL_NAMES,
     OPENCODE_TOOL_NAMES,
     SAFI_EXECUTED_TOOLS,
@@ -34,7 +17,7 @@ from safi_app.core.mcp_servers.coding_tools import (  # noqa: E402
     grep,
     glob_files,
 )
-from safi_app.core.services.mcp_manager import (  # noqa: E402
+from safi_app.core.services.mcp_manager import (
     MCPManager,
     coding_harness_declaration_only,
 )
@@ -42,8 +25,6 @@ from safi_app.core.services.mcp_manager import (  # noqa: E402
 
 class VocabularyTests(unittest.TestCase):
     def test_covers_opencode_tool_set(self):
-        # Pinned deliberately: this is opencode 1.18.34's model-facing tool set.
-        # A change here means the vocabulary was edited on purpose.
         self.assertEqual(
             set(OPENCODE_TOOL_NAMES),
             {
@@ -62,11 +43,6 @@ class VocabularyTests(unittest.TestCase):
         self.assertEqual(SAFI_EXECUTED_TOOLS, {"read", "grep", "glob", "list"})
 
     def test_manager_expands_to_full_vocabulary(self):
-        """The names the agent advertises must equal the vocabulary.
-
-        Anything less and the Will refuses the missing tool by exact match,
-        regardless of what the policy allows.
-        """
         mgr = MCPManager({})
         tools = asyncio.run(mgr.get_tools_for_agent({"tools": ["coding_harness"]}))
         self.assertEqual(
@@ -108,7 +84,6 @@ class VocabularyTests(unittest.TestCase):
             self.assertEqual(schema.get("type"), "object", tool["name"])
 
     def test_mutating_and_client_tools_say_who_runs_them(self):
-        """The model must not expect SAFi to have executed a client tool."""
         mgr = MCPManager({})
         tools = {t["name"]: t for t in asyncio.run(
             mgr.get_tools_for_agent({"tools": ["coding_harness"]}))}
@@ -127,7 +102,6 @@ class VocabularyTests(unittest.TestCase):
 
 
 class PathConfinementTests(unittest.TestCase):
-    """SAFI_CODE_REVIEW_ROOT is the only tree these tools may touch."""
 
     def setUp(self):
         self._saved = os.environ.get("SAFI_CODE_REVIEW_ROOT")
@@ -162,13 +136,6 @@ class PathConfinementTests(unittest.TestCase):
         self.assertGreater(found["match_count"], 0)
 
     def test_recursive_pattern_matches_depth_zero_too(self):
-        """`**/` means zero or more directories.
-
-        Regression: `_walk` matches against the path relative to the SEARCH
-        SCOPE, so `**/*.py` was asked to match "coding_tools.py" — no separator,
-        no match, zero results, while `*.py` found the same files. The pattern a
-        model reaches for first silently returned nothing.
-        """
         scope = f"{self._root}/safi_app/core/mcp_servers"
         recursive = json.loads(asyncio.run(glob_files("**/*.py", scope)))
         shallow = json.loads(asyncio.run(glob_files("*.py", scope)))
@@ -187,11 +154,6 @@ class PathConfinementTests(unittest.TestCase):
             self.assertNotIn("root:", out.get("error", ""))
 
     def test_secret_and_dotfiles_are_refused_or_absent(self):
-        """A hidden path must never yield file contents.
-
-        These may legitimately not exist in the container; what matters is that
-        if one does, it is refused rather than read.
-        """
         for bad in (f"{self._root}/.env", f"{self._root}/.git/config", f"{self._root}/.ssh/id_rsa"):
             out = json.loads(asyncio.run(read_file(bad)))
             if "error" not in out:
@@ -200,7 +162,6 @@ class PathConfinementTests(unittest.TestCase):
             self.assertNotIn("-----BEGIN", out.get("error", ""))
 
     def test_refusals_also_apply_to_grep_and_glob(self):
-        """A confinement check on `read` alone is not confinement."""
         for coro in (grep("root", "/etc"), glob_files("**/*", "/etc")):
             self.assertIn("error", json.loads(asyncio.run(coro)))
 

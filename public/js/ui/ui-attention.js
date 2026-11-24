@@ -1,16 +1,3 @@
-/**
- * Inbox (backlog 57): everything waiting on this user, as a Control Panel
- * tab under Account, with a count pill on its nav row.
- *
- * The pill is a TO-DO count, not an unread count: pending work stays on it
- * until someone acts, so there is no read-state to store anywhere. The data
- * comes from /api/attention, which is role-aware server-side; this module
- * renders whatever it is given and never decides visibility itself.
- *
- * Originally a bell in the chat sidebar header; moved here 2026-08-17 at
- * Nelson's request, next to the other personal surfaces (Profile, Scheduled
- * Updates) instead of crowding the sidebar chrome.
- */
 import * as api from '../core/api.js';
 import * as ui from './ui.js';
 
@@ -37,7 +24,7 @@ async function _fetch() {
     try {
         return await api.fetchAttention();
     } catch (e) {
-        return null; // a failed poll keeps the last badge rather than flashing it away
+        return null;
     }
 }
 
@@ -45,7 +32,7 @@ async function _fetchActions() {
     try {
         return await api.fetchAttentionActions();
     } catch (e) {
-        return null; // non-reviewers get a 403/empty; not an error worth surfacing
+        return null;
     }
 }
 
@@ -61,8 +48,6 @@ async function refreshBadge() {
     _updateBadge(await _fetch());
 }
 
-/** Start the badge poller. Called once the user is signed in (the sidebar
- * render); safe to call again, it just restarts the timer. */
 export function initAttentionBadge() {
     refreshBadge();
     if (_timer) clearInterval(_timer);
@@ -105,8 +90,6 @@ function _approvalBlock(kind, items) {
         </div>`;
 }
 
-/** The Inbox tab. Fetches fresh on every entry: the list must reflect the
- * work as it stands now, not as it stood when the badge last polled. */
 export async function renderSettingsInboxTab() {
     const container = document.getElementById('tab-inbox');
     if (!container) return;
@@ -139,14 +122,10 @@ export async function renderSettingsInboxTab() {
         return;
     }
 
-    // The approval categories render expandable action blocks with their IDs.
-    // The generic /api/attention rollup gives only counts, so the actionable
-    // list is fetched from /api/attention/actions, which carries the IDs.
     let actions = null;
     const hasApproval = items.some(it => it.key === 'policy_changes' || it.key === 'tool_requests');
     if (hasApproval) actions = await _fetchActions();
 
-    // Rows that are NOT approvals render the usual count chips.
     const simpleItems = items.filter(it => it.key !== 'policy_changes' && it.key !== 'tool_requests');
     let simpleHtml = '';
     if (simpleItems.length) {
@@ -170,7 +149,6 @@ export async function renderSettingsInboxTab() {
     const toolBlock = (hasApproval && actions) ? _approvalBlock('tool_requests', actions.tool_requests) : '';
     list.innerHTML = `<div class="space-y-3">${policyBlock}${toolBlock}${simpleHtml}</div>`;
 
-    // Simple actionable rows deep-link; informational rows do not navigate.
     list.querySelectorAll('.attention-row').forEach(row =>
         row.addEventListener('click', () => {
             if (row.dataset.actionable !== '1') return;
@@ -184,11 +162,9 @@ export async function renderSettingsInboxTab() {
                 refreshBadge();
                 renderSettingsInboxTab();
             } catch (err) {
-                // leave the row; the next open retries
             }
         }));
 
-    // Approve/Reject straight from the inbox.
     const onDone = async () => {
         refreshBadge();
         renderSettingsInboxTab();

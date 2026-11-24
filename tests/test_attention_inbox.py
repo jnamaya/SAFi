@@ -1,17 +1,3 @@
-"""
-Attention inbox (backlog 57) and tool-change evidence (backlog 57a).
-
-The inbox is DERIVED: /api/attention aggregates live from the tables that
-already hold pending work, so these tests seed those tables directly and
-assert three things: the counts are right, the role shaping is right (member
-sees only their own items, auditor adds review work, admin sees everything),
-and nothing crosses an org boundary.
-
-57a: changing an agent's tool list must append org_compliance_log evidence,
-because until now the highest-consequence capability change was unrecorded.
-
-Requires local MySQL. Run:  venv/bin/python tests/test_attention_inbox.py
-"""
 import sys
 import uuid
 import unittest
@@ -57,7 +43,6 @@ class AttentionTestBase(unittest.TestCase):
         self.sched_id = str(uuid.uuid4())
         self.msg_pk = int(uuid.uuid4().int % 2_000_000_000)
 
-        # One pending item in every source, all in org A.
         _exec("INSERT INTO knowledge_bases (id, name, created_by, org_id, visibility) "
               "VALUES (%s, 'Attention KB', %s, %s, 'member')",
               (self.kb_id, self.admin, self.org))
@@ -152,8 +137,6 @@ class RoleShaping(AttentionTestBase):
 
 
 class ToolChangeEvidence(AttentionTestBase):
-    """57a: the tool list is the capability boundary; changing it must leave
-    org_compliance_log evidence naming the actor and the delta."""
 
     def test_tool_removal_via_api_is_recorded(self):
         agent_key = f"att_agent_{uuid.uuid4().hex[:8]}"
@@ -205,14 +188,9 @@ class ToolChangeEvidence(AttentionTestBase):
 
 
 class AttentionActions(AttentionTestBase):
-    """The actionable inbox: /api/attention/actions carries the item IDs the
-    rollup omits, so a reviewer can approve from the inbox. Same org scoping
-    and role shaping as the rollup, plus item identities."""
 
     def setUp(self):
         super().setUp()
-        # One pending tool request and one pending policy change in org A,
-        # requested by the member; one pending tool request in org B.
         self.tool_req_a = str(uuid.uuid4())
         self.pol_req_a = str(uuid.uuid4())
         self.tool_req_b = str(uuid.uuid4())
@@ -231,7 +209,7 @@ class AttentionActions(AttentionTestBase):
             (self.tool_req_b, self.other_org, self.other_admin, '["calendar"]'))
 
     def tearDown(self):
-        super().tearDown()  # base tearDown clears both request tables by org
+        super().tearDown()
 
     def _actions(self, user_id, role):
         client = self.app.test_client()

@@ -1,23 +1,3 @@
-"""The demo purge: what it destroys, what it must keep, and what it counts.
-
-WHY. Demo accounts are deleted after 24 hours. For most of the product's life
-the only evidence anyone had ever used the demo was the rows the purge happened
-to MISS — orphaned `auth_events` and `sessions` still naming a `demo_%` user
-whose row was gone. Counting those distinct ids is how we learned the demo had
-served 153 accounts in 40 days while `organizations` only ever showed the ~10
-alive at that moment (GOVERNANCE_BACKLOG 82).
-
-Evidence by accident is evidence that vanishes when someone fixes the accident,
-and it already has once: `auth_events` and `sessions` both begin at exactly
-2026-07-16, when those tables were added, so demo usage before that is gone.
-
-So this file pins three things together, because any one alone is a trap:
-  1. the purge destroys demo CONTENT, chat_audit_trail included;
-  2. it keeps authentication evidence, with org_id nulled rather than dangling;
-  3. the signup count survives the purge that deletes everything it counted.
-
-Run:  python tests/test_demo_purge.py
-"""
 import os
 import sys
 import unittest
@@ -27,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 os.environ.setdefault("FLASK_ENV", "development")
 
-from safi_app.persistence import database as db, demo_store  # noqa: E402
+from safi_app.persistence import database as db, demo_store
 
 
 class DemoPurge(unittest.TestCase):
@@ -44,7 +24,6 @@ class DemoPurge(unittest.TestCase):
             "email": "%s@demo.local" % self.demo_id, "name": "Guest",
             "picture": "", "role": "admin", "org_id": self.org_id,
         })
-        # Backdate past the 24h threshold so the purge considers it expired.
         self.cur.execute(
             "UPDATE users SET created_at = NOW() - INTERVAL 48 HOUR WHERE id=%s",
             (self.demo_id,))
@@ -68,14 +47,6 @@ class DemoPurge(unittest.TestCase):
         self.conn.close()
 
     def _refresh(self):
-        """End this connection's read snapshot.
-
-        MySQL defaults to REPEATABLE READ, so once setUp has read anything this
-        connection keeps that snapshot for its whole transaction and cannot see
-        writes committed by cleanup_old_demo_users() on its own connection. The
-        first run of this file failed twice for exactly that reason and looked
-        like the purge doing nothing.
-        """
         self.conn.commit()
 
     def _seed_conversation_with_trail(self):
@@ -100,9 +71,6 @@ class DemoPurge(unittest.TestCase):
         self.conn.commit()
 
     def test_chat_audit_trail_goes_with_the_sandbox(self):
-        """Nelson 2026-08-25: same ruling as governance_records. Safe because
-        the trail's hash chain is scoped per message_pk, so a demo message's
-        chain is independent of every other org's."""
         self._seed_conversation_with_trail()
         self.cur.execute(
             "SELECT COUNT(*) n FROM chat_audit_trail WHERE org_id=%s", (self.org_id,))
@@ -117,13 +85,6 @@ class DemoPurge(unittest.TestCase):
                          "demo chat_audit_trail rows must not survive the purge")
 
     def test_trail_rows_with_no_org_id_still_go(self):
-        """The reason the purge deletes the trail BY CONVERSATION as well as by
-        org. org_id is nullable and was added later, so early rows carry NULL
-        and the org-scoped delete cannot see them. Without the conversation
-        pass they would survive forever, and a mutation test proved the org
-        pass alone hides that: seeding a row WITH org_id made the trail test
-        pass even with the conversation delete removed.
-        """
         convo_id = str(uuid.uuid4())
         self.cur.execute(
             "INSERT INTO conversations (id, user_id, title) VALUES (%s,%s,%s)",
@@ -145,9 +106,6 @@ class DemoPurge(unittest.TestCase):
                          "a demo trail row with a NULL org_id must still be purged")
 
     def test_authentication_evidence_survives_with_org_id_nulled(self):
-        """auth_events records logins and MFA outcomes: security evidence about
-        a person, not demo content. It outlives the sandbox, and must not be
-        left pointing at an org that no longer exists."""
         self._seed_auth_evidence()
         demo_store.cleanup_old_demo_users()
         self._refresh()
@@ -162,9 +120,6 @@ class DemoPurge(unittest.TestCase):
                          "org_id must be nulled, not left dangling")
 
     def test_the_purge_leaves_no_dangling_org_reference(self):
-        """The failure this whole item is about: rows naming an org that no
-        longer resolves. Swept across EVERY table carrying an org_id, so a new
-        table added later fails here rather than silently accumulating."""
         self._seed_conversation_with_trail()
         self._seed_auth_evidence()
         demo_store.cleanup_old_demo_users()
@@ -189,10 +144,6 @@ class DemoPurge(unittest.TestCase):
                          "rows still name the deleted demo org: %s" % ", ".join(offenders))
 
     def test_the_signup_count_outlives_everything_it_counted(self):
-        """The point of the counter. Record a signup, purge away the account,
-        the org and all its content, and the number must still be there."""
-        # _refresh() BEFORE the query, never between execute and fetchone: the
-        # commit discards a pending result set.
         self._refresh()
         self.cur.execute("SELECT accounts FROM demo_usage_daily WHERE day=CURDATE()")
         row = self.cur.fetchone()
@@ -214,8 +165,6 @@ class DemoPurge(unittest.TestCase):
                          "the count must survive the purge that deleted what it counted")
 
     def test_backfill_is_idempotent(self):
-        """It reconstructs history from orphaned audit rows on first run only.
-        Running it again must never double-count a day."""
         self.cur.execute("SELECT day, accounts FROM demo_usage_daily ORDER BY day")
         before = {r["day"]: r["accounts"] for r in self.cur.fetchall()}
         demo_store.init_demo_usage_schema()

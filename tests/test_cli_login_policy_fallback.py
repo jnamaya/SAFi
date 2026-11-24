@@ -1,4 +1,3 @@
-"""Regression test for CLI login policy key fallback on newly provisioned users."""
 from unittest.mock import MagicMock, patch
 
 from safi_app.persistence import database as db
@@ -8,7 +7,6 @@ def test_new_org_user_without_global_policy_falls_back_to_seeded_policy():
     conn = MagicMock()
     cursor = MagicMock()
     conn.cursor.return_value = cursor
-    # 1: created_by -> None, 2: org_id -> None, 3: is_demo=TRUE -> ('prod_software_engineer_policy',)
     cursor.fetchone.side_effect = [None, None, ("prod_software_engineer_policy",)]
 
     user = {"id": "user-123", "org_id": "org-1", "active_profile": None}

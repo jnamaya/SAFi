@@ -1,4 +1,3 @@
-"""Regression tests for org charter injection on built-in agents."""
 from unittest.mock import patch
 
 from safi_app.profile_resolver import get_profile

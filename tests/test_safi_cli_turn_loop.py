@@ -1,5 +1,3 @@
-"""Tests for turn_loop: resume-budget loop, step-ceiling fallback, subagent role filtering."""
-
 import os
 import unittest
 import uuid
@@ -35,8 +33,6 @@ class TurnLoopTestBase(unittest.TestCase):
 
 class TestResumeBudget(TurnLoopTestBase):
     def test_unfinished_todos_force_continuation_then_finish(self):
-        # Step 0: final with pending todos -> harness_note appended, loop continues.
-        # Step 1: todos completed -> final returned.
         ui.set_active_todos([{"task": "Step A", "status": "in_progress"}])
         self.client.send_turn.side_effect = [
             _final("Mid-task status note."),
@@ -52,7 +48,6 @@ class TestResumeBudget(TurnLoopTestBase):
                 user_id="u1", agent="software_engineer", auto_approve=True,
             )
         self.assertEqual(res["finalOutput"], "All done.")
-        # Second send_turn must carry the harness_note continuation.
         second_kwargs = self.client.send_turn.call_args_list[1].kwargs
         harness_notes = [tr for tr in second_kwargs["tool_results"]
                          if tr["tool_name"] == "harness_note"]
@@ -60,9 +55,6 @@ class TestResumeBudget(TurnLoopTestBase):
         self.assertIn("unfinished steps", harness_notes[0]["result"])
 
     def test_resume_budget_exhausts_after_repeats(self):
-        # Budget starts at 3: the first 3 mid-task finals each trigger one
-        # continuation; the 4th final is accepted even though todos are
-        # still pending, so the loop terminates deterministically.
         self.client.send_turn.side_effect = [_final(f"note {i}") for i in range(4)]
         with patch.object(ui, "get_active_todos",
                           return_value=[{"task": "T", "status": "pending"}]):
@@ -73,15 +65,11 @@ class TestResumeBudget(TurnLoopTestBase):
             )
         self.assertEqual(res["finalOutput"], "note 3")
         self.assertEqual(self.client.send_turn.call_count, 4)
-        # Exactly three continuation harness notes were injected (one per
-        # budgeted resume); later calls re-send all earlier notes, so count
-        # distinct notes via the final call's accumulated tool_results.
         final_trs = self.client.send_turn.call_args_list[-1].kwargs["tool_results"]
         harness = [t for t in final_trs if t["tool_name"] == "harness_note"]
         self.assertEqual(len(harness), 3)
 
     def test_intercepted_will_decision_not_continued(self):
-        # An intercepted (refused) turn must NOT trigger resume continuation.
         ui.set_active_todos([{"task": "T", "status": "pending"}])
         res_refused = {"type": "final", "finalOutput": "no",
                        "willDecision": "refuse"}
@@ -97,7 +85,6 @@ class TestResumeBudget(TurnLoopTestBase):
 
 class TestStepCeiling(TurnLoopTestBase):
     def test_ceiling_appends_summary_harness_note_and_gets_final(self):
-        # max_steps tool calls, then a final summary call with tools=[].
         calls = []
 
         def fake_send_turn(**kwargs):
@@ -122,14 +109,13 @@ class TestStepCeiling(TurnLoopTestBase):
         self.assertEqual(last_call["tools"], [])
 
     def test_ceiling_without_tool_results_errors(self):
-        self.client.send_turn.return_value = _tool_call("noop")  # never final
+        self.client.send_turn.return_value = _tool_call("noop")
         with patch("safi_cli.tools.execute_tool", return_value="ok"):
             res = run_agent_turn(
                 client=self.client, prompt="p", workspace_root=Path("/tmp"),
                 conversation_id="c1", user_id="u1", agent="software_engineer",
                 auto_approve=True, max_steps=1,
             )
-        # With max_steps=1 the fallback send never runs; loop returns None via error.
         self.assertTrue(res is None or res.get("finalOutput"))
 
 
@@ -162,9 +148,7 @@ class TestSubagentToolFiltering(TurnLoopTestBase):
             self._run_subagent([_tool_call("write", {"path": "x", "content": "y"})])
             mock_exec.assert_not_called()
             first_kwargs = self.client.send_turn.call_args_list[0].kwargs
-            # Blocked tool call recorded as a result for the server.
-            tr = first_kwargs["tool_results"]  # populated only on next call
-        # The blocked entry appears in the continuation turn's tool_results.
+            tr = first_kwargs["tool_results"]
         second_kwargs = self.client.send_turn.call_args_list[1].kwargs
         blocked = [t for t in second_kwargs["tool_results"] if t["tool_name"] == "write"]
         self.assertEqual(len(blocked), 1)

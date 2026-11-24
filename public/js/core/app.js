@@ -15,9 +15,6 @@ import { setupControlPanelTabs, updateSettingsState } from '../ui/settings/ui-se
 import offlineManager from '../services/offline-manager.js';
 import * as cache from './cache.js';
 
-// PWA client (Capacitor retired 2026-08-19): no native shell or plugins.
-// isNative is permanently false, so every native branch below is inert and
-// the web path runs. Kept as named constants so those branches still compile.
 const isNative = false;
 const GoogleAuth = null;
 const SplashScreen = null;
@@ -29,16 +26,13 @@ const Browser = null;
 
 const WEB_CLIENT_ID = '391499357887-ggqkfpcqptcr93raffcv5mhgufmlu92v.apps.googleusercontent.com';
 
-// --- GLOBAL STATE ---
 let user = null;
 let activeProfileData = {};
 let availableProfiles = [];
 let availableModels = [];
 let listenersAttached = false;
 
-// --- NATIVE HELPERS ---
 
-/** Sets the native status bar style and App Window color */
 function setSystemBarsTheme(isDark) {
   if (!isNative || !StatusBar) return;
 
@@ -52,28 +46,22 @@ function setSystemBarsTheme(isDark) {
   }
 }
 
-/** Triggers a light haptic impact */
 function hapticImpactLight() {
   if (isNative && Haptics) {
     try { Haptics.impact({ style: 'LIGHT' }); } catch (e) {
-      // console.warn('Haptic impact failed', e);
     }
   }
 }
 
-/** Triggers a short vibration, typically for errors */
 function hapticError() {
   if (isNative && Haptics) {
     try { Haptics.vibrate(); } catch (e) {
-      // console.warn('Haptic vibrate failed', e);
     }
   }
 }
 
-/** Initialize GoogleAuth only on native. */
 async function initializeNativeAuth() {
   if (!isNative || !GoogleAuth) {
-    // console.warn('GoogleAuth plugin not found or not native.');
     return;
   }
   try {
@@ -88,7 +76,6 @@ async function initializeNativeAuth() {
   }
 }
 
-/** Native Google Sign-In flow, then backend exchange. */
 async function handleNativeLogin() {
   if (!GoogleAuth) {
     ui.showToast('Google Sign-In not available on this device.', 'error');
@@ -97,7 +84,6 @@ async function handleNativeLogin() {
   try {
     const googleUser = await GoogleAuth.signIn();
     
-    // CRITICAL FIX: Use the idToken instead of the serverAuthCode
     const authCode = googleUser?.authentication?.idToken || googleUser?.serverAuthCode;
 
     if (!authCode) {
@@ -114,7 +100,6 @@ async function handleNativeLogin() {
   } catch (err) {
     const msg = ('' + (err?.message || err)).toUpperCase();
     if (msg.includes('12501') || msg.includes('USER_CANCELED') || msg.includes('CANCELLED')) {
-      // User cancelled the sign-in, this is not an error
       return;
     }
     console.error('[GA] signIn failed:', err);
@@ -123,7 +108,6 @@ async function handleNativeLogin() {
   }
 }
 
-/** Retired native-shell Microsoft login (device client is the PWA now); inert. */
 async function handleNativeMicrosoftLogin() {
   if (!Browser) {
     ui.showToast('Browser plugin not available.', 'error');
@@ -141,7 +125,6 @@ async function handleNativeMicrosoftLogin() {
   }
 }
 
-/** Show/hide the offline banner and update UI for native status */
 function updateOfflineUI(isOnline) {
   const banner = document.getElementById('offline-banner');
   if (banner) {
@@ -149,9 +132,7 @@ function updateOfflineUI(isOnline) {
   }
 }
 
-// --- THEME ---
 
-/** Applies the selected theme and saves it to localStorage. */
 function applyTheme(theme) {
   const isSystemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
   let shouldBeDark = false;
@@ -172,30 +153,22 @@ function applyTheme(theme) {
   } else {
     document.documentElement.classList.remove('dark');
   }
-  // Update native status bar to match the theme
   setSystemBarsTheme(shouldBeDark);
 
 
-  // Re-render app settings tab if it's currently open to reflect the theme change
   if (ui.elements.controlPanelView && !ui.elements.controlPanelView.classList.contains('hidden')) {
     const currentActiveTab = document.querySelector('.modal-tab-button.active');
     if (currentActiveTab && currentActiveTab.id === 'cp-nav-app-settings') {
       uiSettingsModals.renderSettingsAppTab(
         theme,
         applyTheme,
-        () => ui.showModal('delete') // Show modal instead of direct delete
+        () => ui.showModal('delete')
       );
     }
   }
 }
 
-// --- AUTHENTICATION & DATA LOADING ---
 
-/**
- * Full-screen gate shown when the org requires MFA and this local account
- * has no authenticator yet. The session is server-restricted to the MFA
- * endpoints until verification succeeds, so there is nothing else to render.
- */
 function showMfaEnrollmentGate() {
   const gate = document.createElement('div');
   gate.id = 'mfa-enrollment-gate';
@@ -244,14 +217,12 @@ function showMfaEnrollmentGate() {
       const res = await api.setupTotp();
       gate.querySelector('#mfa-gate-secret').textContent = res.secret;
       gate.querySelector('#mfa-gate-otpauth').href = res.otpauth_uri;
-      // qrcode global from js/lib/qrcode.js (vendored, MIT) — same rendering
-      // as the Settings security card. Self-contained SVG, theme-independent.
       try {
         const qr = qrcode(0, 'M');
         qr.addData(res.otpauth_uri);
         qr.make();
         gate.querySelector('#mfa-gate-qr').innerHTML = qr.createSvgTag(4);
-      } catch { /* manual-entry details above still work without it */ }
+      } catch {   }
       gate.querySelector('#mfa-gate-step1').classList.add('hidden');
       gate.querySelector('#mfa-gate-step2').classList.remove('hidden');
       gate.querySelector('#mfa-gate-code').focus();
@@ -282,7 +253,6 @@ async function checkLoginStatus() {
     await api.awaitAuthInit();
     let me = await api.getMe();
 
-    // If the stored token is expired, attempt a silent Google refresh before giving up
     if ((!me || !me.ok) && isNative && GoogleAuth) {
       try {
         const refreshed = await GoogleAuth.refresh();
@@ -299,22 +269,14 @@ async function checkLoginStatus() {
 
     user = (me && me.ok) ? me.user : null;
 
-    // Org-mandated MFA with no authenticator enrolled: the server has issued
-    // a restricted session (only /me, /me/mfa/* and logout work), so instead
-    // of booting the app we show the enrollment gate.
     if (user && user.mfa_setup_required) {
       showMfaEnrollmentGate();
       return;
     }
 
-    // Render the sidebar/login view based on auth state
     uiAuthSidebar.updateUIForAuthState(user);
 
     if (user) {
-      // Offline/PWA kill switch (Phase F): org members follow their org's
-      // policy (server default: OFF for orgs). Applying it BEFORE the
-      // network listener init keeps a forbidden client from flushing or
-      // building any local cache; disabling also purges what exists.
       try {
         const offlineOk = user.offline_enabled !== false;
         await offlineManager.setOfflineAllowed(offlineOk);
@@ -323,15 +285,12 @@ async function checkLoginStatus() {
         console.warn("Offline policy apply warning:", e);
       }
 
-      // FIX: Only initialize the offline manager (and flush queue) IF we are logged in.
-      // This prevents the "401 Loop of Death" where pending prompts try to send while logged out.
       try {
         await offlineManager.initNetworkListener();
       } catch (e) {
         console.warn("Offline manager init warning:", e);
       }
 
-      // User is logged in, fetch necessary data
       const [profilesResponse, modelsResponse] = await Promise.all([
         api.fetchAvailableProfiles(),
         api.fetchAvailableModels()
@@ -340,11 +299,8 @@ async function checkLoginStatus() {
       availableProfiles = profilesResponse.available || [];
       availableModels = modelsResponse.models || [];
 
-      // --- CRITICAL UPDATE: Pass profiles to sidebar for avatar lookup ---
       uiAuthSidebar.setKnownProfiles(availableProfiles);
-      // ------------------------------------------------------------------
 
-      // Determine the active profile
       const currentProfileKey = user.active_profile || (availableProfiles[0] ? availableProfiles[0].key : null);
       activeProfileData = availableProfiles.find(p => p.key === currentProfileKey) || availableProfiles[0] || null;
 
@@ -374,17 +330,10 @@ async function checkLoginStatus() {
         }
       }
 
-      // Update the UI with the active profile
-      // Pass the FULL object so it can find the custom avatar
       uiAuthSidebar.updateActiveProfileChip(activeProfileData);
 
-      // This function renders the content for all control panel tabs
       renderControlPanel();
 
-      // Initialize Model Selector BEFORE loading conversations: the empty state
-      // reads the active model label and the public-demo flag from this module,
-      // and on initial load loadConversations is what renders it. Initialising
-      // after would leave that first render with the module defaults.
       initModelSelector(availableModels, user.intellect_model, (modelId) => {
         handleQuickModelSwitch(modelId);
         updateModelLabel(getActiveModelLabel());
@@ -394,57 +343,42 @@ async function checkLoginStatus() {
         user.intellect_model = activeModel.id;
       }
 
-      // Load the conversation list and the active chat
       await chat.loadConversations(
         activeProfileData,
         user,
         handleExamplePromptClick,
         ui.showModal,
-        true // Explicitly set shouldSwitchChat=true on initial load
+        true
       );
 
-      // Initialize Data Sources UI
       initDataSources();
 
-      // Initialize File Upload
       chat.initFileUpload();
 
-      // Initialize + Composer Menu
-      // Only the attach action is wired now: the agent, model and data-source
-      // lists are sections of the panel, rendered in place by their own
-      // modules, so there is nothing left to toggle open.
       initComposerMenu({ onAttachFile: () => chat.triggerFilePicker() });
 
-      // Voice input (backlog 74): shows the mic button only if the deployment
-      // has it enabled. Transcribes to text that flows through the normal pipeline.
       initVoiceInput();
 
-      // Set initial labels in + menu
       updateModelLabel(getActiveModelLabel());
 
-      // Last, because it needs the profile list and the composer to exist.
       await applyDeepLink();
     }
-    // Attach all global event listeners
     attachEventListeners();
   } catch (error) {
     console.error("Failed to check login status:", error);
-    uiAuthSidebar.updateUIForAuthState(null); // Show login screen on error
-    attachEventListeners(); // Still attach login button listener
+    uiAuthSidebar.updateUIForAuthState(null);
+    attachEventListeners();
     hapticError();
   } finally {
-    // Hide the native splash screen
     setTimeout(() => {
       if (SplashScreen) {
         SplashScreen.hide();
       } else if (isNative) {
-        // console.warn('SplashScreen plugin not available, cannot hide.');
       }
     }, 250);
   }
 }
 
-// --- LOGIC HANDLERS ---
 
 async function handleLogout() {
   console.log('[LOGOUT] Handle logout triggered.');
@@ -459,12 +393,11 @@ async function handleLogout() {
     console.warn('Logout API call failed (may be queued):', e);
   }
 
-  localStorage.removeItem('theme'); // Reset theme
-  await api.clearAuthToken(); // Clear local token
+  localStorage.removeItem('theme');
+  await api.clearAuthToken();
 
   console.log('[LOGOUT] Local state cleared. Reloading...');
 
-  // FIX: Force reload processing to clear any memory states
   setTimeout(() => window.location.reload(), 100);
 }
 
@@ -498,34 +431,21 @@ async function handleDeleteAccount() {
   }
 }
 
-/** Renders the content for all Control Panel tabs */
 function renderControlPanel() {
   if (!user) return;
 
   console.log('[RBAC] Checking visibility for user:', user.id, 'Role:', user.role);
 
-  // Organization: Admin & Auditor only (Auditor = View Only)
   const canSeeOrg = ['admin', 'auditor'].includes(user.role);
-  // Governance: Admin, Editor, Auditor (Member = No Access)
   const canSeeGovernance = ['admin', 'editor', 'auditor'].includes(user.role);
-  // Dashboard: Admin, Editor, Auditor (Member = No Access)
-  // Dashboard: Admin, Editor, Auditor (Member = No Access)
-  // Dashboard: Admin, Editor, Auditor (Member = No Access)
   const canSeeDashboard = ['admin', 'editor', 'auditor'].includes(user.role);
 
-  // Incidents (Reg S-P registry): Admin only
   const canSeeIncidents = user.role === 'admin';
 
-  // Supervisory Review (FINRA/Art. 14 queue): Admin & Auditor — the reviewer
-  // set. Editors are content authors and don't supervise themselves.
   const canSeeReview = ['admin', 'auditor'].includes(user.role);
 
   console.log('[RBAC] Flags:', { canSeeOrg, canSeeGovernance, canSeeDashboard, canSeeIncidents, canSeeReview });
 
-  // The conscience modal offers a "View Full Audit Report" link into the Audit
-  // Hub. Members get a 403 there, so it must not be offered to them — and the
-  // decision has to come from here, where the rule is already defined, rather
-  // than from a second copy of the role list.
   uiSettingsModals.setConscienceDashboardAccess(canSeeDashboard);
 
   const navOrg = document.getElementById('nav-organization');
@@ -534,7 +454,6 @@ function renderControlPanel() {
     else navOrg.classList.add('hidden');
   }
 
-  // Identity & Access: split out of the org Settings tab, same audience.
   const navIdentity = document.getElementById('nav-identity');
   if (navIdentity) {
     if (canSeeOrg) navIdentity.classList.remove('hidden');
@@ -548,7 +467,6 @@ function renderControlPanel() {
     else navGov.classList.add('hidden');
   }
 
-  // Dashboard tab currently hidden/removed in HTML, but keeping logic safe
   const navDash = document.getElementById('nav-dashboard');
   if (navDash) {
     if (canSeeDashboard) navDash.classList.remove('hidden');
@@ -567,38 +485,20 @@ function renderControlPanel() {
     else navReview.classList.add('hidden');
   }
 
-  // Knowledge tab: everyone except a plain member.
-  //
-  // AUDITOR IS IN THIS LIST ON PURPOSE, and it is not merely about viewing.
-  // Auditors are half the reviewer set (admin|auditor) — the approve/reject
-  // controls for shared knowledge live in this tab, so gating it on editor+
-  // would leave documents permanently pending with no one able to clear them.
-  //
-  // Members were briefly given a read-only view when a knowledge base was
-  // shared with them; that was removed as clutter. They still learn what an
-  // agent is grounded in where it matters — the chat header names the
-  // knowledge base and answers carry SOURCE citations.
   const canSeeKnowledge = ['admin', 'editor', 'auditor'].includes(user.role);
 
-  // Hidden in the markup and revealed here, so nothing flashes before this runs.
   const navKnowledge = document.getElementById('nav-knowledge');
   if (navKnowledge) {
     if (canSeeKnowledge) navKnowledge.classList.remove('hidden');
     else navKnowledge.classList.add('hidden');
   }
 
-  // Tools Catalog: admin only, and not merely for tidiness. Every route behind
-  // this tab is require_role('admin'), so showing it to an editor would render
-  // a screen whose every button 403s. Installing a tool server is also the one
-  // action here that reaches outside the deployment.
   const navTools = document.getElementById('nav-tools');
   if (navTools) {
     if (user.role === 'admin') navTools.classList.remove('hidden');
     else navTools.classList.add('hidden');
   }
 
-  // Models & Usage: admin only, same contract as Tools Catalog — the endpoint
-  // behind it is require_role('admin').
   const navUsage = document.getElementById('nav-usage');
   if (navUsage) {
     if (user.role === 'admin') navUsage.classList.remove('hidden');
@@ -613,16 +513,14 @@ function renderControlPanel() {
       navGroupManagement.classList.add('hidden');
     }
   }
-  // ----------------------------------------
 
-  // Update UI Modals with current user context
   uiSettingsModals.updateCurrentUser(user);
 
   uiSettingsModals.renderSettingsProfileTab(
     availableProfiles,
     activeProfileData?.key || null,
     handleProfileChange,
-    user // Pass user for ownership checks
+    user
   );
 
   uiAuthSidebar.initAgentSelector(
@@ -649,23 +547,17 @@ function renderControlPanel() {
     onDeleteAccount: () => ui.showModal('delete')
   });
 
-  // Render "My Profile" Tab. This will fetch the data.
   uiSettingsModals.renderSettingsMyProfileTab();
 
-  // Render App Settings Tab
   uiSettingsModals.renderSettingsAppTab(
     localStorage.theme || 'system',
     applyTheme,
-    () => ui.showModal('delete') // Open "are you sure" modal
+    () => ui.showModal('delete')
   );
 
-  // Ensure we switch to a visible tab if the current/default one is hidden.
-  // We prioritize: Agents (Profile) > Organization > Dashboard
   const orgTab = document.getElementById('nav-organization');
-  const agentsTab = document.getElementById('nav-agents'); // "Agents" tab
+  const agentsTab = document.getElementById('nav-agents');
 
-  // Safety fallback logic
-  // If the *currently active* tab is now hidden, switch to a safe default.
   const currentActive = document.querySelector('.sidebar-item.active');
   let activeIsVisible = currentActive && !currentActive.classList.contains('hidden');
 
@@ -676,34 +568,27 @@ function renderControlPanel() {
       orgTab.click();
     }
   }
-  // --------------------------------------------------
 
-  // --- Mobile Menu Population ---
   const mobileNavContainer = document.getElementById('mobile-nav-links');
   const desktopNav = document.getElementById('sidebar-nav');
   if (mobileNavContainer && desktopNav) {
-    mobileNavContainer.innerHTML = ''; // Clear previous
+    mobileNavContainer.innerHTML = '';
 
     Array.from(desktopNav.children).forEach(child => {
-      // Skip "Back to Chat" as header has one
       if (child.querySelector('#desktop-back-to-chat')) return;
 
-      // Clone visible elements (respect RBAC). Hidden buttons are cloned hidden;
-      // IDs are stripped to avoid conflicts.
       const clone = child.cloneNode(true);
       clone.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
 
       mobileNavContainer.appendChild(clone);
     });
 
-    // Re-attach listeners to the CLONED buttons
     mobileNavContainer.querySelectorAll('button[data-tab]').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const tab = e.currentTarget.dataset.tab;
         const originalBtn = document.getElementById(`nav-${tab}`);
         if (originalBtn) originalBtn.click();
 
-        // Close mobile menu
         document.getElementById('mobile-menu')?.classList.add('-translate-x-full');
         document.getElementById('mobile-menu-backdrop')?.classList.add('hidden');
       });
@@ -718,9 +603,8 @@ async function handleProfileChange(newProfileKey) {
 
     if (response === 'QUEUED') {
       ui.showToast('Profile change queued.', 'info');
-      // Optimistically update UI
       activeProfileData = availableProfiles.find(p => p.key === newProfileKey) || activeProfileData;
-      uiAuthSidebar.updateActiveProfileChip(activeProfileData); // Pass object for avatar support
+      uiAuthSidebar.updateActiveProfileChip(activeProfileData);
       updateAiDisclosure(activeProfileData, handleViewGoverningPolicy);
       return;
     }
@@ -729,10 +613,9 @@ async function handleProfileChange(newProfileKey) {
     updateAgentLabel(selectedProfile?.name, selectedProfile?.avatar || getAvatarForProfile(selectedProfile?.name));
     ui.showToast(`Agent switched to ${selectedProfile.name}. Reloading...`, 'success');
 
-    // Set a flag to force a new chat window after the reload
     sessionStorage.setItem('forceNewChat', 'true');
 
-    setTimeout(() => window.location.reload(), 1000); // Reload to apply changes
+    setTimeout(() => window.location.reload(), 1000);
   } catch (error) {
     console.error('Failed to switch profile:', error);
     ui.showToast('Could not switch agent.', 'error');
@@ -740,9 +623,6 @@ async function handleProfileChange(newProfileKey) {
   }
 }
 
-// Opens the governing policy of the active agent in the shared details modal
-// (same view the Control Panel governance tab uses). Triggered from the
-// "this policy" link in the composer's AI disclosure.
 async function handleViewGoverningPolicy(profile) {
   try {
     const res = await api.getPolicy(profile.policy_id);
@@ -774,8 +654,6 @@ async function handleViewGoverningPolicy(profile) {
 
 async function handleQuickModelSwitch(modelId) {
   try {
-    // Intellect and Conscience are independent faculty routes. Changing the
-    // drafting model must preserve a separately selected auditor.
     await api.updateUserModels({ intellect_model: modelId });
     user.intellect_model = modelId;
     const model = availableModels.find(m => m.id === modelId);
@@ -786,24 +664,6 @@ async function handleQuickModelSwitch(modelId) {
   }
 }
 
-/** Handles click on an example prompt in the empty chat view */
-/**
- * Deep links from outside the app: `?q=<text>` prefills the composer, and an
- * optional `&agent=<key>` switches to that agent first.
- *
- * Exists so a scheduled email can hand an action item back to the agent that
- * raised it. The morning briefing arrives with a prioritized list and, before
- * this, no way to act on any of it.
- *
- * It PREFILLS AND STOPS — it never sends. The text arrives from outside the
- * app, and a link that auto-sends would put a governed turn on someone's
- * permanent record before they had seen the prompt.
- *
- * Switching agents goes through handleProfileChange, which reloads. The query
- * string survives a reload, so this runs again with the agent already active
- * and falls through to the prefill. The params are then cleared, so a refresh
- * does not re-apply a stale prompt and the text does not sit in the URL bar.
- */
 async function applyDeepLink() {
   let params;
   try {
@@ -819,7 +679,7 @@ async function applyDeepLink() {
       && agentKey !== activeProfileData?.key
       && availableProfiles.some(p => p.key === agentKey)) {
     await handleProfileChange(agentKey);
-    return;  // reload is in flight; the prefill happens on the way back
+    return;
   }
 
   if (q) {
@@ -833,18 +693,15 @@ async function applyDeepLink() {
 
 function handleExamplePromptClick(promptText) {
   ui.elements.messageInput.value = promptText;
-  chat.autoSize(); // Resize textarea
+  chat.autoSize();
   ui.elements.sendButton.disabled = false;
   chat.sendMessage(activeProfileData, user);
 }
 
-// --- EVENT LISTENERS ---
 
-/** Attaches all non-dynamic event listeners */
 function attachEventListeners() {
-  if (listenersAttached) return; // Prevent duplicates
+  if (listenersAttached) return;
 
-  // 1. Google Login
   if (ui.elements.loginButton) {
     if (isNative && GoogleAuth) {
       ui.elements.loginButton.addEventListener('click', handleNativeLogin);
@@ -853,7 +710,6 @@ function attachEventListeners() {
     }
   }
 
-  // 2. Microsoft Login
   const microsoftBtn = document.getElementById('login-microsoft-button');
   if (microsoftBtn) {
     if (isNative) {
@@ -868,10 +724,6 @@ function attachEventListeners() {
     }
   }
 
-  // 3. Guest / Demo Login
-  // Retired native-shell branch (isNative is always false now that the device
-  // client is the PWA): the web login uses the plain <a href="/api/login/demo">
-  // link, same-origin.
   const demoBtn = document.getElementById('login-demo-button');
   if (demoBtn && isNative) {
     demoBtn.addEventListener('click', async (e) => {
@@ -888,7 +740,6 @@ function attachEventListeners() {
     });
   }
 
-  // --- Chat Composer ---
   if (ui.elements.sendButton) {
     ui.elements.sendButton.addEventListener('click', () => { hapticImpactLight(); chat.sendMessage(activeProfileData, user); });
     ui.elements.messageInput.addEventListener('keydown', (e) => {
@@ -899,14 +750,9 @@ function attachEventListeners() {
       }
     });
     ui.elements.messageInput.addEventListener('input', chat.autoSize);
-    // Size once at load, through the same path every keystroke uses. Without
-    // this, first paint is the browser's natural rows=1 height and the first
-    // keystroke is the first measurement — any disagreement between the two
-    // shows up as a jump on the first character typed.
     chat.autoSize();
   }
 
-  // --- Sidebar & Navigation ---
   const newChatButton = document.getElementById('new-chat-button');
   if (newChatButton) {
     newChatButton.addEventListener('click', () => {
@@ -916,7 +762,6 @@ function attachEventListeners() {
     });
   }
 
-  // Use event delegation since the button is dynamically rendered inside the convo list
   document.addEventListener('click', (e) => {
     if (e.target.closest('#clear-all-convos-button')) {
       hapticImpactLight();
@@ -924,9 +769,6 @@ function attachEventListeners() {
     }
   });
 
-  // --- Saved content ---
-  // Bookmark button in the message action bar announces intent via a custom
-  // event (ui-messages.js has no access to projects/api state).
   document.addEventListener('safi:save-content', (e) => {
     const { messageId, anchor } = e.detail || {};
     if (!messageId) return;
@@ -940,7 +782,6 @@ function attachEventListeners() {
     });
   });
 
-  // Sidebar "Saved" entry (delegated: the sidebar re-renders on login)
   document.addEventListener('click', (e) => {
     if (e.target.closest('#saved-content-button')) {
       hapticImpactLight();
@@ -966,8 +807,6 @@ function attachEventListeners() {
   const sidebarOverlay = document.getElementById('sidebar-overlay');
   if (sidebarOverlay) sidebarOverlay.addEventListener('click', ui.closeSidebar);
 
-  // --- Desktop sidebar collapse toggle ---
-  // Delegated: the collapse button lives inside the sidebar, which is re-rendered on login.
   document.addEventListener('click', (e) => {
     if (e.target.closest('[data-sidebar-toggle]')) {
       hapticImpactLight();
@@ -975,7 +814,6 @@ function attachEventListeners() {
     }
   });
 
-  // --- Scroll-to-bottom button ---
   const chatWindow = document.getElementById('chat-window');
   const scrollToBottomBtn = document.getElementById('scroll-to-bottom-btn');
   if (chatWindow && scrollToBottomBtn) {
@@ -991,7 +829,6 @@ function attachEventListeners() {
       requestAnimationFrame(() => { rafPending = false; refreshScrollButton(); });
     };
     chatWindow.addEventListener('scroll', scheduleRefresh, { passive: true });
-    // New/streaming messages change the scroll height — re-evaluate on DOM mutations.
     new MutationObserver(scheduleRefresh).observe(chatWindow, { childList: true, subtree: true });
     scrollToBottomBtn.addEventListener('click', () => {
       hapticImpactLight();
@@ -999,7 +836,6 @@ function attachEventListeners() {
     });
   }
 
-  // --- Control Panel ---
   const controlPanelButton = document.getElementById('control-panel-btn');
   if (controlPanelButton) {
     controlPanelButton.addEventListener('click', () => {
@@ -1007,19 +843,12 @@ function attachEventListeners() {
       ui.elements.chatView.classList.add('hidden');
       ui.elements.controlPanelView.classList.remove('hidden');
 
-      // Sidebar hiding and the chat's left offset are CSS's job — one
-      // :has(#control-panel-view:not(.hidden)) rule in styles.css covers every
-      // path into the panel. closeSidebar() stays: that is the MOBILE overlay,
-      // a different concern from the desktop layout.
       ui.closeSidebar();
     });
   }
 
-  // --- Control Panel Logout Button ---
 
-  // Control Panel Mobile Menu (delegated for robustness)
   document.addEventListener('click', (e) => {
-    // Open Menu
     const openBtn = e.target.closest('#mobile-menu-btn');
     if (openBtn) {
       const menu = document.getElementById('mobile-menu');
@@ -1031,7 +860,6 @@ function attachEventListeners() {
       }
     }
 
-    // Close Menu (Close Btn or Backdrop click)
     const closeBtn = e.target.closest('#close-mobile-menu');
     const isBackdrop = e.target.id === 'mobile-menu-backdrop';
 
@@ -1060,25 +888,18 @@ function attachEventListeners() {
       ui.elements.chatView.style.display = '';
       ui.elements.chatView.classList.remove('hidden');
 
-      // Nothing to restore: hiding #control-panel-view releases the CSS rule
-      // that was hiding the sidebar and zeroing the margin.
     });
   });
 
-  // --- Profile Chips (shortcut to Control Panel) ---
   if (ui.elements.activeProfileChip) {
     ui.elements.activeProfileChip.addEventListener('click', () => {
       hapticImpactLight();
       ui.elements.chatView.classList.add('hidden');
       ui.elements.controlPanelView.classList.remove('hidden');
 
-      // Sidebar hiding and the chat's left offset are CSS's job — one
-      // :has(#control-panel-view:not(.hidden)) rule in styles.css covers every
-      // path into the panel. closeSidebar() stays: that is the MOBILE overlay,
-      // a different concern from the desktop layout.
       ui.closeSidebar();
 
-      if (ui.elements.cpNavProfile) ui.elements.cpNavProfile.click(); // Go to profile tab
+      if (ui.elements.cpNavProfile) ui.elements.cpNavProfile.click();
     });
   }
   if (ui.elements.activeProfileChipMobile) {
@@ -1087,17 +908,12 @@ function attachEventListeners() {
       ui.elements.chatView.classList.add('hidden');
       ui.elements.controlPanelView.classList.remove('hidden');
 
-      // Sidebar hiding and the chat's left offset are CSS's job — one
-      // :has(#control-panel-view:not(.hidden)) rule in styles.css covers every
-      // path into the panel. closeSidebar() stays: that is the MOBILE overlay,
-      // a different concern from the desktop layout.
       ui.closeSidebar();
 
-      if (ui.elements.cpNavProfile) ui.elements.cpNavProfile.click(); // Go to profile tab
+      if (ui.elements.cpNavProfile) ui.elements.cpNavProfile.click();
     });
   }
 
-  // --- Modal Buttons ---
   document.getElementById('close-conscience-modal')?.addEventListener('click', ui.closeModal);
   document.getElementById('got-it-conscience-modal')?.addEventListener('click', ui.closeModal);
   document.getElementById('cancel-delete-btn')?.addEventListener('click', ui.closeModal);
@@ -1120,17 +936,14 @@ function attachEventListeners() {
   ui.elements.cancelDeleteConvoBtn?.addEventListener('click', ui.closeModal);
   ui.elements.confirmDeleteConvoBtn?.addEventListener('click', () => { hapticImpactLight(); chat.handleConfirmDelete(activeProfileData, user); });
 
-  // --- Global Click Listeners ---
   document.getElementById('demo-limit-signin-btn')?.addEventListener('click', handleLogout);
 
   document.addEventListener('click', (event) => {
-    // Close convo menu if clicking outside
     const convoMenuButton = event.target.closest('.convo-menu-button');
     if (!convoMenuButton) {
       ui.closeAllConvoMenus();
     }
 
-    // --- NEW: Delegated Logout Handler (Mobile & Desktop) ---
     const logoutBtn = event.target.closest('[data-tab="logout"]');
     if (logoutBtn) {
       event.preventDefault();
@@ -1138,11 +951,9 @@ function attachEventListeners() {
     }
   });
 
-  // --- System Listeners ---
   uiSettingsModals.setupControlPanelTabs();
 
   try {
-    // Listen for system theme changes
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     mediaQuery.addEventListener('change', () => {
       if (localStorage.theme === 'system' || !localStorage.theme) {
@@ -1150,22 +961,18 @@ function attachEventListeners() {
       }
     });
 
-    // Listen for network online/offline status
     if (isNative && Network) {
       Network.addListener('networkStatusChange', (status) => {
         updateOfflineUI(status.connected);
       });
-      // Update initial state
       Network.getStatus().then(status => updateOfflineUI(status.connected));
     }
 
-    // Refresh conversations when app resumes from background
     if (isNative && App) {
       let _lastActiveTime = Date.now();
       App.addListener('appStateChange', ({ isActive }) => {
         if (isActive && user) {
           const awayMs = Date.now() - _lastActiveTime;
-          // Only refresh the sidebar list (not the active chat) if away for more than 5 minutes
           if (awayMs > 5 * 60 * 1000) {
             chat.refreshConvoListOnly(activeProfileData, user, ui.showModal);
           }
@@ -1174,7 +981,6 @@ function attachEventListeners() {
         }
       });
 
-      // Handle OAuth deep link callbacks (e.g. Microsoft login → com.safi.app://auth?token=...)
       App.addListener('appUrlOpen', async ({ url }) => {
         if (!url || !url.startsWith('com.safi.app://auth')) return;
         try { await Browser?.close(); } catch (_) {}
@@ -1192,7 +998,6 @@ function attachEventListeners() {
       });
     }
 
-    // --- Control Panel Logout Button ---
     const cpNavLogout = document.getElementById('cp-nav-logout');
     if (cpNavLogout) {
       cpNavLogout.addEventListener('click', handleLogout);
@@ -1205,18 +1010,12 @@ function attachEventListeners() {
   listenersAttached = true;
 }
 
-// --- BOOTSTRAP ---
 
 document.addEventListener('DOMContentLoaded', async () => {
-  // 1. Apply initial theme and set system bars
   applyTheme(localStorage.theme || 'system');
 
-  // FIX: Removed offlineManager init from here to prevent 401 loops.
-  // It is now called inside checkLoginStatus on success.
 
-  // 3. Initialize native auth for Google Sign-In
   await initializeNativeAuth();
 
-  // 4. Run main logic
   await checkLoginStatus();
 });

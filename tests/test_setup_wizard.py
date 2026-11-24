@@ -1,22 +1,3 @@
-"""
-The setup wizard writes .env by substituting values into .env.example, so the
-template is the single source of truth. These tests defend that arrangement.
-
-The load-bearing ones:
-
-  * test_every_written_key_exists_in_template — the drift guard. A wizard that
-    writes a key the template does not define would silently drop it from the
-    generated .env, producing a config that boots with a missing secret.
-  * test_generated_env_satisfies_production_validate — renders a production
-    answer set and runs the real Config.validate() against it. This is what
-    stops the wizard shipping a .env that fails on first `docker compose up`.
-  * test_fernet_key_is_accepted_by_fernet — the wizard reproduces
-    Fernet.generate_key() from the standard library, because it must run before
-    requirements.txt is installed. If the upstream key format ever changes, this
-    fails instead of the encryption layer failing in production.
-
-Run:  venv/bin/python tests/test_setup_wizard.py
-"""
 import importlib.util
 import os
 import sys
@@ -27,7 +8,6 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-# scripts/ is not a package; load setup.py by path.
 _spec = importlib.util.spec_from_file_location("safi_setup", REPO_ROOT / "scripts" / "setup.py")
 setup = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(setup)
@@ -48,7 +28,6 @@ def parse_env(text):
 
 
 class TemplateContract(unittest.TestCase):
-    """The wizard and .env.example must not drift apart."""
 
     def setUp(self):
         self.lines, self.index = setup.parse_template(setup.TEMPLATE)
@@ -69,20 +48,10 @@ class TemplateContract(unittest.TestCase):
                          f"wizard writes keys absent from .env.example: {missing}")
 
     def test_commented_examples_are_not_settable(self):
-        """
-        Built-in agent selection remains documentation-only. Model assignments
-        are deliberately explicit template keys now because the appliance setup
-        must be able to select its bundled local model without an API key.
-        """
         self.assertNotIn("SAFI_BUILTIN_AGENTS", self.index)
         self.assertIn("SAFI_INTELLECT_MODEL", self.index)
 
     def test_provider_keys_are_the_ones_config_checks(self):
-        """
-        Config.validate() requires one of a specific list of provider keys. If a
-        provider is added there and not here, the wizard can produce a .env that
-        fails the "no LLM API key configured" check.
-        """
         source = (REPO_ROOT / "safi_app" / "config.py").read_text(encoding="utf-8")
         start = source.index("llm_keys = [")
         block = source[start:source.index("]", start)]
@@ -106,7 +75,6 @@ class TemplateContract(unittest.TestCase):
 class GeneratedSecrets(unittest.TestCase):
 
     def test_no_placeholder_survives(self):
-        """Every change-me-* literal in the template must be replaced."""
         values = setup.generated_secrets()
         values["SAFI_LOCAL_ADMIN_PASSWORD"] = setup.gen_password()
         values["GROQ_API_KEY"] = "gsk_test"
@@ -127,7 +95,6 @@ class GeneratedSecrets(unittest.TestCase):
         self.assertEqual(b"governed turn", Fernet(key).decrypt(token))
 
     def test_passwords_need_no_url_escaping(self):
-        """A password with / or + breaks a MySQL connection string."""
         import string
         allowed = set(string.ascii_letters + string.digits + "-_")
         for _ in range(50):
@@ -135,37 +102,15 @@ class GeneratedSecrets(unittest.TestCase):
 
 
 class ValidateAgainstRealConfig(unittest.TestCase):
-    """
-    Load the generated values into the real Config and run its validator. This
-    is the check that the wizard's output actually boots.
-    """
 
     def _validate(self, env):
-        """
-        Import Config fresh with `env` as the whole environment, and validate.
-
-        config.py:9 calls load_dotenv(dotenv_path=<repo>/.env, override=True),
-        so on any developer machine the real .env would beat the values set
-        here — the same hazard docker-compose.test.yml avoids by refusing to
-        mount the repo root. Neutralising the loader makes this test give the
-        same answer everywhere, with or without a .env on disk.
-        """
         import dotenv
-        # Evicting safi_app is what forces Config to re-read the environment, but
-        # it must be undone. Any test module that already holds a reference --
-        # `from safi_app.core.services import usage_tracking` at import time is
-        # enough -- keeps pointing at the evicted object while the code under
-        # test re-imports a brand new one, so a monkeypatch lands on a module
-        # nothing calls again. Symptoms are far from the cause: the patch appears
-        # to apply cleanly, and only tests asserting on a *patched safi_app
-        # function* fail, in whatever order pytest happens to run them.
         evicted = {m: mod for m, mod in sys.modules.items()
                    if m.startswith("safi_app")}
         for m in evicted:
             del sys.modules[m]
         saved_env = dict(os.environ)
         saved_loader = dotenv.load_dotenv
-        # Keep the process usable; drop everything that could configure SAFi.
         keep = {k: saved_env[k] for k in ("PATH", "HOME", "LANG", "PYTHONPATH")
                 if k in saved_env}
         try:
@@ -179,9 +124,6 @@ class ValidateAgainstRealConfig(unittest.TestCase):
             dotenv.load_dotenv = saved_loader
             os.environ.clear()
             os.environ.update(saved_env)
-            # Put the pre-eviction modules back so every other test keeps the
-            # object references it imported, and so a later import does not build
-            # a duplicate tree beside the one still in use.
             for m in [k for k in sys.modules if k.startswith("safi_app")]:
                 del sys.modules[m]
             sys.modules.update(evicted)
@@ -196,7 +138,7 @@ class ValidateAgainstRealConfig(unittest.TestCase):
             "SAFI_LOCAL_ADMIN_PASSWORD": setup.gen_password(),
             "GROQ_API_KEY": "gsk_test",
         })
-        self._validate(parse_env(render_from(values)))  # raises if invalid
+        self._validate(parse_env(render_from(values)))
 
     def test_trial_env_satisfies_validate(self):
         values = setup.generated_secrets()
@@ -210,7 +152,6 @@ class ValidateAgainstRealConfig(unittest.TestCase):
         self._validate(parse_env(render_from(values)))
 
     def test_username_only_local_admin_satisfies_validate(self):
-        """An appliance admin must not need an email address to boot."""
         values = setup.generated_secrets()
         values.update({
             "FLASK_ENV": "production",
@@ -224,7 +165,6 @@ class ValidateAgainstRealConfig(unittest.TestCase):
         self._validate(parse_env(render_from(values)))
 
     def test_missing_provider_key_allows_bootstrap_for_ui_config(self):
-        """A fresh install can boot without a provider key in .env so keys can be set in UI."""
         values = setup.generated_secrets()
         values.update({
             "FLASK_ENV": "development",
@@ -251,15 +191,8 @@ class ValidateAgainstRealConfig(unittest.TestCase):
 
 
 class KeyVerification(unittest.TestCase):
-    """
-    Offline tests for the provider check. The regression they exist for: the
-    first version sent urllib's default User-Agent, Cloudflare answered 403
-    ("error code: 1010") before Groq ever looked at the key, and the wizard
-    reported every key — including working ones — as rejected.
-    """
 
     def _capture(self, raises=None, status=200):
-        """Run verify_key against a stub, returning (result, captured Request)."""
         import urllib.request
         captured = {}
 
@@ -293,7 +226,6 @@ class KeyVerification(unittest.TestCase):
         return urllib.error.HTTPError("https://example", code, "err", {}, None)
 
     def test_every_request_carries_a_user_agent(self):
-        """The root cause. Without this header the check is worthless."""
         _, req = self._capture()
         self.assertIn("User-agent", req.headers,
                       f"no User-Agent sent; headers were {req.headers}")
@@ -304,10 +236,6 @@ class KeyVerification(unittest.TestCase):
         self.assertEqual("Bearer gsk_test_key", req.headers["Authorization"])
 
     def test_403_is_not_a_rejection(self):
-        """
-        403 is what a WAF returns for bot heuristics, a datacentre IP or a geo
-        rule — none of which say anything about the key. Only 401 does.
-        """
         (ok, msg), _ = self._capture(raises=self._http_error(403))
         self.assertTrue(ok, "403 must not be reported as an invalid key")
         self.assertIn("could not check", msg)
@@ -318,7 +246,6 @@ class KeyVerification(unittest.TestCase):
         self.assertIn("not valid", msg)
 
     def test_network_failure_is_never_fatal(self):
-        """Offline and behind-a-proxy installs must still complete."""
         import urllib.error
         for err in (urllib.error.URLError("no route"), TimeoutError(), OSError()):
             (ok, _), _ = self._capture(raises=err)
@@ -330,7 +257,6 @@ class KeyVerification(unittest.TestCase):
         self.assertIn("accepted", msg)
 
     def test_gemini_sends_the_key_in_the_query_string(self):
-        """Gemini takes ?key=, not a bearer header — a wrong shape reads as 403/401."""
         import urllib.request
         captured = {}
 
@@ -371,13 +297,8 @@ class BackupNaming(unittest.TestCase):
 
 
 class FingerprintPinQuestion(unittest.TestCase):
-    """The optional TCB Fingerprint pin (production installs). The rule that
-    matters: the wizard measures the local tree only to WARN, never to offer
-    the value as the pin — a tree pinned to itself would be self-attestation."""
 
     def test_local_measurement_agrees_with_the_manifest(self):
-        """The wizard's honesty check must use the same measurement as
-        verify_integrity, or its warnings would be noise."""
         import json
         fp = setup._local_tcb_fingerprint()
         expected = json.loads(
@@ -386,8 +307,6 @@ class FingerprintPinQuestion(unittest.TestCase):
         self.assertEqual(fp, expected)
 
     def test_the_wizard_never_autofills_the_pin(self):
-        """No code path may write SAFI_EXPECTED_FINGERPRINT from the local
-        measurement. The pin enters through ask() (a paste) or not at all."""
         src = (REPO_ROOT / "scripts" / "setup.py").read_text(encoding="utf-8")
         at = src.index("def collect_interactive")
         body = src[at:src.index("\ndef ", at + 10)]
@@ -404,7 +323,6 @@ class FingerprintPinQuestion(unittest.TestCase):
         self.assertNotIn("SAFI_EXPECTED_FINGERPRINT", values)
 
     def test_template_carries_the_pin_key(self):
-        """The rendered .env must be able to hold the pin the wizard writes."""
         lines, index = setup.parse_template(REPO_ROOT / ".env.example")
         self.assertIn("SAFI_EXPECTED_FINGERPRINT", index)
 

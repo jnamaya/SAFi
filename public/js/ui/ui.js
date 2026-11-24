@@ -1,5 +1,3 @@
-// This file focuses on element initialization, visibility control,
-// toasts, and other low-level UI helpers.
 import * as uiSettingsModals from './ui-settings-modals.js';
 
 export let elements = {};
@@ -7,10 +5,8 @@ let currentLoadingInterval = null;
 let activeToast = null;
 let openDropdown = null;
 
-// --- Sidebar State ---
-export let isSidebarOpen = false; // Exported for use by toggle buttons
+export let isSidebarOpen = false;
 
-// Initialization function to run after DOM is loaded
 export function _initElements() {
   elements = {
     loginView: document.getElementById('login-view'),
@@ -18,18 +14,17 @@ export function _initElements() {
     controlPanelView: document.getElementById('control-panel-view'),
     controlPanelBackButton: document.getElementById('control-panel-back-btn'),
 
-    // Updated IDs for New Sidebar
-    cpNavProfile: document.getElementById('nav-agents'),      // "Agents" tab
-    cpNavDashboard: document.getElementById('nav-dashboard'), // Might be null
+    cpNavProfile: document.getElementById('nav-agents'),
+    cpNavDashboard: document.getElementById('nav-dashboard'),
     cpNavAppSettings: document.getElementById('nav-settings'),
-    cpNavMyProfile: document.getElementById('nav-profile'),   // "My Profile" tab
+    cpNavMyProfile: document.getElementById('nav-profile'),
     cpNavGovernance: document.getElementById('nav-governance'),
     cpNavOrganization: document.getElementById('nav-organization'),
 
-    cpTabProfile: document.getElementById('tab-agents'),      // Content ID for Agents
+    cpTabProfile: document.getElementById('tab-agents'),
     cpTabDashboard: document.getElementById('tab-dashboard'),
     cpTabAppSettings: document.getElementById('tab-settings'),
-    cpTabMyProfile: document.getElementById('tab-profile'),   // Content ID for user profile
+    cpTabMyProfile: document.getElementById('tab-profile'),
     cpTabGovernance: document.getElementById('tab-governance'),
     cpTabOrganization: document.getElementById('tab-organization'),
     cpTabCompliance: document.getElementById('tab-compliance'),
@@ -84,25 +79,22 @@ export function _initElements() {
     profileModal: document.getElementById('profile-details-modal'),
     profileModalContent: document.getElementById('profile-details-content'),
 
-    sidebarElement: null, // Initialized later in open/close functions
-    sidebarOverlay: null, // Initialized later
-    // Note: We keep the reference but stop toggling its visibility class
+    sidebarElement: null,
+    sidebarOverlay: null,
     menuToggleButton: document.getElementById('menu-toggle'),
   };
 }
 
-// Helper to lazily initialize elements (called by every public function)
 export function _ensureElements() {
   if (!elements.loginView) {
     _initElements();
   }
 }
 
-// --- VISIBILITY & NAVIGATION HELPERS ---
 
 export function setOpenDropdown(menuElement) {
   _ensureElements();
-  closeAllConvoMenus(); // Close any existing one first
+  closeAllConvoMenus();
   openDropdown = menuElement;
   document.body.appendChild(openDropdown);
 }
@@ -123,20 +115,14 @@ function updateSidebarState(open) {
 
   if (!elements.sidebarElement || !elements.sidebarOverlay) return;
 
-  // Clear any pending hide timeout
   if (hideSidebarTimeout) {
     clearTimeout(hideSidebarTimeout);
     hideSidebarTimeout = null;
   }
 
-  // Reset inline transform so the CSS classes drive the transition. The drawer
-  // width lives on the element (w-[85vw] max-w-[340px]); on desktop the
-  // #sidebar id width rule (18rem, >=768px) wins, so this is mobile-only.
   elements.sidebarElement.style.transform = '';
 
   if (open) {
-    // Reveal first (display can't animate), then flip the transform on the next
-    // frame so the drawer slides in instead of snapping.
     elements.sidebarElement.classList.remove('hidden');
     elements.sidebarElement.classList.add('flex');
     elements.sidebarOverlay.classList.remove('hidden');
@@ -149,7 +135,6 @@ function updateSidebarState(open) {
     isSidebarOpen = true;
 
   } else {
-    // Slide off-screen and fade the scrim.
     elements.sidebarElement.classList.add('-translate-x-full');
     elements.sidebarOverlay.classList.add('opacity-0');
 
@@ -159,7 +144,6 @@ function updateSidebarState(open) {
 
     isSidebarOpen = false;
 
-    // Hide the drawer after the slide completes (300ms CSS duration).
     hideSidebarTimeout = setTimeout(() => {
       if (!isSidebarOpen) {
         elements.sidebarElement.classList.add('hidden');
@@ -177,22 +161,14 @@ export function closeSidebar() {
   updateSidebarState(false);
 }
 
-/**
- * Toggles the desktop sidebar between expanded and collapsed.
- * Collapse is driven by an `html.sidebar-collapsed` class (CSS-only on desktop),
- * so it survives the sidebar's re-render on login and is restored before paint.
- * No-op on mobile, where the sidebar is an overlay controlled by open/closeSidebar.
- */
 export function toggleDesktopSidebar() {
   const collapsed = document.documentElement.classList.toggle('sidebar-collapsed');
   try {
     localStorage.setItem('sidebarCollapsed', collapsed ? '1' : '0');
   } catch (e) {
-    /* localStorage unavailable (private mode) — non-fatal */
   }
 }
 
-// --- LOADING / SCROLLING ---
 
 export function clearLoadingInterval() {
   if (currentLoadingInterval) {
@@ -223,16 +199,11 @@ export function scrollToBottom() {
   }
 }
 
-// --- MODAL / TOAST ---
 
-// PWA client (Capacitor retired 2026-08-19): toasts render in-DOM below.
 const isNative = false;
 const Toast = null;
 
 export async function showToast(message, type = 'info', duration = 3000) {
-  // 'success' confirms a user-initiated action (saves, deletes, copies) and
-  // is always shown — silent saves read as broken buttons. 'info' is ambient
-  // (offline-queue notices etc.) and stays suppressed to reduce noise.
   if (type === 'info') return;
 
   _ensureElements();
@@ -303,7 +274,6 @@ export function showModal(kind, data) {
   }
   else if (kind === 'demo_limit') {
     elements.demoLimitModal.classList.remove('hidden');
-    // Ensure the close button works
     elements.closeDemoLimitBtn.onclick = closeModal;
   }
 

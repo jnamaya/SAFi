@@ -1,11 +1,3 @@
-"""A dedicated local Conscience endpoint (SAFI_CONSCIENCE_BASE_URL).
-
-The appliance's main local provider points at one llama-server, so by default
-Intellect and Conscience share a single model. These tests cover the opt-in that
-lets a second on-box server be the Conscience's judge: the route gains its own
-base_url while the provider identity stays `local`, so provider governance, org
-allow-lists and the on-box output ceiling are all unchanged.
-"""
 import asyncio
 import logging
 from types import SimpleNamespace
@@ -22,11 +14,6 @@ def _config(**overrides):
     )
     base.update(overrides)
     return SimpleNamespace(**base)
-
-
-# --------------------------------------------------------------------------
-# route assembly
-# --------------------------------------------------------------------------
 
 
 def test_conscience_keeps_the_local_provider_identity():
@@ -51,8 +38,6 @@ def test_whitespace_only_base_url_is_ignored():
 
 
 def test_the_override_never_relocates_a_cloud_conscience():
-    # The knob moves a local transport address; it must not hijack a hosted
-    # provider's endpoint, even when the env var is set.
     route = build_conscience_route(
         _config(CONSCIENCE_MODEL="openai/gpt-oss-120b", CONSCIENCE_BASE_URL="http://127.0.0.1:8082/v1"),
         "openai/gpt-oss-120b",
@@ -72,10 +57,6 @@ def test_an_explicit_conscience_provider_is_respected():
     assert route["provider"] == "groq"
     assert "base_url" not in route
 
-
-# --------------------------------------------------------------------------
-# dispatch
-# --------------------------------------------------------------------------
 
 class _StubMessage:
     def __init__(self, content):
@@ -157,8 +138,6 @@ def test_conscience_dispatches_to_its_override_client():
 
 
 def test_route_override_keeps_the_local_output_ceiling():
-    # The provider is still "local", so the on-box token ceiling must still
-    # apply; a runaway judge generation would otherwise ride out the timeout.
     provider, _, override_sink = _provider_with_override()
     asyncio.run(
         provider._chat_completion(
@@ -167,10 +146,6 @@ def test_route_override_keeps_the_local_output_ceiling():
     )
     assert override_sink["params"]["max_tokens"] == 1024
 
-
-# --------------------------------------------------------------------------
-# client construction
-# --------------------------------------------------------------------------
 
 def _provider_config(base_url=None):
     conscience_route = {"provider": "local", "model": "safi-llama3.1-8b"}

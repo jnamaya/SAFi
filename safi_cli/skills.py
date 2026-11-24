@@ -1,4 +1,3 @@
-"""Discovery and execution for repository-local custom skills (.safi/skills/)."""
 from __future__ import annotations
 from pathlib import Path
 from typing import Dict
@@ -20,7 +19,6 @@ class LocalSkill:
 
 
 def discover_skills(workspace_root: Path) -> Dict[str, LocalSkill]:
-    """Scan workspace_root/.safi/skills/ for skill files (.md or .txt)."""
     skills: Dict[str, LocalSkill] = {}
     skills_dir = workspace_root / ".safi" / "skills"
     if not skills_dir.exists() or not skills_dir.is_dir():

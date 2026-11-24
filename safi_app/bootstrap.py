@@ -1,4 +1,3 @@
-"""Application-layer bootstrap for configurable policy and account content."""
 from __future__ import annotations
 
 import json
@@ -26,11 +25,6 @@ def _seed_demo_policies() -> None:
         try:
             existing = db.get_policy(policy_id)
             if existing:
-                # Insert-only: the DB row is the runtime source of truth for
-                # will_rules, so an existing row is never re-synced from the
-                # flat file. Overwriting here would silently revert DB-side
-                # edits (made in the UI/API) back to the seed value on every
-                # restart. The flat file only seeds a row on first boot.
                 continue
             db.create_policy(
                 name=policy["name"],
@@ -54,8 +48,6 @@ def _seed_demo_policies() -> None:
         except Exception:
             log.exception("Could not seed a configured example policy.")
 
-    # Retired seed rows remain available to historical records but not in the
-    # current example-policy picker.
     visible_ids = set(active_ids)
     if not visible_ids:
         return
@@ -136,7 +128,6 @@ def _seed_local_admin() -> None:
                  password_hash, Config.DEFAULT_PROFILE),
             )
 
-        # Synchronize password and role for any existing admin/local_admin row
         cursor.execute(
             "UPDATE users SET password_hash=%s, role='admin' "
             "WHERE id='local_admin' OR id='admin' OR username='admin'",
@@ -175,7 +166,6 @@ def _seed_local_admin() -> None:
                                     (json.dumps(pcfg), pid),
                                 )
 
-                # Auto-seed standard default enterprise groups for role & agent governance
                 from .persistence import sharing_store
                 default_groups = [
                     ("Developers", "Software engineering and code development staff", "default"),
@@ -205,11 +195,9 @@ def _seed_local_admin() -> None:
 
 
 def initialize() -> None:
-    """Seed deployment-owned configuration after the generic schema exists."""
     _seed_demo_policies()
     _seed_local_admin()
 
 
 def create_organization(org_name: str, user_id: str):
-    """Create an organization using the deployment's selected policy template."""
     return db.create_organization_atomic(org_name, user_id, SAFI_DEFAULT_POLICY)

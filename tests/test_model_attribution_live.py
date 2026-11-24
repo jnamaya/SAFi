@@ -1,4 +1,3 @@
-"""Tests for live llama-server model attribution resolution."""
 import io
 import json
 from unittest.mock import patch

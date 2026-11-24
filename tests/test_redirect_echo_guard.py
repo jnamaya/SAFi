@@ -1,4 +1,3 @@
-"""Regression tests for redirect echo guard and forced redirect framing."""
 from safi_app.core.orchestrator import SAFi
 
 

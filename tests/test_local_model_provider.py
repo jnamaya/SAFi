@@ -1,4 +1,3 @@
-"""Pure routing tests for the bundled OpenAI-compatible appliance model."""
 from types import SimpleNamespace
 
 import pytest
@@ -15,8 +14,6 @@ def test_safi_demo_routes_to_local_provider():
 
 
 def test_every_appliance_model_alias_routes_to_local():
-    # The setup wizard publishes the operator's choice as a safi- alias, so the
-    # reserved prefix has to carry the whole catalogue, not one literal name.
     for alias in ("safi-qwen3-4b", "safi-qwen3-8b", "safi-qwen3-14b", "safi-qwen3-32b"):
         assert detect_provider(alias) == "local", alias
 
@@ -26,11 +23,6 @@ def test_alias_routing_is_case_insensitive():
 
 
 def test_unprefixed_local_looking_names_fail_closed():
-    # Guards the prefix widening: a raw community id such as "llama3-8b" must
-    # not be captured by the safi- rule, and a bare "safi" without the
-    # separator is not an alias. None of these match a provider, so they now
-    # raise instead of silently defaulting to groq (which would publish a
-    # false HIPAA/ZDR badge).
     import pytest
     from safi_app.core.services.model_routing import UnknownModelProviderError
 
@@ -63,10 +55,6 @@ def test_local_provider_has_no_external_compliance_badges():
     assert metadata["baa_capable"] is False
     assert metadata["eu_hostable"] is False
 
-
-# --------------------------------------------------------------------------
-# local output-token ceiling
-# --------------------------------------------------------------------------
 
 class _StubMessage:
     def __init__(self, content):
@@ -106,7 +94,6 @@ class _StubClient:
 
 
 def _provider_for(provider_name, routes=None):
-    """An LLMProvider whose single provider records the params it was called with."""
     from safi_app.core.services.llm_provider import LLMProvider
 
     config = {
@@ -139,8 +126,6 @@ def _call(provider, sink, max_tokens):
 
 
 def test_local_provider_request_is_capped_so_the_generation_finishes():
-    # 8192 tokens on a 3B model at CPU speeds runs minutes past the 300s
-    # per-call timeout, which returns nothing. Capping returns a real answer.
     provider, sink = _provider_for("local")
     assert _call(provider, sink, 8192) == 1024
 
@@ -151,8 +136,6 @@ def test_a_request_already_under_the_ceiling_is_untouched():
 
 
 def test_cloud_providers_keep_the_callers_budget():
-    # The ceiling is a capacity limit on the on-box server, not an audit policy,
-    # so it must not touch a provider that can serve the full budget.
     provider, sink = _provider_for("groq")
     assert _call(provider, sink, 8192) == 8192
 
@@ -193,9 +176,6 @@ def _both_routes(provider_name):
 
 
 def test_the_answering_route_gets_a_larger_ceiling_than_the_judge(monkeypatch):
-    # The same local provider serves both. The Intellect must be able to finish
-    # a tool call (a whole file body or diff); the Conscience stays small so
-    # raising the answering budget never loosens the audit.
     from safi_app.core.services import llm_provider as mod
 
     monkeypatch.setattr(mod, "LOCAL_INTELLECT_MAX_TOKENS", 8192)
@@ -207,9 +187,6 @@ def test_the_answering_route_gets_a_larger_ceiling_than_the_judge(monkeypatch):
 
 
 def test_the_intellect_ceiling_defaults_to_the_configured_budget():
-    # Out of the box the on-box Intellect is not squeezed below
-    # SAFI_MAX_INTELLECT_TOKENS: raising that budget is not silently undone by
-    # the local cap. Lower it explicitly (e.g. a CPU-only box) if needed.
     from safi_app.core.services import llm_provider as mod
 
     assert mod.LOCAL_INTELLECT_MAX_TOKENS == mod.MAX_INTELLECT_TOKENS
@@ -235,10 +212,6 @@ def test_a_cloud_intellect_keeps_the_full_budget():
     provider, sink = _provider_for("groq", routes=_both_routes("groq"))
     assert _call_route(provider, sink, "intellect", 16384) == 16384
 
-
-# --------------------------------------------------------------------------
-# malformed / truncated tool calls
-# --------------------------------------------------------------------------
 
 class _StubFunction:
     def __init__(self, name, arguments):
@@ -323,9 +296,6 @@ def test_a_valid_tool_call_is_returned_as_json():
 
 
 def test_truncated_tool_call_arguments_raise_an_actionable_error():
-    # The exact shape the coder emits when the output cap cuts it off mid-string:
-    # json.loads used to die here with an opaque JSONDecodeError that surfaced as
-    # "could not reach the language model".
     provider = _provider_returning_tool_call("write_file", '{"path": "/tmp/foo', "length")
     with pytest.raises(RuntimeError) as exc:
         _run(provider)
@@ -339,10 +309,6 @@ def test_malformed_tool_call_arguments_report_a_parse_failure():
         _run(provider)
     assert "tool call arguments" in str(exc.value).lower()
 
-
-# --------------------------------------------------------------------------
-# reasoning-effort override (CLI /reasoning) → local llama.cpp
-# --------------------------------------------------------------------------
 
 def _call_with_effort(provider_name, effort, route="intellect"):
     from safi_app.core.services import llm_provider as mod
@@ -379,9 +345,6 @@ def test_local_no_override_sends_no_chat_template_kwargs():
 
 
 def test_local_conscience_route_always_disables_thinking():
-    # Conscience audits must never inherit user-selected reasoning and must
-    # explicitly disable thinking to return fast JSON audits (~4s) instead of
-    # burning ~45s generating hidden thought tokens.
     sink_high = _call_with_effort("local", "high", route="conscience")
     assert sink_high["extra_body"]["chat_template_kwargs"]["enable_thinking"] is False
 
@@ -390,8 +353,6 @@ def test_local_conscience_route_always_disables_thinking():
 
 
 def test_cloud_openai_compatible_vendor_never_gets_chat_template_kwargs():
-    # The knob is a llama-server template control; sending it to a cloud
-    # vendor's API would be a rejected unknown field.
     sink = _call_with_effort("groq", "high")
     assert "chat_template_kwargs" not in (sink.get("extra_body") or {})
 

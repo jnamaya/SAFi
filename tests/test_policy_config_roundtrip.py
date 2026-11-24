@@ -1,35 +1,3 @@
-"""
-`policy_config` must come back as a dict from EVERY policy reader.
-
-WHY. `policy_config` is a JSON column holding five wizard-authored values:
-business_unit, scope_statement, context (the description), alignment_threshold,
-ethical_memory.
-`get_policy` and `get_policy_version_detail` json.loads it; `list_policies` did
-not, so it reached the browser as a JSON *string*.
-
-That was not cosmetic. The Governance tab opens the policy editor from the LIST
-(`ui-settings-governance.js` -> `openPolicyWizard(policy)`), and `hydratePolicy`
-reads `existingPolicy.policy_config.<key>`. On a string every key is `undefined`,
-so:
-
-    business_unit       -> ""
-    scope_statement     -> ""          <- the reported symptom
-    alignment_threshold -> 0.5         <- wizard default
-    ethical_memory      -> 0.90        <- wizard default
-
-`alignment_threshold` is written back as
-`structural_requirements.alignment_score_threshold`, the Will's blocking
-threshold. So opening a policy and saving it silently reset an enforcement
-parameter, with no warning, no diff and no audit signal.
-
-Reported as "the scope is not saved". The scope saved fine — the write path was
-always correct. That is the point of testing this against a real database rather
-than by reading the source: the writer and the consumer are each correct in
-isolation, and only the round trip shows the defect.
-
-Needs the disposable stack (it writes and deletes a policy row):
-    docker compose -f docker-compose.test.yml run --rm --build tests -k policy_config
-"""
 import json
 import sys
 import unittest
@@ -40,17 +8,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from safi_app.persistence import database as db
 
-# The exact four keys the wizard round-trips, with non-default values so a
-# fallback is detectable. 0.5 / 0.90 are the wizard defaults and would mask the
-# bug if used here.
 CONFIG = {
     "business_unit": "Marketing",
     "scope_statement": "Campaign strategy only — no legal or medical guidance.",
-    # Deliberately multi-line. The description used to be embedded in worldview
-    # as `<!-- CONTEXT: ... -->` and recovered with a dot-based regex, so the
-    # first newline broke the round trip: the description read back empty and
-    # the comment fragment leaked into the Purpose box. Reported 2026-08-15 on
-    # the demo's Accion IT Service Delivery policy.
     "context": "Governs the marketing agents.\nSecond line, which used to break the round trip.",
     "alignment_threshold": 0.75,
     "ethical_memory": 0.55,
@@ -100,8 +60,6 @@ class PolicyConfigRoundTrip(unittest.TestCase):
                                  f"{key} was lost or altered via list_policies")
 
     def test_03_the_enforcement_threshold_is_not_silently_defaulted(self):
-        """The consequence that matters. 0.5 is the wizard's fallback, so seeing it
-        after storing 0.75 means the value was lost, not read."""
         cfg = self._listed()["policy_config"]
         self.assertNotEqual(cfg.get("alignment_threshold"), 0.5,
                             "alignment_threshold fell back to the wizard default — "
@@ -111,8 +69,6 @@ class PolicyConfigRoundTrip(unittest.TestCase):
                             "ethical_memory fell back to the wizard default")
 
     def test_04_list_and_get_agree_on_the_same_row(self):
-        """Two readers of one column disagreeing is how this survived: the detail
-        view looked right while the list view was broken."""
         listed = self._listed()["policy_config"]
         fetched = db.get_policy(self.pid)["policy_config"]
         self.assertIsInstance(fetched, dict)
@@ -121,8 +77,6 @@ class PolicyConfigRoundTrip(unittest.TestCase):
                          "and content for the same policy")
 
     def test_05_the_scope_statement_is_readable_where_the_ui_reads_it(self):
-        """The reported symptom, pinned at the exact access pattern the UI uses:
-        `existingPolicy.policy_config.scope_statement`."""
         cfg = self._listed()["policy_config"]
         self.assertEqual(cfg.get("scope_statement"), CONFIG["scope_statement"])
         self.assertTrue(cfg.get("scope_statement"),
@@ -130,8 +84,6 @@ class PolicyConfigRoundTrip(unittest.TestCase):
                         "'the scope is not saved'")
 
     def test_06_an_absent_config_reads_as_an_empty_dict(self):
-        """Legacy rows predate policy_config. They must hydrate as {} so the UI
-        gets its defaults, never `None` (which would throw on cfg.get)."""
         legacy = f"test_policy_{uuid.uuid4().hex[:12]}"
         db.create_policy(name="Legacy", worldview="", will_rules=[], values=[],
                          created_by=self.user, policy_id=legacy, policy_config=None)
@@ -144,8 +96,6 @@ class PolicyConfigRoundTrip(unittest.TestCase):
             db.delete_policy(legacy)
 
     def test_07_the_frontend_tolerates_a_string_as_well(self):
-        """Belt and braces: hydratePolicy parses a string config, because the cost
-        of being wrong here is an enforcement parameter rather than a label."""
         core = (Path(__file__).resolve().parent.parent / "public" / "js" / "ui"
                 / "policy-wizard" / "ui-policy-wizard-core.js").read_text(
                     encoding="utf-8", errors="replace")
@@ -157,17 +107,12 @@ class PolicyConfigRoundTrip(unittest.TestCase):
 
 
     def test_08_a_multiline_description_survives_intact(self):
-        """The description is its own field now. Newlines must survive both
-        readers byte-for-byte; the embedded-comment scheme could not do this."""
         for cfg in (self._listed()["policy_config"],
                     db.get_policy(self.pid)["policy_config"]):
             self.assertEqual(cfg.get("context"), CONFIG["context"])
             self.assertIn("\n", cfg.get("context"))
 
     def test_09_the_wizard_no_longer_embeds_the_description_in_worldview(self):
-        """The writer is the bug's origin: `<!-- CONTEXT: ... -->` prepended to
-        worldview. It must stay deleted; the comment syntax may remain only in
-        the legacy READERS, which must be newline-tolerant ([\\s\\S])."""
         core = (Path(__file__).resolve().parent.parent / "public" / "js" / "ui"
                 / "policy-wizard" / "ui-policy-wizard-core.js").read_text(
                     encoding="utf-8", errors="replace")

@@ -63,7 +63,6 @@ def encrypt_all(dry_run: bool) -> int:
             print(f"REFUSED: encryption produced no token for {f.name} — aborting before any deletion")
             return 2
         enc_path.write_text(token, encoding="ascii")
-        # Verify the round trip before destroying the plaintext.
         if crypto.decrypt_value(enc_path.read_text(encoding="ascii")) != text:
             print(f"REFUSED: round-trip verification failed for {f.name} — plaintext kept")
             return 2

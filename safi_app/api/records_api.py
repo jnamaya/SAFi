@@ -1,12 +1,3 @@
-"""Records governance API: retention config, legal hold, compliance-log
-evidence, and examiner-production export (SEA 17a-4 / Advisers Act 204-2).
-
-Admin-only, org-scoped. Retention config changes go through
-db.set_org_retention_config so the evidence log can never be skipped.
-The export produces decrypted message records plus audit-trail metadata
-(actions/actors/timestamps/hashes — snapshot states omitted) and logs
-itself to org_compliance_log as chain of custody.
-"""
 import json
 from datetime import datetime, timezone
 
@@ -41,12 +32,6 @@ def _parse_date(value):
 
 @records_bp.route('/me/export', methods=['GET'])
 def export_my_data():
-    """Right-of-access export (Phase H — GDPR Art. 15 / HIPAA §164.524):
-    any authenticated user downloads everything SAFi holds about them,
-    decrypted. Self-service — no role gate, but strictly self-scoped (the
-    user id comes from the session, never from the request). Custody-logged
-    as user_data_export: to the user's org log when they belong to one
-    (admins/auditors see that a member exported), globally otherwise."""
     user_id = session.get('user_id')
     if not user_id:
         return jsonify({"error": "Authentication required"}), 401
@@ -61,7 +46,6 @@ def export_my_data():
         db.append_compliance_log(data["account"].get("org_id"), "user_data_export",
                                  _actor(), {"user_id": user_id, "counts": data["counts"]})
     except Exception as e:
-        # Custody evidence is the point — no evidence, no export.
         current_app.logger.error(f"user_data_export custody log failed — refusing export: {e}")
         return jsonify({"error": "Internal Server Error"}), 500
     payload = {
@@ -117,9 +101,6 @@ def get_offline_config(org_id):
 @records_bp.route('/organizations/<org_id>/offline-config', methods=['PUT'])
 @require_role('admin')
 def update_offline_config(org_id):
-    """Offline/PWA kill switch (Phase F). Members' devices pick the change up
-    on their next /api/me bootstrap; disabling also makes their clients purge
-    any locally cached org content."""
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
     data = request.json or {}
@@ -137,8 +118,6 @@ def update_offline_config(org_id):
 @records_bp.route('/organizations/<org_id>/providers', methods=['GET'])
 @require_role('admin')
 def get_providers(org_id):
-    """The org's LLM provider allow-list, with governance metadata for the UI
-    (BAA-capable / EU-hostable badges). allowlist null = unrestricted."""
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
     from ..core.services.model_routing import PROVIDER_METADATA
@@ -154,9 +133,6 @@ def get_providers(org_id):
 @records_bp.route('/organizations/<org_id>/providers', methods=['PUT'])
 @require_role('admin')
 def update_providers(org_id):
-    """Set (list of provider keys) or clear (null) the org's provider
-    allow-list. Change is evidence-logged to org_compliance_log in the same
-    transaction — same contract as retention config."""
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
     data = request.json or {}
@@ -174,10 +150,6 @@ def update_providers(org_id):
 @records_bp.route('/organizations/<org_id>/connectors', methods=['GET'])
 @require_role('admin')
 def get_connectors(org_id):
-    """The org's data-source connector allow-list, with what each one grants.
-    allowlist null = unrestricted (the default, and what every pre-existing org
-    has). Blocked connectors are returned too — an admin needs to see them to
-    turn them back on."""
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
     from ..core.services.connector_governance import list_connectors_for_org
@@ -189,9 +161,6 @@ def get_connectors(org_id):
 @records_bp.route('/organizations/<org_id>/connectors', methods=['PUT'])
 @require_role('admin')
 def update_connectors(org_id):
-    """Set (list of connector keys) or clear (null) the org's connector
-    allow-list. An empty list is valid and means no data sources may be linked.
-    Evidence-logged to org_compliance_log in the same transaction."""
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
     data = request.json or {}
@@ -209,9 +178,6 @@ def update_connectors(org_id):
 @records_bp.route('/organizations/<org_id>/connections', methods=['GET'])
 @require_role('admin')
 def list_connections(org_id):
-    """Who in this org has linked which data source — the answer to 'what
-    corporate data can our agents currently reach', which had none before.
-    No token material is returned."""
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
     try:
@@ -237,9 +203,6 @@ def compliance_log(org_id):
 @records_bp.route('/organizations/<org_id>/records/export', methods=['GET'])
 @require_role('admin')
 def export_records(org_id):
-    """Examiner production: all message records in [from, to) for the org
-    (optionally one user), decrypted, with trail metadata as integrity
-    evidence. JSON attachment; the export itself is logged."""
     if str(org_id) != str(get_current_org_id()):
         return jsonify({"error": "Forbidden"}), 403
     date_from = _parse_date(request.args.get("from"))
@@ -299,11 +262,9 @@ def export_records(org_id):
                                   "profile_name", "policy_id", "policy_version",
                                   "reasoning_log", "timestamp")
             }
-            # Art. 50(2): exported AI messages carry the machine-readable marker.
             msg["ai_generated"] = (r["role"] == "ai")
             conversations[cid]["messages"].append(msg)
 
-        # Trail metadata per conversation — integrity evidence, states omitted.
         for cid, conv in conversations.items():
             cursor.execute(
                 "SELECT id, message_pk, message_id, action, actor, event_at, "

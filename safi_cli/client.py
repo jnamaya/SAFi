@@ -1,4 +1,3 @@
-"""HTTP Client communicating directly with SAFi's governed agentic endpoint."""
 from __future__ import annotations
 
 import logging
@@ -20,7 +19,6 @@ logger = logging.getLogger("safi.client")
 
 
 def _json_or_none(resp: "requests.Response"):
-    """Parse a response body as JSON, returning None on failure."""
     try:
         return resp.json()
     except ValueError as exc:
@@ -29,7 +27,6 @@ def _json_or_none(resp: "requests.Response"):
 
 
 def _open_browser_url(url: str) -> None:
-    """Open *url* in the user's browser, including across the WSL -> Windows boundary."""
     import subprocess
     import sys
 
@@ -143,13 +140,10 @@ class SafiClient:
         return None
 
     def _allow_cert_refresh(self) -> bool:
-        """Allow refreshing an existing pinned appliance cert on reinstall (default: True)."""
         val = os.environ.get("SAFI_TRUST_ON_REINSTALL", "1")
         return val.strip().lower() not in ("0", "false", "no", "off")
 
     def _host_validates_with_system_ca(self) -> Optional[Any]:
-        """Return True or a system CA bundle path if standard CA verification
-        succeeds against self.api_url, or None if the peer is self-signed."""
         try:
             parsed = urlparse(self.api_url)
             host = parsed.hostname
@@ -201,7 +195,6 @@ class SafiClient:
                 logger.warning("Could not persist appliance cert at %s: %s", self.default_ca, exc)
 
     def _get_json(self, path: str, timeout: int = 5) -> Optional[Any]:
-        """GET a JSON document, retrying once after a cert refresh on SSL errors."""
         headers = {}
         if self.api_key:
             headers["X-API-KEY"] = self.api_key
@@ -235,9 +228,6 @@ class SafiClient:
 
     def login(self, identifier: str, password: str, totp_code: str = "",
               ldap: bool = False, timeout: int = 15) -> Dict[str, Any]:
-        """Exchange web username/password (+ optional TOTP) for a fresh
-        safi-cli API key via POST /api/cli/login. Raises SafiClientError on
-        failure; returns the parsed payload on success."""
         payload = {"identifier": identifier, "password": password}
         if totp_code:
             payload["totp_code"] = totp_code
@@ -262,12 +252,10 @@ class SafiClient:
         return data
 
     def get_app_config(self, timeout: int = 5) -> Dict[str, Any]:
-        """Fetch /api/app-config feature flags (sso_login_enabled, etc.)."""
         data = self._get_json("/api/app-config", timeout=timeout)
         return data if isinstance(data, dict) else {}
 
     def sso_login(self, on_url=None, timeout: int = 180) -> Dict[str, Any]:
-        """Browser-based OAuth SSO login (Google / Microsoft) for safi-cli."""
         import time
         import webbrowser
 
@@ -305,13 +293,6 @@ class SafiClient:
         raise SafiClientError("SSO login timed out waiting for browser authorization.", 408)
 
     def verify_connection(self, timeout: int = 5) -> tuple[bool, str, Dict[str, Any]]:
-        """Strongly verify that the target endpoint is an active, responsive SAFi server.
-
-        Probes /api/agents/all and /api/health to ensure the endpoint is live and authentic.
-
-        Returns:
-            (is_valid, message, metadata_dict)
-        """
         if not self.api_url:
             return False, "API URL is empty", {}
         if not self.api_url.startswith(("http://", "https://")):
@@ -384,14 +365,12 @@ class SafiClient:
         return False, last_error or "Connection verification failed", {}
 
     def get_available_agents(self) -> List[Dict[str, Any]]:
-        """Fetch available agents from the connected SAFi backend URL."""
         data = self._get_json("/api/agents/all")
         if isinstance(data, dict) and data.get("ok") and isinstance(data.get("available"), list):
             return data["available"]
         return []
 
     def get_available_models(self) -> List[Dict[str, Any]]:
-        """Fetch available models for the Intellect faculty from the connected SAFi backend."""
         data = self._get_json("/api/models")
         if isinstance(data, dict) and data.get("ok") and isinstance(data.get("models"), list):
             return data["models"]
@@ -414,14 +393,10 @@ class SafiClient:
         reasoning_effort: Optional[str] = None,
         policy_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Dispatch a single turn to SAFi's governed pipeline."""
         headers = {
             "X-API-KEY": self.api_key,
             "Content-Type": "application/json",
         }
-        # Internal key for keyed endpoints (P3 remediation); injected from
-        # server-side config/env only - SAFI_INTERNAL_KEY or the shared
-        # SAFI_INTERNAL_KEYS value - never committed, never browser-side.
         internal_key = os.environ.get("SAFI_INTERNAL_KEY", "").strip()
         if internal_key:
             headers["X-Internal-Key"] = internal_key
@@ -440,7 +415,6 @@ class SafiClient:
             if sp_path.is_file():
                 raw_sp = sp_path.read_text(encoding="utf-8", errors="replace").strip()
                 if raw_sp:
-                    # Enforce 6,000 char anti-bloat limit
                     max_sp_chars = int(os.environ.get("SAFI_SCRATCHPAD_MAX_CHARS", "6000"))
                     if len(raw_sp) > max_sp_chars:
                         raw_sp = raw_sp[:max_sp_chars] + f"\n... [scratchpad truncated to {max_sp_chars:,} characters]"
@@ -536,7 +510,6 @@ class SafiClient:
             )
 
     def get_turn_progress(self, message_id: str, user_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
-        """Fetch real-time reasoning progress for an in-flight message."""
         headers = {}
         if self.api_key:
             headers["X-API-KEY"] = self.api_key
@@ -558,7 +531,6 @@ class SafiClient:
         return None
 
     def cancel_turn(self, message_id: str, user_id: Optional[str] = None) -> bool:
-        """Request the server to abort processing an in-flight message."""
         headers = {}
         if self.api_key:
             headers["X-API-KEY"] = self.api_key
@@ -586,7 +558,6 @@ class SafiClient:
         action: str = "compress",
         clear_agent_memory: bool = False,
     ) -> Dict[str, Any]:
-        """Compress or manage the conversation's memory summary."""
         headers = {
             "Content-Type": "application/json",
         }
@@ -625,7 +596,6 @@ class SafiClient:
         user_id: str,
         agent: str = "software_engineer",
     ) -> Dict[str, Any]:
-        """Clear both conversation memory summary and accumulated agent work context."""
         headers = {
             "Content-Type": "application/json",
         }

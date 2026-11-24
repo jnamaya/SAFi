@@ -1,6 +1,3 @@
-"""Web Search MCP server — DuckDuckGo backend via the `ddgs` package
-(pip install ddgs). The synchronous DDGS client is run in a thread to stay
-async-compatible."""
 import json
 import logging
 import asyncio
@@ -23,10 +20,6 @@ _MAX_RESULTS_PER_CALL = 60
 
 
 def _bounded_snippet(text: str, limit: int = _MAX_RESULT_SNIPPET_CHARS) -> str:
-    """Truncate a result snippet at a whole-word boundary so large result
-    batches stay compact. Long snippets are what explode web_search payloads;
-    the title carries the profile name and role, and most snippets only add
-    context for the first ~150 characters."""
     if not isinstance(text, str) or len(text) <= limit:
         return text or ""
     cut = text[:limit]
@@ -51,7 +44,6 @@ _TRACKING_PARAMETERS = {"fbclid", "gclid", "msclkid", "ref", "ref_", "source"}
 
 
 def _canonical_result_url(url: str) -> str:
-    """Return a stable identity key without changing the emitted URL."""
     if not isinstance(url, str) or not url.strip():
         return ""
 
@@ -65,8 +57,6 @@ def _canonical_result_url(url: str) -> str:
     host = parts.hostname.lower().removeprefix("www.")
     path = parts.path.rstrip("/") or "/"
 
-    # LinkedIn profile pages are the same result regardless of query parameters
-    # or fragments (including tracking parameters added by search providers).
     if host == "linkedin.com" and path.lower().startswith("/in/"):
         query = ""
     else:
@@ -80,7 +70,6 @@ def _canonical_result_url(url: str) -> str:
 
 
 def _deduplicate_results(results: list) -> list:
-    """Keep the first result for each canonical URL."""
     seen = set()
     unique = []
     for result in results:
@@ -113,13 +102,8 @@ async def search_web(query: str | list[str], max_results: int = 15) -> str:
             try:
                 raw_results.extend(await asyncio.to_thread(_ddg_text, item, max_results))
             except Exception as exc:
-                # A single provider/query failure must not discard successful
-                # results from the rest of a batch.
                 logger.warning("web_search query failed: %s: %s", item, exc)
         results = _deduplicate_results(_format_text_results(raw_results))
-        # Bound the payload returned to the caller: after the per-query cap (
-        # max_results) and cross-query dedup, cap the total so a huge batch of
-        # queries cannot swamp the model context or the audit-evidence budget.
         if len(results) > _MAX_RESULTS_PER_CALL:
             results = results[:_MAX_RESULTS_PER_CALL]
         if not results:

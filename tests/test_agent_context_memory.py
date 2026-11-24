@@ -1,21 +1,3 @@
-"""
-Work-context memory: deterministic merge, stamps, eviction, and the budget.
-
-The durability rules under test are the ones the docstrings promise:
-
-- Anti-shrink: entries the delta does not mention are carried forward.
-- Stamps are applied in Python, never requested from the model: every entry an
-  upsert creates or actually CHANGES gets {updated, src}; an upsert that
-  changes nothing must not refresh the stamp (fake freshness would defeat
-  staleness-based eviction).
-- Cap eviction keeps the most recently UPDATED entries, not the last-listed
-  ones; unstamped (pre-stamp) entries count as oldest.
-- apply_memory_budget bounds the PROMPT copy only: whole entries, oldest
-  first, valid JSON out, an in-band truncation notice, and fail-open on
-  garbage input. The stored memory is never touched by it.
-
-Run:  venv/bin/python tests/test_agent_context_memory.py
-"""
 import json
 import sys
 import unittest
@@ -76,8 +58,6 @@ class StampsAreDeterministic(unittest.TestCase):
 class EvictionPrefersStaleness(unittest.TestCase):
 
     def test_the_stale_entry_is_evicted_not_the_first_listed(self):
-        # Position 0 is ACTIVE (recent stamp); position 1 is stale. Old
-        # tail-keeping would evict position 0.
         tasks = [task("active", updated="2026-08-14"), task("stale", updated="2025-01-01")]
         tasks += [task(f"t{i}", updated="2026-06-01") for i in range(_CTX_CAP - 1)]
         out = merge_agent_context({"tasks": tasks}, {}, stamp=STAMP)
@@ -127,9 +107,6 @@ class TheBudgetBoundsThePromptCopyOnly(unittest.TestCase):
 
 
 class UserFacingMemoryManagement(unittest.TestCase):
-    """The view+delete surface (backlog 50b): list, per-item removal through
-    the same deterministic merge machinery the extractor uses, and clear.
-    Needs the disposable stack (writes agent_context_memory rows)."""
 
     def setUp(self):
         import uuid
@@ -154,7 +131,6 @@ class UserFacingMemoryManagement(unittest.TestCase):
         current = json.loads(self.db.fetch_agent_context_memory(self.user, self.agent))
         merged = merge_agent_context(current, {"removals": {"tasks": ["Call Comcast"]}})
         self.assertEqual([t["task"] for t in merged["tasks"]], ["Ship the report"])
-        # Milestones remove by dict identity (event+date).
         merged = merge_agent_context(merged, {"removals": {
             "milestones": [{"event": "Go-live", "date": "2026-09-01"}]}})
         self.assertEqual(merged["milestones"], [])

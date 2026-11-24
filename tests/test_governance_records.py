@@ -1,13 +1,3 @@
-"""
-DB integration tests for governance_records (native Audit Hub, N1): the
-encrypted per-turn capture written inside update_audit_results' transaction.
-
-Covers: atomic write with plaintext filter dimensions, encryption at rest,
-ON DUPLICATE refresh, write-failure isolation (turn commit unaffected),
-no-record when the caller passes none, and FK cascade on conversation purge.
-
-Run:  venv/bin/python tests/test_governance_records.py
-"""
 import json
 import sys
 import uuid
@@ -82,15 +72,9 @@ class GovernanceRecordsDbTest(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         for sql, params in [
-            # Sweep by actor too: delete-entries are journaled AFTER their
-            # conversation row is gone (the subquery no longer matches) and
-            # may carry no org_id — matching them any other way leaves
-            # orphaned partial chains that fail backup_verify.py.
             ("DELETE FROM chat_audit_trail WHERE org_id=%s OR actor=%s OR conversation_id IN "
              "(SELECT id FROM conversations WHERE user_id=%s)",
              (cls.org_id, f"user:{cls.user_id}", cls.user_id)),
-            # No FK by design — org records survive deletes; sweep test rows
-            # by the org and by the test-record userId convention.
             ("DELETE FROM governance_records WHERE org_id=%s OR user_id LIKE 'gov-user-%'", (cls.org_id,)),
             ("DELETE FROM conversations WHERE user_id=%s", (cls.user_id,)),
             ("DELETE FROM users WHERE id=%s", (cls.user_id,)),
@@ -189,9 +173,6 @@ class GovernanceRecordsDbTest(unittest.TestCase):
         self.assertEqual(ch["will_decision"], "approve")
 
     def test_06_member_delete_preserves_org_record(self):
-        """Org governance records are the ORG's supervisory evidence — a
-        member deleting their conversation must not erase them from the
-        Audit Hub (only the retention purge destroys them)."""
         provider_governance.activate_org(self.org_id)
         cid, mid = self._make_turn()
         values = [{
@@ -205,7 +186,6 @@ class GovernanceRecordsDbTest(unittest.TestCase):
         self.assertTrue(db.delete_conversation(cid, self.user_id))
         row = self._gov_row(mid)
         self.assertIsNotNone(row, "org governance record must survive member deletion")
-        # The Audit Hub drill-down still serves the record without its chat row
         detail = db.get_governance_event(self.org_id, row["message_pk"])
         self.assertIsNone(detail["chat"])
         self.assertEqual(detail["record"]["userPrompt"], "what is our fiduciary duty?")
@@ -220,8 +200,6 @@ class GovernanceRecordsDbTest(unittest.TestCase):
         self.assertIsNone(row["org_id"])
 
     def test_08_personal_delete_erases_record(self):
-        """Personal (no-org) records keep the GDPR-erasure promise: user
-        deletion destroys them immediately."""
         provider_governance.activate_org(None)
         cid, mid = self._make_turn()
         self._commit_turn(mid, record=_record(mid))
@@ -244,7 +222,6 @@ class GovernanceRecordsDbTest(unittest.TestCase):
             self.assertIsNone(self._gov_row(mid_p),
                               "personal record erases with the account")
         finally:
-            # Recreate the shared fixture user for any later tests/teardown.
             _exec("INSERT INTO users (id, email, name) VALUES (%s, %s, 'Gov Records Test')",
                   (self.user_id, f"{self.user_id}@example.test"))
 

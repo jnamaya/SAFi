@@ -1,18 +1,3 @@
-"""
-Cross-org isolation on the policy and agent APIs (backlog 70).
-
-A confirmed IDOR cluster: policy-management endpoints and GET /agents/<key>
-fetched a resource by id and acted on it without comparing its org_id to the
-caller's org. Any logged-in user of org A could read (and an editor mutate,
-delete, or mint keys against) org B's policies and read org B's agent config.
-
-These tests drive the HTTP API as org B against org A's resources and assert
-404, while confirming the legitimate paths still work: org A's owner reads its
-own policy, and demo/global templates stay readable by everyone.
-
-Requires local MySQL. Run:
-    docker compose -f docker-compose.test.yml run --rm tests -k cross_org
-"""
 import sys
 import uuid
 import unittest
@@ -44,13 +29,11 @@ class CrossOrgIsolation(unittest.TestCase):
     def setUp(self):
         self.org_a = str(uuid.uuid4())
         self.org_b = str(uuid.uuid4())
-        # policies/agents FK org_id -> organizations(id), so the orgs must exist.
         _exec("INSERT INTO organizations (id, name) VALUES (%s,%s)", (self.org_a, "Org A"))
         _exec("INSERT INTO organizations (id, name) VALUES (%s,%s)", (self.org_b, "Org B"))
         self.admin_a = new_user(f"a_{uuid.uuid4().hex[:8]}", org_id=self.org_a, role='admin')
         self.admin_b = new_user(f"b_{uuid.uuid4().hex[:8]}", org_id=self.org_b, role='admin')
 
-        # Org A owns a policy and a custom agent.
         self.policy_a = f"pol_a_{uuid.uuid4().hex[:10]}"
         db.create_policy(name="Org A Policy", worldview="A worldview",
                          will_rules=[], values=[], org_id=self.org_a,
@@ -61,7 +44,6 @@ class CrossOrgIsolation(unittest.TestCase):
                         values=[], rules=[], policy_id="standalone",
                         created_by=self.admin_a, org_id=self.org_a)
 
-        # A demo/global template (readable by all).
         self.demo_pol = f"demo_pol_{uuid.uuid4().hex[:8]}"
         db.create_policy(name="Demo Template", worldview="tpl", will_rules=[],
                          values=[], org_id=None, created_by=None, policy_id=self.demo_pol)
@@ -77,7 +59,6 @@ class CrossOrgIsolation(unittest.TestCase):
             _exec("DELETE FROM users WHERE id=%s", (u,))
         _exec("DELETE FROM organizations WHERE id IN (%s,%s)", (self.org_a, self.org_b))
 
-    # --- org B is blocked from org A's policy on every route ---
 
     def test_org_b_cannot_read_org_a_policy(self):
         login_as(self.client, self.admin_b, 'admin', org_id=self.org_b)
@@ -101,7 +82,6 @@ class CrossOrgIsolation(unittest.TestCase):
         self.assertEqual(self.client.put(f"/api/policies/{self.policy_a}",
                                          json={"name": "hijack", "worldview": "x"}).status_code, 404)
         self.assertEqual(self.client.delete(f"/api/policies/{self.policy_a}").status_code, 404)
-        # The policy is untouched.
         self.assertIsNotNone(db.get_policy(self.policy_a))
         self.assertEqual(db.get_policy(self.policy_a)['name'], "Org A Policy")
 
@@ -110,7 +90,6 @@ class CrossOrgIsolation(unittest.TestCase):
         r = self.client.get(f"/api/agents/{self.agent_a}")
         self.assertEqual(r.status_code, 404)
 
-    # --- legitimate paths still work ---
 
     def test_org_a_owner_can_read_its_policy(self):
         login_as(self.client, self.admin_a, 'admin', org_id=self.org_a)

@@ -1,14 +1,3 @@
-"""
-API tests for the native Audit Hub (audit_api.py, N2), via the Flask test
-client with forged sessions. Covers the observer set-check (admin|editor|
-auditor, member excluded), org scoping, metric parity with the Streamlit
-definitions (alignment over approved turns only, overall = clip(align −
-drift×10, 1, 10), flagged = score<6 OR drift>0.4), prompt search under the
-decrypt-scan cap, drill-down decryption + chain verification, and the
-custody-logged export.
-
-Requires local MySQL. Run:  venv/bin/python tests/test_audit_api.py
-"""
 import hashlib
 import json
 import sys
@@ -84,8 +73,6 @@ class TestAuditApi(unittest.TestCase):
         _exec("INSERT INTO conversations (id, user_id, title) VALUES (%s, %s, 'audit api test')",
               (cls.cid, cls.uid))
         provider_governance.activate_org(cls.org_id)
-        # Four turns: clean approve, flagged approve (low score + high drift),
-        # redirect (quality 7, no drift), violation (unscored).
         cls.mid_clean = cls._turn("AUDITAPI unique clean prompt xyzzy", "clean answer",
                                   score=9, drift=0.1, decision="approve", stage=None,
                                   reason="alignment_within_threshold")
@@ -119,7 +106,6 @@ class TestAuditApi(unittest.TestCase):
         provider_governance.activate_org(None)
         for sql, params in [
             ("DELETE FROM review_queue WHERE org_id=%s", (cls.org_id,)),
-            # No FK by design — sweep the org's test records explicitly.
             ("DELETE FROM governance_records WHERE org_id=%s", (cls.org_id,)),
             ("DELETE FROM chat_audit_trail WHERE conversation_id=%s", (cls.cid,)),
             ("DELETE FROM chat_history WHERE conversation_id=%s", (cls.cid,)),
@@ -140,7 +126,6 @@ class TestAuditApi(unittest.TestCase):
         return _fetchall("SELECT message_pk FROM governance_records WHERE message_id=%s",
                          (mid,))[0]["message_pk"]
 
-    # -- access control ------------------------------------------------------
 
     def test_01_observer_set_check(self):
         url = f"/api/organizations/{self.org_id}/audit/summary"
@@ -154,7 +139,6 @@ class TestAuditApi(unittest.TestCase):
         res = self.client(role="admin", org_id=self.other_org).get(url)
         self.assertEqual(res.status_code, 403)
 
-    # -- filters ---------------------------------------------------------------
 
     def test_03_filters_reflect_actual_records(self):
         res = self.client().get(f"/api/organizations/{self.org_id}/audit/filters")
@@ -162,19 +146,14 @@ class TestAuditApi(unittest.TestCase):
         self.assertIn("audit_test_agent", data["profiles"])
         self.assertIn("pol-audit", data["policies"])
 
-    # -- summary metric parity -------------------------------------------------
 
     def test_04_summary_metrics_ported_exactly(self):
         res = self.client().get(f"/api/organizations/{self.org_id}/audit/summary")
         s = json.loads(res.data)
         self.assertEqual(s["total_audits"], 4)
-        # Alignment over APPROVED turns only: (9 + 3) / 2
         self.assertAlmostEqual(s["avg_alignment"], 6.0)
-        # Redirect quality reported separately, never pooled
         self.assertAlmostEqual(s["avg_redirect_quality"], 7.0)
-        # Drift over scored turns: (0.1 + 0.5) / 2 = 0.3 → consistency 70%
         self.assertAlmostEqual(s["avg_consistency"], 70.0)
-        # Overall = clip(6.0 − 0.3×10, 1, 10) = 3.0
         self.assertAlmostEqual(s["overall_score"], 3.0)
         self.assertEqual(s["interventions"], 1)
         self.assertAlmostEqual(s["intervention_rate"], 25.0)
@@ -192,7 +171,6 @@ class TestAuditApi(unittest.TestCase):
         self.assertIsNone(s["avg_consistency"])
         self.assertIsNone(s["intervention_rate"])
 
-    # -- trend -----------------------------------------------------------------
 
     def test_06_trend_buckets(self):
         res = self.client().get(f"/api/organizations/{self.org_id}/audit/trend?bucket=day")
@@ -204,13 +182,11 @@ class TestAuditApi(unittest.TestCase):
         self.assertAlmostEqual(b["avg_drift"], 0.3)
         self.assertAlmostEqual(b["avg_consistency"], 70.0)
 
-    # -- explorer --------------------------------------------------------------
 
     def test_07_events_list_and_filters(self):
         base = f"/api/organizations/{self.org_id}/audit/events"
         all_items = json.loads(self.client().get(base).data)
         self.assertEqual(all_items["total"], 4)
-        # No decrypted content on the list path
         self.assertNotIn("record_enc", all_items["items"][0])
         self.assertNotIn("prompt_preview", all_items["items"][0])
         for flt, expected_mids in (
@@ -238,8 +214,6 @@ class TestAuditApi(unittest.TestCase):
         self.assertEqual(res.status_code, 413)
 
     def test_09b_plaintext_scope_bypasses_cap(self):
-        # The cap bounds per-row decryption; the plaintext scope is pure SQL
-        # LIKE, so a large window must not 413.
         with patch.object(db, "GOVERNANCE_SEARCH_CAP", 1):
             res = self.client().get(
                 f"/api/organizations/{self.org_id}/audit/events"
@@ -249,7 +223,6 @@ class TestAuditApi(unittest.TestCase):
         self.assertEqual(data["window"], 4)
         self.assertEqual(len(data["items"]), 1)
 
-    # -- drill-down --------------------------------------------------------------
 
     def test_10_event_detail_decrypts_and_verifies(self):
         pk = self._pk(self.mid_redir)
@@ -268,7 +241,6 @@ class TestAuditApi(unittest.TestCase):
             f"/api/organizations/{self.other_org}/audit/events/{pk}")
         self.assertEqual(res.status_code, 404)
 
-    # -- export ------------------------------------------------------------------
 
     def test_12_export_custody_logged(self):
         res = self.client().get(
@@ -290,9 +262,6 @@ class TestAuditApi(unittest.TestCase):
         self.assertEqual(res.status_code, 413)
 
     def test_13b_drilldown_carries_the_hashes_not_just_a_verdict(self):
-        """The detail view rendered a green "Chain verified" badge off
-        {entries, valid, first_bad_id} alone — our conclusion, with nothing the
-        viewer could check. The tip digest has to travel with the verdict."""
         pk = self._pk(self.mid_clean)
         doc = json.loads(self.client().get(
             f"/api/organizations/{self.org_id}/audit/events/{pk}").data)
@@ -301,15 +270,12 @@ class TestAuditApi(unittest.TestCase):
         self.assertGreater(trail["entries"], 0)
         self.assertRegex(trail["entry_hash"], r"^[0-9a-f]{64}$")
 
-        # Must be the stored chain head, not a recomputation — the point is to
-        # expose what IS in the table so a reader can compare it elsewhere.
         stored = _fetchall(
             "SELECT entry_hash, prev_hash FROM chat_audit_trail "
             "WHERE message_pk=%s ORDER BY id DESC LIMIT 1", (pk,))[0]
         self.assertEqual(trail["entry_hash"], stored["entry_hash"])
         self.assertEqual(trail["prev_hash"], stored["prev_hash"])
 
-        # Same tip as the export reports for the same turn: one source of truth.
         exported = json.loads(self.client().get(
             f"/api/organizations/{self.org_id}/audit/export").data)
         rec = next(r for r in exported["records"] if r["message_pk"] == pk)
@@ -317,9 +283,6 @@ class TestAuditApi(unittest.TestCase):
         self.assertEqual(rec["integrity"]["prev_hash"], trail["prev_hash"])
 
     def test_13c_empty_chain_is_not_reported_as_valid(self):
-        """_verify_chain_entries([]) used to return valid=True, so a turn whose
-        trail had been purged rendered as a green tick over zero entries. The
-        export already treated that as null; the drill-down did not."""
         pk = self._pk(self.mid_clean)
         saved = _fetchall("SELECT * FROM chat_audit_trail WHERE message_pk=%s", (pk,))
         self.assertTrue(saved, "fixture must have trail rows to remove")
@@ -346,15 +309,11 @@ class TestAuditApi(unittest.TestCase):
                         "restore must leave the chain verifying again")
 
     def test_14_export_carries_verifiable_integrity_evidence(self):
-        """This was the one export a recipient could not check at all: it shipped
-        decrypted records with no entry_hash, prev_hash or chain verdict, while
-        records/export and the review item export both carried them."""
         res = self.client().get(f"/api/organizations/{self.org_id}/audit/export")
         self.assertEqual(res.status_code, 200)
         body = res.data.decode("utf-8")
         payload = json.loads(body)
 
-        # --- per record ---
         self.assertTrue(payload["records"], "fixture should export something")
         for rec in payload["records"]:
             integ = rec["integrity"]
@@ -366,11 +325,8 @@ class TestAuditApi(unittest.TestCase):
                                "fixture turns all have trail entries")
             self.assertTrue(integ["chain_valid"], "untampered chain must verify")
             self.assertIsNone(integ["chain_first_bad_id"])
-            # A real sha256 hex digest, not a placeholder or a truncation.
             self.assertRegex(integ["entry_hash"], r"^[0-9a-f]{64}$")
 
-        # The exported tip must be the actual chain head in the database, not a
-        # recomputation that could drift from what is stored.
         rec = payload["records"][0]
         stored = _fetchall(
             "SELECT entry_hash, prev_hash FROM chat_audit_trail "
@@ -378,12 +334,10 @@ class TestAuditApi(unittest.TestCase):
         self.assertEqual(rec["integrity"]["entry_hash"], stored[0]["entry_hash"])
         self.assertEqual(rec["integrity"]["prev_hash"], stored[0]["prev_hash"])
 
-        # And it must agree with the canonical verifier.
         verdict = db.verify_message_audit_trail(rec["message_pk"])
         self.assertEqual(verdict["entries"], rec["integrity"]["chain_entries"])
         self.assertEqual(verdict["valid"], rec["integrity"]["chain_valid"])
 
-        # --- document level ---
         digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
         self.assertEqual(res.headers.get("X-SAFi-Export-SHA256"), digest,
                          "header digest must cover the exact bytes served")
@@ -393,15 +347,11 @@ class TestAuditApi(unittest.TestCase):
                          "the custody log is the authoritative copy of the digest")
         self.assertNotIn("records", ev["detail"], "custody log must never carry content")
 
-        # The file must state the limits of what it proves, so a reader working
-        # from the artifact alone cannot overstate it.
         scope = payload["integrity"]["scope"]
         self.assertIn("not", scope.lower())
         self.assertIn("integrity evidence", scope)
 
     def test_15_absent_trail_is_not_reported_as_verified(self):
-        """No trail rows is an absence of evidence. Reporting chain_valid=true
-        there would certify exactly the records with nothing backing them."""
         pk = _fetchall("SELECT message_pk FROM governance_records WHERE org_id=%s "
                        "LIMIT 1", (self.org_id,))[0]["message_pk"]
         saved = _fetchall("SELECT * FROM chat_audit_trail WHERE message_pk=%s", (pk,))

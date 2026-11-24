@@ -1,9 +1,3 @@
-"""Pure-logic tests for the appliance local-model catalogue and hardware probe.
-
-safi_local.py is stdlib-only appliance code that lives outside the app package,
-so it is loaded here by path rather than imported normally. That is the same
-importlib mechanism safi-browser-setup.py uses at runtime.
-"""
 import importlib.util
 import json
 from pathlib import Path
@@ -45,10 +39,6 @@ def _hw(ram=0, vram=0, disk=500 << 30, driver=None, usable=False, vendor=None):
     }
 
 
-# --------------------------------------------------------------------------
-# catalogue integrity
-# --------------------------------------------------------------------------
-
 def test_every_model_is_fully_pinned(catalogue):
     for model in catalogue["models"]:
         assert model["url"].startswith("https://"), model["id"]
@@ -75,16 +65,11 @@ def test_model_ids_and_aliases_are_unique(catalogue):
 
 
 def test_every_backend_carries_an_id_matching_its_key(catalogue):
-    # safi-model-fetch reports the chosen backend into the status file with
-    # backend["id"]. A backend spec without one crashes every fetch at the first
-    # progress write, which is how this was originally found.
     for key, backend in catalogue["backends"].items():
         assert backend["id"] == key
 
 
 def test_qwen3_0_6b_is_retired_not_offered(catalogue):
-    # It leaked the reflection contract 6/6 and used a real tool 0/6. It must
-    # not creep back into the picker as a "small" option.
     assert "qwen3-0.6b" not in [m["id"] for m in catalogue["models"]]
     assert "qwen3-0.6b" in catalogue["retired"]
 
@@ -95,9 +80,6 @@ def test_cpu_backend_ships_on_the_iso(catalogue):
 
 
 def test_cuda_backend_downloads_both_archives(catalogue):
-    # llama.cpp split cudart out of the server archive. Fetching only the
-    # server yields a ggml-cuda.so that cannot resolve libcudart and fails at
-    # the first GPU layer load, so both must be counted.
     assets = catalogue["backends"]["cuda-12.8"]["assets"]
     assert len(assets) == 2
     assert any("cudart-" in a["url"] for a in assets)
@@ -105,10 +87,6 @@ def test_cuda_backend_downloads_both_archives(catalogue):
     total = safi_local.backend_download_bytes(catalogue, "cuda-12.8")
     assert total > 700_000_000
 
-
-# --------------------------------------------------------------------------
-# backend selection
-# --------------------------------------------------------------------------
 
 def test_no_gpu_selects_cpu(catalogue):
     assert safi_local.select_backend(catalogue, _hw(ram=16 << 30)) == "cpu"
@@ -146,10 +124,6 @@ def test_broken_nvidia_driver_is_not_treated_as_cpu_only_quietly(catalogue):
     assert "not responding" in safi_local.backend_reason(catalogue, hw, "cpu")
 
 
-# --------------------------------------------------------------------------
-# AMD / Vulkan backend selection
-# --------------------------------------------------------------------------
-
 def _amd_hw(vram, carve=0):
     hw = _hw(vram=vram, driver=0, usable=True, vendor="amd")
     hw["gpu"]["name"] = "AMD Radeon 8060S"
@@ -186,8 +160,6 @@ def test_cuda_backends_are_scoped_to_nvidia_and_carry_a_home(catalogue):
 
 
 def test_amd_gpu_is_not_offered_cuda(catalogue):
-    # A CUDA backend for an nvidia vendor must not win for an AMD card even at
-    # an arbitrary high driver number: vendor scoping is the gate.
     hw = _amd_hw(vram=56 << 30)
     hw["gpu"]["driver_major"] = 595
     assert safi_local.select_backend(catalogue, hw) == "vulkan"
@@ -203,7 +175,6 @@ def test_huge_uma_carve_out_is_surfaced(catalogue):
 def test_qwen3_8_27b_is_the_amd_flagship(catalogue):
     entry = safi_local.model_by_id(catalogue, "qwen3.8-27b")
     assert entry["optimized_for"] == ["amd"]
-    # Verified-compatible with the pinned b11205 Vulkan build.
     assert entry["llama_args"][:2] == ["--spec-type", "draft-mtp"]
     assert "-fa" in entry["llama_args"] and "-ctv" in entry["llama_args"]
     hw = _amd_hw(vram=56 << 30)
@@ -220,14 +191,9 @@ def test_flagship_does_not_override_small_vm_tuning(catalogue):
     hw = _hw(ram=8 << 30, disk=100 << 30)
     results = {r["id"]: r for r in safi_local.evaluate_models(catalogue, hw, "cpu")}
     assert results["qwen3.8-27b"]["fits"] is False
-    # Small-VM behaviour unchanged: only the largest fitting model is marked.
     recommended = [r["id"] for r in results.values() if r["recommended"]]
     assert recommended == ["qwen3-4b"]
 
-
-# --------------------------------------------------------------------------
-# fit evaluation
-# --------------------------------------------------------------------------
 
 def test_4b_is_the_recommendation_on_a_small_vm(catalogue):
     results = {r["id"]: r for r in
@@ -237,9 +203,6 @@ def test_4b_is_the_recommendation_on_a_small_vm(catalogue):
 
 
 def test_a_cpu_box_is_not_offered_a_model_it_cannot_stream(catalogue):
-    # 32 GiB of RAM can hold the 32B's 19.8 GB of weights, but CPU generation
-    # re-reads the whole weight file per token. Recommending it here would be
-    # technically true and practically useless.
     results = {r["id"]: r for r in
                safi_local.evaluate_models(catalogue, _hw(ram=32 << 30), "cpu")}
     assert results["qwen3-32b"]["fits"] is False
@@ -248,7 +211,6 @@ def test_a_cpu_box_is_not_offered_a_model_it_cannot_stream(catalogue):
 
 
 def test_a_gpu_lifts_the_cpu_speed_ceiling(catalogue):
-    # Same RAM as above, but a card that can hold the 32B.
     hw = _hw(ram=32 << 30, vram=24 << 30, driver=535, usable=True, vendor="nvidia")
     results = {r["id"]: r for r in
                safi_local.evaluate_models(catalogue, hw, "cuda-12.8")}
@@ -257,8 +219,6 @@ def test_a_gpu_lifts_the_cpu_speed_ceiling(catalogue):
 
 
 def test_a_very_large_cpu_box_may_still_offer_the_32b(catalogue):
-    # The ceiling is a fraction of RAM, so a genuinely huge box is not blocked
-    # from choosing the largest model.
     results = {r["id"]: r for r in
                safi_local.evaluate_models(catalogue, _hw(ram=96 << 30), "cpu")}
     assert results["qwen3-32b"]["fits"] is True
@@ -269,7 +229,6 @@ def test_cpu_only_large_models_are_flagged_as_slow(catalogue):
                safi_local.evaluate_models(catalogue, _hw(ram=64 << 30), "cpu")}
     assert any("generation will be slow" in note
                for note in results["qwen3-14b"]["notes"])
-    # The 4B is small enough that the warning would just be noise.
     assert not any("generation will be slow" in note
                    for note in results["qwen3-4b"]["notes"])
 
@@ -300,8 +259,6 @@ def test_32b_does_not_fit_a_cpu_vm_of_ordinary_size(catalogue):
     results = {r["id"]: r for r in
                safi_local.evaluate_models(catalogue, _hw(ram=16 << 30), "cpu")}
     assert results["qwen3-32b"]["fits"] is False
-    # With no usable GPU the useful thing to say is the RAM shortfall; "needs
-    # 20.4 GiB VRAM, this GPU has 0.0 GiB" would just be noise.
     assert any("RAM" in reason for reason in results["qwen3-32b"]["reasons"])
 
 
@@ -311,14 +268,10 @@ def test_32b_fits_a_24gb_gpu_and_becomes_recommended(catalogue):
                safi_local.evaluate_models(catalogue, hw, "cuda-12.8")}
     assert results["qwen3-32b"]["fits"] is True
     assert results["qwen3-32b"]["recommended"] is True
-    # Plenty of RAM also fits it, but a GPU box must offload -- otherwise the
-    # operator paid 765 MB for a CUDA backend and watched it sit idle.
     assert results["qwen3-32b"]["placement"] == "gpu"
 
 
 def test_32b_falls_back_to_cpu_when_the_card_is_too_small(catalogue):
-    # 64 GB of RAM holds the 32B, but a 16 GB card cannot offload it. That is
-    # exactly the "effectively GPU-only" case, so it must be called out.
     hw = _hw(ram=64 << 30, vram=16 << 30, driver=535, usable=True, vendor="nvidia")
     results = {r["id"]: r for r in
                safi_local.evaluate_models(catalogue, hw, "cuda-12.8")}
@@ -333,13 +286,10 @@ def test_32b_does_not_fit_with_neither_capacity(catalogue):
                safi_local.evaluate_models(catalogue, hw, "cuda-12.8")}
     assert results["qwen3-32b"]["fits"] is False
     assert any("VRAM" in reason for reason in results["qwen3-32b"]["reasons"])
-    # A 16 GB card still leaves a sensible recommendation behind.
     assert results["qwen3-14b"]["recommended"] is True
 
 
 def test_a_tiny_gpu_never_gets_full_offload_of_a_larger_model(catalogue):
-    # min_vram 0 means "a GPU is optional", not "any GPU will do": a 2 GB card
-    # must not be offered offload of a 2.5 GB model.
     hw = _hw(ram=16 << 30, vram=2 << 30, driver=535, usable=True, vendor="nvidia")
     results = {r["id"]: r for r in
                safi_local.evaluate_models(catalogue, hw, "cuda-12.8")}
@@ -375,9 +325,6 @@ def test_estimated_ram_matches_weights_plus_kv_plus_overhead(catalogue):
 
 
 def test_kv_math_matches_llama_cpp_reported_values(catalogue):
-    # 36 layers * 8 kv heads * 128 head_dim * 2 (K,V) * 2 (f16) = 147456.
-    # llama.cpp reported 144 KiB/token for both Qwen3-0.6B(28L -> 114688) and
-    # Qwen3-8B(36L -> 147456) at ctx 8192, so the formula is the right one.
     four = safi_local.model_by_id(catalogue, "qwen3-4b")
     eight = safi_local.model_by_id(catalogue, "qwen3-8b")
     assert four["kv_bytes_per_token"] == 147456
@@ -390,10 +337,6 @@ def test_unknown_hardware_recommends_nothing_rather_than_guessing(catalogue):
     assert not any(r["recommended"] for r in results)
     assert not any(r["fits"] for r in results)
 
-
-# --------------------------------------------------------------------------
-# display helpers
-# --------------------------------------------------------------------------
 
 def test_human_bytes_uses_decimal_gigabytes(catalogue):
     model = safi_local.model_by_id(catalogue, "qwen3-8b")

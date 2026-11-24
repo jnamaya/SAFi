@@ -1,32 +1,3 @@
-"""
-The request path. One turn of SAFi, in the order the governance phases run:
-
-  Phase 0  PhaseZeroGate on the user prompt. Deterministic, no model, blocks
-           on the same input every run.
-  Phase 2  Intellect: a text draft, or a tool loop in which Will
-            authorizes every step by exact name (also deterministic).
-  Phase    _finalize_draft — the single commit path for EVERY draft
-  3 - 5    producer: Will W1 structure -> Conscience audit -> coverage
-           fail-closed -> hard gates -> Spirit aggregate and threshold. The
-           audit is the only model-scored gate here; every other gate is
-           arithmetic over the ledger or the draft text, so a block on the
-           same input reproduces.
-
-A turn ends in one of four shapes: commit, content-gate reflexion retry,
-agent redirect, or a deterministic system-failure notice. Redirect vs notice
-is an architectural boundary, not a wording preference — see
-_is_correctable_gate and _ship_system_failure_notice.
-
-Everything the turn decided is assembled once as `governance_record` and
-written by update_audit_results, which also owns the encrypted
-governance_records row and the audit hash chain.
-
-Client-owned-tool mode (OpenCode, Claude Code) is a second execution branch in
-this same request path: the tool catalogue/results come from the adapter, Will
-and Conscience gate each proposal, and an approved proposal is returned to that
-client for execution. Its next request re-enters this method with the tool
-result; final drafts still use the same `_finalize_draft` path as web chat.
-"""
 from __future__ import annotations
 import hashlib
 import os
@@ -49,25 +20,14 @@ from collections import deque, OrderedDict
 from .faculties.spirit import build_spirit_feedback
 from . import pii_validators
 from .faculties import IntellectEngine, WillGate, ConscienceAuditor, SpiritIntegrator, PhaseZeroGate
-# Reused rather than reimplemented: the tool-evidence merge below needs the same
-# whole-chunks-plus-explicit-truncation-note behaviour the RAG path already has.
 from .faculties.intellect import _apply_context_budget
-# Plugins arrive through the registry (agreement §III: organizations add
-# plugins without touching this file). The shipped registrations are imported
-# by safi_app/__init__.py, so this manifest-covered file neither knows any
-# plugin's name nor triggers content registration.
 from .plugins.registry import plugins_for
 from .tool_connectors import CONNECTOR_TOOLS
 
-# Unlimited-turns mode still bounds the DB read: "every row in the conversation"
-# is the intent, but an unbounded LIMIT on a thread that has run for months is a
-# pathological query. The character budget below is the real constraint; this
-# only stops the query itself being pathological.
 _HISTORY_FETCH_ALL = 400
 
 
 class AgenticEventKind(str, Enum):
-    """Canonical classification for agentic loop events (Requirement 1)."""
     USER_INPUT = "user_input"
     UNTRUSTED_EXTERNAL_CONTENT = "untrusted_external_content"
     TOOL_INTENT = "tool_intent"
@@ -81,15 +41,6 @@ def classify_agentic_event(
     content: Any,
     **metadata
 ) -> Dict[str, Any]:
-    """
-    Explicitly classifies and formats an agentic event into the SAFi event ontology:
-      - user_input
-      - untrusted_external_content
-      - tool_intent
-      - tool_receipt
-      - final_user_facing_output
-      - internal_reasoning
-    """
     kind_str = event_kind.value if hasattr(event_kind, "value") else str(event_kind)
     event_record = {
         "event_kind": kind_str,
@@ -102,18 +53,6 @@ def classify_agentic_event(
 
 
 def _current_date_line(now_utc: datetime, user_timezone: Optional[str] = None) -> str:
-    """
-    The date line prepended to every user prompt before the Intellect sees it.
-
-    Without a timezone the model lives on the server's UTC clock, which rolls
-    to "tomorrow" mid-evening for anyone west of UTC (a 10pm Thursday question
-    about "tomorrow" got an answer about Saturday). When the client supplies an
-    IANA zone name, the line leads with the user's local calendar and keeps
-    UTC alongside so audit reasoning stays unambiguous. The zone string is
-    untrusted client input: anything ZoneInfo rejects falls back to UTC-only,
-    never an error. Prompt context only — storage, audit records, and every
-    deterministic gate remain UTC and never read this string.
-    """
     utc_line = now_utc.strftime("Current Date: %A, %B %d, %Y. %H:%M:%S Z")
     if not user_timezone:
         return utc_line
@@ -128,23 +67,6 @@ def _current_date_line(now_utc: datetime, user_timezone: Optional[str] = None) -
 
 
 def _render_history(messages, max_chars: int) -> str:
-    """
-    Render the verbatim window, dropping the OLDEST whole turns when it exceeds
-    the character budget, and saying so.
-
-    Two decisions worth keeping:
-
-    WHOLE MESSAGES, never a mid-message cut. Truncating inside a message ends it
-    mid-sentence, and a model handed a severed turn has every reason to complete
-    the thought itself. Same rule `_apply_context_budget` follows for retrieved
-    passages.
-
-    THE DROP IS ANNOUNCED. Silence is the dangerous option here: an agent whose
-    history was quietly clipped will contradict something it was told earlier
-    with complete confidence, and neither the user nor the audit record can tell
-    that from ordinary forgetting. The note is what makes "the model was not
-    shown that" distinguishable from "the model ignored that".
-    """
     if not messages:
         return ""
 
@@ -156,7 +78,6 @@ def _render_history(messages, max_chars: int) -> str:
         return "\n".join(lines)
 
     kept, used = [], 0
-    # Newest first, so the budget is spent on the most recent exchanges.
     for line in reversed(lines):
         cost = len(line) + 1
         if kept and used + cost > max_chars:
@@ -178,9 +99,6 @@ def _render_history(messages, max_chars: int) -> str:
 
 
 def _strip_harness_envelope(text: str) -> str:
-    """Strip workspace metadata, scratchpad headers/tails, and cumulative TOOL RESULT tails
-    from a stored client-owned user message so conversation history only replays the
-    actual user request."""
     s = text or ""
     if "\n\nTOOL RESULT — " in s:
         s = s.split("\n\nTOOL RESULT — ", 1)[0].rstrip()
@@ -198,9 +116,6 @@ def _strip_harness_envelope(text: str) -> str:
 
 
 def _clean_client_owned_history(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Filter intermediate tool-loop hops ([tool_call]/[tool_calls]) and strip
-    cumulative tool-result envelopes from prior client-owned turns so recent_turns_text
-    only replays completed User/Assistant exchanges instead of duplicating tool outputs."""
     if not messages:
         return []
     cleaned: List[Dict[str, Any]] = []
@@ -242,7 +157,6 @@ HARNESS_PROGRESS_LABELS = AGENTIC_PROGRESS_LABELS
 
 
 def record_agentic_progress(store, message_id: str, code: str) -> None:
-    """Journal a fixed, non-reasoning progress phase for agentic clients."""
     label = AGENTIC_PROGRESS_LABELS.get(code)
     if label:
         store.update_message_reasoning(
@@ -259,10 +173,6 @@ _WROTE_CHARS_RE = re.compile(r"Successfully wrote\s+(\d+)\s+characters", re.I)
 
 
 def _bound_tool_arguments(args: Any, max_chars: int = DEFAULT_TOOL_ARG_MAX_CHARS) -> Any:
-    """Replace oversized string values in tool arguments (e.g. a 40KB HTML `write` payload)
-    with a clean intact-write receipt so historical tool headers do not bloat the context
-    and mid-string head+tail splices never trick the model into thinking its written file
-    was corrupted on disk."""
     if not isinstance(args, dict) or max_chars <= 0:
         return args
     bounded: Dict[str, Any] = {}
@@ -281,8 +191,6 @@ def _bound_tool_arguments(args: Any, max_chars: int = DEFAULT_TOOL_ARG_MAX_CHARS
 def _completed_deliverable_paths(
     tool_results: Any, min_chars: int = DEFAULT_DELIVERABLE_MIN_CHARS
 ) -> set:
-    """Return normalized paths and basenames of large deliverable files (>= min_chars)
-    already written via `write` in the current turn."""
     completed: set = set()
     if not isinstance(tool_results, list):
         return completed
@@ -328,9 +236,6 @@ def _is_redundant_post_deliverable_call(
     tool_results: Any,
     proposed_calls: Optional[List[Dict[str, Any]]] = None,
 ) -> bool:
-    """Return True if a large standalone deliverable (>= 10,000 chars) was already
-    written in this turn and the model is now proposing to re-read, grep, validate,
-    or overwrite that same deliverable instead of returning its final response."""
     completed = _completed_deliverable_paths(tool_results)
     if not completed:
         return False
@@ -369,7 +274,6 @@ def _is_redundant_post_deliverable_call(
 
 def count_current_turn_tool_repeats(tool_results, tool_name, parameters,
                                     limit=HARNESS_TOOL_REPEAT_LIMIT):
-    """Count exact prior results in the current client-owned tool loop only."""
     if not isinstance(tool_results, list):
         return 0
     norm_params = _bound_tool_arguments(parameters or {})
@@ -393,20 +297,12 @@ def count_current_turn_tool_repeats(tool_results, tool_name, parameters,
     return seen
 
 
-# Tools that MODIFY a file path. A write/edit/patch to a path resets that
-# path's same-file read counter, so a legitimate read -> edit -> re-read-to-
-# verify cycle is never blocked by stale reads.
 MODIFICATION_TOOL_NAMES = {"write", "edit", "patch", "str_replace", "multi_edit"}
 
 DEFAULT_MAX_SAME_FILE_READS = 3
 
 
 def same_file_read_limit(profile: Optional[Dict[str, Any]] = None) -> int:
-    """Reads allowed per file path in one turn.
-
-    Resolution order: agent-profile key ``max_same_file_reads``, then the
-    ``SAFI_MAX_SAME_FILE_READS`` env var, then ``DEFAULT_MAX_SAME_FILE_READS``.
-    """
     if isinstance(profile, dict):
         override = profile.get("max_same_file_reads")
         if override is not None:
@@ -421,7 +317,6 @@ def same_file_read_limit(profile: Optional[Dict[str, Any]] = None) -> int:
 
 
 def _norm_window_value(value):
-    """Normalize an offset/limit value so window keys compare consistently."""
     if value is None:
         return None
     try:
@@ -431,14 +326,6 @@ def _norm_window_value(value):
 
 
 def _read_window(parameters) -> tuple:
-    """``(start, end, limit)`` window key for a read call.
-
-    Recognizes every alias the read tool accepts (offset/line_start/start_line,
-    line_end/end_line, limit) so a re-read of the same range is recognized as a
-    repeat regardless of which spelling the model chose. Two reads of the same
-    path are the *same read* only when their window matches; reading a different
-    range is progress through the file, not a repeated read.
-    """
     if not isinstance(parameters, dict):
         return (None, None, None)
     start = next(
@@ -460,15 +347,6 @@ def _read_window(parameters) -> tuple:
 
 
 def count_current_turn_path_reads(tool_results, path: str, parameters=None) -> int:
-    """Prior reads of the SAME window (path + offset + limit) since ``path`` was
-    last MODIFIED in this turn.
-
-    Window-aware on purpose: paging through different sections of a large file
-    is legitimate progress, so only re-requesting the identical window counts
-    toward the circuit breaker (which stops a model re-reading the same content
-    forever, without punishing it for exploring a file it has not finished
-    reading). A write/edit/patch to the path resets the count.
-    """
     if not isinstance(tool_results, list) or not path:
         return 0
     norm_target = path.strip().lower()
@@ -489,14 +367,10 @@ def count_current_turn_path_reads(tool_results, path: str, parameters=None) -> i
     return seen
 
 
-# Harness-injected pseudo tool results (a mid-task nudge the owning client adds
-# to the loop). They are shown to the model but are NOT task evidence, so they
-# are excluded from the Conscience audit material.
 HARNESS_META_TOOLS = {"harness_note"}
 
 
 def _compact_tool_target(args: Any) -> str:
-    """A one-line, human-readable target for a tool call (path/command/query)."""
     if not isinstance(args, dict):
         return ""
     for key in ("command", "path", "filePath", "file_path", "pattern", "query", "url", "target"):
@@ -507,16 +381,6 @@ def _compact_tool_target(args: Any) -> str:
 
 
 def build_task_state_block(user_prompt: str, tool_results: Any) -> str:
-    """A compact, deterministic scratchpad for a client-owned agent loop.
-
-    The owning client re-sends the original request each hop and does not carry
-    the model's own plan between tool calls, so without this the model re-derives
-    intent every step — re-reading files, drifting, and asking for guidance.
-    This block lists what has already been done (with repeat counts) and the
-    agent's own latest plan, then tells it to continue. It is built only from
-    data the client already sends (tool results and the todowrite call), so it
-    needs no protocol change and survives history truncation.
-    """
     if not isinstance(tool_results, list) or not tool_results:
         return ""
 
@@ -619,21 +483,9 @@ def _tool_audit_entry(
     result=None,
     profile=None,
 ):
-    """One tool call structured receipt as it is recorded for BOTH the hash chain and capture.
-
-    Returns a structured receipt containing:
-      - tool name
-      - normalized parameters
-      - status (approved, blocked, executed, failed)
-      - risk class (R0-R4)
-      - changed resources
-      - error summary
-      - duration
-    """
     from .faculties.will import WillGate
     risk_class, risk_reason = WillGate.classify_tool_risk(tool_name, parameters or {}, profile)
 
-    # Derive changed resources from common params
     resources = list(changed_resources or [])
     if not resources and isinstance(parameters, dict):
         for path_key in ("path", "filePath", "file_path", "target", "file"):
@@ -661,20 +513,7 @@ def _tool_audit_entry(
     return entry
 
 
-
 def _audit_params(parameters) -> dict:
-    """Parameter record for the audit trail: keys kept, values clipped.
-
-    The arguments are what make a tool call an ACTION — "upload_item" says
-    nothing without knowing what went where — so the trail needs them. But
-    `content` on an upload can be megabytes, and chat_audit_trail is append-only
-    and hash-chained: copying payloads in would bloat every chain permanently and
-    irreversibly. Names plus clipped values identify the action without turning
-    the journal into a file store.
-
-    The step is encrypted before it reaches the chain (see
-    update_message_reasoning), so this is a size control, not a secrecy one.
-    """
     if not isinstance(parameters, dict):
         return {"_value": _clip(parameters)}
     return {k: _clip(v) for k, v in parameters.items()}
@@ -697,11 +536,6 @@ def _tool_status(tool_name: str, turn: int = 0) -> str:
 
 
 class SAFi:
-    """
-    One orchestrator per (agent, models, policy), cached and shared by every
-    request for that profile — hence the locked coaching state in __init__ and
-    the process-wide MCP runtime it borrows rather than owns.
-    """
 
     def __init__(
         self,
@@ -780,10 +614,6 @@ class SAFi:
              import re
              self.active_profile_name = re.sub(r'[^a-zA-Z0-9_\-]', '_', raw_name).lower()
 
-        # Shared per-profile coaching state. SAFi instances are cached and shared
-        # across all requests for a profile, and requests run in separate threads
-        # (gunicorn gthread), so reads/writes go through _spirit_state_lock.
-        # Held only for quick in-memory ops — never across an await or DB call.
         self._spirit_state_lock = threading.Lock()
         self.last_drift = 0.0
         self.mu_history = deque(maxlen=5)
@@ -828,29 +658,10 @@ class SAFi:
             pass
 
     def _submit_bg(self, fn, *args):
-        """executor.submit with the caller's contextvars copied into the
-        worker thread, so per-org provider governance (activate_org) keeps
-        applying to background LLM calls — plain threads don't inherit
-        contextvars."""
         ctx = contextvars.copy_context()
         return self.executor.submit(ctx.run, fn, *args)
 
     def _resolve_history_window(self) -> tuple:
-        """
-        (turns, max_chars) for the verbatim history window.
-
-        `turns` counts USER/ASSISTANT pairs; 0 means every prior turn in the
-        conversation. The agent's own agent wins over the deployment default,
-        which is the point of the setting — "some agents need to preserve full
-        memory" is a property of the agent, not of the install.
-
-        `history_turns: "all"` is accepted alongside 0 because that is what a
-        human writes in a config field.
-
-        A bad value falls back to the deployment default rather than raising: a
-        typo in one agent's config must not take that agent off the air, and the
-        conservative direction is the smaller window.
-        """
         cfg_turns = getattr(self.config, "HISTORY_TURNS", 3)
         cfg_chars = getattr(self.config, "HISTORY_MAX_CHARS", 40000)
         prof = self.profile or {}
@@ -889,15 +700,6 @@ class SAFi:
             return False
 
     def _ledger_covers_values(self, ledger: List[Dict[str, Any]]) -> bool:
-        """True if the audit usably covers this agent's defined values: every
-        hard gate is scored AND a strict majority of scored values are present.
-
-        The old rule ("any one value scored") let a mostly-garbled ledger coast
-        through — 1 of 8 values scored counted as a usable audit, the other 7
-        defaulted to neutral in Spirit's aggregate, and the message could ship
-        on the strength of a single score. Failing coverage here (rather than
-        at the hard-gate check) also gives the guarded audit its one retry
-        before the orchestrator fails closed."""
         if not ledger:
             return False
         from .faculties.utils import _norm_label
@@ -918,10 +720,6 @@ class SAFi:
         return matched * 2 > len(value_names)
 
     async def _run_conscience_audit(self, a_t, user_prompt, r_t, retrieved_context, message_id, recent_history=""):
-        """Run the Conscience audit, retrying once if it errors or returns a
-        ledger that scores none of this agent's values (transient LLM failure /
-        garbled output). Returns the ledger — possibly still degraded, in which
-        case the caller fails closed."""
         ledger: List[Dict[str, Any]] = []
         self._last_conscience_failure = None
         last_empty_ledger_failure = None
@@ -945,7 +743,6 @@ class SAFi:
                 last_empty_ledger_failure = getattr(
                     self, "_last_conscience_failure", None
                 )
-            # Ungoverned agent (no values) has nothing to audit — accept as-is.
             if not self.values or self._ledger_covers_values(ledger):
                 self._last_conscience_failure = None
                 return ledger
@@ -957,7 +754,6 @@ class SAFi:
 
     @staticmethod
     def _safe_audit_failure_reason(exc: Exception) -> str:
-        """A bounded, credential-safe explanation for an unavailable audit."""
         status = getattr(exc, "status_code", None)
         provider = getattr(exc, "provider", None)
         endpoint = getattr(exc, "endpoint", None)
@@ -974,7 +770,6 @@ class SAFi:
 
     @staticmethod
     def _redact_prompt_secrets(draft: str, user_prompt: str) -> str:
-        """Deterministically redact operator-supplied passwords/tokens from final prose drafts."""
         if not draft or not user_prompt:
             return draft
         import re
@@ -1005,22 +800,6 @@ class SAFi:
         recent_history: str = "",
         progress_callback=None,
     ) -> Dict[str, Any]:
-        """Unified governance commit path for ANY candidate draft — initial text,
-        tool-loop synthesis, blocked-tool reflexion, or Spirit reflexion retry.
-        Runs the same gates in the same order for every producer:
-
-          structure (Will W1) → Conscience audit → coverage fail-closed →
-          hard gates (Will) → Spirit aggregate + threshold (Will)
-
-        Only the audit calls a model; the rest is arithmetic over the ledger or
-        over the draft text, so a block is reproducible run to run.
-
-        Returns a verdict dict; the caller decides redirect / retry / commit:
-          verdict: "approve" | "violation"
-          stage:   "structure" | "audit" | "hard_gate" | "spirit"
-          reason:  gate-specific reason string
-          ledger / spirit_assessment: populated as far as the draft got
-        """
         tag = f" | {label}" if label else ""
 
         redact_fn = getattr(self, "_redact_prompt_secrets", None)
@@ -1036,11 +815,6 @@ class SAFi:
         self.store.update_message_reasoning(message_id, "Checking response structure...")
         is_valid_struct, structure_reason = self.will_gate.evaluate_draft_structure(a_t)
         if not is_valid_struct and structure_reason == "missing_disclaimer":
-            # Mechanically repairable: append the mandatory disclaimer and
-            # re-validate rather than discard an otherwise-good draft (models
-            # omit it intermittently, and blocking here surfaced repeated
-            # "internal issue" notices). The repaired draft still runs the FULL
-            # audit below; callers commit it via the result's "draft" key.
             repaired = self._append_mandatory_disclaimer(a_t)
             if repaired is not None:
                 self.log.info(f"[Governance | Phase 3 | Will W1{tag}] Appended mandatory disclaimer (deterministic repair).")
@@ -1056,9 +830,6 @@ class SAFi:
         self.store.update_message_reasoning(message_id, "Auditing response for compliance...")
         ledger = await self._run_conscience_audit(a_t, user_prompt, r_t, retrieved_context, message_id, recent_history)
 
-        # Fail-closed: a governed agent MUST receive a usable audit. If Conscience
-        # errored, timed out, or returned a ledger that scored none of this
-        # agent's values, the draft cannot ship unaudited.
         if self.values and not self._ledger_covers_values(ledger):
             self.log.error(f"[Governance | Phase 4{tag}] Audit unavailable/degraded — failing closed.")
             reason = getattr(self, "_last_conscience_failure", None) or "audit_unavailable"
@@ -1099,7 +870,6 @@ class SAFi:
     async def _dispatch_server_tool(
         self, tool_name: str, parameters: dict, user_id: Optional[str] = None
     ) -> Any:
-        """Execute a policy-authorized server-side MCP tool during harness turns."""
         if not self.mcp_manager:
             return f"ERROR: MCP manager is not configured for {tool_name}"
         return await self.mcp_manager.execute_tool(
@@ -1108,10 +878,6 @@ class SAFi:
 
     @staticmethod
     def _batch_tools_enabled() -> bool:
-        """Whether one Intellect response may yield several tool proposals.
-
-        On by default; set SAFI_AGENTIC_BATCH_TOOLS=0 to fall back to exactly one
-        tool per loop hop (the pre-batching behaviour)."""
         return os.environ.get("SAFI_AGENTIC_BATCH_TOOLS", "1").strip().lower() not in (
             "0", "false", "no", "off",
         )
@@ -1120,11 +886,6 @@ class SAFi:
     def _sanitize_client_tool_parameters(
         tool_name: str, parameters: Optional[Dict[str, Any]]
     ) -> Dict[str, Any]:
-        """Normalise the common parameter aliases a model emits for client tools.
-
-        Extracted verbatim from the single-proposal path so the batch path accepts
-        exactly the same shapes — path/filePath, target/oldString, task/prompt.
-        """
         safe_parameters = dict(parameters or {})
         if tool_name in ("read", "write", "edit", "patch", "delete", "remove") and not safe_parameters.get("path"):
             alt_path = safe_parameters.get("filePath") or safe_parameters.get("file_path") or ""
@@ -1183,22 +944,6 @@ class SAFi:
         recent_turns_text: str,
         tool_audit: list,
     ) -> Optional[Dict[str, Any]]:
-        """Approve and return several client tool proposals from ONE Intellect turn.
-
-        Returns a payload with a `tool_calls` list, or None to fall back to the
-        single-proposal path (which owns the blocked/reflexion/redirect behaviour).
-
-        Integrity is unchanged: every call is gated by the same deterministic
-        WillGate as a single proposal, the same repeat/same-file circuit breakers
-        apply, and each approved call gets its own structured tool receipt. The
-        Conscience/Spirit audit still runs only on the final synthesised answer.
-        Only the ALL-APPROVED case batches — any blocked call drops to the single
-        path so a rejection keeps its existing reflexion/redirect handling. Turns
-        that opt into an LLM tool-intent preflight never batch, so each intent
-        keeps its own audited hop.
-        """
-        # An explicit policy preflight is an LLM call per intent; batching it would
-        # either double-count or skip it. Leave those turns to the single path.
         audit_tool_trigger = (
             isinstance(self.profile.get("will_rules"), dict)
             and self.profile.get("will_rules", {}).get("audit_tool_intents") is True
@@ -1209,7 +954,6 @@ class SAFi:
         max_batch = int(os.environ.get("SAFI_AGENTIC_MAX_BATCH_TOOLS", "8"))
         proposed_calls = proposed_calls[:max_batch]
 
-        # --- Evaluate everything with NO side effects first. ---
         decisions: List[Tuple[str, Dict[str, Any], str, str]] = []
         for call in proposed_calls:
             if not isinstance(call, dict):
@@ -1242,7 +986,6 @@ class SAFi:
                     return None
             decisions.append((name, params, decision, reason))
 
-        # --- All approved: apply the side effects once. ---
         entries: List[Dict[str, Any]] = []
         for name, params, decision, reason in decisions:
             _entry = _tool_audit_entry(name, params, decision, reason, profile=profile_for_turn)
@@ -1344,24 +1087,13 @@ class SAFi:
         client_recent_turns: Optional[str] = None,
         client_workspace_context: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
-        """
-        The one request path. Gates, redirects and retries are decided here;
-        _finalize_draft holds the gate order and the verdict contract.
-        """
         message_id = override_message_id if override_message_id else str(uuid.uuid4())
 
-        # Per-org provider governance for this turn: every LLM dispatch below
-        # (Intellect, Conscience, backgrounds via _submit_bg) checks this
-        # context and fails closed on a disallowed provider.
         self.activate_org(org_id or (self.profile or {}).get("org_id"))
-        # Usage attribution rides the same context (backlog 61).
         self.activate_agent(self.active_profile_name)
 
         now_utc = datetime.now(timezone.utc)
         client_owned = client_owned_tools is not None
-        # Keep the date header byte-stable across tool-loop hops in a client-owned
-        # turn so per-second clock ticks at line 1 of USER QUERY do not invalidate
-        # llama-server's prefix KV cache on every step.
         date_for_prompt = (
             now_utc.replace(minute=0, second=0, microsecond=0)
             if client_owned else now_utc
@@ -1391,10 +1123,6 @@ class SAFi:
                     advertised_client_tool_names.update(CONNECTOR_TOOLS[name])
                 else:
                     advertised_client_tool_names.add(name)
-            # Client tools are proposed by the connected agentic client per request.
-            # The policy remains the upper bound: intersect the client catalogue
-            # with its allow-list before offering schemas to Intellect. This also
-            # makes the compiled profile the single source of Will authorization.
             declared_harness_tools = set(
                 CONNECTOR_TOOLS.get("agentic_coding") or CONNECTOR_TOOLS.get("coding_harness", ())
             )
@@ -1402,12 +1130,9 @@ class SAFi:
                 advertised_client_tool_names & declared_harness_tools
                 & allowed_tool_names
             )
-            # Server-side tools are policy-authorized tools that SAFi executes internally:
             server_tool_names = allowed_tool_names - declared_harness_tools
             profile_for_turn["allowed_tools"] = sorted(valid_client_tools | server_tool_names)
 
-            # The dispatcher sees only the policy-authorized subset of offered
-            # tool schemas, plus any server-side MCP tools authorized for this persona.
             filtered_client_tools = [
                 tool for tool in client_owned_tools
                 if isinstance(tool, dict)
@@ -1448,11 +1173,6 @@ class SAFi:
                     + "\n[/Client workspace metadata]\n\n" + prompt_for_intellect
                 )
 
-            # Workspace Scratchpad (.safi/scratchpad.md)
-            # Appended at the tail of prompt_for_intellect (after user_prompt and
-            # tool_history, right alongside task_state_block) so edits to the
-            # scratchpad do not invalidate llama-server's LCP KV cache for the
-            # static user prompt and accumulated tool results.
             scratchpad_block = ""
             scratchpad_content = context.get("scratchpad")
             if not scratchpad_content:
@@ -1496,10 +1216,6 @@ class SAFi:
                     )
                 return s
 
-            # Retain up to the last 30 tool results in context, keeping the most recent
-            # full_window (14) results at full detail and compacting older results so cumulative
-            # tool history never overwhelms the model's latency or token budget. Also pin up to
-            # 2 initial specification/reference reads if they have slid out of the window.
             tool_window = int(os.environ.get("SAFI_TOOL_RESULTS_WINDOW", "30"))
             full_window = int(os.environ.get("SAFI_TOOL_RESULTS_FULL_WINDOW", "14"))
             total_tool_budget = int(os.environ.get("SAFI_TOOL_HISTORY_MAX_CHARS", "90000"))
@@ -1572,15 +1288,9 @@ class SAFi:
         prompt_with_date = f"{current_date_string}\n\nUSER QUERY: {prompt_for_intellect}"
 
         try:
-            # Title derives from the first message, so decide it before inserting.
             history_check = self.store.fetch_chat_history_for_conversation(conversation_id, limit=1)
             new_title = self.store.set_conversation_title_from_first_message(conversation_id, user_prompt) if not history_check else None
 
-            # Insert the user row and the AI placeholder atomically. A repeated
-            # or concurrent submit reusing this message_id fails the AI row's
-            # UNIQUE key, rolls the whole turn back (so no orphaned duplicate
-            # user row is left behind — the flaw of the old two-insert path),
-            # and returns False so we drop the double-submit cleanly.
             if not self.store.insert_turn_atomic(conversation_id, prompt_for_storage, message_id):
                 self.log.warning(f"Duplicate message_id {message_id} — ignoring double-submit.")
                 return { "finalOutput": "", "messageId": message_id, "duplicate": True }
@@ -1591,9 +1301,6 @@ class SAFi:
             self.log.error(f"Pre-Insert CRASH: {str(e)}\n{traceback.format_exc()}")
             return { "finalOutput": "An internal error occurred. Please try again.", "messageId": message_id }
 
-        # Plugins — every handler registered for this agent, gathered
-        # concurrently. Registration order is merge order: a later plugin's
-        # payload keys win, same as the old hardcoded list's dict.update.
         plugin_context_data = {}
         plugin_tasks = [
             handler(user_prompt, self.active_profile_name, self.log)
@@ -1606,49 +1313,32 @@ class SAFi:
         
         memory_summary = self.store.fetch_conversation_summary(conversation_id)
         current_profile_json = self.store.fetch_user_profile_memory(user_id)
-        # Per-agent gate: only task/project-oriented agents accumulate work context.
-        # Built-in informational agents set track_work_context=False; org/custom
-        # agents (no flag in DB) default to True. "{}" is the empty sentinel.
         track_work_context = bool((self.profile or {}).get("track_work_context", True))
         current_agent_context_json = (
             self.store.fetch_agent_context_memory(user_id, self.active_profile_name)
             if track_work_context else "{}"
         )
-        # Two copies on purpose: the budgeted copy is what the Intellect sees,
-        # the FULL copy stays the extractor's merge base. Feeding the truncated
-        # one to the merge would persist the loss and quietly break
-        # merge_agent_context's anti-shrink guarantee.
         agent_context_for_prompt = self.context_budgeter(
             current_agent_context_json, self.config.AGENT_MEMORY_MAX_CHARS
         )
 
-        # Verbatim history window. Depth is configurable (SAFI_HISTORY_TURNS,
-        # or `history_turns` on the agent) because some agents need the whole
-        # thread and others must not pay for it — see _resolve_history_window.
         turns, max_chars = self._resolve_history_window()
-        # +2 covers the current user message, which is dropped below.
         fetch_limit = _HISTORY_FETCH_ALL if turns == 0 else (max((turns * 2) + 2, 120) if client_owned else (turns * 2) + 2)
         raw_history = self.store.fetch_chat_history_for_conversation(conversation_id, limit=fetch_limit)
         prior_turns = [
             m for m in raw_history
             if m.get("content", "").strip() and m.get("message_id") != message_id
         ]
-        recent_window = prior_turns[:-1]          # drop the current user message
+        recent_window = prior_turns[:-1]
         if client_owned:
             recent_window = _clean_client_owned_history(recent_window)
         if turns:
             recent_window = recent_window[-(turns * 2):]
         if memory_summary:
-            # When memory_summary anchors previous context, limit verbatim window
-            # to the most recent 2 turn pairs so future turns preserve token savings.
             recent_window = recent_window[-4:]
         recent_turns_text = _render_history(recent_window, max_chars)
         if client_owned and isinstance(client_recent_turns, str) and client_recent_turns.strip():
             recent_turns_text = client_recent_turns[-12000:]
-        # Journal the first pipeline phase for every client-owned turn. This used to
-        # sit inside the recent-turns branch above, so a harness turn that sends no
-        # verbatim history (the common first-loop case) never recorded it — the live
-        # progress bar then sat on "analyzing" alone for the whole wait.
         if client_owned:
             record_harness_progress(
                 self.store,
@@ -1656,10 +1346,6 @@ class SAFi:
                 "analyzing" if client_tool_results else "checking_request",
             )
         
-        # Read-only snapshot for the coaching feedback below. The authoritative
-        # EMA commit at the end of the turn re-reads mu under a row lock
-        # (update_spirit_memory_atomic), so this copy being seconds stale by
-        # then is harmless.
         temp_spirit_memory = self.store.load_spirit_memory(self.active_profile_name)
         if temp_spirit_memory is None:
              temp_spirit_memory = {"turn": 0, "mu": {}}
@@ -1680,7 +1366,6 @@ class SAFi:
                 v_name = v.get("value") or v.get("name") or "Unknown"
                 current_mu[i] = mu_memory.get(_norm_label(v_name), 0.0)
 
-        # Derive last turn's raw scores (p_t) via EMA inversion: p_t = (mu_t - beta*mu_{t-1}) / (1-beta)
         last_pt = None
         if len(recent_mu_snapshot) >= 2:
             beta = getattr(self.spirit, 'beta', 0.9)
@@ -1691,9 +1376,6 @@ class SAFi:
                     0.0, 1.0
                 )
 
-        # An agent with no scored values (no Charter and no Policy) has nothing to
-        # coach against — skip Spirit feedback rather than crash. It still runs;
-        # it is simply ungoverned until a Charter or Policy gives it values.
         if self.values:
             spirit_feedback = build_spirit_feedback(
                 mu=current_mu,
@@ -1707,11 +1389,6 @@ class SAFi:
         else:
             spirit_feedback = ""
 
-        # --- PHASE 0: Pre-generation Injection Gate ---
-        # will_rules may be a dict (governed agents) or a legacy list (a
-        # standalone custom agent — load_custom_agent defaults the missing key
-        # to []). Only a dict carries early_prompt_blacklist; treat a list as
-        # "none defined" rather than crashing on list.get().
         _will_rules = (self.profile or {}).get("will_rules", {})
         agent_blacklist = (
             _will_rules.get("early_prompt_blacklist", [])
@@ -1734,11 +1411,6 @@ class SAFi:
             )
         self.log.info(f"[Governance | Phase 0 | Injection Gate] PASS — {gate_reason}")
 
-        # --- PHASE 1: Conscience Prompt Scope Preflight ---
-        # Verifies that the initial user prompt falls within the agent's authorized scope
-        # BEFORE any planning, tool loop, or expensive Intellect generation begins.
-        # Runs for every agent with a scope_statement unless explicitly disabled
-        # via policy will_rules.preflight_prompt_scope = false or SAFI_PREFLIGHT_PROMPT_SCOPE=0.
         policy_preflight = _will_rules.get("preflight_prompt_scope") if isinstance(_will_rules, dict) else None
         if policy_preflight is None:
             _pol = getattr(self, "policy", None)
@@ -1796,12 +1468,10 @@ class SAFi:
                         )
             self.log.info(f"[Governance | Phase 1 | Scope Preflight] PASS")
 
-        # --- CANCELLATION CHECK: before the expensive Intellect call ---
         if self._is_cancelled(message_id):
             self.log.info(f"[Governance] Message {message_id} cancelled before Intellect.")
             return {"finalOutput": "", "messageId": message_id, "audit_status": "cancelled", "willDecision": "cancelled"}
 
-        # --- PHASE 2: Generate Proposal (Intellect) ---
         if client_owned:
             record_harness_progress(self.store, message_id, "analyzing")
         self.store.update_message_reasoning(message_id, "Drafting a response...")
@@ -1820,27 +1490,8 @@ class SAFi:
             tool_results_supplied=len(client_tool_results),
         )
 
-        # Accumulated across the tool loop so the governance CAPTURE carries it
-        # too, not just the hash chain. The chain already had each step, but the
-        # Audit Hub drill-down and the examiner export both read the capture, and
-        # it had no tool field at all — the record was tamper-evident and
-        # unreadable by the people it is for. Initialised here, before the intent
-        # dispatch, so a turn that calls no tools still has a defined (empty) list.
         tool_audit: list = []
 
-        # Tool OUTPUT, kept separately from tool_audit (which records the verdicts).
-        # Until this existed, tool results reached only the Intellect via
-        # agent_history, so the Conscience audited a tool-grounded answer against an
-        # EMPTY evidence block and correctly scored Evidence First -1 on claims the
-        # agent had in fact retrieved. With Claim Discipline as a hard gate that made
-        # tool use and grounding enforcement mutually exclusive: every searched
-        # answer blocked, permanently. Merged into retrieved_context at the single
-        # point where all tool-loop exits converge, just before _finalize_draft.
-        #
-        # Phase Zero scans the user prompt and, per turn, each tool result before
-        # it is used (evaluate_tool_result). Retrieved third-party content still
-        # reaches the Conscience as evidence and the draft as grounding, so the
-        # signature gate is a filter, not a guarantee.
         tool_evidence: List[str] = [
             f"[TOOL RESULT — {item.get('tool_name', 'unknown')} called with "
             f"{json.dumps(_bound_tool_arguments(item.get('arguments') or {}), sort_keys=True, default=str)}]\n"
@@ -1864,10 +1515,6 @@ class SAFi:
         D_t: str = "approve"
         E_t: str = ""
 
-        # If a large standalone deliverable (>= 10,000 chars) was already written in this
-        # turn and the model proposes to re-read, grep, bash-check, or rewrite that same
-        # deliverable file instead of finishing, suppress the redundant tool loop and
-        # generate the final executive summary immediately with tools disabled.
         if (
             client_owned
             and isinstance(intent, dict)
@@ -1920,18 +1567,11 @@ class SAFi:
 
             self.log.info(f"[Governance | Phase 2 | Intellect] Draft: {len(a_t)} chars | '{a_t[:100].strip()}'")
 
-            # Structure, audit, hard gates, and Spirit all run in the unified
-            # _finalize_draft path below — same gates for every draft producer.
-            # D_t stays "approve" here.
 
         elif intent["type"] == "tool_call":
             tool_name = intent["tool_name"]
             parameters = intent["parameters"]
 
-            # Several independent calls in one Intellect turn (e.g. read four
-            # files, or list+grep+read). Handled as a batch only when every call
-            # is approved; otherwise we fall through to the single-proposal path
-            # below, which owns the blocked/reflexion/redirect handling.
             proposed_calls = intent.get("tool_calls")
             if (
                 client_owned
@@ -1954,7 +1594,6 @@ class SAFi:
                 if batch_payload is not None:
                     return batch_payload
 
-            # Publish progressive thought/step to the live UI feed
             if r_t and r_t.strip():
                 short_thought = r_t.strip().split("\n")[0][:80]
                 self.store.update_message_reasoning(message_id, f"Intent: {short_thought}")
@@ -2002,10 +1641,6 @@ class SAFi:
                             "You already have that content in context. Proceed directly to 'edit', 'write', or your response — or read a different section."
                         )
 
-            # Deterministic Tool-Intent Gate (Requirements 2, 3 & 7):
-            # Routine tool calls are governed deterministically by WillGate without latency.
-            # Full SAFi / Conscience preflight is reserved strictly for explicit high-risk
-            # policy triggers (e.g. will_rules.audit_tool_intents=True or R2/R3 triggers).
             audit_tool_trigger = (
                 isinstance(self.profile.get("will_rules"), dict)
                 and self.profile.get("will_rules", {}).get("audit_tool_intents") is True
@@ -2041,7 +1676,6 @@ class SAFi:
                             )
                             break
 
-            # Journal only after both deterministic Will gate and circuit breaker checks have reached a verdict.
             _entry = _tool_audit_entry(tool_name, parameters, tool_decision, tool_reason, profile=profile_for_turn)
             tool_audit.append(_entry)
             self.store.update_message_reasoning(
@@ -2154,10 +1788,6 @@ class SAFi:
                         "audit_status": "complete",
                     }
 
-                # A denied client-owned proposal normally returns a user-facing
-                # draft without advertising tools again (SAFi never dispatches
-                # client tools through its own MCP executor). Harness anti-loop
-                # refusals are the exception, handled below.
                 self.log.warning(f"WillGate blocked client tool '{tool_name}'. Reason: {tool_reason}")
                 redirect_on_tool_block = bool(
                     isinstance(self.profile.get("will_rules"), dict)
@@ -2176,11 +1806,6 @@ class SAFi:
                         agent_context=agent_context_for_prompt,
                     )
 
-                # Client-owned proposal refusals: Hand the refusal back to the owning
-                # client so it records the refused call in tool_results and continues
-                # the loop seamlessly. The toolless reflexion previously forced a prose
-                # apology that stripped tools, ran a slow Conscience audit on the apology,
-                # and caused the harness to stall while re-driving incomplete plans.
                 safe_parameters = self._sanitize_client_tool_parameters(
                     tool_name, parameters
                 )
@@ -2257,10 +1882,6 @@ class SAFi:
                         phase="gather"
                     )
 
-                    # Computed for BOTH branches: the Gemini path does not build a
-                    # SYSTEM OBSERVATION string, but the audit-evidence block below
-                    # still needs the arguments, and referencing a name defined only
-                    # in the else-branch would NameError on the first Gemini turn.
                     try:
                         _args_str = json.dumps(current_parameters, ensure_ascii=False, default=str)
                     except Exception:
@@ -2319,16 +1940,11 @@ class SAFi:
                             tool_audit[-1]["error_summary"] = _tool_error
                             tool_audit[-1]["status"] = "failed" if result_safe else "withheld"
 
-                    # Evidence for the audit. Labelled with the tool AND its
-                    # arguments, because "which search produced this" is the first
-                    # thing a reviewer asks, and an auditor comparing a claim to a
-                    # result needs to know the result answers the same question.
                     tool_evidence.append(
                         f"[TOOL RESULT — {current_tool_name} called with {_args_str}]\n"
                         f"{tool_result}"
                     )
 
-                    # Feed compressed receipt into Intellect context (Requirement 6)
                     receipt_summary = f"[RECEIPT: {current_tool_name} | status: {tool_audit[-1].get('status', 'executed')} | risk: {tool_audit[-1].get('risk_class', 'R1')} | duration: {_tool_duration_ms}ms]\n{tool_result}"
                     agent_history.append(
                         self.llm_provider.tool_result_history_entry(current_tool_name, receipt_summary)
@@ -2432,9 +2048,6 @@ class SAFi:
 
                 a_t = next_intent.get("content") or "" if next_intent and next_intent.get("type") == "text" else "I was unable to produce a response after executing the requested tools."
 
-                # Structure + value compliance for the synthesized tool answer are
-                # enforced by the unified _finalize_draft path below. D_t stays
-                # "approve" here.
 
             else:
                 self.log.warning(f"WillGate blocked tool '{tool_name}'. Reason: {tool_reason}")
@@ -2479,21 +2092,10 @@ class SAFi:
                 D_t = "approve"
                 E_t = f"Tool '{tool_name}' blocked: {tool_reason}."
 
-        # --- CANCELLATION CHECK: before Conscience (second expensive LLM call) ---
         if self._is_cancelled(message_id):
             self.log.info(f"[Governance] Message {message_id} cancelled before Conscience.")
             return {"finalOutput": "", "messageId": message_id, "audit_status": "cancelled", "willDecision": "cancelled"}
 
-        # Tool output joins the retrieved context as audit evidence. Done HERE
-        # because every tool-loop exit converges on this line — normal break,
-        # blocked follow-up, and MAX_AGENT_TURNS all reach it — so one merge
-        # covers all of them.
-        #
-        # Budgeted with the Intellect's own helper rather than a second mechanism:
-        # the Conscience audits against the same material the draft was written
-        # from, so this context is paid for twice, and _apply_context_budget
-        # already keeps whole chunks and says so when it drops any. That note is
-        # what stops truncation from looking like fabrication to the auditor.
         if tool_evidence:
             retrieved_context = _apply_context_budget(
                 ([retrieved_context] if retrieved_context else []) + tool_evidence,
@@ -2505,20 +2107,14 @@ class SAFi:
             self.will_gate.profile = original_will_profile
             self.conscience.profile = original_conscience_profile
 
-        # --- PHASES 3–5: Unified Commit Path (Will → Conscience → Will → Spirit) ---
         result = await self._finalize_draft(a_t, user_prompt, r_t, retrieved_context, message_id,
                                             recent_history=recent_turns_text,
                                             progress_callback=(
                                                 (lambda code: self._record_harness_progress(message_id, code))
                                                 if client_owned else None
                                             ))
-        # _finalize_draft may deterministically repair the draft (e.g. append a
-        # missing mandatory disclaimer) — commit what was actually audited.
         a_t = result.get("draft", a_t)
 
-        # Structural and audit-availability failures are system faults, not
-        # verdicts on the user's request — ship a deterministic notice instead
-        # of a agent redirect (see _ship_system_failure_notice).
         if result["verdict"] == "violation" and result["stage"] in ("structure", "audit"):
             return self._ship_system_failure_notice(
                 original_prompt=user_prompt,
@@ -2542,18 +2138,8 @@ class SAFi:
                 ),
             )
 
-        # Content-correction hard gates (reason mapped to ethical_violation
-        # in will.py's gate table) are like spirit-stage dips:
-        # the user's request is fine, the DRAFT is the problem. They fall
-        # through to the reflexion retry below, which regenerates with the
-        # question and blocked draft visible. The vacuum agent redirect
-        # cannot do that (it withholds the question as an anti-injection
-        # measure) and produced false "out of scope" refusals here.
         correctable_gate = self._is_correctable_gate(result)
 
-        # Remaining hard-gate failures (scope, grounding) ARE verdicts on
-        # engaging the request at all and keep the agent redirect, voiced
-        # with the gate's own reason.
         if result["verdict"] == "violation" and result["stage"] != "spirit" and not correctable_gate:
             return await self.trigger_agent_redirect(
                 original_prompt=user_prompt,
@@ -2571,15 +2157,9 @@ class SAFi:
 
         ledger = result["ledger"]
         commit_reason = result["reason"]
-        # Will provenance for the committed row: NULL stage = clean approve;
-        # 'spirit' = shipped with an honest low-alignment score (see below).
         will_stage_final = None
 
         if result["verdict"] == "violation":
-            # A content-quality block — a spirit-stage dip or a correctable hard
-            # gate (see above); scope and injection are gated at Phase 0 / 4.5.
-            # The user's intent is fine, so run a reflexion retry that shows the
-            # model its blocked draft instead of redirecting in a vacuum.
             E_spirit = result["reason"]
             retry_metadata.update({
                 "was_retried": True,
@@ -2587,7 +2167,6 @@ class SAFi:
                 "violation_reason": E_spirit,
             })
 
-            # Cancellation check before the retry's extra Intellect + Conscience calls.
             if self._is_cancelled(message_id):
                 self.log.info(f"[Governance] Message {message_id} cancelled before Spirit retry.")
                 return {"finalOutput": "", "messageId": message_id, "audit_status": "cancelled", "willDecision": "cancelled"}
@@ -2650,10 +2229,6 @@ class SAFi:
             retry_result = None
             if a_t_spirit:
                 self.store.update_message_reasoning(message_id, "Re-auditing corrected response...")
-                # The retry draft runs the SAME full gate path as the original:
-                # structure, guarded audit, coverage fail-closed, hard gates, Spirit.
-                # (Previously it skipped structure + hard gates, and an audit error
-                # here escaped uncaught.)
                 retry_result = await self._finalize_draft(
                     a_t_spirit, user_prompt, r_t_spirit, context_spirit, message_id, label="Retry",
                     recent_history=recent_turns_text,
@@ -2664,9 +2239,6 @@ class SAFi:
                 )
                 a_t_spirit = retry_result.get("draft", a_t_spirit)
 
-            # A draft is committable ONLY if it cleanly passed governance.
-            # In classical ethics, a defective act is never willed; the machine must
-            # not ship the "lesser of two evils" when both drafts failed alignment.
             def _committable(res: Optional[Dict[str, Any]]) -> bool:
                 if not res:
                     return False
@@ -2677,9 +2249,6 @@ class SAFi:
                 candidates.append((retry_result, a_t_spirit, r_t_spirit, context_spirit))
 
             if not candidates:
-                # Both the original draft and the reflexion retry failed governance.
-                # Refuse to deliver defective output; ship an honest, deterministic
-                # system failure notice with zero LLM calls.
                 self.log.warning(
                     f"[Governance | Gate] Reflexion retry failed to meet alignment standards ({result.get('reason')}). "
                     f"Refusing to deliver defective output; shipping deterministic system notice."
@@ -2702,20 +2271,15 @@ class SAFi:
                     ),
                 )
 
-            # The retry successfully passed governance:
             best = candidates[0]
             chosen, a_t, r_t, retrieved_context = best
             ledger = chosen["ledger"]
             commit_reason = chosen["reason"]
             will_stage_final = None
 
-        # compute() runs against the FRESH mu under a DB row lock, so two
-        # concurrent turns on this profile serialize their EMA updates instead
-        # of last-write-wins (which lost one turn's contribution and its turn
-        # increment). compute() is pure math; the lock is held for milliseconds.
         def _apply_ema(fresh_memory: Dict[str, Any]):
             computed = self.spirit.compute(ledger, fresh_memory.get("mu", {}))
-            return computed[2], computed  # (new_mu, full result tuple)
+            return computed[2], computed
 
         (S_t, note, mu_new, p_t, drift_val, mu_new_vector), spirit_turn = (
             self.store.update_spirit_memory_atomic(self.active_profile_name, _apply_ema)
@@ -2727,41 +2291,21 @@ class SAFi:
             self.last_drift = drift_for_log
             self.mu_history.append(mu_new_vector)
 
-        # --- PHASE 6: Safe Execution (Will) ---
         if client_owned:
             self._record_harness_progress(message_id, "finalizing")
         self.store.update_message_reasoning(message_id, "Preparing your answer...")
         self.store.update_message_content(message_id, a_t, audit_status="complete")
 
-        # Record the gate's approve reason unless a more specific note (e.g. a
-        # blocked tool) was already set — approved turns used to log an empty reason.
         if not E_t:
             E_t = commit_reason
 
-        # The full per-turn governance capture. Built before the terminal
-        # commit so it rides update_audit_results' transaction (encrypted
-        # governance_records row, atomic with the turn); the same dict also
-        # feeds the optional JSONL debug sink below.
         governance_record = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "t": spirit_turn,
-            # t is the spec's interaction index (MATHEMATICAL_SPECIFICATION, symbol
-            # table), but the sequence it counts is the AGENT's spirit_memory
-            # baseline — keyed on profile_name alone, so shared by every org using
-            # a built-in agent. Stated explicitly because "t": 13 next to one
-            # conversation reads as that conversation's 13th turn, and is not.
             "t_sequence": "agent_baseline_shared",
             "userPrompt": user_prompt,
             "intellectDraft": a_t,
             "intellectReflection": r_t or "",
-            # The tool loop, so the Audit Hub drill-down and the examiner export
-            # can answer "what did the agent DO" and not only "what did it say".
-            # Same entries as the hash chain (see _tool_audit_entry); parameter
-            # values are clipped, so this stays small even on a 5-turn loop.
-            # Internal tools carry their Will verdicts here. Client-owned tools
-            # have an individual proposal audit row per handoff; the final turn
-            # stores the returned executions/results in the form the Audit Hub
-            # labels "executed".
             "toolCalls": (client_tool_results + tool_audit) if client_owned else tool_audit,
             "toolOnlyTurn": bool(client_owned and not ledger and not client_tool_results),
             "clientToolProposal": bool(client_owned and not ledger and not client_tool_results),
@@ -2779,10 +2323,6 @@ class SAFi:
             "recentTurns": recent_turns_text,
             "spiritFeedback": spirit_feedback,
             "retrievedContext": retrieved_context or "",
-            # The work-context memory AS THE MODEL SAW IT (the budgeted copy,
-            # not the stored row), so the audit can answer "what memory shaped
-            # this draft" — backlog 50, read side. "{}" (empty sentinel) is
-            # recorded as "" so the Audit Hub card only renders real memory.
             "agentWorkContext": "" if agent_context_for_prompt in ("{}", "null", "") else agent_context_for_prompt,
             "retryMetadata": retry_metadata,
             "policyId": (self.profile or {}).get("policy_id"),
@@ -2804,14 +2344,10 @@ class SAFi:
                                 will_decision="approve", will_stage=will_stage_final,
                                 governance_record=governance_record)
 
-        # Optional host monitoring callback runs off the request path.
         if self.review_alert_callback:
             self._submit_bg(self.review_alert_callback,
                             self.active_profile_name, S_t, drift_val, "approve")
 
-        # Suggested prompts were removed: they were an ungoverned model call
-        # whose output was shown to the user as if it came from the agent. The
-        # column stays populated for historical turns.
         S_p: List[str] = []
 
         self._append_log(governance_record)
@@ -2857,32 +2393,9 @@ class SAFi:
         conversation_id: str,
         org_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """
-        Headless governance gateway: evaluate an EXTERNALLY generated output
-        against this profile's compiled policy, without calling Intellect.
-
-        Runs the same unified gate path as a native draft (_finalize_draft:
-        structure → Conscience audit → coverage fail-closed → hard gates →
-        Spirit threshold) plus the Phase Zero injection gate on the input,
-        and persists the turn to chat_history so the evaluation is covered by
-        the hash-chained audit trail, retention engine, and examiner export
-        exactly like a native turn.
-
-        It never redirects, retries, or rewrites — the caller owns
-        remediation. The one deterministic repair _finalize_draft applies
-        (appending a missing mandatory disclaimer) is surfaced via
-        evaluatedOutput / outputRepaired so the caller can ship the repaired
-        text. Spirit EMA memory integrates ONLY approved outputs: the gateway
-        is a pre-delivery gate, and a blocked output that never ships must not
-        shape the agent's longitudinal character memory (the same rule the
-        agent-redirect path applies via compute_redirect).
-        """
         message_id = str(uuid.uuid4())
 
-        # Per-org provider governance: the Conscience audit below must honor
-        # the governing org's provider allow-list, same as a native turn.
         self.activate_org(org_id or (self.profile or {}).get("org_id"))
-        # Usage attribution rides the same context (backlog 61).
         self.activate_agent(self.active_profile_name)
 
         if not self.store.insert_turn_atomic(conversation_id, user_prompt, message_id):
@@ -2914,8 +2427,6 @@ class SAFi:
                 "orgId": org_id or (self.profile or {}).get("org_id"),
                 "userId": user_id,
                 "agentName": self.active_profile_name,
-                # No intellectModel: the output under evaluation is external.
-                # The audit model is the only model provenance for this record.
                 "conscienceModel": self.conscience_model,
             }
             self.store.update_audit_results(message_id, ledger, spirit_score, spirit_note,
@@ -2950,7 +2461,6 @@ class SAFi:
                 "audit_status": "complete",
             }
 
-        # --- PHASE 0: Injection gate on the INPUT (report-only, no redirect) ---
         _will_rules = (self.profile or {}).get("will_rules", {})
         agent_blacklist = (
             _will_rules.get("early_prompt_blacklist", [])
@@ -2964,7 +2474,6 @@ class SAFi:
                                       agent_output, [], None,
                                       f"Input blocked pre-audit: {gate_reason}", None)
 
-        # --- PHASES 3–5: unified gate path on the external output ---
         result = await self._finalize_draft(
             agent_output, user_prompt, "", "", message_id, label="Gateway"
         )
@@ -2975,7 +2484,6 @@ class SAFi:
             return _commit_and_report("violation", result["stage"], result["reason"],
                                       evaluated, ledger, None, result["reason"], None)
 
-        # Approved: integrate Spirit EMA under the same row lock as native turns.
         def _apply_ema(fresh_memory: Dict[str, Any]):
             computed = self.spirit.compute(ledger, fresh_memory.get("mu", {}))
             return computed[2], computed
@@ -2991,14 +2499,6 @@ class SAFi:
                                   evaluated, ledger, S_t, note, drift_val)
 
     def _append_mandatory_disclaimer(self, text: str) -> Optional[str]:
-        """Return `text` with the profile's mandatory disclaimer appended, or
-        None when there is nothing to repair with (no disclaimer configured)
-        or it is already present.
-
-        Prefers structural_requirements.disclaimer_repair_text (the full,
-        well-formed disclaimer) and falls back to the checked substring —
-        which is a lenient prefix, so agent authors should set the repair
-        text whenever the substring is not a complete sentence."""
         rules = (self.profile or {}).get("will_rules", {})
         struct = rules.get("structural_requirements", {}) if isinstance(rules, dict) else {}
         substring = (struct.get("mandatory_disclaimer_substring") or "").strip()
@@ -3007,9 +2507,6 @@ class SAFi:
             return None
         return f"{text.rstrip()}\n\n{repair_text}"
 
-    # Phrases that mean "your subject is off-limits". A PII block is never
-    # about the subject: the request was in scope and the identifier was the
-    # problem, so any of these in a pii_detected redirect is a false refusal.
     _SCOPE_CLAIM_MARKERS = (
         "outside my", "outside the scope", "outside your scope", "out of scope",
         "not within my", "area of focus", "i can only", "i can provide information and analysis on",
@@ -3023,14 +2520,6 @@ class SAFi:
     )
 
     def _repair_pii_redirect(self, safe_output: str, violation_type: str) -> str:
-        """Replace a PII refusal that blames the wrong cause.
-
-        The Intellect is given an explicit directive for `pii_detected` telling
-        it to say the message contained sensitive data and invite a resend. A
-        model may ignore it and return a response that misstates why the request
-        was blocked. Correctness must not depend on model compliance, so the
-        user-facing reason is repaired deterministically without another model call.
-        """
         if violation_type != "pii_detected" or not safe_output:
             return safe_output
         low = safe_output.lower()
@@ -3042,17 +2531,6 @@ class SAFi:
         return self._PII_REFUSAL
 
     def _enforce_redirect_structure(self, safe_output: str) -> str:
-        """Deterministically repair a redirect that fails the Will's structural
-        gate. The redirect is terminal (it cannot recurse into another
-        redirect), so instead of re-generating we fix what we can:
-
-        - missing_disclaimer: append the mandatory disclaimer substring verbatim,
-          so a regulated agent's refusal carries it exactly as a normal draft
-          would (the structural gate enforces the same substring elsewhere).
-        - other structural failures (e.g. banned markdown): logged and shipped
-          as-is — a governed refusal is better than an error, and there is no
-          safe automatic rewrite. These are unlikely in a plain refusal.
-        """
         is_valid, reason = self.will_gate.evaluate_draft_structure(safe_output)
         if is_valid:
             return safe_output
@@ -3068,22 +2546,12 @@ class SAFi:
 
     @staticmethod
     def _is_correctable_gate(result: Dict[str, Any]) -> bool:
-        """True for a hard-gate failure whose mapped reason is ethical_violation
-        (a content-quality gate, per will.py's gate table) or an in-scope
-        draft-failure under scope_violation. These take the
-        reflexion retry — regenerate with the question and blocked draft
-        visible — instead of the vacuum agent redirect, which cannot see the
-        question and misreports in-scope requests as out of scope."""
         if result.get("verdict") != "violation" or result.get("stage") != "hard_gate":
             return False
         reason = result.get("reason")
         if reason in ("ethical_violation", "grounding_violation"):
             return True
         if reason == "scope_violation":
-            # If the user's prompt was in-scope but the draft failed to answer,
-            # was a fragment, derailed, or contradicted observed facts, it is a
-            # content-quality defect (correctable via reflexion retry) rather than
-            # an out-of-scope request.
             ledger = result.get("ledger") or []
             for entry in ledger:
                 val = str(entry.get("value") or "").lower()
@@ -3117,19 +2585,6 @@ class SAFi:
         audit_failure_reason: Optional[str] = None,
         governance_record_extra: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Ship a deterministic notice for internal governance failures
-        (audit unavailable/degraded, structural check failed) — and, with a
-        custom `notice`, as the terminal for an exhausted content-gate retry.
-
-        These are system faults, not verdicts on the user's request, so
-        trigger_agent_redirect is the wrong tool for them: it generates in a
-        vacuum (generate_forced_response withholds the user's question as an
-        anti-injection measure) and agent worldviews mandate scope refusals
-        for anything off-topic — which turned in-scope questions into false
-        "outside my area of focus" replies. This path makes NO LLM calls, so it
-        also still works when the failure is the provider itself (rate limit,
-        outage) — precisely when this path tends to fire.
-        """
         self.log.info(
             f"[Governance | INTERCEPT] Profile: {self.active_profile_name} | "
             f"Reason: {violation_type} (deterministic system-failure notice)"
@@ -3143,10 +2598,6 @@ class SAFi:
             )
         self.store.update_message_content(message_id, notice, audit_status="complete")
 
-        # Nothing to audit: the text is fixed, governance-authored copy, and no
-        # redirect-quality score applies (None, not 0 — a 0 would read as a real
-        # rock-bottom score in the dashboard). The failing audit's ledger is
-        # preserved in the log entry so the dashboard can show WHY the draft failed.
         note = f"System failure ({violation_type}) — deterministic notice shipped without redirect audit."
         if audit_failure_reason:
             note = f"{note} Audit detail: {audit_failure_reason[:400]}"
@@ -3213,31 +2664,6 @@ class SAFi:
         }
 
     def _pii_enabled(self, org_id=None):
-        """Which PII validators apply to this turn.
-
-        The union of two sources, and the second is the point
-        (GOVERNANCE_BACKLOG 84):
-
-          1. the COMPILED PROFILE, i.e. what the agent's own org and policy
-             asked for, merged by Synderesis;
-          2. the ACTING USER'S organization, looked up per turn.
-
-        The acting user's organization is included because the person supplying
-        the data determines which organization-level controls apply. Applying
-        both profile and organization rules as a union means neither layer can
-        silently remove the other's configured checks.
-
-        A union, so it can only tighten: neither source can switch the other
-        off, and the org floor stays a floor. Guests have no org and so get
-        source 1 only, which for a built-in agent means nothing at all.
-
-        Returns [] on anything unexpected, including a failed lookup. An org
-        that has enabled nothing must behave exactly as it did before this
-        feature existed (Nelson: SAFi blocks nothing by default). Note this is
-        the opposite of the Will's outbound check, which fails CLOSED: there,
-        a control is configured and cannot be evaluated; here we are still
-        asking whether one is configured at all.
-        """
         keys = []
         try:
             rules = (self.profile or {}).get("will_rules") or {}
@@ -3257,22 +2683,10 @@ class SAFi:
                     if k not in keys:
                         keys.append(k)
             except Exception as e:
-                # Deliberately not fatal. A standards lookup that fails must not
-                # take down the turn; it means this org's floor is not applied
-                # for this request, which is logged and visible.
                 self.log.warning("PII: org standards lookup failed for %s: %s", org_id, e)
         return pii_validators.normalize(keys, (self.profile or {}).get("pii_validator_catalog"))
 
     def _redact_pii(self, text, org_id=None):
-        """Strip detected identifiers before anything is persisted.
-
-        The governance record is retained for years under the org's retention
-        policy, so a record written BECAUSE it contained an SSN must not be the
-        thing that stores one (Nelson, 2026-08-26). Redaction leaves the
-        validator key, so the record still explains why the turn was blocked.
-        Returns the text unchanged when nothing is enabled, which is the
-        default.
-        """
         enabled = self._pii_enabled(org_id)
         if not enabled or not isinstance(text, str) or not text:
             return text
@@ -3282,15 +2696,7 @@ class SAFi:
 
     @staticmethod
     def _default_redirect_directive(violation_type: str) -> str:
-        """Return an accurate user-facing directive for an unmapped violation.
-
-        Prompt-injection blocks need a truthful explanation of the attempted
-        instruction override; they are not automatically scope violations.
-        """
         if violation_type == "pii_detected":
-            # Neither a scope refusal nor a generic failure. The request was in
-            # scope and the user can fix it, so say what happened and what to do.
-            # Never restate the detected value.
             return (
                 "CRITICAL: The user's message contained what appears to be sensitive "
                 "information, and it was blocked before reaching you. "
@@ -3331,11 +2737,6 @@ class SAFi:
         )
 
     def _deterministic_redirect_fallback(self, violation_type: str) -> str:
-        """Deterministic policy fallback when an agent's dynamic redirect fails Conscience audit.
-
-        Zero LLM calls. Provides an immutable, governed refusal corresponding to the violation,
-        ensuring no rebellious or unaligned response bypasses governance to reach the user.
-        """
         agent_name = (self.profile or {}).get("name") or "This agent"
         scope = (self.profile or {}).get("scope_statement")
 
@@ -3378,7 +2779,6 @@ class SAFi:
 
     @staticmethod
     def _is_directive_echo(output: str, directive: str) -> bool:
-        """Detect when Intellect parrots internal_rephrase_directives verbatim."""
         if not output:
             return False
         out_l = " ".join(output.lower().split())
@@ -3411,15 +2811,12 @@ class SAFi:
         will_stage: Optional[str] = None,
         agent_context: str = "",
     ) -> Dict[str, Any]:
-        """Agent Redirect: Re-engages the Intellect to handle boundaries in the agent's own voice."""
         self.log.info(f"[Governance | INTERCEPT] Profile: {self.active_profile_name} | Reason: {violation_type}")
         self.store.update_message_reasoning(message_id, "Applying governance policy...")
 
         directives = self.profile.get("internal_rephrase_directives", {})
         directive = directives.get(violation_type)
         if not directive:
-            # No agent-specific directive. Select a fallback for the actual
-            # violation class; injection blocks are not automatically scope blocks.
             directive = self._default_redirect_directive(violation_type)
         
         safe_intent, _ = await self.intellect_engine.generate_forced_response(
@@ -3436,24 +2833,12 @@ class SAFi:
             )
             safe_output = self._deterministic_redirect_fallback(violation_type)
 
-        # Enforce the structural gate on the redirect too. Normal drafts run
-        # through _finalize_draft (which redirects on a structural failure), but
-        # the redirect is the terminal path and cannot recurse — so we repair
-        # deterministically instead. Most important for regulated agents whose
-        # refusal must still carry the mandatory disclaimer; the model is
-        # instructed to add it via the worldview, but that is not enforced.
         safe_output = self._repair_pii_redirect(safe_output, violation_type)
         safe_output = self._enforce_redirect_structure(safe_output)
         raw_redirect_draft = safe_output
 
         self.store.update_message_reasoning(message_id, "Auditing governance response...")
         try:
-            # REDACTED, not raw. evaluate_redirect fences the prompt into the
-            # body it sends to the Conscience (conscience.py:301-304), so a
-            # PII-blocked prompt would still reach a model even though
-            # generate_forced_response deliberately discards it. Fine for
-            # injection, where the goal is "the model must not obey it"; wrong
-            # for PII, where the goal is "the data must not leave".
             ledger = await self.conscience.evaluate_redirect(
                 redirect_output=safe_output,
                 user_prompt=self._redact_pii(original_prompt, org_id),
@@ -3465,26 +2850,15 @@ class SAFi:
             self.log.exception(f"ConscienceAuditor.evaluate_redirect() failed for agent redirect: {e}")
             ledger = []
 
-        # Redirect audits use a separate quality score — redirect rubrics don't map to
-        # agent values, so the EMA spirit vector must not be updated here.
         S_t, note = self.spirit.compute_redirect(ledger)
         drift_val = None
         with self._spirit_state_lock:
             self.last_drift = 0.0
         p_t = np.zeros(max(1, len(self.spirit.values)))
         mu_new_vector = p_t
-        # Load turn count for log context only — not incrementing, not saving.
         _sm_readonly = self.store.load_spirit_memory(self.active_profile_name) or {"turn": 0}
         redirect_turn = int(_sm_readonly.get("turn", 0))
 
-        # Classical Conscience Gate on Redirects:
-        # In Thomistic ethics, no act may pass from the intellect to the patient
-        # without the seal of Conscience and the sanction of the Will. If Conscience
-        # finds the redirect defective (S_t < 6, or any rubric evaluated negative,
-        # such as Reason Fidelity, Tone and Respect, or Redirect Clarity), or if the
-        # audit could not verify the response, the dynamic output is VETOED.
-        # The harness suppresses the rogue draft and enforces an immutable,
-        # deterministic policy statement.
         is_redirect_deficient = (
             not ledger
             or S_t < 6
@@ -3505,7 +2879,6 @@ class SAFi:
             safe_output = self._enforce_redirect_structure(safe_output)
             note = f"{note} [Conscience Veto: dynamic redirect rejected ({S_t}/10); deterministic policy fallback enforced]"
 
-        # Commit to database ONLY after Conscience audit and gate approval.
         self.store.update_message_content(message_id, safe_output, audit_status="complete")
 
         self.store.update_message_reasoning(message_id, "Preparing your answer...")
@@ -3521,9 +2894,6 @@ class SAFi:
             "willDecision": "redirected",
             "willReason": violation_type,
             "isRedirect": True,
-            # The audit that triggered the block — the redirect's own quality audit
-            # goes in conscienceLedger; this preserves WHY the original draft failed
-            # so the dashboard can show the judge's justification.
             "originalLedger": failing_ledger or [],
             "blockedDraft": self._redact_pii(blocked_draft or "", org_id),
             "profileValues": self.values,
@@ -3536,8 +2906,6 @@ class SAFi:
             "memorySummary": "",
             "spiritFeedback": "",
             "retrievedContext": "",
-            # What memory the blocked draft was conditioned on, same contract
-            # as the approve path's record (backlog 50, read side).
             "agentWorkContext": "" if agent_context in ("{}", "null", "") else agent_context,
             "policyId": self.profile.get("policy_id"),
             "policyVersion": self.profile.get("policy_version"),
@@ -3592,10 +2960,6 @@ class SAFi:
         }
 
     def _append_log(self, log_entry: Dict[str, Any]):
-        # Debug sink only — the system of record is the encrypted
-        # governance_records row written inside update_audit_results.
-        # Default stays ON while the Streamlit Audit Hub still reads these
-        # files; the decommission commit flips SAFI_DEBUG_JSONL_LOGS off.
         if not getattr(self.config, "DEBUG_JSONL_LOGS", True):
             return
         log_path = Path(self.log_dir)

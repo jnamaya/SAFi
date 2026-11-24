@@ -1,4 +1,3 @@
-"""safi-cli entrypoint (thin): argument parsing, client bootstrap, dispatch."""
 from __future__ import annotations
 
 import argparse
@@ -18,7 +17,6 @@ from typing import Any, Dict, List, Optional
 from . import config, prompt_input, ssh_keys, tools, ui
 from .client import SafiClient, SafiClientError
 
-# Backwards-compatible re-exports (tests and callers import via safi_cli.main)
 from .subagents import (
     MAX_SUBAGENTS_PER_TURN,
     _execute_tool_with_live_status,
@@ -56,18 +54,15 @@ logger = logging.getLogger("safi.main")
 
 
 def main():
-    # Direct command shortcuts: safi setup-key [target], safi push-key [target], safi ssh-key [target]
     if len(sys.argv) > 1 and sys.argv[1] in ("setup-key", "push-key", "ssh-key"):
         code = ssh_keys.run_setup_key(sys.argv[2:]) if len(sys.argv) > 2 else (ssh_keys.interactive_setup_key() or 0)
         sys.exit(code if isinstance(code, int) else 0)
 
-    # Cloud setup shortcut: safi setup-cloud, safi cloud
     if len(sys.argv) > 1 and sys.argv[1] in ("setup-cloud", "cloud", "cloud-setup"):
         from . import cloud
         cloud.interactive_setup_cloud()
         sys.exit(0)
 
-    # Standalone keygen shortcut: safi keygen (local Ed25519 key, no deployment)
     if len(sys.argv) > 1 and sys.argv[1] in ("keygen", "gen-key"):
         sys.exit(ssh_keys.keygen_local())
 
@@ -285,7 +280,6 @@ def main():
             ui.console.print(f"[yellow]URL '{new_url}' was not saved. Please verify the endpoint is reachable or run 'safi-cli --setup'.[/]")
             sys.exit(1)
 
-    # Run setup wizard if requested via --setup or on first run in an interactive terminal
     is_first_run = (not config.has_configured_api_url() and not args.api_url)
     if args.setup_wizard or (is_first_run and sys.stdin.isatty()):
         wizard_url, wizard_agent, wizard_key = run_setup_wizard()

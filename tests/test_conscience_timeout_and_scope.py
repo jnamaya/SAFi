@@ -1,4 +1,3 @@
-"""Regression tests for Conscience fast-fail timeout and scope refusal guidance."""
 import asyncio
 from unittest.mock import patch
 

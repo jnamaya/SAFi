@@ -1,4 +1,3 @@
-"""Generic role/capability enforcement over host-supplied role data."""
 from __future__ import annotations
 
 from functools import wraps
@@ -14,7 +13,6 @@ def _role_config():
 
 
 def check_permission(required_role):
-    """Compare role ranks from host configuration; unknown roles fail closed."""
     user = session.get("user")
     if not user:
         return False

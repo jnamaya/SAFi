@@ -27,7 +27,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from safi_app.persistence import database as db
 from safi_app.persistence import crypto
 
-# (table, pk_cols, columns, journaled)
 MANIFEST = [
     ("oauth_tokens", ("user_id", "provider"), ("access_token", "refresh_token"), False),
     ("conversations", ("id",), ("memory_summary", "title"), False),
@@ -43,10 +42,6 @@ def needs_encryption(value):
     return isinstance(value, str) and value != "" and not crypto.is_token(value)
 
 
-# suggested_prompts is a JSON column: legacy plaintext is a JSON array,
-# encrypted form is a JSON *string* wrapping the Fernet token (see
-# db._encode_suggested_prompts). The generic string path would write a bare
-# token, which MySQL's JSON validation rejects — so it gets its own codec.
 def _sp_needs(value):
     if not isinstance(value, str) or not value:
         return False
@@ -95,13 +90,11 @@ def count_candidates(table, columns):
 
 
 def backfill_table(table, pk_cols, columns, journaled, batch_size):
-    """Encrypts one table in batches. Returns rows updated."""
     conn = db.get_db_connection()
     cur = conn.cursor(dictionary=True)
     updated = 0
     pk_list = ", ".join(pk_cols)
     col_list = ", ".join(columns)
-    # chat_history trail entries need conversation_id/message_id for the journal
     extra = ", conversation_id, message_id" if journaled else ""
     last_pk = None
     try:
@@ -115,7 +108,6 @@ def backfill_table(table, pk_cols, columns, journaled, batch_size):
                     params,
                 )
             else:
-                # Composite-PK tables are small (tokens, profiles): single pass.
                 cur.execute(f"SELECT {pk_list}, {col_list}{extra} FROM {table} ORDER BY {pk_list} FOR UPDATE")
             rows = cur.fetchall()
             if not rows:
@@ -158,7 +150,6 @@ def backfill_table(table, pk_cols, columns, journaled, batch_size):
 
 
 def verify_table(table, pk_cols, columns, journaled, sample=25):
-    """Samples rows: stored values must be tokens that decrypt round-trip."""
     conn = db.get_db_connection()
     cur = conn.cursor(dictionary=True)
     problems = 0

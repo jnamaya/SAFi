@@ -1,8 +1,3 @@
-"""Local repository tools and execution engine for SAFi CLI.
-
-These tools execute directly on the developer's local filesystem in the
-current working directory, under SAFi's Will Gate and path confinement.
-"""
 from __future__ import annotations
 
 import fnmatch
@@ -29,7 +24,6 @@ FORBIDDEN_DIRS = frozenset({
 FORBIDDEN_SUFFIXES = (
     ".pem", ".key", ".pkcs12", ".pfx", ".p12", ".kdbx", ".jks",
 )
-# `.env.*` files hold secrets (.env.local, .env.production); these templates do not.
 ENV_TEMPLATE_SUFFIXES = (".example", ".sample", ".template", ".dist")
 SKIP_DIRS = frozenset({
     ".git", ".venv", "venv", "node_modules", "__pycache__", ".mypy_cache",
@@ -454,12 +448,10 @@ SYSADMIN_TOOL_SCHEMAS: List[Dict[str, Any]] = [
     }
 ]
 
-# Default / backward compatibility alias
 TOOL_SCHEMAS: List[Dict[str, Any]] = SOFTWARE_ENGINEER_TOOL_SCHEMAS
 
 
 def get_tools_for_agent(agent: Optional[str]) -> List[Dict[str, Any]]:
-    """Return the designated tool schemas for the given agent."""
     if not agent:
         return []
     low = agent.lower()
@@ -477,14 +469,10 @@ def get_tools_for_agent(agent: Optional[str]) -> List[Dict[str, Any]]:
         or "adversarial" in low
     ):
         return list(SOFTWARE_ENGINEER_TOOL_SCHEMAS)
-    # Default fallback for any custom or unlisted agent connected through the CLI harness:
-    # Offer the harness tools so the client advertises them; the server's WillGate
-    # policy remains the authoritative enforcement layer.
     return list(SOFTWARE_ENGINEER_TOOL_SCHEMAS)
 
 
 def _is_secret_name(name: str, agent: Optional[str] = None) -> bool:
-    """True for credential files: exact names, key suffixes, and .env.* variants (templates excepted)."""
     lower = name.lower()
     is_sysadmin = agent is not None and "sysadmin" in agent.lower()
     if lower == "inventory.json":
@@ -510,14 +498,12 @@ def resolve_safe_path(
     follow_symlinks: bool = True,
     agent: Optional[str] = None,
 ) -> Path:
-    """Confine a relative path to workspace_root and block protected directories and secret files."""
     ws_resolved = workspace_root.resolve()
     is_sysadmin = agent is not None and "sysadmin" in agent.lower()
 
     expanded_path = os.path.expanduser(rel_path)
     raw_target = Path(expanded_path) if Path(expanded_path).is_absolute() else (workspace_root / rel_path)
 
-    # In WSL, fallback to Windows host user profile if local inventory.json does not exist or is empty stub
     if is_sysadmin and raw_target.name == "inventory.json":
         from safi_cli.config import resolve_inventory_file
         resolved_inv = resolve_inventory_file()
@@ -532,7 +518,6 @@ def resolve_safe_path(
     try:
         rel_parts = target.relative_to(ws_resolved).parts
     except ValueError:
-        # sysadmin is explicitly permitted to read inventory.json from ~/.config/safi or Windows profile
         if is_sysadmin and target.name == "inventory.json":
             if target.is_file() and target.stat().st_size > 10:
                 return target
@@ -553,7 +538,6 @@ def resolve_safe_path(
 
 
 def _dir_contains_protected(directory: Path, agent: Optional[str] = None) -> Optional[str]:
-    """Return the name of any protected directory or secret file inside `directory`, else None."""
     for root, dirs, files in os.walk(directory, followlinks=False):
         for d in dirs:
             if d.lower() in FORBIDDEN_DIRS or _is_secret_name(d, agent=agent):
@@ -569,18 +553,6 @@ def _build_bwrap_command(
     workspace_root: Path,
     agent: Optional[str] = None,
 ) -> Optional[List[str]]:
-    """Build a Bubblewrap (bwrap) isolation command for running bash commands safely.
-
-    Sandboxes execution:
-    - Root filesystem is mounted read-only (--ro-bind / /).
-    - Workspace is mounted read-write (--bind ws ws).
-    - /tmp is a private in-memory filesystem (--tmpfs /tmp).
-    - Process namespace is unshared (--unshare-pid).
-    - Session is isolated (--new-session) to prevent terminal injection (TIOCSTI ioctl attacks).
-    - For non-sysadmin agents, sensitive credential directories (~/.ssh, ~/.config/safi,
-      ~/.aws, ~/.azure, ~/.gnupg, ~/.kube, ~/.docker, ~/.config/gh) and shell histories / auth tokens
-      are masked with empty tmpfs or /dev/null mounts.
-    """
     bwrap_path = shutil.which("bwrap")
     if not bwrap_path:
         logger.warning(
@@ -605,11 +577,8 @@ def _build_bwrap_command(
     is_sysadmin = agent is not None and "sysadmin" in agent.lower()
 
     if not is_sysadmin:
-        # Mask administrative and root files
         bwrap_cmd.extend(["--tmpfs", "/root"])
 
-        # Mask user home spaces so sibling repositories, private documents, and downloads
-        # cannot be accessed or laterally staged into the workspace.
         if ws_resolved != Path("/home") and ws_resolved != Path("/"):
             bwrap_cmd.extend(["--tmpfs", "/home"])
 
@@ -642,14 +611,11 @@ def _build_bwrap_command(
             if sfile.exists():
                 bwrap_cmd.extend(["--ro-bind-try", "/dev/null", str(sfile)])
 
-        # Safely bind developer configs and non-secret tooling
         if (home / ".gitconfig").is_file():
             bwrap_cmd.extend(["--ro-bind-try", str(home / ".gitconfig"), str(home / ".gitconfig")])
         if (home / ".local" / "bin").is_dir():
             bwrap_cmd.extend(["--ro-bind-try", str(home / ".local" / "bin"), str(home / ".local" / "bin")])
 
-        # Allow read-only access to known_hosts and ssh config so git/ssh can verify
-        # remote host identities (e.g. github.com) and use ssh configs without exposing any private key files.
         ssh_dir = home / ".ssh"
         if ssh_dir.exists() and ssh_dir.is_dir():
             bwrap_cmd.extend([
@@ -658,8 +624,6 @@ def _build_bwrap_command(
                 "--ro-bind-try", str(ssh_dir / "config"), str(ssh_dir / "config"),
             ])
 
-    # Mount the workspace read-write and change into it.
-    # Mounting this after any tmpfs ensures the workspace remains accessible while surrounding paths are isolated.
     bwrap_cmd.extend([
         "--bind", ws, ws,
         "--chdir", ws,
@@ -676,7 +640,6 @@ def execute_tool(
     agent: Optional[str] = None,
     on_output: Optional[Callable[[str], None]] = None,
 ) -> str:
-    """Execute a tool proposal locally inside workspace_root."""
     try:
         if agent:
             allowed_tools = {t["function"]["name"] for t in get_tools_for_agent(agent)}
@@ -1150,7 +1113,6 @@ def execute_tool(
             from . import cloud
             action = str(args.get("action") or "").strip()
             params = args.get("params") or {}
-            # Flatten top-level parameters if provided directly
             for k in ("user_id", "upn", "email", "temp_password", "force_change", "sku_id", "query", "search", "limit"):
                 if k in args and k not in params:
                     params[k] = args[k]
@@ -1161,7 +1123,6 @@ def execute_tool(
             from . import cloud
             action = str(args.get("action") or "").strip()
             params = args.get("params") or {}
-            # Flatten top-level parameters if provided directly
             for k in ("resource_group", "vm_name", "name", "action", "resource_type"):
                 if k in args and k not in params:
                     params[k] = args[k]

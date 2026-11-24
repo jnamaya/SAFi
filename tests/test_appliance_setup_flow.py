@@ -1,10 +1,3 @@
-"""End-to-end tests for the setup wizard's HTTP flow.
-
-The helper tests in test_appliance_setup_wizard.py pin down decision logic.
-These drive the real handler through a fake socket to cover the wiring: the PIN
-gate, the local-then-finish sequence, the cloud shortcut, and the guarantee that
-a 20 GB download never happens inside a request.
-"""
 import importlib.machinery
 import importlib.util
 import io
@@ -20,7 +13,7 @@ REPO = Path(__file__).resolve().parents[1]
 if not (REPO / "deploy/iso/config/includes.chroot/usr/local/sbin").is_dir():
     pytest.skip("appliance ISO build tree (deploy/iso) is not present", allow_module_level=True)
 
-from test_appliance_setup_wizard import FakeSetup, _hw, safi_local, wizard  # noqa: F401
+from test_appliance_setup_wizard import FakeSetup, _hw, safi_local, wizard
 CLOUD_KEYS = ("GROQ_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
               "GEMINI_API_KEY", "MISTRAL_API_KEY", "DEEPSEEK_API_KEY",
               "CEREBRAS_API_KEY", "ZHIPU_API_KEY")
@@ -47,11 +40,6 @@ class FakeServer:
 
 
 def _call(path, fields=None, method="POST", pin=PIN, hardware=None):
-    """Drive one request through the handler and return the response body.
-
-    Built via __new__ so socketserver's __init__ -- which would want a real
-    socket and would start serving -- never runs.
-    """
     body = urlencode(fields).encode() if fields is not None else b""
     handler = wizard.Handler.__new__(wizard.Handler)
     handler.rfile = io.BytesIO(body)
@@ -95,10 +83,6 @@ def env_paths(tmp_path, monkeypatch):
             "state": state_file, "choice": choice_file, "calls": calls}
 
 
-# --------------------------------------------------------------------------
-# the PIN gate
-# --------------------------------------------------------------------------
-
 def test_a_wrong_pin_cannot_start_a_download(env_paths):
     body = _call("/setup", {
         "pin": "000000", "mode": "local", "model": "qwen3-8b",
@@ -122,17 +106,12 @@ def test_the_pin_is_not_leaked_into_the_status_endpoint(env_paths):
     assert PIN not in body
 
 
-# --------------------------------------------------------------------------
-# local path
-# --------------------------------------------------------------------------
-
 def test_local_setup_starts_the_fetch_without_blocking(env_paths):
     body = _call("/setup", {
         "pin": PIN, "mode": "local", "model": "qwen3-8b",
         "username": "admin", "password": "correct-horse-battery",
         "password_confirm": "correct-horse-battery"})
     assert "Installing" in body
-    # --no-block is the whole point: a 20 GB download must not hold the request.
     start = [c for c in env_paths["calls"] if "start" in c]
     assert start and "--no-block" in start[0]
 
@@ -159,8 +138,6 @@ def test_a_gpu_box_uses_cuda_unless_told_otherwise(env_paths):
 
 
 def test_an_oversized_model_is_refused_by_the_form_too(env_paths):
-    # 32B cannot stream from 32 GiB of RAM, so the POST must fail before any
-    # choice file is written.
     body = _call("/setup", {
         "pin": PIN, "mode": "local", "model": "qwen3-32b",
         "username": "admin", "password": "correct-horse-battery",
@@ -183,7 +160,7 @@ def test_finish_is_refused_while_the_model_is_still_downloading(env_paths):
         "pin": PIN, "mode": "local", "model": "qwen3-8b",
         "username": "admin", "password": "correct-horse-battery",
         "password_confirm": "correct-horse-battery"})
-    env_paths["pin"].write_text(PIN + "\n")  # PIN is still on file pre-commit
+    env_paths["pin"].write_text(PIN + "\n")
     body = _call("/setup/finish", {"pin": PIN})
     assert "has not finished downloading" in body
     assert not env_paths["done"].exists()
@@ -233,10 +210,6 @@ def test_finish_without_a_started_setup_is_refused(env_paths):
     assert not env_paths["done"].exists()
 
 
-# --------------------------------------------------------------------------
-# cloud path
-# --------------------------------------------------------------------------
-
 def test_cloud_setup_waits_for_an_explicit_start(env_paths):
     body = _call("/setup", {
         "pin": PIN, "mode": "cloud", "provider": "GROQ_API_KEY", "api_key": "sk-test",
@@ -250,7 +223,6 @@ def test_cloud_setup_waits_for_an_explicit_start(env_paths):
     assert "SAFi is starting" in body
     assert env_paths["done"].exists()
     assert "GROQ_API_KEY=sk-test" in env_paths["env"].read_text()
-    # A cloud choice must never spawn the fetcher.
     assert not any("safi-model-fetch" in " ".join(map(str, c)) for c in env_paths["calls"])
 
 
@@ -279,10 +251,6 @@ def test_test_key_rejects_an_unlisted_provider(env_paths, monkeypatch):
     assert "Choose an AI provider" in body
     assert not called, "an unlisted provider must never reach the network"
 
-
-# --------------------------------------------------------------------------
-# admin validation
-# --------------------------------------------------------------------------
 
 @pytest.mark.parametrize("fields,expected", [
     ({"password": "short", "password_confirm": "short"}, "at least 8 characters"),
@@ -313,10 +281,6 @@ def test_the_admin_password_never_appears_back_in_the_page(env_paths):
     assert "correct-horse-battery" not in body
 
 
-# --------------------------------------------------------------------------
-# decide later
-# --------------------------------------------------------------------------
-
 def test_deferring_starts_safi_and_keeps_setup_open(env_paths):
     body = _call("/setup", {
         "pin": PIN, "mode": "later",
@@ -324,12 +288,9 @@ def test_deferring_starts_safi_and_keeps_setup_open(env_paths):
         "password_confirm": "correct-horse-battery"})
     assert "SAFi is running" in body
     assert "No AI model is configured yet" in body
-    # SAFi is usable, just not for anything that needs a model.
     assert any("safi.service" in " ".join(map(str, c)) for c in env_paths["calls"])
-    # Setup is not finished, so the wizard must stay up and the PIN stay valid.
     assert not env_paths["done"].exists()
     assert env_paths["pin"].exists()
-    # Nothing to download.
     assert not any("safi-model-fetch" in " ".join(map(str, c)) for c in env_paths["calls"])
 
 
@@ -342,21 +303,13 @@ def test_deferring_writes_no_provider_key_at_all(env_paths):
     for provider in ("GROQ_API_KEY", "GEMINI_API_KEY", "MISTRAL_API_KEY",
                      "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "CEREBRAS_API_KEY"):
         assert f"{provider}=" not in text
-    # The local key IS set, deliberately: Config.validate() refuses to start
-    # with no provider key at all, so a deferred box would not boot. It is a
-    # marker of intent, not a credential -- no local model is installed, so
-    # nothing is ever offered or dispatched to 127.0.0.1:8081.
     assert "SAFI_LOCAL_MODEL_API_KEY=local" in text
-    # Crucially, no faculty is pointed at a model, so nothing defaults to a
-    # name the model server does not serve.
     assert "SAFI_INTELLECT_MODEL" not in text
     assert "SAFI_CONSCIENCE_MODEL" not in text
     assert "SAFI_BACKEND_MODEL" not in text
 
 
 def test_deferring_does_not_leave_the_admin_password_on_disk(env_paths):
-    # There is no download to wait for, so nothing needs the stored password
-    # to survive the submission.
     _call("/setup", {
         "pin": PIN, "mode": "later",
         "username": "admin", "password": "correct-horse-battery",
@@ -370,14 +323,12 @@ def test_a_visit_after_deferring_returns_the_choose_page(env_paths):
         "username": "admin", "password": "correct-horse-battery",
         "password_confirm": "correct-horse-battery"})
     body = _call("/setup", method="GET")
-    # Not a progress page: there is no download to wait on.
     assert "Installing" not in body
     assert 'value="later"' in body
     assert "Setup was deferred" in body
 
 
 def test_deferring_still_requires_an_admin_password(env_paths):
-    # "Decide later" is about the model, not about leaving the box open.
     body = _call("/setup", {
         "pin": PIN, "mode": "later", "username": "admin", "password": "short",
         "password_confirm": "short"})
@@ -412,19 +363,10 @@ def test_an_unknown_mode_is_refused(env_paths):
 
 
 def test_a_deferred_env_file_really_configures_no_provider(env_paths, monkeypatch):
-    """The load-bearing safety property of 'decide later'.
-
-    A placeholder key would be worse than none: the app would offer a model it
-    cannot serve, and every turn that used it would fail against a bogus key.
-    This renders the REAL .env.example through the REAL setup.render, so it
-    proves the template itself leaves every provider blank.
-    """
     from test_appliance_setup_wizard import _load
     from safi_app.core.services.model_routing import configured_providers
 
     setup = _load("real_setup_under_test", REPO / "scripts/setup.py")
-    # APP_DIR is redirected to tmp by the fixture; the template has to come from
-    # the checkout. ENV_FILE stays in tmp.
     monkeypatch.setattr(wizard, "APP_DIR", REPO)
     wizard.initialize(
         {"choice": {"mode": "later"},
@@ -436,15 +378,10 @@ def test_a_deferred_env_file_really_configures_no_provider(env_paths, monkeypatc
     offenders = [line for line in rendered.splitlines()
                  if line.startswith(CLOUD_KEYS) and line.partition("=")[2].strip()]
     assert offenders == [], f"deferred .env must leave cloud providers blank: {offenders}"
-    # The local marker is the one key set, and it is not a credential.
     assert "SAFI_LOCAL_MODEL_API_KEY=local" in rendered
-    # No faculty is bound to a model, so _detect_faculty_defaults() has nothing
-    # phantom to fall back on.
     for faculty in ("INTELLECT", "CONSCIENCE", "BACKEND", "SUMMARIZER"):
         assert f"SAFI_{faculty}_MODEL=\n" in rendered
 
-    # And the app agrees: with no keys, nothing is dispatchable, so the model
-    # list is empty and model_provider_configured() refuses rather than guessing.
     import safi_app.config as config_module
     saved = config_module.Config
     try:

@@ -1,4 +1,3 @@
-"""Governed security-engineering and penetration-testing profile for SAFi."""
 from typing import Any, Dict
 
 

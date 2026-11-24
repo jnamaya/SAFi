@@ -71,12 +71,8 @@ class TestSearchGovernanceEvents(unittest.TestCase):
             cursor = MagicMock()
             mock_conn.return_value.cursor.return_value = cursor
 
-            # First query: COUNT(*) AS n
-            # Second query: SELECT ... FROM governance_records
-            # Third query: SELECT id, name FROM users
             cursor.fetchone.return_value = {"n": 2}
 
-            # Search by prompt text
             cursor.fetchall.side_effect = [
                 [dict(r) for r in mock_rows],
                 [{"id": "user-123", "name": "Alice Admin"}, {"id": "user-456", "name": "Bob Security"}],
@@ -87,7 +83,6 @@ class TestSearchGovernanceEvents(unittest.TestCase):
             self.assertIn("OAuth", matches[0]["prompt_preview"])
             self.assertEqual(matches[0]["user_name"], "Alice Admin")
 
-            # Search by model
             cursor.fetchall.side_effect = [
                 [dict(r) for r in mock_rows],
                 [{"id": "user-123", "name": "Alice Admin"}, {"id": "user-456", "name": "Bob Security"}],
@@ -96,7 +91,6 @@ class TestSearchGovernanceEvents(unittest.TestCase):
             self.assertEqual(len(matches), 1)
             self.assertEqual(matches[0]["message_pk"], 101)
 
-            # Search by agent name
             cursor.fetchall.side_effect = [
                 [dict(r) for r in mock_rows],
                 [{"id": "user-123", "name": "Alice Admin"}, {"id": "user-456", "name": "Bob Security"}],
@@ -105,7 +99,6 @@ class TestSearchGovernanceEvents(unittest.TestCase):
             self.assertEqual(len(matches), 1)
             self.assertEqual(matches[0]["message_pk"], 101)
 
-            # Search by user name
             cursor.fetchall.side_effect = [
                 [dict(r) for r in mock_rows],
                 [{"id": "user-123", "name": "Alice Admin"}, {"id": "user-456", "name": "Bob Security"}],
@@ -114,7 +107,6 @@ class TestSearchGovernanceEvents(unittest.TestCase):
             self.assertEqual(len(matches), 1)
             self.assertEqual(matches[0]["message_pk"], 102)
 
-            # Plaintext scope bypasses cap
             with patch.object(db, "GOVERNANCE_SEARCH_CAP", 1):
                 cursor.fetchall.side_effect = [
                     [dict(r) for r in mock_rows],
@@ -124,7 +116,6 @@ class TestSearchGovernanceEvents(unittest.TestCase):
                 self.assertEqual(len(matches), 1)
                 self.assertEqual(matches[0]["message_pk"], 102)
 
-                # Prompt scope over cap raises ValueError
                 cursor.fetchall.side_effect = [
                     [dict(r) for r in mock_rows],
                     [{"id": "user-123", "name": "Alice Admin"}, {"id": "user-456", "name": "Bob Security"}],

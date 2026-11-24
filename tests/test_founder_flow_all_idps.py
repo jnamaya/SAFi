@@ -1,25 +1,3 @@
-"""
-The Founder Flow runs on EVERY login path, not just Google web.
-
-WHY. Creating an organization for an unaffiliated user used to be inlined in
-`callback()` (Google web) and existed nowhere else. `_resolve_membership` is
-shared by all three paths and deliberately never creates an org: it matches an
-invitation, else joins a verified domain's org under that org's join policy,
-else returns. So an unaffiliated Microsoft or mobile signup finished login with
-`users.org_id = NULL`, displaying the column default `role='member'`, and had no
-way back: `POST /api/organizations` never promotes the caller, no front end
-calls it, and domain verification is admin-only.
-
-Observed on the multi-tenant demo on 2026-08-25 with a Microsoft signup on a
-fresh domain. Backlog 57.
-
-Two things are pinned here. The structural test is the one that matters most:
-the defect was not a wrong behaviour, it was a path that never asked. A fourth
-login path added later must fail this file rather than ship the same gap.
-
-Needs the disposable stack:
-    docker compose -f docker-compose.test.yml run --rm tests -k founder_flow
-"""
 import re
 import sys
 import uuid
@@ -60,7 +38,6 @@ def _drop(user_id, *org_ids):
                 continue
             cur.execute("DELETE FROM auth_events WHERE org_id=%s", (oid,))
             cur.execute("UPDATE users SET org_id=NULL WHERE org_id=%s", (oid,))
-            # Clear the pointer before the row it points at.
             cur.execute("UPDATE organizations SET global_policy_id=NULL WHERE id=%s", (oid,))
             cur.execute("DELETE FROM policies WHERE org_id=%s", (oid,))
             cur.execute("DELETE FROM organizations WHERE id=%s", (oid,))
@@ -71,18 +48,11 @@ def _drop(user_id, *org_ids):
 
 
 class EveryLoginPathFoundsAnOrg(unittest.TestCase):
-    """Structural: whatever resolves membership must also run the Founder Flow.
-
-    Read from the source rather than by driving three OAuth callbacks, which
-    cannot be exercised without standing up Google and Microsoft. The property
-    is about which handlers ask the question, and that is visible in the source.
-    """
 
     def setUp(self):
         self.src = inspect.getsource(auth_api)
 
     def _bodies_calling(self, name):
-        """Function names in auth.py whose body calls `name`."""
         out = set()
         current = None
         for line in self.src.splitlines():
@@ -95,7 +65,7 @@ class EveryLoginPathFoundsAnOrg(unittest.TestCase):
 
     def test_no_path_resolves_membership_without_founding(self):
         resolvers = self._bodies_calling('_resolve_membership(')
-        resolvers.discard('_resolve_membership')          # its own def line
+        resolvers.discard('_resolve_membership')
         founders = self._bodies_calling('_found_org_if_unaffiliated(')
         founders.discard('_found_org_if_unaffiliated')
 
@@ -109,7 +79,6 @@ class EveryLoginPathFoundsAnOrg(unittest.TestCase):
                          "organization and no route out (backlog 57)")
 
     def test_the_founder_flow_is_not_inlined_anywhere(self):
-        # One implementation, or the next fix lands in one copy of three.
         callers = self._bodies_calling('create_organization_atomic(')
         callers.discard('create_organization_atomic')
         self.assertEqual(
@@ -147,8 +116,6 @@ class AnUnaffiliatedUserBecomesAdminOfANewOrg(unittest.TestCase):
         self.org_id = details["org_id"]
         self.assertEqual(details["role"], "admin")
 
-        # Persisted, not just decorated onto the dict: the session reads role
-        # and org from the users row on every request.
         row = db.get_user_details(self.uid)
         self.assertEqual(str(row["org_id"]), str(self.org_id),
                          "the founder must not be left outside the org they founded")
@@ -161,7 +128,6 @@ class AnUnaffiliatedUserBecomesAdminOfANewOrg(unittest.TestCase):
                       "the trail must say which IdP the founder came from")
 
     def test_a_second_call_is_a_no_op(self):
-        # Every login runs this. It must only ever fire once per user.
         details = {"id": self.uid, "name": "Fresh Founder"}
         with self.app.app_context():
             self.assertTrue(auth_api._found_org_if_unaffiliated(details, idp="microsoft"))
@@ -171,8 +137,6 @@ class AnUnaffiliatedUserBecomesAdminOfANewOrg(unittest.TestCase):
 
 
 class AClaimedDomainStillGetsNoShadowOrg(unittest.TestCase):
-    """The backlog-78 guard has to survive the move into the helper: an account
-    on someone else's verified domain under invite_only waits for an invite."""
 
     @classmethod
     def setUpClass(cls):

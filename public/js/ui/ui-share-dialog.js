@@ -1,11 +1,3 @@
-// ui-share-dialog.js
-//
-// Sharing dialog for conversations and folders (backlog 56), reusing org
-// groups exactly like the agent-share dialog (ui-settings-agents.js) does.
-// Two differences from that dialog: a role selector (viewer/contributor,
-// not a single can_use level), and two resource kinds sharing one body
-// renderer since the schema and endpoints are identical in shape.
-
 import * as api from '../core/api.js';
 import * as ui from './ui.js';
 
@@ -15,9 +7,6 @@ function esc(s) {
     return div.innerHTML;
 }
 
-// onChange fires once, on close, when this dialog actually granted or
-// revoked something. The sidebar uses it to refresh the mark on the owner's
-// own rows, so a share taken away stops showing as shared without a reload.
 function openDialog(kind, id, name, onChange) {
     document.getElementById('share-dialog-modal')?.remove();
     const modal = document.createElement('div');
@@ -42,9 +31,6 @@ function openDialog(kind, id, name, onChange) {
         modal.remove();
         if (modal.dataset.changed === '1' && typeof onChange === 'function') onChange();
     };
-    // One listener for the life of the dialog (renderBody reruns and rebuilds
-    // the dropdown/input on every share/revoke, so this looks them up fresh
-    // each time rather than closing over elements that no longer exist).
     const onOutsideClick = (e) => {
         const dropdown = modal.querySelector('#share-grantee-dropdown');
         const input = modal.querySelector('#share-grantee-input');
@@ -89,8 +75,6 @@ async function renderBody(modal, kind, id) {
         </div>`).join('')
         : `<p class="text-sm text-gray-500 py-2">Not shared with anyone yet. Only you can see it.</p>`;
 
-    // Flat candidate list for the search box below — groups first, since
-    // sharing with a group is the more common "whole team" case.
     const candidates = [
         ...groups.map(g => ({ type: 'group', id: g.id,
             label: g.name || 'Untitled group',
@@ -118,13 +102,6 @@ async function renderBody(modal, kind, id) {
         <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Who has access</h4>
         <div>${grantRows}</div>`;
 
-    // --- Searchable grantee picker ---
-    // A plain <select> doesn't scale past a handful of names and gives no
-    // feedback about who got picked once the list is long; this is a small
-    // filter-as-you-type combobox instead. `selected` is the source of truth
-    // for the grant button — the input's text is just a label for it, and
-    // any edit to that text (without picking a fresh suggestion) invalidates
-    // the selection rather than silently sharing with the wrong person.
     let selected = null;
     const input = body.querySelector('#share-grantee-input');
     const dropdown = body.querySelector('#share-grantee-dropdown');
@@ -145,7 +122,6 @@ async function renderBody(modal, kind, id) {
             </button>`).join('')
             : `<p class="px-3 py-2 text-xs text-gray-400 italic">No matches</p>`;
         dropdown.querySelectorAll('.share-grantee-option').forEach((btn, i) => {
-            // mousedown, not click: fires before the input's blur would close this.
             btn.addEventListener('mousedown', (e) => {
                 e.preventDefault();
                 selected = matches[i];
@@ -184,10 +160,6 @@ async function renderBody(modal, kind, id) {
         const granteeId = selected.id;
         try {
             const res = await calls.grant(id, granteeType, granteeId, roleSel.value);
-            // A folder share is never blocked over agent access (a folder can
-            // hold conversations from several agents, or none) — but the owner
-            // still needs to know when the grant won't fully work, so this is a
-            // warning toast instead of the usual quiet success one.
             if (res && res.warning) {
                 ui.showToast(res.warning, 'warning');
             } else {

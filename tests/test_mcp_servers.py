@@ -1,29 +1,3 @@
-"""
-Operator-installed MCP servers (GOVERNANCE_BACKLOG 47b).
-
-Two halves, and the second is the one that matters:
-
-  * Unit coverage of the seams: config parsing, env expansion, connector
-    registration precedence, result rendering.
-
-  * A LIVE server. tests/fixture_mcp_server.py is a real MCP server spoken to
-    over real stdio, so these tests fail if the session does not stay open
-    across calls, if the runtime's event loop and the caller's loop are not
-    bridged correctly, or if discovery does not reach the Will. The previous
-    implementation would have passed every mock-based test ever written: it
-    imported the SDK, constructed StdioServerParameters, and then returned
-    without connecting to anything.
-
-The governance assertions are the point of the file:
-
-  * a discovered server is a CONNECTOR, so granting it authorizes its functions
-    and nothing else,
-  * a server cannot claim a built-in tool name,
-  * a tool nobody granted is blocked by the Will even though it is connected,
-  * discovery that never ran fails CLOSED rather than open.
-
-Run:  venv/bin/python tests/test_mcp_servers.py
-"""
 import asyncio
 import json
 import os
@@ -62,8 +36,6 @@ def _stamp_profile(profile):
 
 
 class ConfigLoadingTests(unittest.TestCase):
-    """The server file is read once at import. Every malformed shape must
-    degrade to 'no MCP tools', never to a partially-applied config."""
 
     def _load(self, contents):
         from safi_app.config import _load_mcp_servers
@@ -116,7 +88,6 @@ class ConfigLoadingTests(unittest.TestCase):
 
 
 class EnvExpansionTests(unittest.TestCase):
-    """Secrets belong in the environment, not in a file that gets copied."""
 
     def test_expands_nested_values(self):
         os.environ["SAFI_TEST_TOKEN"] = "s3cret"
@@ -134,7 +105,6 @@ class EnvExpansionTests(unittest.TestCase):
 
 
 class ConnectorRegistrationTests(unittest.TestCase):
-    """Precedence: built-ins win, and the failure mode is fail-closed."""
 
     def setUp(self):
         clear_discovered_connectors()
@@ -150,12 +120,9 @@ class ConnectorRegistrationTests(unittest.TestCase):
     def test_cannot_shadow_a_builtin_connector(self):
         self.assertFalse(register_discovered_connector("web_search", ("evil_tool",)))
         self.assertNotIn("web_search", discovered_connectors())
-        # The built-in expansion is untouched.
         self.assertEqual(list(expand_connectors(["web_search"])), list(CONNECTOR_TOOLS["web_search"]))
 
     def test_builtin_table_is_consulted_first(self):
-        # Even if a discovered entry somehow existed under a built-in key, the
-        # built-in wins at expansion time as well as at registration time.
         from safi_app.core import tool_connectors
         tool_connectors._DISCOVERED["web_search"] = ("impostor",)
         try:
@@ -164,9 +131,6 @@ class ConnectorRegistrationTests(unittest.TestCase):
             clear_discovered_connectors()
 
     def test_unknown_name_passes_through_which_is_fail_closed(self):
-        # Discovery never ran. The connector name expands to itself, so none of
-        # the server's real function names reach allowed_tools, and the Will
-        # blocks every call the model makes.
         profile = _stamp_profile({"tools": ["acme"]})
         self.assertEqual(profile["allowed_tools"], ["acme"])
         decision, _ = authorize("acme_invoice", profile)
@@ -211,7 +175,6 @@ class ResultRenderingTests(unittest.TestCase):
 
 
 class LiveServerTests(unittest.TestCase):
-    """The real thing: a genuine MCP server over real stdio."""
 
     @classmethod
     def setUpClass(cls):
@@ -240,8 +203,6 @@ class LiveServerTests(unittest.TestCase):
         self.assertIn("fixture_add", entry["tools"])
 
     def test_a_builtin_name_is_refused_at_discovery(self):
-        # The fixture also exposes web_search. It must not have been registered,
-        # or a third-party server could repoint an existing agent's tool.
         self.assertNotIn("web_search", mcp_runtime.tools())
         self.assertNotIn("web_search", mcp_runtime.tools_for_server("fixture"))
 
@@ -255,9 +216,6 @@ class LiveServerTests(unittest.TestCase):
         self.assertIn("echo: hi", out)
 
     def test_session_stays_open_across_calls_on_different_loops(self):
-        # Each asyncio.run is a NEW event loop, which is what Flask[async] does
-        # per request. If the session were bound to the caller's loop rather
-        # than the runtime's, the second call here would fail.
         first = asyncio.run(mcp_runtime.call("fixture_add", {"a": 1, "b": 2}))
         second = asyncio.run(mcp_runtime.call("fixture_add", {"a": 20, "b": 22}))
         self.assertIn("3", first)
@@ -285,14 +243,6 @@ class LiveServerTests(unittest.TestCase):
         self.assertEqual({s["name"] for s in schemas}, {"fixture_echo"})
 
     def test_catalogue_offers_each_tool_separately(self):
-        """One card per TOOL, not per server (backlog 48d).
-
-        A built-in connector is offered as a bundle because its contents were
-        reviewed when they shipped. A server the operator installed is not: the
-        policy step exists so an editor can enable some of its tools and block
-        the rest, and a single checkbox for the whole server would make that
-        decision unavailable.
-        """
         categories = mcp_manager.MCPManager({}).list_all_tools()
         fixture = [c for c in categories if c["category"] == "Fixture Server"]
         self.assertEqual(len(fixture), 1)
@@ -302,15 +252,11 @@ class LiveServerTests(unittest.TestCase):
         self.assertNotIn("fixture", offered)
 
     def test_a_policy_can_authorize_one_tool_of_a_server(self):
-        """What the per-tool cards are FOR: naming a function directly
-        authorizes exactly that function, because expand_connectors passes an
-        unknown name through and the Will matches exactly."""
         profile = _stamp_profile({"tools": ["fixture_echo"]})
         self.assertEqual(profile["allowed_tools"], ["fixture_echo"])
         self.assertEqual(authorize("fixture_echo", profile)[0], "approve")
         self.assertEqual(authorize("fixture_add", profile)[0], "violation")
 
-    # --- the governance assertions ---
 
     def test_granting_the_server_authorizes_its_functions(self):
         profile = _stamp_profile({"tools": ["fixture"]})
@@ -339,14 +285,10 @@ class LiveServerTests(unittest.TestCase):
         })
         self.assertEqual(authorize("fixture_echo", profile, {"message": "safe"})[0], "approve")
         self.assertEqual(authorize("fixture_echo", profile, {"message": "other"})[0], "violation")
-        # Omitting a constrained parameter is a block, not a bypass.
         self.assertEqual(authorize("fixture_echo", profile, {})[0], "violation")
 
 
 class ConcurrentProbeTests(unittest.TestCase):
-    """Probing has to be concurrent to be usable: most public registry entries
-    do not answer, and each failure costs the full timeout, so a catalogue page
-    probed one server at a time would take minutes."""
 
     def tearDown(self):
         mcp_runtime.shutdown()
@@ -356,7 +298,6 @@ class ConcurrentProbeTests(unittest.TestCase):
             {"transport": "stdio", "command": sys.executable, "args": [FIXTURE]}, timeout=20)
         self.assertTrue(result["ok"], result["error"])
         self.assertIn("fixture_echo", result["tools"])
-        # A probe must leave no trace: nothing connected, nothing registered.
         self.assertEqual(mcp_runtime.connectors(), {})
         self.assertEqual(mcp_runtime.tools(), {})
 
@@ -377,8 +318,6 @@ class ConcurrentProbeTests(unittest.TestCase):
 
 
 class BrokenServerTests(unittest.TestCase):
-    """A server that cannot start must leave the deployment tool-less, running,
-    and fail-closed. Never tool-present-and-unguarded."""
 
     def tearDown(self):
         mcp_runtime.shutdown()
@@ -403,7 +342,6 @@ class BrokenServerTests(unittest.TestCase):
             {"late": {"transport": "stdio", "command": "/nonexistent"}},
             reserved_tool_names=frozenset(),
         )
-        # The second call must not spawn anything: discovery happens once.
         self.assertEqual(first["tool_count"], 0)
         self.assertEqual(second["tool_count"], 0)
         self.assertNotIn("late", second["servers"])

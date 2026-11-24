@@ -1,27 +1,3 @@
-"""
-The custom model catalog is per-org (backlog 77).
-
-WHY. The catalog had no org column and all three endpoints were gated on
-`admin`, which is ANY org's admin. So on a deployment with self-serve signup,
-anyone who registered could list every other org's model ids and labels (a
-fine-tune name discloses a customer or a project) and, worse, DELETE them, at
-which point that org's users silently fell back to the default model. Found by
-Nelson on the demo: models added under one org appeared in a brand-new org.
-
-The contract pinned here:
-
-- An org sees its own rows plus deployment-wide rows, never another org's.
-- An org can delete only its own rows: another org's row, and a deployment-wide
-  row, both report not-found rather than disappearing.
-- Model ids stay unique per DEPLOYMENT, because detect_provider maps an id to a
-  provider with no org in scope and sits in the dispatch path. A collision must
-  not disclose the holder, the label or the provider.
-- The composer list (list_models_for_org) filters by org too, since that is the
-  surface where the leak was actually noticed.
-
-Needs the disposable stack:
-    docker compose -f docker-compose.test.yml run --rm tests -k model_catalog_scope
-"""
 import sys
 import uuid
 import unittest
@@ -40,7 +16,6 @@ class CatalogIsPerOrg(unittest.TestCase):
         tag = uuid.uuid4().hex[:8]
         self.org_a = db.create_organization(f"Catalog Org A {tag}")
         self.org_b = db.create_organization(f"Catalog Org B {tag}")
-        # Anthropic, so the provider is a real one the metadata knows.
         self.model_a = f"a-tune-{tag}"
         self.model_b = f"b-tune-{tag}"
         self.model_global = f"g-tune-{tag}"
@@ -54,7 +29,7 @@ class CatalogIsPerOrg(unittest.TestCase):
 
     def tearDown(self):
         for m in (self.model_a, self.model_b, self.model_global):
-            db.delete_custom_model(m)          # org_id=None: unrestricted cleanup
+            db.delete_custom_model(m)
         conn = db.get_db_connection()
         cur = conn.cursor()
         try:
@@ -66,7 +41,6 @@ class CatalogIsPerOrg(unittest.TestCase):
             conn.close()
         mr.invalidate_custom_models_cache()
 
-    # ---- visibility ----
 
     def _ids_visible_to(self, org_id):
         return {r["model_id"] for r in db.list_custom_models(visible_to_org=org_id)}
@@ -83,11 +57,9 @@ class CatalogIsPerOrg(unittest.TestCase):
         self.assertNotIn(self.model_a, visible)
 
     def test_unscoped_listing_still_returns_everything_for_routing(self):
-        # detect_provider needs every row; this is internal, not user-facing.
         every = {r["model_id"] for r in db.list_custom_models()}
         self.assertTrue({self.model_a, self.model_b, self.model_global} <= every)
 
-    # ---- deletion ----
 
     def test_an_org_cannot_delete_another_orgs_model(self):
         removed = db.delete_custom_model(self.model_b, org_id=self.org_a)
@@ -103,37 +75,24 @@ class CatalogIsPerOrg(unittest.TestCase):
         self.assertTrue(db.delete_custom_model(self.model_a, org_id=self.org_a))
         self.assertNotIn(self.model_a, {r["model_id"] for r in db.list_custom_models()})
 
-    # ---- the composer surface, where the leak was seen ----
 
     def test_the_composer_list_is_scoped(self):
         ids_a = {m["id"] for m in pg.list_models_for_org(self.org_a)}
         self.assertNotIn(self.model_b, ids_a,
                          "another org's custom model must not reach the picker")
-        # Own and deployment-wide rows appear when their provider is configured;
-        # if anthropic is unconfigured in this environment both are filtered, so
-        # assert the leak is absent rather than asserting presence.
         self.assertNotIn(self.model_b, {m["id"] for m in pg.list_models_for_org(self.org_a)})
 
-    # ---- deployment-wide rows must stay manageable by SOMEONE ----
 
     def test_an_operator_can_delete_a_deployment_wide_model(self):
-        """org_id=None is the operator scope. Scoping every delete to the
-        caller's org left deployment-wide rows deletable by nobody holding an
-        org, which is every admin on a normal install: the org-scoped delete
-        never matches org_id ''. That orphaned the rows entirely."""
         self.assertTrue(db.delete_custom_model(self.model_global, org_id=None))
         self.assertNotIn(self.model_global,
                          {r["model_id"] for r in db.list_custom_models()})
 
     def test_the_operator_scope_can_also_reach_an_orgs_row(self):
-        # An operator curating the catalog must not be blocked by ownership.
         self.assertTrue(db.delete_custom_model(self.model_a, org_id=None))
 
-    # ---- routing is unaffected ----
 
     def test_routing_still_resolves_any_registered_id(self):
-        # Ownership must not change dispatch: the id maps to its declared
-        # provider regardless of which org asks.
         self.assertEqual(mr.detect_provider(self.model_a), "anthropic")
         self.assertEqual(mr.detect_provider(self.model_b), "anthropic")
 

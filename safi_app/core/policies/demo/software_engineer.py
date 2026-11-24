@@ -1,4 +1,3 @@
-"""Pro Software Coding Policy (software engineering) for the Software Engineer agent."""
 from typing import Any, Dict, List
 
 from ...agents.software_engineer import SOFTWARE_ENGINEER_AGENT
@@ -153,9 +152,6 @@ POLICY: Dict[str, Any] = {
         "for those standards — they are what constrain destructive, secret-bearing or unsafe "
         "actions, and they are the right instrument for judging a risky tool call."
     ),
-    # Derived from the agent profile (single source of truth), matching the
-    # convention used by every other demo policy, so the governed scope can
-    # never drift from the agent's own scope_statement.
     "scope_statement": SOFTWARE_ENGINEER_AGENT.get("scope_statement", ""),
     "values": _lift_values(AGENTIC_CODING_VALUES),
     "will_rules": {

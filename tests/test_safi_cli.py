@@ -1,5 +1,3 @@
-"""Unit tests for the native SAFi CLI local tools and configuration."""
-
 import json
 import os
 import subprocess
@@ -10,9 +8,6 @@ from pathlib import Path
 
 import requests
 
-# Pin imports to the repository's safi_cli package: a stale installed copy
-# (e.g. ~/.local/share/safi-cli via PYTHONPATH or a user-site .pth) must not
-# shadow the code under test. Every other safi_cli test file does the same.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from safi_cli.tools import execute_tool, resolve_safe_path
@@ -31,15 +26,12 @@ class TestSafiCliTools(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def test_safe_path_resolution(self):
-        # Normal path
         p = resolve_safe_path("src/test.py", self.root)
         self.assertEqual(p, (self.root / "src" / "test.py").resolve())
 
-        # Path traversal refused
         with self.assertRaises(PermissionError):
             resolve_safe_path("../../etc/passwd", self.root)
 
-        # Secret file refused
         with self.assertRaises(PermissionError):
             resolve_safe_path(".env", self.root)
 
@@ -86,7 +78,6 @@ class TestSafiCliTools(unittest.TestCase):
         import shutil
         if not shutil.which("bwrap"):
             self.skipTest("bwrap not installed on system")
-        # When running as software_engineer, ~/.ssh should be masked with empty tmpfs
         out = execute_tool(
             "bash",
             {"command": "ls -1 ~/.ssh 2>/dev/null || true"},
@@ -112,7 +103,6 @@ class TestSafiCliTools(unittest.TestCase):
             self.assertIn("gh=", out)
             self.assertNotIn("sk-ant-test-secret", out)
             self.assertNotIn("ghp_secret_token_123", out)
-            # SSH_AUTH_SOCK is retained for ssh-agent passthrough
             self.assertIn("ssh=/tmp/fake-ssh-sock", out)
         finally:
             os.environ.pop("ANTHROPIC_API_KEY", None)
@@ -127,7 +117,6 @@ class TestSafiCliTools(unittest.TestCase):
             self.skipTest("bwrap not installed on system")
 
         home = Path.home().resolve()
-        # For software_engineer
         cmd_se = _build_bwrap_command("ls", self.root, agent="software_engineer")
         self.assertIsNotNone(cmd_se)
         self.assertIn("/root", cmd_se)
@@ -140,13 +129,11 @@ class TestSafiCliTools(unittest.TestCase):
             self.assertIn(str(home / ".ssh"), cmd_se)
             idx = cmd_se.index(str(home / ".ssh"))
             self.assertEqual(cmd_se[idx - 1], "--tmpfs")
-            # known_hosts and config are bound read-only
             if (home / ".ssh" / "known_hosts").is_file():
                 self.assertIn(str(home / ".ssh" / "known_hosts"), cmd_se)
                 kh_idx = cmd_se.index(str(home / ".ssh" / "known_hosts"))
                 self.assertEqual(cmd_se[kh_idx - 1], "--ro-bind-try")
 
-        # For sysadmin
         cmd_sys = _build_bwrap_command("ls", self.root, agent="sysadmin")
         self.assertIsNotNone(cmd_sys)
         self.assertNotIn("/home", cmd_sys)
@@ -177,8 +164,6 @@ from safi_cli.main import run_agent_turn, DEFAULT_MAX_STEPS
 class TestSafiCliTurn(unittest.TestCase):
     def test_run_agent_turn_respects_max_steps(self):
         client = MagicMock()
-        # Endless tool calls, then a final answer when the loop forces one with
-        # tools disabled.
         final = {
             "type": "response",
             "finalOutput": "Summarised after the loop.",
@@ -210,7 +195,6 @@ class TestSafiCliTurn(unittest.TestCase):
             auto_approve=True,
             max_steps=2,
         )
-        # 2 loop iterations + 1 forced finalization pass.
         self.assertEqual(client.send_turn.call_count, 3)
         self.assertEqual(client.send_turn.call_args.kwargs.get("tools"), [])
         self.assertIsNotNone(res)
@@ -254,7 +238,6 @@ class TestSafiCliTurn(unittest.TestCase):
                 "conscienceLedger": [],
             },
         ]
-        # Notice auto_approve is not passed, relying on default True
         res = run_agent_turn(
             client=client,
             prompt="list files",
@@ -272,7 +255,6 @@ from unittest.mock import patch
 from safi_cli.main import prompt_switch_agent, prompt_command_menu, AVAILABLE_AGENTS
 
 
-
 class TestSafiCliAgentSwitching(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
@@ -288,16 +270,13 @@ class TestSafiCliAgentSwitching(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def test_per_agent_key_storage_and_resolution(self):
-        # Save key for fiduciary
         config.save_agent_api_key("fiduciary", "sk-fiduciary-123")
-        # Save key for software_engineer
         config.save_agent_api_key("software_engineer", "sk-coding-456")
 
         self.assertEqual(config.resolve_agent_api_key("fiduciary"), "sk-fiduciary-123")
         self.assertEqual(config.resolve_agent_api_key("software_engineer"), "sk-coding-456")
         self.assertIsNone(config.resolve_agent_api_key("health_navigator"))
 
-        # Test environment variable override
         with patch.dict(os.environ, {"SAFI_API_KEY_HEALTH_NAVIGATOR": "sk-env-health"}):
             self.assertEqual(config.resolve_agent_api_key("health_navigator"), "sk-env-health")
 
@@ -331,7 +310,6 @@ class TestSafiCliAgentSwitching(unittest.TestCase):
 
         self.assertEqual(new_agent, "fiduciary")
         self.assertEqual(client.api_key, "sk-new-financial-key")
-        # Check saved to config
         saved_key = config.resolve_agent_api_key("fiduciary")
         self.assertEqual(saved_key, "sk-new-financial-key")
 
@@ -340,7 +318,6 @@ class TestSafiCliAgentSwitching(unittest.TestCase):
         client = MagicMock()
         client.api_key = "coding-key"
 
-        # "3" corresponds to fiduciary in AVAILABLE_AGENTS
         with patch("builtins.input", return_value="3"):
             new_agent, new_conv = prompt_switch_agent(
                 current_agent="software_engineer",
@@ -364,7 +341,6 @@ class TestSafiCliAgentSwitching(unittest.TestCase):
                 requested_agent=None,
             )
 
-        # Should remain on current agent
         self.assertEqual(new_agent, "software_engineer")
         self.assertEqual(client.api_key, "coding-key")
 
@@ -372,7 +348,6 @@ class TestSafiCliAgentSwitching(unittest.TestCase):
         client = MagicMock()
         client.api_key = "coding-key"
 
-        # User chooses fiduciary (2), but presses Enter when asked for key
         with patch("builtins.input", side_effect=["2", ""]):
             new_agent, new_conv = prompt_switch_agent(
                 current_agent="software_engineer",
@@ -461,8 +436,6 @@ class TestSafiCliDynamicAgentDiscovery(unittest.TestCase):
     @patch("safi_cli.config.resolve_user_id", return_value=None)
     @patch.object(requests.Session, "get")
     def test_client_get_available_agents_route_miss_returns_empty(self, mock_get, mock_user_id):
-        # The /api/agentic/agents alias was removed in CLI 0.2.0; a miss on the
-        # canonical /api/agents/all must degrade to an empty list, not retry.
         mock_404 = MagicMock()
         mock_404.status_code = 404
         mock_get.return_value = mock_404
@@ -509,7 +482,6 @@ class TestSafiCliDynamicAgentDiscovery(unittest.TestCase):
         self.assertNotIn("software_engineer", AVAILABLE_AGENTS)
 
     def test_url_switching_discovers_instance_specific_agents(self):
-        # Instance 1: safi.demo.com
         client_demo = MagicMock()
         client_demo.api_url = "https://safi.demo.com"
         client_demo.get_available_agents.return_value = [
@@ -519,7 +491,6 @@ class TestSafiCliDynamicAgentDiscovery(unittest.TestCase):
         self.assertIn("demo_specialist", AVAILABLE_AGENTS)
         self.assertEqual(list(AVAILABLE_AGENTS.keys()), ["demo_specialist"])
 
-        # Instance 2: safi.demo1.com
         client_demo1 = MagicMock()
         client_demo1.api_url = "https://safi.demo1.com"
         client_demo1.get_available_agents.return_value = [
@@ -603,7 +574,6 @@ class TestSafiClientToolPayload(unittest.TestCase):
         self.assertIn("read", tool_names)
         self.assertIn("write", tool_names)
         self.assertIn("edit", tool_names)
-        # Verify sysadmin does not include code-specific git tools
         self.assertNotIn("git_status", tool_names)
         self.assertNotIn("git_diff", tool_names)
 
@@ -665,11 +635,9 @@ class TestSafiClientToolPayload(unittest.TestCase):
         )
         self.assertIsNotNone(res)
         self.assertEqual(client.send_turn.call_count, 2)
-        # Verify proposal and summary printed once during step-by-step loop
         mock_proposal.assert_called_once()
         mock_summary.assert_called_once_with("get_stock_price", '{"symbol": "TSLA", "current_price": 370.59}')
         mock_final.assert_called_once()
-        # Verify tool_results sent in the second turn
         second_call_kwargs = client.send_turn.call_args_list[1].kwargs
         self.assertEqual(len(second_call_kwargs["tool_results"]), 1)
         self.assertEqual(second_call_kwargs["tool_results"][0]["tool_name"], "get_stock_price")
@@ -712,10 +680,8 @@ class TestSafiClientToolPayload(unittest.TestCase):
 
     def test_ui_banner_and_audit_details(self):
         from safi_cli import ui
-        # Verify banner runs cleanly with and without intellect_model
         ui.print_banner("/tmp/repo", "software_engineer", "http://localhost:5000", user_name="Alice", intellect_model="claude-3-5-sonnet")
 
-        # Verify audit details formatting for all score tiers
         test_payload = {
             "policyName": "Software Policy",
             "conscienceLedger": [
@@ -729,11 +695,8 @@ class TestSafiClientToolPayload(unittest.TestCase):
         self.assertIsNotNone(ui.COLOR_BRAND_600)
         self.assertEqual(ui.COLOR_BRAND_600, "#16a34a")
 
-        # Green tier (>= 7.0)
         ui.print_audit_details({"policyName": "P", "conscienceLedger": [], "spirit_score": 7.0})
-        # Yellow tier (4.0 <= val < 7.0)
         ui.print_audit_details({"policyName": "P", "conscienceLedger": [], "spirit_score": 4.0})
-        # Red tier (< 4.0)
         ui.print_audit_details({"policyName": "P", "conscienceLedger": [], "spirit_score": 3.9})
 
 
@@ -879,19 +842,16 @@ class TestSafiModelSelection(unittest.TestCase):
             {"id": "gpt-4o", "label": "GPT-4o", "provider": "OpenAI"},
         ]
         with unittest.mock.patch.object(client, "get_available_models", return_value=mock_models):
-            # Select 0: follow appliance serving model
             with unittest.mock.patch("builtins.input", return_value="0"):
                 chosen = prompt_switch_model(None, client, current_agent="software_engineer")
                 self.assertEqual(chosen, "safi-active-7b")
                 self.assertEqual(config.resolve_intellect_model("software_engineer"), "local")
 
-            # Select 2: standby model (notice printed, model saved)
             with unittest.mock.patch("builtins.input", return_value="2"):
                 chosen = prompt_switch_model(None, client, current_agent="software_engineer")
                 self.assertEqual(chosen, "safi-standby-14b")
                 self.assertEqual(config.resolve_intellect_model("software_engineer"), "safi-standby-14b")
 
-            # Select 3: GPT-4o
             with unittest.mock.patch("builtins.input", return_value="3"):
                 chosen = prompt_switch_model(None, client, current_agent="software_engineer")
                 self.assertEqual(chosen, "gpt-4o")
@@ -995,7 +955,6 @@ class TestSafiModelSelection(unittest.TestCase):
         client.send_turn.side_effect = slow_send
         client.cancel_turn.return_value = True
 
-        # Trigger cancel_evt after 50ms
         timer = threading.Timer(0.05, cancel_evt.set)
         timer.start()
 
@@ -1014,7 +973,6 @@ class TestSafiModelSelection(unittest.TestCase):
         timer.cancel()
 
         self.assertIsNone(res)
-        # Should cancel quickly without waiting for slow_send (0.5s)
         self.assertLess(elapsed, 0.45)
         client.cancel_turn.assert_called_once()
 
@@ -1049,7 +1007,6 @@ class TestSafiModelSelection(unittest.TestCase):
 
     def test_ui_print_compression_result(self):
         from safi_cli.ui import print_compression_result
-        # Test rendering without errors
         data = {
             "ok": True,
             "compressed": True,
@@ -1062,7 +1019,6 @@ class TestSafiModelSelection(unittest.TestCase):
         }
         print_compression_result(data)
 
-        # Test minimal / not-compressed rendering
         minimal_data = {
             "ok": True,
             "compressed": False,
@@ -1074,7 +1030,6 @@ class TestSafiModelSelection(unittest.TestCase):
     def test_compression_telemetry_reduction(self):
         from safi_cli import ui
         ui.reset_session_telemetry()
-        # Simulate turns accumulating tokens
         turn_1 = {
             "models_usage": {
                 "intellect": {"prompt_tokens": 10000, "completion_tokens": 200, "model": "gpt-6-luna"},
@@ -1086,7 +1041,6 @@ class TestSafiModelSelection(unittest.TestCase):
         self.assertEqual(ui._session_conscience["in"], 8000)
         self.assertEqual(ui._session_active_context, 10000)
 
-        # Now compress: 10,000 down to 500 (saved 9,500)
         ui.record_compression_telemetry(
             tokens_before=10000,
             tokens_after=500,
@@ -1095,13 +1049,11 @@ class TestSafiModelSelection(unittest.TestCase):
             intellect_model="gpt-6-luna",
         )
 
-        # Verify session input tokens dropped down to the compacted baseline
         self.assertEqual(ui._session_intellect["in"], 500)
         self.assertEqual(ui._session_active_context, 500)
         self.assertEqual(ui._session_compression["tokens_saved"], 9500)
         self.assertEqual(ui._session_compression["reduction_pct"], 95.0)
 
-        # Next turn should build on the reduced baseline
         turn_2 = {
             "models_usage": {
                 "intellect": {"prompt_tokens": 700, "completion_tokens": 150, "model": "gpt-6-luna"},
@@ -1112,11 +1064,9 @@ class TestSafiModelSelection(unittest.TestCase):
         self.assertEqual(ui._session_intellect["in"], 1200)
         self.assertEqual(ui._session_active_context, 700)
 
-        # Panel rendering with compacted state
         panel = ui.build_telemetry_panel(intellect_model="gpt-6-luna", in_t=700, out_t=150)
         self.assertIsNotNone(panel)
 
-        # Resetting session wipes telemetry cleanly
         ui.reset_session_telemetry()
         self.assertEqual(ui._session_intellect["in"], 0)
         self.assertEqual(ui._session_compression["tokens_saved"], 0)
@@ -1153,10 +1103,8 @@ class TestSafiSubagentDelegation(unittest.TestCase):
             )
             self.assertIn("Found files: test.py, README.md", res)
             self.assertEqual(client.send_turn.call_count, 2)
-            # Verify child conversation ID is isolated
             call_kwargs = client.send_turn.call_args_list[0].kwargs
             self.assertTrue(call_kwargs["conversation_id"].startswith("conv-parent_sub_"))
-            # Verify child tools are strictly read-only
             tool_names = [t["function"]["name"] for t in call_kwargs["tools"]]
             self.assertEqual(set(tool_names), {"read", "grep", "glob", "list", "git_status", "git_diff"})
 
@@ -1166,7 +1114,7 @@ class TestSafiSubagentDelegation(unittest.TestCase):
         client.send_turn.side_effect = [
             {
                 "type": "tool_call",
-                "tool_name": "write",  # Researcher is NOT allowed to write!
+                "tool_name": "write",
                 "parameters": {"path": "bad.py", "content": "bad"},
                 "willDecision": "approve",
             },
@@ -1344,13 +1292,10 @@ class TestSafiSubagentDelegation(unittest.TestCase):
         ui.render_todo_list(todos)
         panel = ui.build_plan_panel(todos)
         self.assertIsNotNone(panel)
-        # Test progress calculation
         self.assertEqual(len(ui.get_active_todos()), 3)
 
-        # Test tool result execution indicator with plan progress
         ui.print_tool_result_summary("read", "file contents")
 
-        # Test print_final_output side-by-side with active plan
         test_payload = {
             "policyName": "Software Policy",
             "spirit_score": 8.0,
@@ -1358,12 +1303,10 @@ class TestSafiSubagentDelegation(unittest.TestCase):
         }
         ui.print_final_output("Completed task.", test_payload)
 
-        # Test mark_active_todos_completed
         ui.set_active_todos([{"task": "Step A", "status": "pending"}])
         ui.mark_active_todos_completed()
         self.assertEqual(ui.get_active_todos()[0]["status"], "completed")
 
-        # Test advance_active_todo
         ui.set_active_todos([
             {"task": "Step 1", "status": "in_progress"},
             {"task": "Step 2", "status": "pending"},
@@ -1373,19 +1316,16 @@ class TestSafiSubagentDelegation(unittest.TestCase):
         self.assertEqual(active[0]["status"], "completed")
         self.assertEqual(active[1]["status"], "in_progress")
 
-        # Test clear
         ui.clear_active_todos()
         self.assertEqual(len(ui.get_active_todos()), 0)
         self.assertIsNone(ui.build_plan_panel([]))
 
     def test_readline_auto_completion(self):
         from safi_cli.main import _compute_completions, setup_readline_completer
-        # 1. Slash command completion
         cmd_matches = _compute_completions("/ag", "/ag")
         self.assertIn("/agent", cmd_matches)
         self.assertIn("/agents", cmd_matches)
 
-        # 2. Agent persona auto-completion (e.g. /agents fid -> fiduciary)
         agent_matches = _compute_completions("/agents fid", "fid")
         self.assertEqual(agent_matches, ["fiduciary"])
 
@@ -1396,7 +1336,6 @@ class TestSafiSubagentDelegation(unittest.TestCase):
         self.assertIn("software_engineer", all_agents)
         self.assertIn("fiduciary", all_agents)
 
-        # 3. Model auto-completion (e.g. /model claud)
         import safi_cli.agent_registry as agent_registry
         agent_registry.AVAILABLE_MODELS = [
             {"id": "claude-haiku-5-5", "label": "Claude 5.5 Haiku", "provider": "Anthropic"},
@@ -1406,13 +1345,11 @@ class TestSafiSubagentDelegation(unittest.TestCase):
         self.assertTrue(any("claude" in m for m in model_matches))
         self.assertIn("claude-haiku-5-5", model_matches)
 
-        # 4. Memory and Compress subcommands (e.g. /memory comp, /compress sh)
         mem_matches = _compute_completions("/memory comp", "comp")
         self.assertEqual(mem_matches, ["compress"])
         comp_matches = _compute_completions("/compress sh", "sh")
         self.assertEqual(comp_matches, ["show"])
 
-        # 5. Verify setup runs without error
         setup_readline_completer()
 
 
@@ -1420,13 +1357,11 @@ class TestSafiCliHardeningAndUiFixes(unittest.TestCase):
     def test_result_is_error_heuristic(self):
         from safi_cli.ui import _result_is_error
 
-        # False positive checks: grep hits containing "error" or "handle_error" should NOT be classified as errors
         self.assertFalse(_result_is_error("safi_app/config.py:25: handle_error(exception)"))
         self.assertFalse(_result_is_error("def test_error_handling(): pass"))
         self.assertFalse(_result_is_error("Exit code 0\nAll tests passed with 0 errors"))
         self.assertFalse(_result_is_error("src/router.ts:4: import { ErrorBoundary } from 'react'"))
 
-        # Genuine failure checks:
         self.assertTrue(_result_is_error("Exit code 1\nCommand not found"))
         self.assertTrue(_result_is_error("exit code 127: bash: invalid command"))
         self.assertTrue(_result_is_error("Error: 'path' parameter is required for read."))
@@ -1437,7 +1372,6 @@ class TestSafiCliHardeningAndUiFixes(unittest.TestCase):
     def test_ui_markup_safety(self):
         from safi_cli import ui
 
-        # Unescaped brackets that would crash rich.errors.MarkupError if parsed as markup
         tricky_outputs = [
             "src/components/[id].tsx:12: const { id } = useParams()",
             "def parse[T](items: list[T]) -> dict[str, int]:",
@@ -1446,10 +1380,8 @@ class TestSafiCliHardeningAndUiFixes(unittest.TestCase):
         ]
 
         for out in tricky_outputs:
-            # None of these should throw MarkupError or any exception
             ui.print_tool_result_summary("grep", out)
 
-        # Test print_workspace_step with bracketed parameters and output
         ui.print_workspace_step(
             tool_name="edit",
             args={"path": "pages/[id].tsx", "target": "a", "replacement": "b"},
@@ -1463,14 +1395,12 @@ class TestSafiCliHardeningAndUiFixes(unittest.TestCase):
             result_str="Updated pages/[id].tsx with [0] changes",
         )
 
-        # Test print_tool_proposal with bracketed path and diff
         ui.print_tool_proposal(
             name="write",
             args={"path": "components/[slug].tsx", "content": "export default function Slug() {}"},
             res={"willDecision": "approved"},
         )
 
-        # Test subagent prints with bracketed names
         ui.print_subagent_start("code_reviewer [v2]", "Reviewing [id].tsx changes")
         ui.print_subagent_step("code_reviewer [v2]", "read", {"path": "pages/[id].tsx"}, "contents [0]")
         ui.print_subagent_done("code_reviewer [v2]", "Review passed [100%]", steps=2)
@@ -1478,7 +1408,6 @@ class TestSafiCliHardeningAndUiFixes(unittest.TestCase):
     def test_secrets_isolation(self):
         from safi_cli.tools import _is_secret_name, execute_tool
 
-        # Secret filenames must be detected
         self.assertTrue(_is_secret_name(".env"))
         self.assertTrue(_is_secret_name(".env.local"))
         self.assertTrue(_is_secret_name(".env.production"))
@@ -1489,7 +1418,6 @@ class TestSafiCliHardeningAndUiFixes(unittest.TestCase):
         self.assertTrue(_is_secret_name("server.key"))
         self.assertTrue(_is_secret_name("cert.pem"))
 
-        # Template/example files must NOT be blocked
         self.assertFalse(_is_secret_name(".env.example"))
         self.assertFalse(_is_secret_name(".env.sample"))
         self.assertFalse(_is_secret_name(".env.template"))
@@ -1501,12 +1429,10 @@ class TestSafiCliHardeningAndUiFixes(unittest.TestCase):
             (p / ".env.production").write_text("API_SECRET=12345")
             (p / ".env.example").write_text("API_SECRET=your_key_here")
 
-            # Reading .env.production must be rejected
             res_blocked = execute_tool("read", {"path": ".env.production"}, p)
             self.assertIn("Access denied", res_blocked)
             self.assertIn("secret/credential file", res_blocked)
 
-            # Reading .env.example must succeed
             res_allowed = execute_tool("read", {"path": ".env.example"}, p)
             self.assertIn("API_SECRET=your_key_here", res_allowed)
 
@@ -1516,10 +1442,8 @@ class TestSafiCliHardeningAndUiFixes(unittest.TestCase):
             p = Path(tmpdir)
             subprocess.run(["git", "init"], cwd=str(p), check=True, stdout=subprocess.DEVNULL)
 
-            # Injection attempt in path parameter
             malicious_path = "; touch pwned.txt"
             res = execute_tool("git_diff", {"path": malicious_path}, p)
-            # Must safely report error / not execute touch
             self.assertFalse((p / "pwned.txt").exists())
 
     def test_edit_empty_target_safeguard(self):
@@ -1529,7 +1453,6 @@ class TestSafiCliHardeningAndUiFixes(unittest.TestCase):
             test_file = p / "sample.py"
             test_file.write_text("print('hello')")
 
-            # Calling edit with empty target must fail gracefully, not replace empty boundaries
             res = execute_tool("edit", {"path": "sample.py", "target": "", "replacement": "evil"}, p)
             self.assertIn("Error", res)
             self.assertIn("'target' text is required", res)
@@ -1544,7 +1467,6 @@ class TestSafiCliHardeningAndUiFixes(unittest.TestCase):
             test_file.write_text("parser.add_argument('-v', '--verbose')\n")
             subprocess.run(["git", "add", "options.py"], cwd=str(p), check=True, stdout=subprocess.DEVNULL)
 
-            # Grepping for '-v' must be interpreted as a search pattern, not git grep flags
             res = execute_tool("grep", {"pattern": "-v", "path": "."}, p)
             self.assertIn("-v", res)
 
@@ -1555,7 +1477,6 @@ class TestSafiCliHardeningAndUiFixes(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             ws = Path(tmpdir)
-            # 1. Test cancel on empty input (Enter key)
             with patch("builtins.input", return_value=""):
                 agent, conv, model, user, should_exit = prompt_command_menu(
                     current_agent="software_engineer",
@@ -1567,7 +1488,6 @@ class TestSafiCliHardeningAndUiFixes(unittest.TestCase):
                 self.assertEqual(agent, "software_engineer")
                 self.assertEqual(conv, "conv-1")
 
-            # 2. Test selecting command by name with slash (e.g. "/help")
             with patch("builtins.input", return_value="/help"):
                 agent, conv, model, user, should_exit = prompt_command_menu(
                     current_agent="software_engineer",
@@ -1577,7 +1497,6 @@ class TestSafiCliHardeningAndUiFixes(unittest.TestCase):
                 )
                 self.assertFalse(should_exit)
 
-            # 3. Test selecting command by name without slash (e.g. "clear")
             with patch("builtins.input", return_value="clear"):
                 agent, conv, model, user, should_exit = prompt_command_menu(
                     current_agent="software_engineer",
@@ -1593,16 +1512,13 @@ class TestSafiUiEnhancements(unittest.TestCase):
     def test_build_progress_line_phases(self):
         from safi_cli.ui import build_progress_line
 
-        # Early phase with elapsed time
         line = build_progress_line(["checking_request", "analyzing"], "Analyzing the request", 4.2)
         self.assertIn("Analyzing the request", line)
         self.assertIn("4.2s", line)
 
-        # Running override respects model
         line = build_progress_line(None, "Drafting response", 1.5, model="gpt-4o")
         self.assertIn("Running with gpt-4o", line)
 
-        # No data yet falls back to a sensible label
         line = build_progress_line(None, None, 0.0)
         self.assertIn("Governing turn", line)
 
@@ -1647,7 +1563,6 @@ class TestSafiUiEnhancements(unittest.TestCase):
     def test_diff_stats_line_in_proposal(self):
         from safi_cli.ui import print_tool_proposal
 
-        # A large edit must render without crashing and be preview-capped.
         target = "\n".join(f"line {i}" for i in range(200))
         replacement = "\n".join(f"line {i} changed" for i in range(200))
         print_tool_proposal(
@@ -1664,8 +1579,8 @@ class TestSafiUiEnhancements(unittest.TestCase):
         self.assertIsNotNone(entry)
         self.assertEqual(entry["result"], "src/a.py:1: needle")
 
-        ui.print_full_tool_result("missing_tool")  # no exception
-        ui.record_tool_result("todowrite", "internal")  # ignored by recorder
+        ui.print_full_tool_result("missing_tool")
+        ui.record_tool_result("todowrite", "internal")
         self.assertNotEqual(ui.get_last_tool_result()["tool"], "todowrite")
 
 
@@ -1752,7 +1667,7 @@ class TestSafiSessionResume(unittest.TestCase):
         self.sessions_file = Path(self.temp_dir.name) / "sessions.json"
         self.orig = config.SESSIONS_FILE
         config.SESSIONS_FILE = self.sessions_file
-        self.orig_dir = config.SESSIONS_FILE  # no-op alias for clarity
+        self.orig_dir = config.SESSIONS_FILE
 
     def tearDown(self):
         config.SESSIONS_FILE = self.orig
@@ -1762,11 +1677,9 @@ class TestSafiSessionResume(unittest.TestCase):
         config.set_workspace_session("/tmp/repo-a", "conv-aaa")
         config.set_workspace_session("/tmp/repo-b", "conv-bbb")
         sessions = config.list_sessions()
-        # Metadata key excluded from session list
         self.assertNotIn("_paths", sessions)
         self.assertIn("conv-aaa", sessions.values())
         self.assertIn("conv-bbb", sessions.values())
-        # Path map populated for friendly display
         self.assertEqual(config.session_paths()["conv-aaa"], "/tmp/repo-a")
 
     def test_session_for_workspace(self):
@@ -1786,16 +1699,8 @@ class TestSafiSessionResume(unittest.TestCase):
 
 
 class TestSubagentDelegationGuard(unittest.TestCase):
-    """Read-only subagents must never be handed implementation work.
-
-    A real coding session delegated the page conversion to read-only
-    subagents, which could only read and report; the parent never edited and
-    the job never finished. The guard refuses those delegations.
-    """
 
     def test_client_side_mutation_regex_removed(self):
-        """Mutation policy is enforced by the server Will gate + role tool filtering,
-        not by a heuristic client-side regex (see backlog item: server-driven trust)."""
         import safi_cli.main as main_mod
 
         self.assertFalse(hasattr(main_mod, "_looks_like_mutation_request"))
@@ -1872,7 +1777,6 @@ class TestSafiCliMemoryClearCommands(unittest.TestCase):
         }
         panel = _format_agent_context_panel(mock_ctx)
         self.assertIsNotNone(panel)
-        # Verify it doesn't crash on print_compression_result with agent_context
         data = {
             "ok": True,
             "compressed": False,
@@ -1900,17 +1804,14 @@ class TestSafiCliMemoryClearCommands(unittest.TestCase):
         from safi_cli.ui import build_tool_status_line
         from safi_cli.main import _execute_tool_with_live_status
 
-        # Test bash tool preview
         bash_status = build_tool_status_line("bash", {"command": "ssh root@server 'sleep 10'"}, 4.2)
         self.assertIn("Running bash: ssh root@server 'sleep 10'", bash_status)
         self.assertIn("4.2s", bash_status)
 
-        # Test read tool preview
         read_status = build_tool_status_line("read", {"path": "src/app.py"}, 0.3)
         self.assertIn("Reading src/app.py", read_status)
         self.assertIn("0.3s", read_status)
 
-        # Test live status execution wrapping tools.execute_tool
         with tempfile.TemporaryDirectory() as tmpdir:
             p = Path(tmpdir)
             (p / "demo.txt").write_text("hello live status")
@@ -1927,31 +1828,25 @@ class TestSafiCliMemoryClearCommands(unittest.TestCase):
             with patch("safi_cli.config.CONFIG_DIR", cfg_dir), \
                  patch("safi_cli.config.SESSIONS_FILE", cfg_dir / "sessions.json"):
 
-                # Set workspace sessions
                 config.set_workspace_session("/repo/one", "conv-alpha")
                 config.set_workspace_session("/repo/two", "conv-beta")
                 config.set_workspace_session("/repo/three", "conv-gamma")
 
-                # Name session
                 config.set_session_name("conv-alpha", "Website Redesign")
                 names = config.session_names()
                 self.assertEqual(names.get("conv-alpha"), "Website Redesign")
 
-                # Test resuming by name via target_arg
                 resumed = prompt_resume_session("conv-beta", Path("/repo/three"), target_arg="Website Redesign")
                 self.assertEqual(resumed, "conv-alpha")
 
-                # Test resuming by ID prefix
                 resumed_id = prompt_resume_session("conv-alpha", Path("/repo/three"), target_arg="conv-beta")
                 self.assertEqual(resumed_id, "conv-beta")
 
-                # Test unmatched target returns current_conv
                 unmatched = prompt_resume_session("conv-alpha", Path("/repo/three"), target_arg="nonexistent-target")
                 self.assertEqual(unmatched, "conv-alpha")
 
 
 class TestWorkspaceAgentPersistence(unittest.TestCase):
-    """Test that a workspace remembers the last active agent and restores it when returning."""
 
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
@@ -1972,16 +1867,13 @@ class TestWorkspaceAgentPersistence(unittest.TestCase):
         ws = "/home/nelson/Documents/sysadmin"
         self.assertIsNone(config.get_workspace_agent(ws))
 
-        # Set sysadmin as the agent for this workspace
         config.set_workspace_agent(ws, "sysadmin", "conv-sys-1")
         self.assertEqual(config.get_workspace_agent(ws), "sysadmin")
         self.assertEqual(config.session_agent("conv-sys-1"), "sysadmin")
 
-        # Switching to another agent updates the workspace
         config.set_workspace_agent(ws, "fiduciary", "conv-fid-2")
         self.assertEqual(config.get_workspace_agent(ws), "fiduciary")
         self.assertEqual(config.session_agent("conv-fid-2"), "fiduciary")
-        # Earlier session agent is preserved
         self.assertEqual(config.session_agent("conv-sys-1"), "sysadmin")
 
     def test_resolve_session_id_with_agent(self):
@@ -1995,7 +1887,6 @@ class TestWorkspaceAgentPersistence(unittest.TestCase):
         config.set_workspace_agent(ws, "sysadmin", "conv-sys")
         config.set_workspace_agent(ws, "software_engineer", "conv-dev")
 
-        # Rebinding to conv-sys restores sysadmin as the workspace agent
         config.set_workspace_session(ws, "conv-sys")
         self.assertEqual(config.get_workspace_agent(ws), "sysadmin")
 
@@ -2007,7 +1898,6 @@ class TestWorkspaceAgentPersistence(unittest.TestCase):
         Path(ws).mkdir()
         config.set_workspace_agent(ws, "sysadmin", "conv-existing-123")
 
-        # Simulate running `safi -w <ws>` without -a
         with patch("sys.argv", ["safi", "-w", ws]), \
              patch("safi_cli.main.SafiClient") as mock_client_cls, \
              patch("safi_cli.main.interactive_repl") as mock_repl, \
@@ -2016,7 +1906,6 @@ class TestWorkspaceAgentPersistence(unittest.TestCase):
             mock_client_cls.return_value = mock_client
             main()
 
-            # Verify interactive_repl was invoked with sysadmin, not software_engineer
             mock_repl.assert_called_once()
             _, kwargs = mock_repl.call_args
             self.assertEqual(kwargs.get("agent"), "sysadmin")
@@ -2034,7 +1923,6 @@ class TestSafiCliUiSpinnerCleanup(unittest.TestCase):
         ctrl = Control(ControlType.CARRIAGE_RETURN, (ControlType.CURSOR_UP, 1), (ControlType.ERASE_IN_LINE, 2))
         test_console.print(ctrl)
         output = buf.getvalue()
-        # Should NOT contain 80 spaces from Padding wrapper
         self.assertNotIn(" " * 40, output)
 
     def test_clear_live_status_tail_erases_lines(self):
@@ -2046,7 +1934,6 @@ class TestSafiCliUiSpinnerCleanup(unittest.TestCase):
         with unittest.mock.patch.object(ui, "console", test_console):
             ui.clear_live_status_tail("Test status")
             output = buf.getvalue()
-            # Must emit cursor up and clear line escape codes
             self.assertIn("\x1b[1A\r\x1b[2K", output)
 
 
@@ -2079,7 +1966,6 @@ class TestSafiSetupWizard(unittest.TestCase):
     def test_run_setup_wizard(self, mock_discover, mock_input, mock_verify):
         from safi_cli.main import run_setup_wizard
 
-        # Inputs: 1) URL, 2) Persona choice "1" (sysadmin), 3) API Key "sk-safi-12345"
         mock_input.side_effect = ["http://192.168.1.223:5001", "1", "sk-safi-12345"]
         url, agent, key = run_setup_wizard()
 
@@ -2087,7 +1973,6 @@ class TestSafiSetupWizard(unittest.TestCase):
         self.assertEqual(agent, "sysadmin")
         self.assertEqual(key, "sk-safi-12345")
 
-        # Verify saved to config
         self.assertEqual(config.load_config().get("api_url"), "http://192.168.1.223:5001")
         self.assertEqual(config.get_default_agent(), "sysadmin")
         self.assertEqual(config.resolve_agent_api_key("sysadmin"), "sk-safi-12345")
@@ -2096,8 +1981,6 @@ class TestSafiSetupWizard(unittest.TestCase):
     def test_run_setup_wizard_rejects_unverified_url_and_loops(self, mock_input):
         from safi_cli.main import run_setup_wizard
 
-        # 1st attempt: bad URL, prompt "Save anyway?": "n" (rejects)
-        # 2nd attempt: valid URL, accepts, choice "1", key "sk-test"
         with unittest.mock.patch(
             "safi_cli.client.SafiClient.verify_connection",
             side_effect=[
@@ -2123,9 +2006,7 @@ class TestSafiSetupWizard(unittest.TestCase):
         self.assertTrue("refused" in msg.lower() or "connection" in msg.lower())
 
 
-
 class TestWorkspaceScratchpad(unittest.TestCase):
-    """Test scratchpad detection, bounding, and transmission in safi_cli."""
 
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
@@ -2192,11 +2073,6 @@ if __name__ == "__main__":
     unittest.main()
 
 
-
-
-
-
-
 class TestPromptUserPermission(unittest.TestCase):
     def setUp(self):
         import safi_cli.ui as ui
@@ -2206,7 +2082,6 @@ class TestPromptUserPermission(unittest.TestCase):
     def test_always_grants_session_approval(self):
         with mock.patch("builtins.input", return_value="a"):
             self.assertTrue(self.ui.prompt_user_permission("bash", {}))
-        # Subsequent prompts auto-approved without prompting.
         with mock.patch("builtins.input") as fake_input:
             self.assertTrue(self.ui.prompt_user_permission("write", {}))
             fake_input.assert_not_called()
@@ -2240,7 +2115,6 @@ class TestSshKeyManagement(unittest.TestCase):
 
     def test_parse_lenient_json(self):
         from safi_cli import config
-        # UTF-8 BOM, comments, trailing commas, and unescaped Windows paths
         messy_json = (
             "\ufeff"
             "{\n"
@@ -2275,8 +2149,6 @@ class TestSshKeyManagement(unittest.TestCase):
         with patch.object(ssh_keys, "ensure_local_ssh_key", return_value="ssh-ed25519 AAAA test-key"), \
              patch("subprocess.run") as mock_run, \
              patch("subprocess.call", return_value=0) as mock_call:
-            # First run: check existing (returns 1 = not configured)
-            # Second run: verify (returns 0 = success)
             mock_run.side_effect = [
                 mock.MagicMock(returncode=1),
                 mock.MagicMock(returncode=0),
@@ -2299,4 +2171,3 @@ class TestSshKeyManagement(unittest.TestCase):
                 self.assertIn("local-VM", matches)
                 matches_win = _compute_completions("/ssh-key win", "win")
                 self.assertIn("win-server", matches_win)
-

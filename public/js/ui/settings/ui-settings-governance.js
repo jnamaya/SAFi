@@ -4,8 +4,6 @@ import { openPolicyWizard } from '../ui-policy-wizard.js';
 import { renderProfileDetailsModal } from './ui-settings-agents.js';
 import { escapeHtml, formatRelativeTime } from '../../core/utils.js';
 
-// Constraint count must handle both shapes of will_rules: legacy
-// list-of-rules, and the structured dict (whose .length is undefined).
 function constraintCount(wr) {
     if (Array.isArray(wr)) return wr.length;
     if (wr && typeof wr === 'object') {
@@ -18,7 +16,6 @@ function constraintCount(wr) {
     return 0;
 }
 
-// --- NEW: Governance Tab Rendering ---
 export async function renderSettingsGovernanceTab() {
     ui._ensureElements();
     const container = ui.elements.cpTabGovernance;
@@ -35,18 +32,11 @@ export async function renderSettingsGovernanceTab() {
         if (!res.ok) throw new Error(res.error || "Failed to fetch policies");
 
         const user = meRes && meRes.ok ? meRes.user : {};
-        // RBAC: Admin & Editor have Write Access. Auditor is Read Only.
         const canEditPolicy = ['admin', 'editor'].includes(user.role);
-        // RBAC: Only Admin can generate keys (implied by matrix "Create/Edit/Delete" for Editor, but Keys are sensitive). 
-        // Matrix says Editor: "Create/Edit/Delete" for "AI Construction". Keys are arguably part of construction.
-        // Let's allow Editors to generate keys too for consistency with "AI Construction".
         const canGenerateKey = ['admin', 'editor'].includes(user.role);
 
-        const allPolicies = res.policies || []; // Ensure array
+        const allPolicies = res.policies || [];
 
-        // All policies returned by /api/policies (org policies + active built-in
-        // agent policies) are active policies; retired demo examples are already
-        // excluded server-side by db.list_policies.
         const demoPolicies = [];
         const myPolicies = allPolicies;
 
@@ -124,7 +114,6 @@ export async function renderSettingsGovernanceTab() {
             </div>
         `;
 
-        // Handlers
         const createBtn = document.getElementById('btn-create-policy');
         if (createBtn) {
             createBtn.addEventListener('click', () => {
@@ -145,7 +134,7 @@ export async function renderSettingsGovernanceTab() {
             btn.addEventListener('click', async () => {
                 if (confirm('Are you sure you want to delete this policy? This may break agents using it.')) {
                     await api.deletePolicy(btn.dataset.id);
-                    renderSettingsGovernanceTab(); // Refresh
+                    renderSettingsGovernanceTab();
                 }
             });
         });
@@ -160,7 +149,6 @@ export async function renderSettingsGovernanceTab() {
             btn.addEventListener('click', () => {
                 const policy = allPolicies.find(p => p.id === btn.dataset.id);
                 if (policy) {
-                    // Reuse Profile Modal for displaying Policy Details
                     const policyAsProfile = {
                         name: policy.name,
                         description: `**Policy ID:** ${policy.id}\n\nThis policy is ${policy.is_demo ? 'a **DEMO/OFFICIAL** policy' : 'a **CUSTOM** policy'}.`,
@@ -170,7 +158,6 @@ export async function renderSettingsGovernanceTab() {
                         will_rules: policy.will_rules
                     };
                     renderProfileDetailsModal(policyAsProfile, { isPolicy: true });
-                    // Open the modal
                     const modal = document.getElementById('profile-details-modal');
                     if (modal) modal.classList.remove('hidden');
                 }
@@ -195,7 +182,6 @@ export async function renderSettingsGovernanceTab() {
     }
 }
 
-// --- POLICY-CHANGE APPROVALS PANEL (backlog 57f) ---
 
 function escGov(s) {
     const div = document.createElement('div');
@@ -211,7 +197,7 @@ async function renderPolicyApprovals() {
         const res = await api.listPolicyChanges('pending');
         requests = res.requests || [];
     } catch (e) {
-        return; // not a policy approver, or a transient failure: no panel
+        return;
     }
     if (!requests.length) {
         host.innerHTML = '';
@@ -264,7 +250,6 @@ async function renderPolicyApprovals() {
     }));
 }
 
-// --- Policy Version History (modal) ---
 async function openPolicyHistory(policyId, policyName, canEdit) {
     document.getElementById('policy-history-modal')?.remove();
     const modal = document.createElement('div');
@@ -347,7 +332,6 @@ async function openPolicyHistory(policyId, policyName, canEdit) {
     }
 }
 
-// --- API Keys Management (modal) ---
 async function openManageKeysModal(policyId, policyName, canGenerateKey = true) {
     document.getElementById('policy-keys-modal')?.remove();
     const modal = document.createElement('div');
@@ -489,7 +473,6 @@ async function openManageKeysModal(policyId, policyName, canGenerateKey = true) 
         }
     };
 
-    // Generate Key form handling
     const labelInput = modal.querySelector('#new-key-label');
     const submitBtn = modal.querySelector('#btn-submit-new-key');
     const alertContainer = modal.querySelector('#new-key-alert-container');

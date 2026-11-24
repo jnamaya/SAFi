@@ -1,9 +1,3 @@
-"""Microsoft 365 and Azure Cloud administration module for SAFi CLI.
-
-Provides governed, credential-safe administration across Microsoft 365 (Entra ID,
-licenses, users, sign-in logs) and Azure Resource Manager (VMs, resource groups, resources)
-without leaking secrets into the model context.
-"""
 from __future__ import annotations
 
 import json
@@ -25,12 +19,10 @@ GRAPH_ENDPOINT = "https://graph.microsoft.com/v1.0"
 ARM_ENDPOINT = "https://management.azure.com"
 LOGIN_ENDPOINT = "https://login.microsoftonline.com"
 
-# In-memory token cache: {(tenant_id, scope): (token, expires_at)}
 _TOKEN_CACHE: Dict[Tuple[str, str], Tuple[str, float]] = {}
 
 
 def ensure_cloud_config_dir() -> Path:
-    """Ensure ~/.config/safi exists with 0700 permissions."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     try:
         os.chmod(CONFIG_DIR, 0o700)
@@ -40,7 +32,6 @@ def ensure_cloud_config_dir() -> Path:
 
 
 def load_cloud_config() -> Dict[str, Any]:
-    """Load cloud configurations from ~/.config/safi/cloud.json."""
     if not CLOUD_CONFIG_FILE.exists():
         return {}
     try:
@@ -53,7 +44,6 @@ def load_cloud_config() -> Dict[str, Any]:
 
 
 def save_cloud_config(config: Dict[str, Any]) -> None:
-    """Save cloud configurations to ~/.config/safi/cloud.json with 0600 permissions."""
     ensure_cloud_config_dir()
     CLOUD_CONFIG_FILE.write_text(json.dumps(config, indent=2), encoding="utf-8")
     try:
@@ -63,24 +53,20 @@ def save_cloud_config(config: Dict[str, Any]) -> None:
 
 
 def get_tenant_config(tenant_alias: Optional[str] = None) -> Optional[Dict[str, Any]]:
-    """Resolve M365 / Entra ID tenant config from cloud.json or environment."""
     cfg = load_cloud_config()
     tenants = cfg.get("tenants", {})
 
     if tenant_alias and tenant_alias in tenants:
         return tenants[tenant_alias]
 
-    # Check default tenant
     default_alias = cfg.get("default_tenant")
     if default_alias and default_alias in tenants:
         return tenants[default_alias]
 
-    # Pick first configured tenant if any
     if tenants:
         first_key = next(iter(tenants))
         return tenants[first_key]
 
-    # Environment fallback
     tenant_id = os.environ.get("AZURE_TENANT_ID") or os.environ.get("M365_TENANT_ID")
     client_id = os.environ.get("AZURE_CLIENT_ID") or os.environ.get("M365_CLIENT_ID")
     client_secret = os.environ.get("AZURE_CLIENT_SECRET") or os.environ.get("M365_CLIENT_SECRET")
@@ -98,24 +84,20 @@ def get_tenant_config(tenant_alias: Optional[str] = None) -> Optional[Dict[str, 
 
 
 def get_subscription_config(sub_alias: Optional[str] = None) -> Optional[Dict[str, Any]]:
-    """Resolve Azure subscription config from cloud.json or environment."""
     cfg = load_cloud_config()
     subs = cfg.get("subscriptions", {})
 
     if sub_alias and sub_alias in subs:
         return subs[sub_alias]
 
-    # Check default subscription
     default_alias = cfg.get("default_subscription")
     if default_alias and default_alias in subs:
         return subs[default_alias]
 
-    # Pick first configured subscription
     if subs:
         first_key = next(iter(subs))
         return subs[first_key]
 
-    # Environment fallback
     tenant_id = os.environ.get("AZURE_TENANT_ID")
     client_id = os.environ.get("AZURE_CLIENT_ID")
     client_secret = os.environ.get("AZURE_CLIENT_SECRET")
@@ -135,12 +117,11 @@ def get_subscription_config(sub_alias: Optional[str] = None) -> Optional[Dict[st
 
 
 def acquire_oauth_token(tenant_id: str, client_id: str, client_secret: str, scope: str) -> str:
-    """Acquire an OAuth2 bearer token using client_credentials grant with local memory caching."""
     cache_key = (tenant_id, scope)
     now = time.time()
     if cache_key in _TOKEN_CACHE:
         token, expires_at = _TOKEN_CACHE[cache_key]
-        if now < expires_at - 60:  # 60s buffer
+        if now < expires_at - 60:
             return token
 
     url = f"{LOGIN_ENDPOINT}/{tenant_id}/oauth2/v2.0/token"
@@ -168,14 +149,11 @@ def acquire_oauth_token(tenant_id: str, client_id: str, client_secret: str, scop
     return token
 
 
-# --- Microsoft 365 Operations ---
-
 def execute_m365_admin(
     action: str,
     params: Optional[Dict[str, Any]] = None,
     tenant_alias: Optional[str] = None,
 ) -> str:
-    """Execute a governed Microsoft 365 / Entra ID operation."""
     p = params or {}
     tenant = get_tenant_config(tenant_alias)
     if not tenant:
@@ -365,14 +343,11 @@ def execute_m365_admin(
         return f"Network/API Error communicating with Microsoft Graph: {exc}"
 
 
-# --- Azure Resource Manager Operations ---
-
 def execute_azure_admin(
     action: str,
     params: Optional[Dict[str, Any]] = None,
     subscription_alias: Optional[str] = None,
 ) -> str:
-    """Execute a governed Azure Resource Manager operation."""
     p = params or {}
     sub_cfg = get_subscription_config(subscription_alias)
     if not sub_cfg:
@@ -508,17 +483,13 @@ def execute_azure_admin(
         return f"Network/API Error communicating with Azure ARM: {exc}"
 
 
-# --- Unified Status & Interactive Setup ---
-
 def execute_cloud_status() -> str:
-    """Return status summary of configured Microsoft 365 and Azure environments."""
     cfg = load_cloud_config()
     tenants = cfg.get("tenants", {})
     subs = cfg.get("subscriptions", {})
 
     lines = ["☁️ SAFi Cloud Environment Status:"]
 
-    # M365 section
     if tenants:
         lines.append(f"\nMicrosoft 365 Tenants ({len(tenants)} configured):")
         for alias, t in tenants.items():
@@ -528,7 +499,6 @@ def execute_cloud_status() -> str:
     else:
         lines.append("\nMicrosoft 365: No tenant configured. (Run '/setup-cloud')")
 
-    # Azure section
     if subs:
         lines.append(f"\nAzure Subscriptions ({len(subs)} configured):")
         for alias, s in subs.items():
@@ -542,7 +512,6 @@ def execute_cloud_status() -> str:
 
 
 def interactive_setup_cloud() -> None:
-    """Interactive CLI setup for Microsoft 365 and Azure credentials (matching /setup-key)."""
     ui.console.print(f"\n[bold {ui.COLOR_BRAND_400}]☁️ Configure Cloud Environments (M365 & Azure)[/]")
     ui.console.print("[dim]Configure Service Principal credentials for Microsoft 365 and Azure administration.[/dim]\n")
 
@@ -595,7 +564,6 @@ def _setup_m365_interactive(cfg: Dict[str, Any]) -> None:
         ui.print_error("Tenant ID, Client ID, and Client Secret are required.")
         return
 
-    # Test token acquisition
     ui.console.print("Verifying credentials with Microsoft Entra ID...")
     try:
         acquire_oauth_token(tenant_id, client_id, client_secret, "https://graph.microsoft.com/.default")
@@ -639,7 +607,6 @@ def _setup_azure_interactive(cfg: Dict[str, Any]) -> None:
         ui.print_error("Tenant ID, Client ID, Client Secret, and Subscription ID are required.")
         return
 
-    # Test token acquisition
     ui.console.print("Verifying credentials with Azure ARM...")
     try:
         acquire_oauth_token(tenant_id, client_id, client_secret, "https://management.azure.com/.default")

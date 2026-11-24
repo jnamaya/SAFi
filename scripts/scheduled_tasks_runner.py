@@ -1,32 +1,4 @@
 #!/usr/bin/env python3
-"""
-Scheduled Updates runner (backlog 54): the USB-side scheduler that replaced
-the /opt systemd timers.
-
-Every minute it loads the enabled schedules, computes which are due in each
-task's OWN timezone, and executes each due task as a FULL governed turn
-through the orchestrator — Phase Zero, tools under the agent's policy, the
-Conscience, the Will, a complete governance record in the Audit Hub — then
-emails the APPROVED output to the task owner's account address.
-
-Two boundaries hold this honest:
-
-  * The email is USB delivery of an approved response, exactly like the
-    Teams/Telegram bots delivering to a channel — never an agent tool call.
-    The model cannot address, trigger, or suppress the send.
-  * Recipients are not configurable: mail goes to the owner's own account
-    email, resolved at send time. Broadening delivery is a governance
-    decision recorded in the backlog, not a field to edit here.
-
-Failure posture: a failed run records last_status on the task and the loop
-continues. A governed VIOLATION is not a failure — the redirect the
-governance produced is what gets delivered, because that is what the user
-would have seen in chat.
-
-Run modes:
-    python scripts/scheduled_tasks_runner.py --loop     # the service (compose)
-    python scripts/scheduled_tasks_runner.py --once     # one pass, for testing
-"""
 from __future__ import annotations
 
 import argparse
@@ -41,19 +13,10 @@ from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-# A due task fires when local time is within this many minutes AFTER the
-# scheduled time (the once-per-day guard prevents doubles). The window is
-# what makes a runner restart at 06:03 still deliver the 06:00 digest.
 GRACE_MINUTES = 30
 
 
 def task_is_due(task: dict, now_utc: datetime) -> bool:
-    """Pure function so the test suite can pin the semantics.
-
-    Due = enabled task whose local weekday is in `days`, whose local clock is
-    within [time_of_day, time_of_day + GRACE_MINUTES), and which has not
-    already run today (task-local today, so DST and timezones cannot double-
-    or zero-fire a schedule)."""
     try:
         tz = ZoneInfo(str(task.get("timezone") or "UTC"))
     except Exception:
@@ -77,9 +40,6 @@ def task_is_due(task: dict, now_utc: datetime) -> bool:
 
 
 def _md_inline(escaped: str) -> str:
-    """Bold, italics and inline code, applied to ALREADY-ESCAPED text.
-    Italics require the asterisks to hug non-space characters, so arithmetic
-    like '2 * 3 * 4' stays literal."""
     import re as _re
     escaped = _re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
     escaped = _re.sub(r"(?<!\*)\*(\S(?:[^*\n]*\S)?)\*(?!\*)", r"<em>\1</em>", escaped)
@@ -91,12 +51,6 @@ def _md_inline(escaped: str) -> str:
 
 
 def md_to_email_html(body: str) -> str:
-    """Minimal markdown for mail clients: headings, bullets, numbered lists,
-    bold, inline code, horizontal rules. Line-based and deliberately dumb —
-    anything unrecognized is a paragraph. SAFETY ORDER: the raw text is
-    HTML-escaped FIRST and the transforms run on escaped text, so the only
-    tags in the output are the ones this function writes; a prompt-injected
-    <script> arrives as visible characters."""
     import html as _html
     import re as _re
 
@@ -110,7 +64,6 @@ def md_to_email_html(body: str) -> str:
 
     def flush_quote():
         if quote:
-            # Blank quote lines ("> " alone) split paragraphs inside the quote.
             paras, cur = [], []
             for q in quote:
                 if q:
@@ -140,7 +93,7 @@ def md_to_email_html(body: str) -> str:
     for raw in lines:
         line = raw.strip()
         h = _re.match(r"^(#{1,4})\s+(.*)$", line)
-        q = _re.match(r"^&gt;\s?(.*)$", line)  # text is already escaped, so > is &gt;
+        q = _re.match(r"^&gt;\s?(.*)$", line)
         if q:
             flush_para(); flush_lists()
             quote.append(q.group(1).strip())
@@ -169,10 +122,6 @@ def md_to_email_html(body: str) -> str:
 
 
 def build_email_html(agent_name: str, body: str, date_label: str) -> str:
-    """Simple branded HTML for the digest. Inline styles only (email clients
-    ignore stylesheets), the official palette only (green #16a34a accent on
-    the #f9f9f9 canvas). Markdown is rendered by md_to_email_html, whose
-    escape-first order is the injection defense."""
     import html as _html
     paragraphs = md_to_email_html(body)
     safe_agent = _html.escape(agent_name)
@@ -202,12 +151,9 @@ def send_email(config, to_addr: str, subject: str, body: str,
     msg["From"] = config.SMTP_FROM
     msg["To"] = to_addr
     msg["Subject"] = subject
-    msg.set_content(body)  # plain-text part stays the canonical fallback
+    msg.set_content(body)
     msg.add_alternative(build_email_html(agent_name or "SAFi agent", body,
                                          date_label), subtype="html")
-    # Port decides the transport: 465 is implicit TLS from the first byte
-    # (SMTP_SSL); anything else is plaintext upgraded via STARTTLS. Gmail
-    # serves both; the demo host's proven credentials use 465.
     if int(config.SMTP_PORT) == 465:
         ctx = smtplib.SMTP_SSL(config.SMTP_HOST, config.SMTP_PORT, timeout=30)
     else:
@@ -239,8 +185,6 @@ def run_task(task: dict) -> None:
         db.mark_scheduled_task_run(task["id"], run_date, f"error: unknown agent ({e})")
         return
 
-    # A schedule is a standing chat turn, so a revoked share stops it too
-    # (backlog 55). Built-in agents are not rows and stay platform-wide.
     raw_agent = db.get_agent(task["agent_key"])
     if raw_agent:
         from safi_app.persistence import sharing_store
@@ -251,12 +195,8 @@ def run_task(task: dict) -> None:
             return
 
     org_id = prof.get("org_id") or owner.get("org_id")
-    activate_org(org_id)  # provider allow-list applies to scheduled turns too
+    activate_org(org_id)
 
-    # The stored conversation can be gone — users may delete the digest
-    # thread from the sidebar — and reusing a stale id crashes the turn on
-    # the chat_history foreign key. Verify, and create a fresh thread when
-    # the old one is missing or no longer the owner's.
     conversation_id = task.get("conversation_id")
     if conversation_id and not db.verify_conversation_ownership(task["user_id"], conversation_id):
         conversation_id = None
@@ -294,9 +234,6 @@ def run_task(task: dict) -> None:
                                    conversation_id=conversation_id)
         return
     if not decision:
-        # A result without a Will decision is a failure notice, not a governed
-        # output (e.g. the orchestrator's internal-error return). Never mail
-        # those as if they were the digest.
         db.mark_scheduled_task_run(task["id"], run_date,
                                    "error: turn failed before governance completed",
                                    conversation_id=conversation_id)
@@ -336,25 +273,7 @@ def one_pass() -> int:
 
 
 def boot_mcp() -> None:
-    """Connect the MCP servers for THIS process.
-
-    `start_servers()` has one other caller, `create_app()`, so until this was
-    added the scheduler ran with an empty `mcp_runtime`: no servers, no tools,
-    nothing advertised to the Intellect, whatever the agent's policy granted.
-    A scheduled turn therefore behaved as if the agent had been granted
-    nothing, and the docstring at the top of this file promising "tools under
-    the agent's policy" was untrue for every scheduled run (backlog 88).
-
-    It failed invisibly. Given no tools, a model says it cannot reach the data
-    and offers to work from figures you paste in, which reads as a weak model
-    rather than as a missing capability.
-
-    Once per process, before the loop: MCP sessions are held open for the life
-    of the process, so this must not be per task.
-    """
     try:
-        # Imported here, not at module scope: this file defers safi_app imports
-        # so that --help and argument errors do not need a database.
         from safi_app.config import Config
         from safi_app.core.services.mcp_manager import start_servers
         summary = start_servers(Config)
@@ -362,8 +281,6 @@ def boot_mcp() -> None:
         names = ", ".join(sorted(summary.get("servers", {}))) or "none"
         print(f"scheduler: MCP ready, {count} tool(s) from [{names}]")
     except Exception as e:
-        # A scheduler that cannot reach a tool server must still deliver the
-        # turns that need no tools, exactly as the web app does.
         print(f"scheduler: MCP unavailable, continuing without tools: {e}",
               file=sys.stderr)
 

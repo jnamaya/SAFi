@@ -1,21 +1,3 @@
-"""
-The mandatory disclaimer is enforced by the Will, deterministically, and is NOT
-adjudicated by the Conscience.
-
-WHY. Both requirements used to be expressed twice: the Will checks
-`mandatory_disclaimer_substring` against the draft (a substring test), and the
-value rubrics ALSO told the Conscience to score disclaimer presence. Asking a
-model to judge string equality produced exactly the failure you would expect —
-the same byte-identical disclaimer scored +1 on one turn and -1 at 0.95
-confidence on the next, with the invented reason "not verbatim". The Fiduciary's
-Transparency (weight 0.25) and the Health Navigator's Patient Safety (weight
-0.40) were both affected, which is why it was noticeable in normal use.
-
-These tests pin both halves: the deterministic gate still blocks a draft that
-omits the disclaimer, and no rubric asks a model to re-judge it.
-
-Requires no database. Run:  venv/bin/python tests/test_disclaimer_enforcement.py
-"""
 import json
 import sys
 import unittest
@@ -26,9 +8,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from safi_app.core.agents.fiduciary import THE_FIDUCIARY_AGENT
 from safi_app.core.agents.health_navigator import THE_HEALTH_NAVIGATOR_AGENT
 
-# Agents that arm the Will's disclaimer gate. If a new one does, add it here —
-# the point of this file is that arming the gate and scoring it are mutually
-# exclusive.
 DISCLAIMER_AGENTS = {
     "fiduciary": THE_FIDUCIARY_AGENT,
     "health_navigator": THE_HEALTH_NAVIGATOR_AGENT,
@@ -36,16 +15,11 @@ DISCLAIMER_AGENTS = {
 
 
 def _structural(agent):
-    # Key name must match will.py:88 — `structural_requirements`, not
-    # `structural`. Getting this wrong makes every assertion below vacuously
-    # pass against an empty dict, which is how a test file like this ends up
-    # guarding nothing.
     rules = agent.get("will_rules") or {}
     return rules.get("structural_requirements") or {}
 
 
 class TestWillOwnsTheDisclaimer(unittest.TestCase):
-    """The deterministic half: the gate is armed and its substring is real."""
 
     def test_01_gate_is_armed_with_a_usable_substring(self):
         for name, agent in DISCLAIMER_AGENTS.items():
@@ -61,8 +35,6 @@ class TestWillOwnsTheDisclaimer(unittest.TestCase):
                                    f"{name}: substring too short to be a meaningful match")
 
     def test_02_the_substring_appears_in_the_style_instruction(self):
-        """The Intellect is told to emit the disclaimer; the Will checks for it.
-        If those two texts drift, every draft gets blocked."""
         for name, agent in DISCLAIMER_AGENTS.items():
             with self.subTest(agent=name):
                 sub = _structural(agent)["mandatory_disclaimer_substring"].strip()
@@ -74,8 +46,6 @@ class TestWillOwnsTheDisclaimer(unittest.TestCase):
 
 
 class TestConscienceDoesNotReAdjudicate(unittest.TestCase):
-    """The half that regressed. A rubric mentioning the disclaimer invites a
-    model to judge wording, which is what produced the false -1."""
 
     def _rubric_prose(self, agent):
         chunks = []
@@ -96,8 +66,6 @@ class TestConscienceDoesNotReAdjudicate(unittest.TestCase):
                                      f"deterministically. Presence is not a matter of opinion.")
 
     def test_04_no_agent_anywhere_scores_the_disclaimer(self):
-        """Widened past the two known agents: any agent arming the gate must
-        not also score it, and any agent scoring it must be caught here."""
         import safi_app.core.agents as pkg
         import importlib, pkgutil
         offenders = []
@@ -113,8 +81,6 @@ class TestConscienceDoesNotReAdjudicate(unittest.TestCase):
         self.assertEqual(offenders, [], f"rubrics scoring the disclaimer: {offenders}")
 
     def test_05_the_values_still_score_something(self):
-        """Removing the clause must not hollow out the value. Each affected
-        rubric needs a full -1/0/+1 guide describing a real judgement."""
         for name, agent in DISCLAIMER_AGENTS.items():
             for v in agent.get("values") or []:
                 with self.subTest(agent=name, value=v.get("value")):

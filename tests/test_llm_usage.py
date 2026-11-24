@@ -1,20 +1,3 @@
-"""
-Per-org LLM token usage tracking (backlog 61, Usage & Cost tab).
-
-The contract, pinned here:
-
-- extract_usage reads token counts from all three provider response shapes
-  and never raises on a shape it does not recognize.
-- Usage rows aggregate strictly per org: one org's rows never appear in
-  another org's result, and NULL-org rows appear in nobody's.
-- record_usage is fire-and-forget: a database failure is swallowed, because
-  a usage write must never break a chat turn.
-- Dollars are never stored. The table carries raw token counts only; the
-  price map is display-time config.
-
-Needs the disposable stack (it writes and deletes usage rows):
-    docker compose -f docker-compose.test.yml run --rm tests -k llm_usage
-"""
 import sys
 import unittest
 import uuid
@@ -40,8 +23,6 @@ class ExtractUsage(unittest.TestCase):
         self.assertEqual(ut.extract_usage("anthropic", resp), (300, 80))
 
     def test_gemini_output_includes_thinking_tokens(self):
-        """total - prompt, not candidates alone: thinking tokens are billed
-        as output and candidates_token_count excludes them."""
         resp = SimpleNamespace(usage_metadata=SimpleNamespace(
             prompt_token_count=200, candidates_token_count=50, total_token_count=310))
         self.assertEqual(ut.extract_usage("gemini", resp), (200, 110))
@@ -83,7 +64,6 @@ class UsageRowsArePerOrg(unittest.TestCase):
                             "llama-3.3-70b", 800, 100)
         db.insert_llm_usage(self.org_b, "tutor", "intellect", "openai",
                             "gpt-5-mini", 500, 50)
-        # NULL org: ungoverned context. Must surface in nobody's tab.
         db.insert_llm_usage(None, None, "intellect", "openai", "gpt-5-mini", 10, 5)
 
     def tearDown(self):

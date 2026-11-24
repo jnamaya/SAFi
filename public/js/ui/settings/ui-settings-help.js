@@ -1,11 +1,3 @@
-/**
- * Help Tab. A user guide, deliberately scoped to what a signed-in user can
- * actually do in the product (backlog 56). Product positioning, deployment,
- * and admin walkthroughs live in the GitHub docs, not here: a member reading
- * this page should never hit a section they cannot act on. The one exception
- * is the short "for administrators" pointer at the bottom.
- */
-
 export function renderSettingsHelpTab() {
     const container = document.getElementById('tab-help');
     if (!container) return;
@@ -337,7 +329,6 @@ export function renderSettingsHelpTab() {
         </div>
     `;
 
-    // Wire up section toggles
     container.querySelectorAll('.section-toggle').forEach(btn => {
         btn.addEventListener('click', () => {
             const body    = btn.nextElementSibling;
@@ -347,7 +338,6 @@ export function renderSettingsHelpTab() {
         });
     });
 
-    // Wire up FAQ toggles
     container.querySelectorAll('.faq-toggle').forEach(btn => {
         btn.addEventListener('click', () => {
             const body   = btn.closest('.faq-item').querySelector('.faq-body');

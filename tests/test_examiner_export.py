@@ -1,9 +1,3 @@
-"""
-Tests for the examiner-production export API (records_api.py), via the Flask
-test client with a forged admin session.
-
-Run:  venv/bin/python tests/test_examiner_export.py
-"""
 import json
 import sys
 import uuid
@@ -64,11 +58,11 @@ class TestExaminerExport(unittest.TestCase):
         self.assertEqual(doc["counts"]["conversations"], 1)
         conv = doc["conversations"][0]
         contents = [m["content"] for m in conv["messages"]]
-        self.assertIn("EXPTEST what is 17a-4?", contents)          # decrypted plaintext
+        self.assertIn("EXPTEST what is 17a-4?", contents)
         self.assertIn("EXPTEST it is the recordkeeping rule.", contents)
         self.assertGreater(len(conv["trail"]), 0)
         for entry in conv["trail"]:
-            self.assertNotIn("state", entry)                        # snapshots omitted
+            self.assertNotIn("state", entry)
             self.assertIn("entry_hash", entry)
 
     def test_export_logs_chain_of_custody(self):
@@ -100,10 +94,8 @@ class TestExaminerExport(unittest.TestCase):
         res = c.get(f"/api/organizations/{self.org_id}/compliance-log")
         events = json.loads(res.data)["events"]
         self.assertIn("legal_hold_set", [e["event_type"] for e in events])
-        # invalid value rejected
         res = c.put(f"/api/organizations/{self.org_id}/retention", json={"retention_years": 0})
         self.assertEqual(res.status_code, 400)
-        # cleanup: clear hold
         c.put(f"/api/organizations/{self.org_id}/retention", json={"legal_hold": {"active": False}})
 
 

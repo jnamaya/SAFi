@@ -1,36 +1,3 @@
-"""
-The org's deterministic Will settings must reach every agent.
-
-NOTE 2026-08-09: these settings moved OFF the charter and onto a separate
-`org_ai_standards` artifact. A charter is mission and core values — who the
-organization is — and its values are SCORED; AI conduct rules are optional and
-contribute gates and literal checks only. Filing one as the other is what let a
-required disclosure become a scored value that blocked every turn. The merge
-semantics pinned below are unchanged; only the source moved, so the fixtures now
-pass `ai_standards=` and the assertions stand as written.
-
-WHY. Scored values and hard gates already bind org-wide through the charter's
-core_values, but the mechanisms the Will enforces *structurally* — the disclaimer
-check, the pre-LLM prompt blacklist, the tool allow-list — existed only on a
-business-unit Policy. A corporate AI policy's prohibitions therefore had to be
-copy-pasted into every policy with nothing keeping the copies in step, which is
-the drift such a policy exists to prevent.
-
-The governing rule is that a Policy may ADD to what the org requires but never
-quietly drop it. That resolves differently per key because the keys differ in
-type (OR for the boolean, union for lists, max for the threshold, intersection
-for tools), so each is pinned here — a plausible-looking "simplification" to one
-uniform merge would silently weaken enforcement.
-
-Two invariants are load-bearing and easy to break:
-
-- An org with no charter, or a charter written before these fields existed, must
-  compile EXACTLY as before. Absent settings are no-ops, never deny-all.
-- An empty tool list means "does not narrow", matching authorized_tools. Treating
-  it as deny-all would strip every tool from every agent in the org.
-
-Run:  venv/bin/python tests/test_charter_org_wide_rules.py
-"""
 import sys
 import unittest
 from pathlib import Path
@@ -47,14 +14,10 @@ def base_profile(will_rules=None):
 
 
 def charter_with(**kw):
-    """Builds the AI-STANDARDS side of the merge. Named for the tier these
-    settings used to live on, kept so the diff against the original stays
-    readable; `standards_with` would be the better name today."""
     return dict(kw)
 
 
 class TestBackwardCompatibility(unittest.TestCase):
-    """An org that sets nothing must compile exactly as it did before."""
 
     def test_no_charter_is_a_no_op(self):
         wr = {"structural_requirements": {"require_disclaimer": True}}
@@ -62,14 +25,11 @@ class TestBackwardCompatibility(unittest.TestCase):
         self.assertEqual(out["will_rules"], wr)
 
     def test_charter_without_the_new_fields_is_a_no_op(self):
-        # Rows predating the columns come back with nothing set.
         wr = {"structural_requirements": {"banned_markdown_syntaxes": ["```html"]}}
         out = apply_charter(base_profile(wr), None, ai_standards=charter_with())
         self.assertEqual(out["will_rules"], wr)
 
     def test_empty_charter_tool_list_does_not_deny_all(self):
-        # [] means "does not narrow" — the same convention as authorized_tools.
-        # Reading it as deny-all would disarm every agent in the org.
         out = apply_charter(base_profile({"allowed_tools": ["github"]}), None, ai_standards=charter_with(allowed_tools=[]))
         self.assertEqual(out["will_rules"]["allowed_tools"], ["github"])
 
@@ -92,8 +52,6 @@ class TestDisclaimerPrecedence(unittest.TestCase):
         self.assertTrue(out["will_rules"]["structural_requirements"]["require_disclaimer"])
 
     def test_charter_substring_replaces_the_policy_one(self):
-        # Only one substring is checkable, so the org-wide mandate wins. The
-        # settings UI states this; if the rule changes, the copy must too.
         policy = {"structural_requirements": {
             "require_disclaimer": True, "mandatory_disclaimer_substring": "Unit disclaimer.",
         }}
@@ -171,9 +129,6 @@ class TestToolCap(unittest.TestCase):
         self.assertEqual(out["will_rules"]["allowed_tools"], ["web_search"])
 
     def test_charter_and_policy_intersect(self):
-        # Both sides are expanded from connector names to function names before
-        # intersecting, so authorizing the "web_search" connector authorizes
-        # every function under it — the same expansion authorized_tools does.
         policy = {"allowed_tools": ["web_search", "calculator"]}
         out = apply_charter(
             base_profile(policy), None,
@@ -190,7 +145,6 @@ class TestToolCap(unittest.TestCase):
         self.assertEqual(out["will_rules"]["allowed_tools"], [])
 
     def test_cap_still_cannot_grant_beyond_what_the_agent_advertises(self):
-        # The charter narrows; it never widens. authorized_tools runs after this.
         out = apply_charter(base_profile({}), None, ai_standards=charter_with(allowed_tools=["web_search", "calculator"]))
         effective = authorized_tools(["calculator"], out["will_rules"]["allowed_tools"])
         self.assertEqual(effective, ["calculator"])
@@ -199,8 +153,6 @@ class TestToolCap(unittest.TestCase):
 class TestShapePromotion(unittest.TestCase):
 
     def test_legacy_prose_list_is_promoted_not_discarded(self):
-        # Structured keys cannot attach to a list, but dropping the prose was a
-        # real bug once already.
         out = apply_charter(base_profile(["A written rule."]), None, ai_standards=charter_with(
             early_prompt_blacklist=["blocked"]))
         wr = out["will_rules"]

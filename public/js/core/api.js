@@ -1,5 +1,3 @@
-// js/api.js
-
 import {
     setAuthToken,
     getAuthToken,
@@ -9,7 +7,6 @@ import {
 
 import offlineManager from '../services/offline-manager.js';
 
-// PWA is served same-origin, so API paths are bare and relative.
 const j = (p) => p;
 
 export { awaitAuthInit, setAuthToken, getAuthToken, clearAuthToken };
@@ -19,7 +16,7 @@ export const urls = {
     MOBILE_LOGIN: j("/api/auth/google/mobile"),
     LOGOUT: j('/api/logout'),
     ME: j('/api/me'),
-    PROFILES: j('/api/agents/all'), // DB-backed list
+    PROFILES: j('/api/agents/all'),
     MODELS: j('/api/models'),
     UPDATE_MODELS: j('/api/me/models'),
     UPDATE_PROFILE: j('/api/me/profile'),
@@ -32,7 +29,7 @@ export const urls = {
     MY_PROFILE: j('/api/me/profile'),
     AGENTS: j('/api/agents'),
     TOOLS: j('/api/agents/tools'),
-    RUBRIC_GEN: j('/api/generate/rubric'), // Fixed: No trailing slash
+    RUBRIC_GEN: j('/api/generate/rubric'),
     VALUES_GEN: j('/api/generate/values'),
     SCOPE_GEN: j('/api/generate/scope'),
     POLICIES: j('/api/policies'),
@@ -51,7 +48,6 @@ export const urls = {
     MEMORY: (agentId) => `${j('/api/memory')}/${encodeURIComponent(agentId)}`,
     MEMORY_ITEMS: (agentId) => `${j('/api/memory')}/${encodeURIComponent(agentId)}/items`,
 
-    // Org & Domain
     ORG_ME: j('/api/organizations/me'),
     ORG_CREATE: j('/api/organizations'),
     ORG_VERIFY_START: j('/api/organizations/domain/start'),
@@ -61,7 +57,6 @@ export const urls = {
     TCB_VERIFY: (id) => j(`/api/organizations/${id}/tcb-verify`),
     TCB_VERIFY_LAST: (id) => j(`/api/organizations/${id}/tcb-verify/last`),
 
-    // Document Upload
     DOCUMENTS_EXTRACT: j('/api/documents/extract'),
     AUDIO_TRANSCRIBE: j('/api/audio/transcribe'),
     APP_CONFIG: j('/api/app-config'),
@@ -86,21 +81,17 @@ async function httpGet(url) {
         credentials: 'include'
     });
     const result = await offlineManager.fetchWithCache(request);
-    // The data is nested in the 'data' property by fetchWithCache
     if (result && result.data) {
         return result.data;
     }
-    // Fallback if the structure is flat (e.g., from a direct fetch)
     return result;
 }
 
 async function httpJSON(url, method, body, options = {}) {
     url = apiUrl(url);
-    // We construct the body string and headers here
     const headers = await createHeaders();
     const bodyStr = JSON.stringify(body);
 
-    // Pass plain arguments to offlineManager to avoid Request stream issues
     return await offlineManager.postWithQueue(url, bodyStr, method, headers, options);
 }
 
@@ -135,7 +126,7 @@ export async function logout() {
     } catch (e) {
         console.warn("Logout API call failed, clearing token anyway.", e);
     } finally {
-        await clearAuthToken(); // Use clearAuthToken from cache.js
+        await clearAuthToken();
     }
     return { ok: true };
 }
@@ -144,7 +135,6 @@ export const getMe = async () => {
     try {
         return await httpGet(urls.ME);
     } catch (e) {
-        // Suppress 401/Unauthorized errors for the 'me' check to avoid console noise
         if (e.message && e.message.includes('UNAUTHORIZED')) {
             return { ok: false, user: null };
         }
@@ -201,8 +191,6 @@ export const processUserMessage = (message, conversation_id, signal = null, mess
     httpJSON(urls.PROCESS, 'POST', {
         message, conversation_id, message_id,
         agent_key,
-        // IANA zone name so the agent's "Current Date" line uses the user's
-        // calendar instead of the server's UTC one. Validated server-side.
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || null
     }, { signal, noQueue: true });
 export const fetchAuditResult = (messageId) =>
@@ -231,10 +219,6 @@ export const fetchTTSAudio = async (text) => {
     return response.blob();
 };
 
-// Export a governed answer as a downloadable DOCX/PDF (backlog 66). Streams the
-// file over an authenticated POST (same auth as TTS), then triggers a browser
-// download via a blob URL — <a download> works on plain HTTP, unlike the
-// file-picker APIs. Returns nothing; throws on failure so the caller can toast.
 export const exportDocument = async ({ text, format, title, agent }) => {
     const headers = await createHeaders();
     const response = await fetch(urls.EXPORT_DOCUMENT, {
@@ -250,7 +234,6 @@ export const exportDocument = async ({ text, format, title, agent }) => {
     }
     const blob = await response.blob();
 
-    // Filename from Content-Disposition, else a sensible default.
     let filename = `${(title || 'SAFi-Document').replace(/[^A-Za-z0-9 _-]/g, '').trim() || 'SAFi-Document'}.${format}`;
     const cd = response.headers.get('Content-Disposition') || '';
     const m = cd.match(/filename="?([^"]+)"?/);
@@ -266,7 +249,6 @@ export const exportDocument = async ({ text, format, title, agent }) => {
     URL.revokeObjectURL(url);
 };
 
-// Returns the raw Response so the caller can stream the body
 export const fetchTTSStream = async (text) => {
     const headers = await createHeaders();
     const response = await fetch(urls.TTS, {
@@ -342,8 +324,6 @@ export async function fetchAttention() {
     return httpGet('/api/attention');
 }
 
-// The actionable subset of the inbox: pending approvals with their IDs, so an
-// inbox row can approve/reject without first deep-linking to the target tab.
 export async function fetchAttentionActions() {
     return httpGet('/api/attention/actions');
 }
@@ -428,9 +408,6 @@ export async function removeNestedGroup(groupId, childGroupId) {
 }
 
 export async function fetchAvailableTools(policyId = null) {
-    // With a policy id the backend marks each tool with allowed_by_policy,
-    // expanding connector names to function names the way the compiler does.
-    // Without one it returns the full catalogue and policy_narrows = false.
     return httpGet(policyId && policyId !== 'standalone'
         ? `${urls.TOOLS}?policy_id=${encodeURIComponent(policyId)}`
         : urls.TOOLS);
@@ -555,8 +532,6 @@ export async function deleteOrgProviderKey(orgId, provider) {
     return httpJSON(`/api/organizations/${orgId}/provider-keys?provider=${encodeURIComponent(provider)}`, 'DELETE', {});
 }
 
-// Deployment-wide provider keys. The layer under .env, and the only way to add
-// a cloud provider on an appliance, which has no organization to scope a key to.
 export async function getDeploymentProviderKeys() {
     return httpGet('/api/providers/keys');
 }
@@ -573,9 +548,6 @@ export async function getCustomModels() {
     return httpGet('/api/models/custom');
 }
 
-// The on-appliance catalogue: what could be downloaded, what is on disk, and
-// which single model the local server is being served. Empty on a normal
-// deployment, which is not an error.
 export async function getLocalModels() {
     return httpGet('/api/models/local');
 }
@@ -597,8 +569,6 @@ export async function deleteCustomModel(modelId) {
 }
 
 export async function saveOrganization(orgData) {
-    // If we were editing, we'd use PUT, but currently we only confirm creation via Wizard
-    // which uses this. If we implement "Update Settings", we will need a PUT route.
     return httpJSON(urls.ORG_CREATE, 'POST', orgData);
 }
 
@@ -704,10 +674,6 @@ export async function deleteCharter(orgId) {
     return httpJSON(`/api/organizations/${orgId}/charter`, 'DELETE', {});
 }
 
-// AI Standards are a separate resource from the charter, not another field on
-// it: a charter is who the organization is and every org has one, while AI
-// conduct rules are optional. Adopting or dropping them must not touch the
-// charter, which is only true if they are saved and deleted independently.
 export async function getPiiChecks(orgId) {
     return httpGet(`/api/organizations/${orgId}/pii-checks`);
 }
@@ -731,15 +697,6 @@ export function getLastTcbVerify(orgId) {
     return httpGet(j(`/api/organizations/${orgId}/tcb-verify/last`));
 }
 
-/**
- * Uploads a file and returns the extracted text content.
- * Uses a direct fetch (not offline manager) since file uploads can't be queued.
- *
- * @param {File} file - The File object from an input element.
- * @returns {Promise<{text: string, filename: string, sha256: string, bytes: number,
- *                     total_chars: number, chars_used: number, was_truncated: boolean}>}
- */
-/** Non-sensitive feature flags for the UI (voice input, local login, demo). */
 export async function getAppConfig() {
     try {
         const r = await fetch(urls.APP_CONFIG, { credentials: 'include' });
@@ -749,13 +706,6 @@ export async function getAppConfig() {
     }
 }
 
-/**
- * Uploads a recorded audio blob and returns the transcript. The returned text
- * is put into the composer for the user to review before sending, the same as
- * a typed prompt; it does not get sent automatically. Raw audio is not stored
- * server-side.
- * @returns {Promise<{text: string, sha256: string, chars: number}>}
- */
 export async function transcribeAudio(blob) {
     const formData = new FormData();
     formData.append('file', blob, 'recording.webm');
@@ -784,8 +734,6 @@ export async function extractDocumentText(file) {
 
     const auth = await getAuthToken();
     const headers = new Headers();
-    // NOTE: Do NOT set Content-Type for FormData — the browser sets it
-    // automatically with the correct multipart boundary.
     if (auth) headers.append('Authorization', `Bearer ${auth}`);
 
     const response = await fetch(urls.DOCUMENTS_EXTRACT, {
@@ -808,13 +756,6 @@ export async function listKnowledgeBases() {
     return httpGet(j('/api/knowledge-bases'));
 }
 
-/**
- * Only KBs with a built index — what the agent wizard may offer.
- *
- * `includeBuiltin` adds the corpora shipped with the image. The policy wizard
- * needs them (a policy must be able to authorize the Steward's own knowledge);
- * the agent wizard does not ask for them.
- */
 export async function listAvailableKnowledgeBases({ includeBuiltin = false } = {}) {
     const qs = includeBuiltin ? '?include_builtin=1' : '';
     return httpGet(j(`/api/knowledge-bases/available${qs}`));
@@ -853,9 +794,6 @@ export async function listPendingKnowledgeReviews() {
     return httpGet(j('/api/knowledge-bases/pending-reviews'));
 }
 
-// Read-only. Installation is an operator action on the host (scripts/safi_mcp.py),
-// so there is deliberately no install, review or remove call here: the browser
-// does not install tool servers.
 
 export async function listMcpServers() {
     return httpGet(j('/api/mcp/servers'));
@@ -865,21 +803,12 @@ export async function disconnectMcpAuth(serverKey) {
     return httpJSON(j(`/api/mcp/auth/${encodeURIComponent(serverKey)}/disconnect`), 'POST', {});
 }
 
-/**
- * Uploads one document into a knowledge base.
- *
- * Direct fetch rather than the offline queue, same as extractDocumentText:
- * a multipart body cannot be replayed from the queue, and an upload that
- * silently succeeded offline and never reached the indexer would show a
- * document in the list that answers nothing.
- */
 export async function uploadKnowledgeBaseDocument(kbId, file) {
     const formData = new FormData();
     formData.append('file', file);
 
     const auth = await getAuthToken();
     const headers = new Headers();
-    // No Content-Type — the browser sets the multipart boundary.
     if (auth) headers.append('Authorization', `Bearer ${auth}`);
 
     const response = await fetch(j(`/api/knowledge-bases/${kbId}/documents`), {
@@ -924,8 +853,6 @@ export async function setIncidentRegimes(orgId, regimes) {
     return httpJSON(j(`/api/organizations/${orgId}/incident-regimes`), 'PUT', { regimes });
 }
 
-// Export is a file download — used as a plain href/window.open target,
-// not through the JSON pipeline.
 export function incidentExportUrl(orgId, incidentId, format) {
     return j(`/api/organizations/${orgId}/incidents/${incidentId}/export?format=${format}`);
 }
@@ -942,7 +869,6 @@ export async function updateOfflineConfig(orgId, enabled) {
     return httpJSON(j(`/api/organizations/${orgId}/offline-config`), 'PUT', { offline_enabled: enabled });
 }
 
-// Right-of-access self-export (custody-logged server-side) — plain URL for window.open.
 export function myDataExportUrl() {
     return j('/api/me/export');
 }
@@ -955,7 +881,6 @@ export async function getOrgProviders(orgId) {
     return httpGet(j(`/api/organizations/${orgId}/providers`));
 }
 
-// allowlist: array of provider keys, or null for unrestricted
 export async function updateOrgProviders(orgId, allowlist) {
     return httpJSON(j(`/api/organizations/${orgId}/providers`), 'PUT', { allowlist });
 }
@@ -964,24 +889,19 @@ export async function getOrgConnectors(orgId) {
     return httpGet(j(`/api/organizations/${orgId}/connectors`));
 }
 
-// allowlist: array of connector keys, [] for none, or null for unrestricted
 export async function updateOrgConnectors(orgId, allowlist) {
     return httpJSON(j(`/api/organizations/${orgId}/connectors`), 'PUT', { allowlist });
 }
 
-// Who in the org has linked what. No token material is returned.
 export async function getOrgConnections(orgId) {
     return httpGet(j(`/api/organizations/${orgId}/connections`));
 }
 
-// File download — plain URL for window.open/href, not the JSON pipeline.
 export function recordsExportUrl(orgId, from, to, userId) {
     const u = userId ? `&user_id=${encodeURIComponent(userId)}` : '';
     return j(`/api/organizations/${orgId}/records/export?from=${from}&to=${to}${u}`);
 }
 
-// status/trigger accept a string or array of strings (multi-select); the API
-// takes comma-joined values and matches rows on ANY selected value.
 export async function listReviewQueue(orgId, { status, trigger, profile, sort, from, to, limit, offset } = {}) {
     const q = new URLSearchParams();
     const join = (v) => Array.isArray(v) ? v.filter(Boolean).join(',') : (v || '');
@@ -1001,7 +921,6 @@ export async function getReviewItem(orgId, queueId) {
     return httpGet(j(`/api/organizations/${orgId}/review/queue/${queueId}`));
 }
 
-// action: 'approve' | 'override'; reason mandatory for override
 export async function actOnReviewItem(orgId, queueId, action, reason) {
     return httpJSON(j(`/api/organizations/${orgId}/review/queue/${queueId}/action`), 'POST', { action, reason });
 }
@@ -1022,7 +941,6 @@ export async function getReviewReport(orgId, from, to) {
     return httpGet(j(`/api/organizations/${orgId}/review/report${qs ? '?' + qs : ''}`));
 }
 
-// CSV download (logs chain of custody server-side) — plain URL for window.open.
 export function reviewReportCsvUrl(orgId, from, to) {
     const q = new URLSearchParams({ format: 'csv' });
     if (from) q.set('from', from);
@@ -1030,8 +948,6 @@ export function reviewReportCsvUrl(orgId, from, to) {
     return j(`/api/organizations/${orgId}/review/report?${q}`);
 }
 
-// Per-item export: one row per reviewed turn, including the reviewer's
-// rationale. Logged server-side with a sha256 of the emitted body.
 export function reviewItemsCsvUrl(orgId, from, to) {
     const q = new URLSearchParams({ format: 'csv' });
     if (from) q.set('from', from);
@@ -1076,7 +992,6 @@ export async function getAuditEvent(orgId, messagePk) {
     return httpGet(j(`/api/organizations/${orgId}/audit/events/${messagePk}`));
 }
 
-// JSON download (custody-logs audit_export server-side) — plain URL for window.open.
 export function auditExportUrl(orgId, params) {
     return j(`/api/organizations/${orgId}/audit/export${auditQs(params)}`);
 }

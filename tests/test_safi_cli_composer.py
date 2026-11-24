@@ -1,5 +1,3 @@
-"""Tests for the prompt_toolkit composer wiring (completions + history suggestions)."""
-
 import pytest
 
 from safi_cli import prompt_input
@@ -11,7 +9,6 @@ def _pt():
 
 
 def _fresh_state(monkeypatch):
-    """Reset module-level session caches so tests are order-independent."""
     monkeypatch.setattr(prompt_input, "_SESSION", None)
     monkeypatch.setattr(prompt_input, "_SESSION_HISTORY", None)
     monkeypatch.setattr(prompt_input, "_SESSION_COMPLETER_FN", None)
@@ -22,7 +19,7 @@ def test_session_gains_history_autosuggest(monkeypatch, tmp_path):
     _fresh_state(monkeypatch)
     session = prompt_input._get_session(str(tmp_path / "hist"))
     assert session.auto_suggest is not None
-    assert session.default_buffer is not None  # session constructed OK
+    assert session.default_buffer is not None
 
 
 def test_completer_swapped_when_fn_changes(monkeypatch, tmp_path):
@@ -38,8 +35,6 @@ def test_completer_swapped_when_fn_changes(monkeypatch, tmp_path):
     session.completer = pt._CallbackCompleter(fn_a)
     assert isinstance(session.completer, pt._CallbackCompleter)
 
-    # read_prompt with a different fn swaps the completer (simulate the swap
-    # logic without rendering a real prompt)
     def fn_b(line, text):
         return ["/agent"]
 
@@ -121,21 +116,18 @@ def test_composer_dividers_and_styling(monkeypatch, tmp_path):
 
     session = pt._get_session(str(tmp_path / "hist"))
     assert isinstance(session, pt.SafiPromptSession)
-    assert session.bottom_toolbar is None  # Ensures it is not pinned to the terminal bottom
+    assert session.bottom_toolbar is None
 
-    # Verify layout has the bottom divider attached tightly to the inner HSplit
     layout = session._create_layout()
     main_float = layout.container.children[0].alternative_content
     assert len(main_float.content.children) >= 3
 
-    # Verify no background in prompt styles
     style_dict = pt._prompt_style().style_rules
     style_map = dict(style_dict)
     assert "bg:" not in style_map.get("safi-badge", "")
     assert "bg:" not in style_map.get("safi-agent", "")
     assert "bg:" not in style_map.get("safi-arrow", "")
 
-    # Verify continuation has no ellipsis
     continuation = pt._continuation(25, 1, False)
     cont_text = "".join(token[1] for token in continuation)
     assert "…" not in cont_text

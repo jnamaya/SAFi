@@ -1,35 +1,3 @@
-"""
-MCP Manager: the tool catalogue, the per-agent schemas, and dispatch.
-
-Two kinds of tool arrive here and they are not the same thing:
-
-  * BUILT-IN CONNECTORS (core/mcp_servers/*.py) are curated. Someone wrote the
-    module, hand-wrote the schema, and shipped it in the image, so the tool list
-    is reviewed at build time. Several of them act on a MEMBER's behalf using
-    delegated per-user OAuth, which is why they take user_id.
-
-  * DISCOVERED MCP SERVERS (core/mcp_runtime.py) are installed by the operator
-    in the file MCP_SERVERS_JSON names, and their schemas come from a third
-    party at runtime, reviewed by nobody. They authenticate with the
-    deployment's own credential, which makes each one a service principal.
-
-That difference decides what each is FOR, and it belongs in the docs an
-organization reads: a shared or system resource (a company API, an internal
-pricing service) is right for an MCP server; a member's own mailbox or files
-belong on per-user authorization (the OAuth MCP path or a delegated
-connector), or every read in the source system's audit log is attributed to
-SAFi rather than to a person, and offboarding stops cutting access.
-
-What is NOT different is the governance. A discovered server becomes a
-connector like any other (tool_connectors.py), an organization allows it
-(connector_governance.py), a policy grants it, Synderesis expands it into
-allowed_tools, and the Will authorizes every individual call by exact name.
-Discovery adds catalogue entries and changes no rule. See GOVERNANCE_BACKLOG 47b.
-
-Session lifecycle lives in mcp_runtime, not here, and deliberately: a SAFi
-orchestrator (and so an MCPManager) is built per cached agent profile, while MCP
-sessions must be one per process.
-"""
 import asyncio
 import logging
 import json
@@ -47,12 +15,6 @@ log = logging.getLogger(__name__)
 
 
 def agentic_declaration_only() -> frozenset:
-    """Names the agentic_coding connector declares but SAFi does not execute.
-
-    Agentic coding vocabulary minus the four repository tools implemented in
-    core/mcp_servers/coding_tools.py. Kept as a helper rather than inlined so
-    dispatch and the catalog agree on the split from one definition.
-    """
     from ..mcp_servers.coding_tools import (
         CODING_HARNESS_TOOL_NAMES, SAFI_EXECUTED_TOOLS,
     )
@@ -62,28 +24,13 @@ def agentic_declaration_only() -> frozenset:
 coding_harness_declaration_only = agentic_declaration_only
 
 
-
 def is_guest(user_id: str = "", email: str = "") -> bool:
-    """A demo/sandbox account, created by the public demo login.
-
-    Guests are made ADMIN of a throwaway organization (api/auth.py), which is
-    fine for exploring the product and is NOT a basis for reaching a tool server
-    the operator installed. Being an admin of a sandbox is not being an admin of
-    this deployment, and an MCP server holds one real credential.
-    """
     uid = (user_id or "").lower()
     mail = (email or "").lower()
     return uid.startswith("demo_") or mail.endswith("@demo.local")
 
 
 def server_allows_org(server: str, org_id: Optional[str]) -> bool:
-    """Whether an organization may use a given installed server.
-
-    A server definition may carry `"orgs": ["<org-id>", ...]`. Absent means every
-    organization, which is right for the single-tenant installs that are the
-    common case and wrong to assume on a shared one, so the docs tell
-    multi-tenant operators to set it.
-    """
     allowed = mcp_runtime.orgs_for(server)
     if not allowed:
         return True
@@ -91,15 +38,6 @@ def server_allows_org(server: str, org_id: Optional[str]) -> bool:
 
 
 def _caller_org(user_id: Optional[str]):
-    """(org_id, is_guest) for the user a tool call is being made for.
-
-    org_id is None when there is no identifiable caller, which is a real and
-    legitimate state rather than an error: the public bot and the /evaluate
-    gateway have no user. That is kept DISTINCT from being a guest, because the
-    two deserve different answers. A guest is refused outright; an
-    unattributable call is refused only by a server that restricts itself to
-    named organizations, since membership cannot be shown either way.
-    """
     if not user_id:
         return None, False
     if is_guest(user_id):
@@ -116,19 +54,6 @@ def _caller_org(user_id: Optional[str]):
 
 
 def member_oauth_servers(user_id, org_id, role):
-    """The OAuth tool servers this member may see and connect, with the same
-    two flags the delegated connectors carry:
-
-      allowed  the server's own orgs restriction admits this member's org
-      usable   at least one agent this member can reach is granted the
-               server's tools (by connector key or by function name)
-
-    Connecting is the means to an agent's end, so a member with no agent that
-    could ever call the tools gets no invitation to grant a token nothing will
-    read. Admins are the exception, handled by the CALLER, because someone has
-    to make the first connection that discovers the catalog before any policy
-    can list its tools.
-    """
     from ..tool_connectors import expand_connectors
 
     servers = []
@@ -167,13 +92,6 @@ def member_oauth_servers(user_id, org_id, role):
 
 
 def member_can_connect(user_id, org_id, role, server_key) -> bool:
-    """Whether this member may run the sign-in flow for this server.
-
-    Host-configured authority roles always may: the first connection is what discovers the catalog, and
-    without it no policy can enable a tool for anyone. Everyone else needs an
-    agent that is actually granted the server, which is the same rule the
-    delegated connectors enforce on their login routes.
-    """
     from ...role_config import ROLE_CONFIG
     if role in ROLE_CONFIG["organization_admin_roles"]:
         return True
@@ -184,22 +102,10 @@ def member_can_connect(user_id, org_id, role, server_key) -> bool:
 
 
 def builtin_tool_names() -> frozenset:
-    """Every function name the built-in connectors own.
-
-    This is the reserved set discovery refuses to let a third-party server
-    claim. Derived from CONNECTOR_TOOLS rather than written out again, because
-    a second hand-maintained copy of these names is exactly the drift that made
-    tool_connectors.py necessary in the first place.
-    """
     return frozenset(fn for fns in CONNECTOR_TOOLS.values() for fn in fns)
 
 
 def start_servers(config: Any) -> Dict[str, Any]:
-    """Connect the operator's MCP servers and register them as connectors.
-
-    Called once per process from create_app(). Never raises: a deployment with a
-    broken server file must still start, minus those tools.
-    """
     servers = (getattr(config, "MCP_CONFIG", None) or {}).get("mcp_servers") or {}
     if not servers:
         return {"servers": {}, "tool_count": 0}
@@ -224,9 +130,6 @@ def start_servers(config: Any) -> Dict[str, Any]:
     clear_discovered_connectors()
     for server, functions in mcp_runtime.connectors().items():
         if not register_discovered_connector(server, functions):
-            # The only way this fails is a server key that shadows a built-in
-            # connector. Loud, because the operator's tools are silently absent
-            # until they rename it, and the Will will block every call.
             log.error(
                 "MCP server '%s' collides with a built-in connector name and was "
                 "NOT registered. Rename the server key; its tools are unavailable.",
@@ -236,13 +139,6 @@ def start_servers(config: Any) -> Dict[str, Any]:
 
 
 def refresh_discovered_connectors() -> None:
-    """Re-register the connector table from whatever is currently connected.
-
-    Built from the runtime rather than from the database so the table can never
-    claim a connector whose session did not actually come up: an agent
-    authorized for tools that do not exist would be blocked at the Will with a
-    confusing reason, which is worse than the tool simply being absent.
-    """
     clear_discovered_connectors()
     for server, functions in mcp_runtime.connectors().items():
         if not register_discovered_connector(server, functions):
@@ -254,12 +150,6 @@ def refresh_discovered_connectors() -> None:
 
 
 def file_servers() -> Dict[str, Any]:
-    """Re-read the operator's server file from disk.
-
-    Deliberately not `Config.MCP_CONFIG`, which was evaluated once at import.
-    The CLI edits this file while the app is running, so the whole point of
-    reading it here is to see what it says NOW.
-    """
     from ...config import _load_mcp_servers
 
     servers = _load_mcp_servers() or {}
@@ -268,8 +158,6 @@ def file_servers() -> Dict[str, Any]:
         if not isinstance(params, dict) or not params.get("enabled", True):
             continue
         if (params.get("auth") or "").lower() == "oauth":
-            # The catalog of an OAuth server cannot be discovered anonymously,
-            # so it is served from the cache captured at the last sign-in.
             params = dict(params)
             try:
                 from ...persistence import mcp_store
@@ -282,12 +170,6 @@ def file_servers() -> Dict[str, Any]:
 
 
 async def discover_after_connect(server_key: str, token: str) -> list:
-    """Capture an OAuth server's catalog with the token that just arrived.
-
-    Runs once per sign-in, in the callback. The result is cached in the
-    database and the generation counter is bumped, so every worker republishes
-    the tools without anyone else having to authenticate first.
-    """
     url = mcp_runtime.url_of(server_key) or (file_servers().get(server_key) or {}).get("url", "")
     if not url:
         return []
@@ -295,7 +177,6 @@ async def discover_after_connect(server_key: str, token: str) -> list:
     from ...persistence import mcp_store
     mcp_store.replace_cached_tools(server_key, tools)
     mcp_store.bump_generation()
-    # This worker republishes now rather than on its next request.
     mcp_runtime.sync_origin(file_servers(), reserved_tool_names=builtin_tool_names(),
                             origin=mcp_runtime.origin_of(server_key) or "file")
     refresh_discovered_connectors()
@@ -303,16 +184,6 @@ async def discover_after_connect(server_key: str, token: str) -> list:
 
 
 def resync_if_stale(generation_getter) -> bool:
-    """Re-read the operator's file when the CLI says it changed.
-
-    Four gunicorn workers each hold their own MCP sessions and each read the
-    file once at boot, so a CLI edit on the host has to reach all of them. The
-    CLI bumps one counter; each worker notices on its next request. Cheaper than
-    any IPC we would have to build and then operate.
-
-    Returns True when a resync happened. Never raises: a deployment whose
-    generation check fails should keep serving with the tools it already has.
-    """
     global _generation
     try:
         current = generation_getter()
@@ -333,44 +204,18 @@ _generation = 0
 
 
 class MCPManager:
-    """Per-orchestrator view over the tool catalogue.
-
-    Holds no connections. The live MCP sessions belong to the process, not to
-    this object: SAFi instances are cached per (agent, models, policy) and built
-    lazily per request, so sessions owned here would mean one set of subprocesses
-    per cached agent.
-    """
 
     def __init__(self, config: Dict[str, Any]):
         self.config = config or {}
         self.log = logging.getLogger(self.__class__.__name__)
 
     async def get_tools_for_agent(self, agent_profile: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """
-        The tool schemas this agent may be offered.
-
-        Two lists matter and they are not the same. `tools` is what the agent
-        was configured with; `allowed_tools` is what Synderesis stamped after
-        intersecting that with the policy's ceiling, and it is what the Will
-        enforces. The schemas built below come from the first, and are then
-        filtered by the second.
-
-        That filter is the point. Without it a policy that narrows an agent's
-        tools still ADVERTISED the wider set, so the model was offered a tool it
-        could never call, proposed it, and collected a violation. Never showing
-        the model a tool the Will would refuse costs nothing and removes a whole
-        class of avoidable blocked turns.
-        """
         allowed_tools = agent_profile.get("tools", [])
         if not allowed_tools:
             return []
 
         tools = []
 
-        # Each coding-harness connector emits exactly the functions its entry in
-        # tool_connectors.CONNECTOR_TOOLS declares. test_mapping_matches_the_real_builder
-        # pins that equality, so the schemas offered to the model can never drift
-        # from what the Will will authorize.
         _CODING_CONNECTORS = (
             "agentic_coding", "coding_harness",
             "software_engineer_tools", "sysadmin_tools", "security_engineer_tools",
@@ -459,12 +304,6 @@ class MCPManager:
                 },
             })
 
-            # The rest of the harness vocabulary. These are DECLARED so the Will
-            # can authorize them and the picker can offer them, because the gate
-            # matches names exactly and an undeclared name is a guaranteed
-            # refusal. SAFi does not execute them: the client runs them on the
-            # host and reports results back as tool messages. Descriptions say
-            # so plainly, so the model does not expect SAFi to have done it.
             declared_only = [
                 ("bash", "Run a shell command. Executed by the coding-agent "
                          "client on the host, not by SAFi.",
@@ -618,15 +457,7 @@ class MCPManager:
                 }
             })
 
-        # The sharepoint connector (7 tools) was retired 2026-08-15, absorbed
-        # by the Graph gateway (scripts/graph_gateway.py), the last of the
-        # three delegated built-ins to go. Its upload had no successor: the
-        # gateways are read-only until tool calls can be held for human review.
 
-        # --- DISCOVERED MCP SERVERS ---
-        # Same rule as the built-ins above: advertise a tool if the agent was
-        # granted its connector (the server key) or the function by name. The
-        # second form is what lets a policy narrow within a server.
         for name, spec in mcp_runtime.tools().items():
             if name in allowed_tools or spec["server"] in allowed_tools:
                 tools.append({
@@ -635,10 +466,6 @@ class MCPManager:
                     "input_schema": spec["input_schema"],
                 })
 
-        # The policy ceiling, applied once at the end so it covers built-in and
-        # discovered tools identically. A profile with no `allowed_tools` key was
-        # not built by the compiler (tests, direct construction), and is left
-        # alone rather than silently emptied.
         authorized = agent_profile.get("allowed_tools")
         if isinstance(authorized, list):
             permitted = set(authorized)
@@ -652,12 +479,6 @@ class MCPManager:
         guest: bool = False,
         policy_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """
-        The catalogue a tool picker renders, grouped by category.
-
-        `org_id` scopes GUI-installed servers to the organization that installed
-        them. Omit it only where there is no organization to scope to.
-        """
         pid_lower = str(policy_id or "").lower()
         if "sysadmin" in pid_lower or "systems_admin" in pid_lower:
             harness_category = "Sysadmin Tools"
@@ -719,12 +540,6 @@ class MCPManager:
                 ]
             },
             {
-                # Read-only repository inspection. The picker offers these as
-                # individual functions rather than as one "coding_harness" card,
-                # because the policy step decides tool by tool which of them an
-                # agent may use — the same rule discovered MCP servers follow.
-                # Saving stores the connector name, which expand_connectors
-                # turns back into these four.
                 "category": harness_category,
                 "tools": [
                     {
@@ -847,17 +662,6 @@ class MCPManager:
 
     @staticmethod
     def known_connectors(org_id: Optional[str] = None, guest: bool = False) -> set:
-        """Every connector name this caller can be offered.
-
-        Built-ins are deployment-wide. Installed MCP servers are NOT: a built-in
-        that touches member data is gated by the org connector allow-list AND by
-        that member's own OAuth, while an MCP server has neither and holds one
-        shared credential. Treating them alike let any organization — and a
-        guest, who admins a sandbox org — reach any installed server.
-
-        Pass org_id=None only where there is no caller to scope to (background
-        jobs, tests); it returns the deployment-wide view.
-        """
         connectors = set(CONNECTOR_TOOLS)
         if guest:
             return connectors
@@ -868,19 +672,6 @@ class MCPManager:
 
     @staticmethod
     def _discovered_categories(org_id: Optional[str] = None, guest: bool = False) -> List[Dict[str, Any]]:
-        """One category per connected server, one card per TOOL.
-
-        Built-in connectors are offered as a bundle because their contents were
-        reviewed when they shipped. A server the operator installed is different:
-        its tools arrive from a third party at runtime, and the point of the
-        policy step is that an editor decides tool by tool which of them an agent
-        may use. Offering the server as a single checkbox would make that
-        decision unavailable.
-
-        Individual tool names need nothing special downstream: expand_connectors
-        passes an unknown name through unchanged and the Will matches exactly,
-        so a policy listing three of a server's nine tools authorizes three.
-        """
         if guest:
             return []
         categories: List[Dict[str, Any]] = []
@@ -904,16 +695,6 @@ class MCPManager:
         return categories
 
     async def execute_tool(self, tool_name: str, arguments: Dict[str, Any], user_id: Optional[str] = None) -> str:
-        """
-        Run one approved tool call.
-
-        Built-in connectors dispatch to the in-process implementations in
-        core/mcp_servers/ below; anything discovered from an operator-installed
-        MCP server goes over the real protocol at the end (core/mcp_runtime.py).
-
-        Reached only after WillGate.evaluate_tool_intent approved this exact
-        name, so nothing here re-checks agent-level authorization.
-        """
         self.log.info(f"Executing tool '{tool_name}' with args {arguments}")
         
         if tool_name == "read":
@@ -942,11 +723,6 @@ class MCPManager:
             from ..mcp_servers.coding_tools import list_directory
             return await list_directory(arguments.get("path", "."))
 
-        # The remainder of the coding harness vocabulary is DECLARED by the
-        # coding_harness connector but executed by the coding-agent client, not by
-        # SAFi. Say so explicitly: a bare "not found" reads as a bug, and worse
-        # would leave the caller believing the command had been refused for a
-        # governance reason when it simply has no local executor.
         if tool_name in agentic_declaration_only():
             return json.dumps({
                 "error": (
@@ -984,13 +760,6 @@ class MCPManager:
             if tool_name == "web_news":
                 return await get_news(arguments["query"])
 
-        # -- DISCOVERED MCP SERVERS --
-        # Dispatch-time authorization, and not a duplicate of the Will's. The Will
-        # asks whether THIS AGENT may call this tool; this asks whether the
-        # caller's ORGANIZATION may reach this server at all. The catalogue and
-        # the save guard apply the same rule, but a filter on a picker is not a
-        # check, and an agent created before a restriction was added would
-        # otherwise keep working.
         if mcp_runtime.owns(tool_name):
             server = mcp_runtime.server_of(tool_name)
             org_id, guest = _caller_org(user_id)
@@ -1006,17 +775,9 @@ class MCPManager:
                            else " and this one is not among them.")
                     )
                 })
-        # Last, so a built-in always wins a name contest. Two credential models
-        # live behind this branch and they are opposites: a static server runs
-        # with the deployment's own credential (a service principal, so no
-        # member identity is passed), while an OAuth server (MCP authorization
-        # spec) runs every call as the requesting user with an audience-bound
-        # token, which is what restores per-person attribution.
         if mcp_runtime.owns(tool_name):
             server = mcp_runtime.server_of(tool_name)
             if mcp_runtime.auth_mode_of(server) == "oauth":
-                # No user means no identity to run as: the public bot and
-                # /evaluate have no way to hold a token.
                 if not user_id:
                     return json.dumps({"error": (
                         f"Tool '{tool_name}' requires a signed-in user's "
@@ -1026,10 +787,6 @@ class MCPManager:
                 definition = file_servers().get(server) or {}
                 token = mcp_oauth.access_token_for(user_id, server, definition)
                 if not token:
-                    # The link, not directions: the old text pointed members at
-                    # a tab only admins can see. The agent relays this message, so
-                    # it carries the absolute sign-in URL, which the chat renders
-                    # as a link the member can actually click.
                     from ...config import Config
                     login_url = (f"{Config.WEB_BASE_URL.rstrip('/')}"
                                  f"/api/mcp/auth/{server}/login")

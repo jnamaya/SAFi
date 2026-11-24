@@ -1,12 +1,3 @@
-"""
-Voice input API.
-
-Accepts an audio upload, transcribes it locally to text, and returns the text.
-The frontend puts that text into the composer and the user sends it through the
-normal governed pipeline, so the transcript, not the audio, is what Phase Zero
-scans and what lands in the audit record. Raw audio is never sent to a model and
-is not stored. This mirrors documents.py (upload -> extracted text -> composer).
-"""
 import hashlib
 
 from flask import Blueprint, session, jsonify, request, current_app
@@ -27,13 +18,10 @@ def _user_id():
 
 @audio_bp.route('/audio/transcribe', methods=['POST'])
 def transcribe_audio():
-    """multipart/form-data with a 'file' audio field -> {text, sha256, chars}."""
     user_id = _user_id()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
 
-    # Feature gate. Off by default; the app-config flag keeps the mic button
-    # hidden, and this is the server-side enforcement behind it.
     if not Config.VOICE_INPUT_ENABLED:
         return jsonify({"error": "Voice input is not enabled on this deployment."}), 404
 
@@ -42,8 +30,6 @@ def transcribe_audio():
 
     audio = request.files['file']
 
-    # Size check before reading the bytes into memory. MAX_CONTENT_LENGTH is the
-    # framework-level backstop; this gives a clean, specific message.
     audio.seek(0, 2)
     size_bytes = audio.tell()
     audio.seek(0)
@@ -65,9 +51,6 @@ def transcribe_audio():
         current_app.logger.error(f"Audio transcription failed: {e}")
         return jsonify({"error": "Transcription failed."}), 500
 
-    # Org-level provenance, same spirit as the document-attach evidence. The
-    # transcript is governed and audited when the user sends it; here we only note
-    # that an audio input was transcribed, with its digest, without storing audio.
     try:
         org_id = get_current_org_id()
         if org_id:

@@ -1,15 +1,3 @@
-"""A citation must return the passage that was asked for.
-
-`Retriever._keyword_search` matches a book and chapter, and the chunks it
-compares against span ~4 overlapping verses. Slicing that result by k answers
-with the OPENING of the chapter: at k=50 "Psalm 119" lost verses 148-176, and
-at k=5 "Psalm 119:105" answered from verses 1-20 and never reached verse 105.
-So a verse in the query now narrows the match, and a chapter-wide request
-returns the chapter whole.
-
-The search half is stubbed — this exercises the matching and the bound, not
-the vector index.
-"""
 import sys
 import unittest
 from pathlib import Path
@@ -26,7 +14,6 @@ def _chunk(book, chapter, start, end, text=""):
 
 
 def _retriever(metadata):
-    """A Retriever with only what _keyword_search reads: metadata and log."""
     r = Retriever.__new__(Retriever)
     r.kb_name = "bible_bsb_v1"
     r.metadata = metadata
@@ -35,16 +22,13 @@ def _retriever(metadata):
     return r
 
 
-# Psalm 119 has 176 verses; the real index chunks it into 59 overlapping pieces.
 PSALM_119 = [_chunk("Psalm", 119, s, min(s + 3, 176)) for s in range(1, 177, 3)]
 JOHN_3 = [_chunk("John", 3, s, s + 3) for s in range(1, 37, 3)]
-# Luke 9's real chunk boundaries, which the lectionary reading rides on.
 LUKE_9 = ([_chunk("Luke", 9, s, s + 3) for s in range(1, 56, 3)]
           + [_chunk("Luke", 9, 55, 59), _chunk("Luke", 9, 58, 62), _chunk("Luke", 9, 61, 62)])
 
 
 def _covered_verses(retriever, query):
-    """Every verse number the returned chunks actually contain."""
     verses = set()
     for i in retriever._keyword_search(query):
         md = retriever.metadata[i]["metadata"]
@@ -78,7 +62,6 @@ class AVerseNarrowsTheChapter(unittest.TestCase):
         self.assertLess(len(spans), len(JOHN_3), "the chapter should not come back whole")
 
     def test_a_verse_number_is_not_mistaken_for_a_second_citation(self):
-        # "John 3:16" is one citation; the 16 must not be read as a chapter.
         r = _retriever(JOHN_3 + [_chunk("John", 16, 1, 4)])
         for i in r._keyword_search("John 3:16"):
             meta = r.metadata[i]["metadata"]
@@ -87,13 +70,6 @@ class AVerseNarrowsTheChapter(unittest.TestCase):
 
 
 class AVerseRangeIsTheWholeRange(unittest.TestCase):
-    """A lectionary reading is a RANGE, and the first verse is not the range.
-
-    Reading only the leading verse of "Luke 9:57-62" returned the single chunk
-    holding verse 57 (verses 55-59). Verses 60-62 were then absent from the
-    audit material, the Intellect completed them from memory, and Textual
-    Fidelity scored 0 for exactly that reason — a gap the retrieval created.
-    """
 
     def test_the_tail_of_the_range_is_retrieved(self):
         r = _retriever(LUKE_9)
@@ -159,8 +135,6 @@ class NonCitationsAndOddInput(unittest.TestCase):
         self.assertEqual(_retriever(PSALM_119)._keyword_search("Ecclesiasticus 3:1"), [])
 
     def test_chunks_without_verse_metadata_are_kept_not_dropped(self):
-        # A flat-shaped corpus cannot be placed against a verse, so the chapter
-        # comes back whole rather than leaving a gap the model cannot see.
         flat = [{"text_chunk": "John 3:16 text",
                  "metadata": {"book": "John", "chapter": 3}}]
         r = _retriever(flat)

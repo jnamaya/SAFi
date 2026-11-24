@@ -1,18 +1,3 @@
-"""
-Incident lifecycle must reach the org-wide compliance log (backlog 58).
-
-Before this, create/close/harm-determination/notice events journaled ONLY
-into incident_events (the per-incident trail), so org_compliance_log, the
-evidence stream an auditor reads first, had no idea an incident ever
-existed. Inconsistent by inspection: changing the org's DEFAULT regimes was
-evidence-logged while closing an actual incident was not.
-
-The mirror is thin (id, title, transition) and best-effort; the incident
-journal stays the authoritative detail. These tests drive the HTTP API the
-way the form does and assert each transition lands in the log exactly once.
-
-Requires local MySQL. Run:  venv/bin/python tests/test_incident_compliance_mirror.py
-"""
 import sys
 import uuid
 import unittest

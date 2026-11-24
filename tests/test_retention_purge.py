@@ -1,12 +1,3 @@
-"""
-DB integration tests for scripts/retention_purge.py.
-
-Seeds a synthetic org with backdated conversations/messages/trail entries via
-raw SQL and runs the purge phases against it. Uses --force semantics (a tiny
-org always trips the blast-radius guard by percentage).
-
-Run:  venv/bin/python tests/test_retention_purge.py
-"""
 import argparse
 import sys
 import uuid
@@ -20,8 +11,8 @@ from safi_app.persistence import database as db
 import retention_purge as rp
 
 ACTOR = "admin@example.test"
-OLD = "2018-01-15 10:00:00"      # far outside any retention period
-RECENT_TRAIL = None               # entries created now
+OLD = "2018-01-15 10:00:00"
+RECENT_TRAIL = None
 
 
 def args(**kw):
@@ -59,7 +50,6 @@ class TestRetentionPurge(unittest.TestCase):
         cur.close()
         conn.close()
 
-    # --- seeding helpers -------------------------------------------------
 
     def raw(self, sql, params=()):
         conn = db.get_db_connection()
@@ -73,7 +63,6 @@ class TestRetentionPurge(unittest.TestCase):
 
     def seed_conversation(self, message_ts=OLD, conv_created=OLD, n_messages=2,
                           backdate_trail=True):
-        """A conversation with messages+trail, backdated as requested."""
         cid = db.create_conversation(self.uid)["id"]
         for i in range(n_messages):
             mid = str(uuid.uuid4())
@@ -99,7 +88,6 @@ class TestRetentionPurge(unittest.TestCase):
         rows = [e for e in db.list_compliance_log(self.org_id, 50) if e["event_type"] == event_type]
         return rows[0] if rows else None
 
-    # --- tests ------------------------------------------------------------
 
     def test_old_conversation_purged_with_trail_and_evidence(self):
         cid = self.seed_conversation()
@@ -108,14 +96,12 @@ class TestRetentionPurge(unittest.TestCase):
         ev = self.last_event("purge_completed")
         self.assertIsNotNone(ev)
         self.assertEqual(ev["detail"]["counts"]["conversations"], 1)
-        self.assertEqual(ev["detail"]["counts"]["chat_history"], 4)  # 2 turns = 4 rows
+        self.assertEqual(ev["detail"]["counts"]["chat_history"], 4)
         self.assertGreater(ev["detail"]["counts"]["chat_audit_trail_chains"], 0)
         self.assertIsNotNone(self.last_event("purge_started"))
 
     def test_recent_chain_in_old_conversation_survives(self):
         cid = self.seed_conversation()
-        # A message deleted RECENTLY: its trail chain (created now, not backdated)
-        # is inside its own retention window and must survive the purge.
         mid = str(uuid.uuid4())
         db.insert_turn_atomic(cid, "late prompt", mid)
         self.raw("UPDATE chat_history SET timestamp=%s WHERE conversation_id=%s", (OLD, cid))
@@ -170,13 +156,12 @@ class TestRetentionPurge(unittest.TestCase):
         rp.purge_org(self.conn, self.org_row(), args())
         rp.purge_org(self.conn, self.org_row(), args())
         self.assertEqual(self.counts(cid), (0, 0, 0))
-        # second run logs zero-count completion
         evs = [e for e in db.list_compliance_log(self.org_id, 50) if e["event_type"] == "purge_completed"]
         self.assertEqual(len(evs), 2)
         self.assertEqual(evs[0]["detail"]["counts"]["conversations"], 0)
 
     def test_saved_content_purged_by_age(self):
-        cid = self.seed_conversation(message_ts=None, backdate_trail=False)  # keep conversation alive
+        cid = self.seed_conversation(message_ts=None, backdate_trail=False)
         mid = self.raw("SELECT message_id FROM chat_history WHERE conversation_id=%s AND role='ai' LIMIT 1", (cid,))[0]["message_id"]
         saved = db.save_content(self.uid, mid)
         self.raw("UPDATE saved_content SET created_at=%s WHERE id=%s", (OLD, saved["id"]))

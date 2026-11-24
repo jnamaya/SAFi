@@ -1,10 +1,3 @@
-"""Client-side context management: tool_result truncation and ID tagging.
-
-Mirrors the server's bounding idioms (core/orchestrator.py _bound_result):
-shrink *result bodies only*, never drop entries, so server-side task-state
-counts and reconciliation stay structurally intact. Older results get a
-75/25 head+tail window; the newest results are preserved verbatim.
-"""
 from __future__ import annotations
 
 import hashlib
@@ -23,7 +16,6 @@ TRUNC_MARKER = "\n... [result truncated; showing first {head} and last {tail} of
 
 
 def _bound_result(body: str, max_chars: int) -> str:
-    """Return body bounded to max_chars using a 75/25 head+tail window."""
     if len(body) <= max_chars:
         return body
     head = int(max_chars * 0.75)
@@ -33,9 +25,6 @@ def _bound_result(body: str, max_chars: int) -> str:
 
 
 def _bound_arguments(args: Any, max_chars: int = DEFAULT_MAX_ARG_CHARS) -> Any:
-    """Return a copy of tool arguments with oversized string payloads (e.g. write content)
-    replaced by a clean intact-write receipt so mid-string head+tail splices never trick
-    the model into thinking its written file was corrupted on disk."""
     if not isinstance(args, dict) or max_chars <= 0:
         return args
     bounded_args: Dict[str, Any] = {}
@@ -58,14 +47,6 @@ def truncate_tool_results(
     new_kept: int = DEFAULT_NEW_KEPT,
     total_cap: int = DEFAULT_TOTAL_CAP,
 ) -> List[Dict[str, Any]]:
-    """Return a bounded copy of tool_results.
-
-    - The newest `new_kept` entries keep full result bodies.
-    - Older entries get result bodies bounded via _bound_result.
-    - Entries beyond `total_cap` oldest are dropped and summarized in a
-      harness_note so the server knows history was windowed client-side.
-    - Every entry carries a stable `result_id` for ID-based reconciliation.
-    """
     if not tool_results:
         return []
 

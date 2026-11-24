@@ -1,25 +1,12 @@
 import * as api from '../../core/api.js';
 
-// Shared tool-checklist renderer used by both the Agent wizard (Tools step)
-// and the Policy wizard (Tools & Controls step). The canonical tool list
-// comes from the backend registry via GET /api/agents/tools.
 
 const CHECK_SVG = '<svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>';
 
-/**
- * Fetch the backend tool categories. Returns an array of
- * { category, tools: [{ name, label, description, icon }] }, or null on error.
- */
 export async function loadToolCategories(policyId = null) {
     try {
         const res = await api.fetchAvailableTools(policyId);
         if (res.ok && res.tools) {
-            // The backend marks each tool with allowed_by_policy when a policy
-            // narrows. Carried through so callers can filter on the SERVER's
-            // answer instead of comparing raw strings, which is what broke:
-            // a policy authorizing the connector `demo_server` never matched
-            // the cards `demo_echo` and `demo_add`, so an agent whose policy
-            // allowed a whole server was offered none of its tools.
             res.tools._policyNarrows = !!res.policy_narrows;
             return res.tools;
         }
@@ -29,10 +16,6 @@ export async function loadToolCategories(policyId = null) {
     return null;
 }
 
-/**
- * The set of tool names a policy authorizes, taken from the backend marks.
- * Returns null when nothing narrows, matching the existing filter contract.
- */
 export function policyFilterFrom(categories) {
     if (!categories || !categories._policyNarrows) return null;
     const allowed = new Set();
@@ -62,8 +45,6 @@ function officeNote() {
         </div>`;
 }
 
-// Build a single checkbox tool card. `afterToggle` (optional) runs after the
-// selection state and card styling have updated — used to refresh badges.
 function buildToolCard(tool, isSelected, onToggle, afterToggle) {
     const checked = isSelected(tool.name);
     const card = document.createElement('label');
@@ -94,21 +75,6 @@ function buildToolCard(tool, isSelected, onToggle, afterToggle) {
     return card;
 }
 
-/**
- * Render category cards with checkbox tool cards into `container`.
- *
- * opts:
- *   categories  - array from loadToolCategories()
- *   isSelected  - (toolName) => boolean
- *   onToggle    - (toolName, checked) => void
- *   filter      - optional Set<string> of allowed tool names. Tools not in the
- *                 set are hidden; categories that end up empty are skipped.
- *   collapsible - when true, each category is a collapsible row with a
- *                 "selected / total" badge. Categories with a selection are
- *                 expanded on first render; the rest start collapsed.
- *
- * Returns the number of tool cards actually rendered.
- */
 export function renderToolGrid(container, { categories, isSelected, onToggle, filter = null, collapsible = false }) {
     container.innerHTML = '';
     let rendered = 0;

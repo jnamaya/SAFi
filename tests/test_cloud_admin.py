@@ -1,5 +1,3 @@
-"""Unit tests for Microsoft 365 and Azure cloud administration in SAFi CLI."""
-
 import json
 import unittest
 from pathlib import Path
@@ -59,12 +57,10 @@ class TestCloudAdmin(unittest.TestCase):
         }
         mock_post.return_value = mock_resp
 
-        # First call hits network
         token1 = cloud.acquire_oauth_token("tenant-1", "client-1", "secret-1", "https://graph.microsoft.com/.default")
         self.assertEqual(token1, "token-abc-123")
         self.assertEqual(mock_post.call_count, 1)
 
-        # Second call uses memory cache
         token2 = cloud.acquire_oauth_token("tenant-1", "client-1", "secret-1", "https://graph.microsoft.com/.default")
         self.assertEqual(token2, "token-abc-123")
         self.assertEqual(mock_post.call_count, 1)

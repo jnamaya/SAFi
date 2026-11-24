@@ -3,34 +3,18 @@ import * as ui from '../ui/ui.js';
 import * as uiAuthSidebar from '../ui/ui-auth-sidebar.js';
 import * as uiMessages from '../ui/ui-messages.js';
 import { openConversationShareDialog, openProjectShareDialog } from '../ui/ui-share-dialog.js';
-import * as cache from './cache.js'; // Use cache for optimistic updates
-// --- CONVERSATION STATE ---
+import * as cache from './cache.js';
 export let currentConversationId = null;
 let convoToRename = { id: null, oldTitle: null };
 let convoToDelete = null;
 
-// --- PROJECT (WORKSPACE) STATE ---
-// `projects` holds the user's project list; `currentProjectId` is the project a
-// newly-created chat will be filed under (null = loose / no project).
 let projects = [];
 let currentProjectId = null;
-// Conversations and folders shared with this user by another org member
-// (backlog 56). Best-effort, org members only: an unauthenticated or
-// org-less session just sees an empty section, never an error.
 let sharedConversations = [];
 let sharedProjects = [];
-// The other direction: ids of this user's OWN conversations and folders that
-// carry a grant, so the sidebar can mark what they are sharing. Ids only —
-// who it is shared with comes from the share dialog, which is also where it
-// is revoked. There is deliberately no "Shared by me" section: these items
-// already live in the user's own folders and history, and a section would
-// list every one of them a second time.
 let mySharedConvoIds = new Set();
 let mySharedProjectIds = new Set();
 const EXPANDED_PROJECTS_KEY = 'safi_expanded_projects';
-// The collapsed "Shared with me" row rides on the same expanded-state store
-// as real folders; this sentinel is not a project id, so it can never
-// collide with one.
 const SHARED_SECTION_KEY = '__shared_with_me__';
 
 function getExpandedProjects() {
@@ -44,16 +28,11 @@ function getExpandedProjects() {
 function setProjectExpanded(projectId, expanded) {
     const set = getExpandedProjects();
     if (expanded) set.add(projectId); else set.delete(projectId);
-    try { localStorage.setItem(EXPANDED_PROJECTS_KEY, JSON.stringify([...set])); } catch { /* ignore */ }
+    try { localStorage.setItem(EXPANDED_PROJECTS_KEY, JSON.stringify([...set])); } catch {   }
 }
 
-// --- FILE UPLOAD STATE ---
-let pendingFiles = [];   // array — supports multiple attachments
+let pendingFiles = [];
 
-/**
- * Initializes the file upload button and hidden input.
- * Each pick appends to pendingFiles so users can add files from multiple dialogs.
- */
 export function initFileUpload() {
     const fileInput = document.getElementById('file-upload-input');
     if (!fileInput) return;
@@ -72,7 +51,6 @@ export function triggerFilePicker() {
     document.getElementById('file-upload-input')?.click();
 }
 
-/** Returns type-specific colour tokens for the file card. */
 function _getFileTypeConfig(filename) {
     const ext = (filename.split('.').pop() || '').toLowerCase();
     const configs = {
@@ -99,7 +77,6 @@ function _fmtSize(bytes) {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/** Re-renders all pending file chips. Called after any add/remove. */
 function _renderFileChips() {
     const chipArea = document.getElementById('file-chip-area');
     if (!chipArea) return;
@@ -174,17 +151,13 @@ export function handleDelete(id) {
 export async function handleTogglePin(id, isPinned, activeProfileData, user) {
     ui.closeAllConvoMenus();
     const newPinState = !isPinned;
-    const oldPinState = isPinned; // Store old state for rollback
+    const oldPinState = isPinned;
 
     try {
-        // 1. Optimistic UI Update (Update local cache instantly)
-        // This is done BEFORE the network call to make the change feel instant
         await cache.updateConvoInList(id, { is_pinned: newPinState });
 
-        // 2. Refresh list only to update sidebar order/title without scrolling chat
         await refreshConvoListOnly(activeProfileData, user, ui.showModal);
 
-        // 3. API Call (Sync to server)
         const response = await api.togglePinConversation(id, newPinState);
 
         if (response === 'QUEUED') {
@@ -193,24 +166,18 @@ export async function handleTogglePin(id, isPinned, activeProfileData, user) {
             ui.showToast(newPinState ? 'Conversation pinned.' : 'Conversation unpinned.', 'success');
         }
 
-        // 4. Reload list again to ensure server-side update is reflected
         await refreshConvoListOnly(activeProfileData, user, ui.showModal);
 
     } catch (error) {
         console.error('Failed to toggle pin status:', error);
         ui.showToast('Could not save pin status.', 'error');
 
-        // 5. Rollback on failure 
         await cache.updateConvoInList(id, { is_pinned: oldPinState });
         await refreshConvoListOnly(activeProfileData, user, ui.showModal);
     }
 }
 
 
-// --- PROJECT (WORKSPACE) HANDLERS ---
-
-// Styled project modals (create/rename name prompt + delete confirm). Listeners
-// are attached once, lazily; each open swaps in a fresh pending callback.
 let _projectModalsWired = false;
 let _pendingProjectNameSubmit = null;
 let _pendingProjectDelete = null;
@@ -304,7 +271,6 @@ function handleRenameProject(projectId, oldName, activeProfileData, user) {
 
 function handleDeleteProject(projectId, name, activeProfileData, user) {
     ui.closeAllConvoMenus();
-    // Deleting a project keeps its chats — they fall back to History.
     openDeleteProjectModal({
         name,
         onConfirm: async () => {
@@ -359,32 +325,19 @@ function createDefaultPromptHandler(activeProfileData, user) {
     };
 }
 
-// --- CORE CONVERSATION MANAGEMENT ---
 
-/**
- * Loads conversation list from server/cache, re-renders sidebar, 
- * and optionally switches to the active chat and scrolls to the bottom.
- * @param {object} activeProfileData 
- * @param {object} user 
- * @param {function} promptClickHandler 
- * @param {function} showModal 
- * @param {boolean} [shouldSwitchChat=true] - NEW: If false, only the list is refreshed, preserving current chat view.
- */
 export async function loadConversations(activeProfileData, user, promptClickHandler, showModal, shouldSwitchChat = true) {
-    // Check for the flag set during profile change
     const forceNewChat = sessionStorage.getItem('forceNewChat') === 'true';
     if (forceNewChat) {
         sessionStorage.removeItem('forceNewChat');
     }
 
-    // 1. Load from local cache for immediate display
     const cachedConvos = await cache.loadConvoList();
     if (cachedConvos.length > 0) {
         renderConvoList(cachedConvos, activeProfileData, user, showModal);
     }
 
     try {
-        // 2. Fetch fresh data (uses offlineManager/cache)
         const [response, projectResponse, sharedConvoResponse, sharedProjectResponse, mySharesResponse] = await Promise.all([
             api.fetchConversations(),
             api.fetchProjects().catch(() => []),
@@ -403,7 +356,6 @@ export async function loadConversations(activeProfileData, user, promptClickHand
         mySharedConvoIds = new Set(Array.isArray(mySharesResponse?.conversations) ? mySharesResponse.conversations : []);
         mySharedProjectIds = new Set(Array.isArray(mySharesResponse?.projects) ? mySharesResponse.projects : []);
 
-        // 3. Save new list and render if different
         await cache.saveConvoList(conversations);
         renderConvoList(conversations, activeProfileData, user, showModal);
 
@@ -428,11 +380,6 @@ export async function loadConversations(activeProfileData, user, promptClickHand
     }
 }
 
-/**
- * Loads conversation list from server/cache and re-renders sidebar ONLY.
- * Used for actions like Pin/Delete/Rename where we don't want to force
- * the main chat window to reload or scroll.
- */
 export async function refreshConvoListOnly(activeProfileData, user, showModal) {
     return loadConversations(activeProfileData, user, () => { }, showModal, false);
 }
@@ -449,7 +396,6 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
 
     convoList.innerHTML = '';
 
-    // Pinned first, then most-recently-updated.
     const sortConvos = (list) => list.sort((a, b) => {
         if (a.is_pinned !== b.is_pinned) return a.is_pinned ? -1 : 1;
         const dateA = a.last_updated ? new Date(a.last_updated) : new Date(0);
@@ -459,10 +405,10 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
     sortConvos(conversations);
 
     const handlers = {
-        switchHandler: (id) => switchConversation(id, activeProfileData, user, showModal, true), // Click always switches/scrolls
+        switchHandler: (id) => switchConversation(id, activeProfileData, user, showModal, true),
         renameHandler: handleRename,
         deleteHandler: handleDelete,
-        pinHandler: (id, isPinned) => handleTogglePin(id, isPinned, activeProfileData, user), // Pass all args
+        pinHandler: (id, isPinned) => handleTogglePin(id, isPinned, activeProfileData, user),
         moveHandler: (id, projectId) => handleMoveConversation(id, projectId, activeProfileData, user),
         shareHandler: (id, title) => openConversationShareDialog(
             id, title, () => refreshConvoListOnly(activeProfileData, user, showModal)),
@@ -470,7 +416,6 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
         projects: projects,
     };
 
-    // --- PROJECTS SECTION (workspaces that group conversations) ---
     const projectIds = new Set(projects.map(p => p.id));
     const convosByProject = {};
     projects.forEach(p => { convosByProject[p.id] = []; });
@@ -505,20 +450,9 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
             pid, name, () => refreshConvoListOnly(activeProfileData, user, showModal)),
     };
 
-    // --- SHARED WITH ME (backlog 56, collapsed at the top by 56c) ---
-    // One collapsed row above the user's own folders. It used to render
-    // inline below them, which meant a member of three shared folders had
-    // their own Pinned/History pushed down by a dozen rows they did not
-    // create. Collapsed, it costs one row, and the top is where incoming
-    // work is discoverable. Mine and not-mine still never interleave.
-    // Pin/rename/delete/move/share stay owner-only, so both the folder and
-    // loose-conversation handlers here just explain that instead of hitting
-    // an endpoint that would 404 for a non-owner.
     if (sharedProjects.length > 0 || sharedConversations.length > 0) {
         const notOwner = (verb) => () => ui.showToast(`Only the owner can ${verb} this conversation.`, 'info');
 
-        // Grantee-side removal: drops MY grant only. If access still reaches
-        // us via a group or the folder, say so instead of implying it is gone.
         const removeFromShared = async (kind, id, label) => {
             if (!window.confirm(`Remove "${label}" from your shared-with-me list?`)) return;
             try {
@@ -544,9 +478,6 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
             switchHandler: handlers.switchHandler,
             pinHandler: notOwner('pin'),
             renameHandler: notOwner('rename'),
-            // 'delete' on a shared-with-me row means removing MY grant, never
-            // the owner's conversation — the menu renders this as
-            // "Remove from shared with me" via unshareHandler.
             deleteHandler: notOwner('delete'),
             unshareHandler: (id, title) => removeFromShared('conversation', id, title || 'conversation'),
         };
@@ -555,10 +486,6 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
             unshareHandler: (pid, name) => removeFromShared('project', pid, name || 'folder'),
         };
 
-        // A conversation reached via a folder grant renders inside that
-        // folder, same as an owned conversation does — reached via a DIRECT
-        // grant (with or without an unrelated project_id of the owner's own,
-        // which this viewer has no access to) renders as a loose item below.
         const sharedProjectIds = new Set(sharedProjects.map(p => p.id));
         const sharedConvosByProject = {};
         sharedProjects.forEach(p => { sharedConvosByProject[p.id] = []; });
@@ -571,8 +498,6 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
             }
         });
 
-        // Count what the row actually opens onto: folders plus the loose
-        // conversations, not every conversation inside every folder.
         const sectionCount = sharedProjects.length + looseSharedConversations.length;
         const { wrap, body } = uiAuthSidebar.renderSidebarSection(
             'Shared with me', sectionCount, expanded.has(SHARED_SECTION_KEY),
@@ -608,7 +533,6 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
         convoList.appendChild(folder);
     });
 
-    // Loose conversations (no project) keep the original Pinned / History layout.
     const looseConversations = conversations.filter(c => !c.project_id || !projectIds.has(c.project_id));
     const pinnedConversations = looseConversations.filter(c => c.is_pinned);
     const unpinnedConversations = looseConversations.filter(c => !c.is_pinned);
@@ -626,9 +550,6 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
     }
 
     if (unpinnedConversations.length > 0) {
-        // Grouped by recency instead of one undifferentiated "History" stack.
-        // Local midnights, so "Today" means the user's today; last_updated is
-        // patched onto cached rows by the client, created_at covers the rest.
         const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
         const DAY = 86400000;
         const groupOf = (convo) => {
@@ -655,8 +576,6 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
             headerContainer.appendChild(groupHeader);
 
             if (firstHeader) {
-                // Clear-history rides on the first group whichever it is —
-                // bound by delegation on its id, so it must exist exactly once.
                 const clearBtn = document.createElement('button');
                 clearBtn.id = 'clear-all-convos-button';
                 clearBtn.type = 'button';
@@ -674,7 +593,6 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
             });
         }
     } else {
-        // Fallback: List is empty (or all pinned). Show Header anyway.
         const headerContainer = document.createElement('div');
         const mt = pinnedConversations.length > 0 ? 'mt-4 border-t border-gray-100 dark:border-gray-800 pt-4' : 'mt-2';
         headerContainer.className = `px-3 mb-2 ${mt} flex items-center justify-between`;
@@ -694,7 +612,6 @@ function renderConvoList(conversations, activeProfileData, user, showModal) {
         headerContainer.appendChild(clearBtn);
         convoList.appendChild(headerContainer);
     }
-    // Ensure the currently active link is highlighted after rendering
     if (currentConversationId) {
         uiAuthSidebar.setActiveConvoLink(currentConversationId);
     }
@@ -705,8 +622,6 @@ export async function startNewConversation(isInitialLoad = false, activeProfileD
     if (ui.elements.controlPanelView) ui.elements.controlPanelView.classList.add('hidden');
     if (ui.elements.chatView) ui.elements.chatView.classList.remove('hidden');
 
-    // The next created chat lands in this project (null = loose). The global
-    // "New Chat" button passes no projectId, so it always clears the context.
     currentProjectId = projectId;
 
     if (!isInitialLoad) {
@@ -720,17 +635,8 @@ export async function startNewConversation(isInitialLoad = false, activeProfileD
         const firstName = user && user.name ? user.name.split(' ')[0] : '';
         uiMessages.displayEmptyState(activeProfileData, promptClickHandler, firstName);
     }
-    // We rely on sendMessage to create the conversation when the user types the first message.
 }
 
-/**
- * Switches the main chat view to the specified conversation ID.
- * @param {string} id - The conversation ID.
- * @param {object} activeProfileData 
- * @param {object} user 
- * @param {function} showModal 
- * @param {boolean} [shouldScroll=false] - NEW: If true, scrolls to the bottom after rendering history.
- */
 export async function switchConversation(id, activeProfileData, user, showModal, shouldScroll = false) {
     if (ui.elements.controlPanelView) ui.elements.controlPanelView.classList.add('hidden');
     if (ui.elements.chatView) ui.elements.chatView.classList.remove('hidden');
@@ -740,7 +646,6 @@ export async function switchConversation(id, activeProfileData, user, showModal,
     uiMessages.resetChatView();
     uiAuthSidebar.updateActiveProfileChip(activeProfileData);
 
-    // Set title optimistically
     try {
         const activeLink = document.querySelector(`a[data-id="${id}"]`);
         const title = activeLink ? activeLink.querySelector('.convo-title').textContent : 'SAFi';
@@ -749,49 +654,36 @@ export async function switchConversation(id, activeProfileData, user, showModal,
         uiAuthSidebar.updateChatTitle('SAFi');
     }
 
-    // 1. Load from local UI state cache first
     const cachedHistory = await cache.loadConvoHistory(id);
     if (cachedHistory.length > 0) {
-        // Updated to pass activeProfileData for retry logic
         renderHistory(cachedHistory, user, showModal, activeProfileData);
-        if (shouldScroll) ui.scrollToBottom(); // Scroll only if requested
+        if (shouldScroll) ui.scrollToBottom();
     } else {
         const firstName = user && user.name ? user.name.split(' ')[0] : '';
         uiMessages.displayEmptyState(activeProfileData, createDefaultPromptHandler(activeProfileData, user), firstName);
     }
 
     try {
-        // 2. Then fetch from network (or network's API cache via offlineManager)
         const historyResponse = await api.fetchHistory(id);
         const history = Array.isArray(historyResponse) ? historyResponse
             : (historyResponse && Array.isArray(historyResponse.history)) ? historyResponse.history
                 : [];
 
-        // 3. Save to local UI state cache, re-render, and scroll
         await cache.saveConvoHistory(id, history);
 
-        // Only re-render if the newly fetched history is different from the cache we rendered,
-        // or if we initially rendered the empty state (cachedHistory.length === 0).
         if (cachedHistory.length === 0 || JSON.stringify(cachedHistory) !== JSON.stringify(history)) {
             uiMessages.resetChatView();
-            // Updated to pass activeProfileData for retry logic
             renderHistory(history, user, showModal, activeProfileData);
-            if (shouldScroll) ui.scrollToBottom(); // Scroll only if requested
+            if (shouldScroll) ui.scrollToBottom();
         }
     } catch (error) {
         console.error('Failed to fetch conversation history:', error);
-        // If fetch failed but we rendered cache, just warn.
         if (cachedHistory.length === 0) {
             ui.showToast('Could not load chat history.', 'error');
         }
     }
 }
 
-/**
- * Strips injected document context blocks from a user message before display.
- * The backend appends [UPLOADED DOCUMENT: ...]...[END DOCUMENT] to the stored
- * turn content; we never want to render that wall of text in the chat bubble.
- */
 function _stripDocumentContext(content) {
     if (typeof content !== 'string') return content;
     return content.replace(/\n\n\[UPLOADED DOCUMENT:[\s\S]*?\[END DOCUMENT\]/g, '').trim();
@@ -800,8 +692,6 @@ function _stripDocumentContext(content) {
 function renderHistory(history, user, showModal, activeProfileData) {
     if (!history || history.length === 0) return;
 
-    // The most recent user prompt seen while walking the history, so each AI
-    // turn's redo knows what to re-ask. Stripped form — see where it is set.
     let _lastReplayedUserPrompt = null;
 
     history.forEach((turn, i) => {
@@ -811,20 +701,11 @@ function renderHistory(history, user, showModal, activeProfileData) {
         const ledger = typeof turn.conscience_ledger === 'string' ? JSON.parse(turn.conscience_ledger) : turn.conscience_ledger;
         const values = typeof turn.profile_values === 'string' ? JSON.parse(turn.profile_values) : turn.profile_values;
 
-        // Historical turns may still carry suggested_prompts in the database.
-        // They are deliberately NOT rendered: the feature is gone because it was
-        // an ungoverned model call, and a stored chip is still ungoverned output
-        // offered as a one-click action. The rows stay for the record.
 
-        // Filter out null/undefined scores before passing to the trend line.
         const scoresHistory = history.slice(0, i + 1)
             .map(t => t.spirit_score)
             .filter(s => s !== null && s !== undefined);
 
-        // Point-in-time governance provenance persisted with the turn
-        // (chat_history.policy_id / policy_version). The display name resolves
-        // from the active profile when the ids match; otherwise the modal
-        // falls back to the humanized policy id.
         const turnPolicyId = (turn.policy_id && turn.policy_id !== 'standalone') ? turn.policy_id : null;
 
         const payload = {
@@ -841,12 +722,10 @@ function renderHistory(history, user, showModal, activeProfileData) {
             spirit_score: turn.spirit_score,
             spirit_scores_history: scoresHistory,
             final_output: turn.role === 'ai' ? turn.content : null,
-            message_id: turn.message_id // Ensure message_id is in payload
+            message_id: turn.message_id
         };
 
         const options = {};
-        // Re-enter the composer with `text` and send it. Shared by the user
-        // bubble's retry and the AI bar's redo — both are "ask this again".
         const resend = activeProfileData ? (text) => {
             ui.elements.messageInput.value = text;
             autoSize();
@@ -861,14 +740,10 @@ function renderHistory(history, user, showModal, activeProfileData) {
             if (resend) options.onRetry = resend;
         }
 
-        // Strip injected document context from user messages before rendering
         const displayContent = turn.role === 'user'
             ? _stripDocumentContext(turn.content)
             : turn.content;
 
-        // Redo on the answer's action bar re-asks the prompt that PRODUCED it.
-        // Tracked as we walk the history (the stripped form, so a redo never
-        // re-injects a stale document context block into a fresh turn).
         if (turn.role === 'user') {
             _lastReplayedUserPrompt = displayContent;
         } else if (resend && _lastReplayedUserPrompt) {
@@ -886,11 +761,6 @@ function renderHistory(history, user, showModal, activeProfileData) {
                 const freshHistory = await cache.loadConvoHistory(currentConversationId);
                 const msgIndex = freshHistory.findIndex(m => m.message_id === p.message_id);
 
-                // The server derives this now (get_audit_result), so it is
-                // authoritative and independent of whether the client is even
-                // allowed to cache. Recompute from the cache only when the
-                // payload has no server-provided series, and never let a cache
-                // miss erase a series we already have.
                 let freshScores = p.spirit_scores_history || [];
                 if (!freshScores.length && msgIndex > -1) {
                     freshScores = freshHistory.slice(0, msgIndex + 1)
@@ -903,10 +773,6 @@ function renderHistory(history, user, showModal, activeProfileData) {
             options
         );
 
-        // For historical messages that pre-date inline audit data, fetch once —
-        // and if the audit is genuinely still running (a turn reloaded seconds
-        // after it was sent), keep watching rather than giving up until the
-        // next reload.
         if (turn.role === 'ai' && turn.message_id && turn.audit_status === 'pending') {
             fetchAndApplyAuditResult(turn.message_id).then((outcome) => {
                 if (outcome === 'pending') _pollForAudit(turn.message_id);
@@ -921,7 +787,7 @@ async function showConscienceAuditModal(payload) {
         try {
             const result = await api.fetchAuditResult(payload.message_id);
             if (result?.status === 'complete') context = result;
-        } catch { /* the cached audit remains viewable without extra context */ }
+        } catch {   }
     }
     ui.showModal('conscience', {
         ...payload,
@@ -933,7 +799,6 @@ async function showConscienceAuditModal(payload) {
 }
 
 
-// --- ABORT CONTROLLER STATE ---
 let currentAbortController = null;
 let currentAiMessageId = null;
 
@@ -946,10 +811,6 @@ function generateUUID() {
 }
 
 async function recoverInFlightTurn(messageId, signal) {
-    // Poll /api/audit_result when the long-lived /api/process_prompt socket
-    // drops mid-flight (e.g. net::ERR_NETWORK_CHANGED). If the server never
-    // created the turn (consecutive 404s), bail out quickly; if it did, keep
-    // updating the trace until audit_status === 'complete'.
     let consecutiveNotFound = 0;
     const deadline = Date.now() + 1_800_000;
     while (Date.now() < deadline && (!signal || !signal.aborted)) {
@@ -973,20 +834,17 @@ async function recoverInFlightTurn(messageId, signal) {
                 consecutiveNotFound += 1;
                 if (consecutiveNotFound >= 3) return false;
             }
-            // Transient offline blip while recovering — keep trying until deadline.
         }
     }
     return false;
 }
 
 export async function sendMessage(activeProfileData, user) {
-    // 1. Check if we are currently sending (and thus can cancel)
     if (currentAbortController) {
         console.log('Cancelling request...');
         currentAbortController.abort();
         currentAbortController = null;
 
-        // Tell the backend to stop the pipeline
         if (currentAiMessageId) {
             api.cancelMessage(currentAiMessageId).catch(() => {});
             currentAiMessageId = null;
@@ -994,7 +852,6 @@ export async function sendMessage(activeProfileData, user) {
 
         ui.showToast('Request cancelled.', 'info');
 
-        // Reset button immediately
         const buttonIcon = document.getElementById('button-icon');
         const buttonLoader = document.getElementById('button-loader');
         buttonIcon.classList.remove('hidden');
@@ -1007,12 +864,10 @@ export async function sendMessage(activeProfileData, user) {
         buttonLoader.classList.add('hidden');
 
         ui.elements.sendButton.classList.remove('canceling');
-        // Re-evaluate disabled state based on input text (likely empty if just sent)
-        // But the input was cleared! So we should keep it focused.
         ui.elements.sendButton.disabled = ui.elements.messageInput.value.trim().length === 0;
 
         ui.clearLoadingInterval();
-        const loadingIndicator = document.querySelector('.loading-indicator'); // Or robust find
+        const loadingIndicator = document.querySelector('.loading-indicator');
         if (loadingIndicator) loadingIndicator.remove();
         return;
     }
@@ -1030,7 +885,6 @@ export async function sendMessage(activeProfileData, user) {
     if (!currentConversationId) {
         isNewConversation = true;
         try {
-            // currentProjectId files the chat under a project when one is active.
             const newConvo = await api.createNewConversation(currentProjectId);
 
             if (newConvo === 'QUEUED') {
@@ -1039,7 +893,6 @@ export async function sendMessage(activeProfileData, user) {
             }
 
             currentConversationId = newConvo.id;
-            // The API response now includes is_pinned: false
             const newConvoMeta = {
                 id: newConvo.id,
                 title: 'Untitled',
@@ -1049,13 +902,6 @@ export async function sendMessage(activeProfileData, user) {
             };
             await cache.updateConvoInList(newConvo.id, newConvoMeta);
 
-            // One renderer for both paths. Loose chats used to be prepended
-            // with a DOM shortcut that hunted for "the first h3", written
-            // before the Folders header and the date groups existed — so a new
-            // conversation appeared ABOVE the folders, then jumped into Today
-            // on the next full render (a refresh). Where a row lands must be
-            // one function's decision, and renderConvoList is that function:
-            // the fresh last_updated already sorts it to the top of Today.
             if (newConvoMeta.project_id) {
                 setProjectExpanded(newConvoMeta.project_id, true);
             }
@@ -1072,52 +918,26 @@ export async function sendMessage(activeProfileData, user) {
     const buttonIcon = document.getElementById('button-icon');
     const buttonLoader = document.getElementById('button-loader');
 
-    // UI: Show Stop Button instead of Spinner/Arrow
-    // Ideally we want a nice transition. For now, swap icon to "Stop"
-    buttonIcon.classList.remove('hidden'); // Keep icon visible
+    buttonIcon.classList.remove('hidden');
     buttonIcon.innerHTML = `
         <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
           <rect x="5" y="5" width="10" height="10" rx="1"></rect>
         </svg>`;
 
-    // We do NOT use the spinner anymore, or we use it as a border? 
-    // The user asked for "cancel option to the spinning button". 
-    // Let's keep the spinner but put the stop icon INSIDE it?
-    // Current CSS structure: button-icon OR button-loader. Loader replaces icon.
-    // Let's show loader AND stop icon.
-    buttonLoader.classList.remove('hidden'); // Spinner rotating
-    // Remove the icon? No, we want the stop icon visible. 
-    // The loader is likely a div that spins. If we put text inside it spins.
-    // Let's look at index.html: loader is empty div.
-    // Solution: Keep loader spinning (if it's absolute/overlay) or just show Stop icon.
-    // "cancel option to the spinning button" -> implied Stop Button.
-    // Standard UI: Spinner ring around a square stop button.
-    // Simpler UI: Just a stop button. 
+    buttonLoader.classList.remove('hidden');
 
-    // Let's do: Stop Icon only. No spinner, or spinner around it? 
-    // Given the request, "spinning button" usually means "button is loading". 
-    // I will replace the spinner with an actionable Stop Icon.
-    buttonLoader.classList.add('hidden'); // Hide simple spinner
-    // Stop icon is already set above.
-    ui.elements.sendButton.disabled = false; // ENABLED so we can click to cancel!
+    buttonLoader.classList.add('hidden');
+    ui.elements.sendButton.disabled = false;
 
-    // Turn button red while the request is in flight
     ui.elements.sendButton.classList.add('canceling');
 
-    // Init AbortController
     currentAbortController = new AbortController();
 
     const now = new Date();
     const init = encodeURIComponent((user && user.name ? user.name.charAt(0) : 'U').toUpperCase());
     const pic = user && (user.picture || user.avatar) || `data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 40 40'><rect width='40' height='40' fill='%2316a34a'/><text x='50%25' y='54%25' dominant-baseline='middle' text-anchor='middle' fill='%23FFFFFF' font-family='sans-serif' font-size='18' font-weight='600'>${init}</text></svg>`;
-    // generateUUID(), never crypto.randomUUID() directly: the Web Crypto API is
-    // only exposed in a secure context, so on a self-hosted instance reached
-    // over plain HTTP by IP or hostname (http://192.168.1.218:5000) this throws
-    // TypeError and kills sendMessage before the fetch — the prompt silently
-    // never leaves the browser. Works on localhost, fails on every LAN deploy.
     const userMessageId = generateUUID();
 
-    // --- NEW: Retry Handler for optimistic message ---
     const retryHandler = (text) => {
         ui.elements.messageInput.value = text;
         autoSize();
@@ -1126,7 +946,6 @@ export async function sendMessage(activeProfileData, user) {
         sendMessage(activeProfileData, user);
     };
 
-    // Capture pending file infos before extraction (for display in chat bubble)
     const pendingFileInfos = pendingFiles.map(f => ({ name: f.name, size: f.size }));
 
     uiMessages.displayMessage('user', userMessage, now, userMessageId, null, null, {
@@ -1140,21 +959,19 @@ export async function sendMessage(activeProfileData, user) {
         content: userMessage,
         timestamp: now.toISOString(),
         message_id: userMessageId,
-        audit_status: 'n/a' // User messages don't need audit
+        audit_status: 'n/a'
     };
     await cache.addMessageToHistory(currentConversationId, userMessageObject);
 
     const originalMessage = ui.elements.messageInput.value;
     ui.elements.messageInput.value = '';
-    autoSize(); // resets disabled=true (empty input) — re-enable immediately for cancel
+    autoSize();
     ui.elements.sendButton.disabled = false;
 
     const loadingIndicator = uiMessages.showLoadingIndicator(activeProfileData?.name || 'Assistant');
 
     const aiMessageId = generateUUID();
     currentAiMessageId = aiMessageId;
-    // Poll for live reasoning status only while the API call is in flight.
-    // Stops automatically in the finally block. Audit data comes from the response itself.
     let statusPollInterval = setInterval(async () => {
         try {
             const result = await api.fetchAuditResult(aiMessageId);
@@ -1165,10 +982,9 @@ export async function sendMessage(activeProfileData, user) {
                     uiMessages.updatePipelineTrace(log);
                 }
             }
-        } catch (e) { /* message may not exist yet — ignore */ }
+        } catch (e) {   }
     }, 1500);
 
-    // --- DOCUMENT UPLOAD: Extract text from all pending files ---
     let documentContext = '';
     if (pendingFiles.length > 0) {
         const filesToProcess = [...pendingFiles];
@@ -1176,12 +992,6 @@ export async function sendMessage(activeProfileData, user) {
         for (const file of filesToProcess) {
             try {
                 const extracted = await api.extractDocumentText(file);
-                // The provenance line rides inside the prompt on purpose: the
-                // prompt is encrypted into chat_history AND the audit trail, so
-                // the digest lands wherever the analysed text lands, with no
-                // second store to purge, hold or export. It answers the only
-                // question anyone asks later — "is this the document the agent
-                // read?" — which the extracted text alone cannot.
                 const provenance = [
                     `sha256 ${extracted.sha256 || 'unavailable'}`,
                     `${(extracted.total_chars || 0).toLocaleString()} characters`,
@@ -1191,9 +1001,6 @@ export async function sendMessage(activeProfileData, user) {
                 ].join(' | ');
                 documentContext += `\n\n[UPLOADED DOCUMENT: ${extracted.filename}]\n[PROVENANCE: ${provenance}]\n[INSTRUCTION: Before analyzing this document, first assess whether its content falls within your defined role and expertise. If the document is outside your domain, politely decline to analyze it in depth, explain why it falls outside your scope, and suggest what type of professional or agent would be more appropriate. Do not force a connection between the document and your role if none exists.${extracted.was_truncated ? ' This document was truncated: say so if the user asks about anything you cannot see.' : ''}]\n${extracted.text}\n[END DOCUMENT]`;
                 if (extracted.was_truncated) {
-                    // NOT 'info' — showToast suppresses that type entirely, so
-                    // this warning was never shown. A document was silently cut
-                    // and the agent answered on part of it with nobody told.
                     const kept = (extracted.chars_used || 0).toLocaleString();
                     const total = (extracted.total_chars || 0).toLocaleString();
                     ui.showToast(
@@ -1205,7 +1012,6 @@ export async function sendMessage(activeProfileData, user) {
                 _clearAllPendingFiles();
                 if (loadingIndicator && loadingIndicator.parentNode) loadingIndicator.remove();
                 ui.clearLoadingInterval();
-                // Reset button
                 buttonIcon.classList.remove('hidden');
                 buttonIcon.innerHTML = `
                    <svg class="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
@@ -1222,13 +1028,10 @@ export async function sendMessage(activeProfileData, user) {
             }
         }
     }
-    // --- END DOCUMENT UPLOAD ---
 
-    // Build the full message: user text + document context (if any)
     const fullMessage = documentContext ? (userMessage || 'Please analyze the attached document.') + documentContext : userMessage;
 
     try {
-        // PASS SIGNAL AND MESSAGE_ID HERE
         const initialResponse = await api.processUserMessage(
             fullMessage,
             currentConversationId,
@@ -1242,29 +1045,22 @@ export async function sendMessage(activeProfileData, user) {
 
         if (initialResponse === 'QUEUED') {
             ui.showToast('Message queued, will send when online.', 'info');
-            // Remove user message from display/cache as it will be resent on flush.
             const userMsgElement = document.querySelector(`[data-message-id="${userMessageId}"]`);
             if (userMsgElement) userMsgElement.remove();
             return;
         }
 
-        // --- START BUG FIX: Handle empty/missing data from API ---
         const mainAnswer = initialResponse.finalOutput ?? '[Sorry, the model returned an empty response.]';
         const ledger = typeof initialResponse.conscienceLedger === 'string' ? JSON.parse(initialResponse.conscienceLedger) : (initialResponse.conscienceLedger || []);
         const values = typeof initialResponse.profileValues === 'string' ? JSON.parse(initialResponse.profileValues) : (initialResponse.profileValues || []);
         const messageId = initialResponse.messageId || aiMessageId;
-        // Resolve human-readable profile name
         let profileName = initialResponse.activeProfile;
-        // If the returned profile matches the current active profile key, use the readable name
         if (activeProfileData && activeProfileData.key === profileName) {
             profileName = activeProfileData.name;
         }
-        // Fallback if initialResponse.activeProfile was null
         if (!profileName && activeProfileData) {
             profileName = activeProfileData.name;
         }
-        // Governance provenance for this turn, straight from the response
-        // (same values the backend persisted to chat_history).
         const respPolicyId = (initialResponse.policyId && initialResponse.policyId !== 'standalone')
             ? initialResponse.policyId : null;
         const respPolicyVersion = respPolicyId ? (initialResponse.policyVersion ?? null) : null;
@@ -1273,15 +1069,9 @@ export async function sendMessage(activeProfileData, user) {
             : null;
         const spiritScore = initialResponse.spirit_score;
         const isBlocked = mainAnswer.includes("🛑 **The answer was blocked**");
-        // --- END BUG FIX ---
 
-        // Fetch full history *including* the user message we just added
         const historyForPayload = await cache.loadConvoHistory(currentConversationId);
 
-        // Filter out null/undefined scores *before* passing to the trend line.
-        // Prefer the server-derived series: the local cache is empty whenever
-        // the org disables offline persistence (the default), which used to
-        // leave this array one entry long and silently drop the trend.
         const serverScores = Array.isArray(initialResponse.spiritScoresHistory)
             ? initialResponse.spiritScoresHistory
             : (Array.isArray(initialResponse.spirit_scores_history)
@@ -1293,7 +1083,6 @@ export async function sendMessage(activeProfileData, user) {
             scoresHistoryForPayload = historyForPayload
                 .map(t => t.spirit_score)
                 .filter(s => s !== null && s !== undefined);
-            // Add the new score (if it exists) to the history for the trend line
             if (spiritScore !== null && spiritScore !== undefined) {
                 scoresHistoryForPayload.push(spiritScore);
             }
@@ -1340,11 +1129,6 @@ export async function sendMessage(activeProfileData, user) {
                 const freshHistory = await cache.loadConvoHistory(currentConversationId);
                 const msgIndex = freshHistory.findIndex(m => m.message_id === p.message_id);
 
-                // The server derives this now (get_audit_result), so it is
-                // authoritative and independent of whether the client is even
-                // allowed to cache. Recompute from the cache only when the
-                // payload has no server-provided series, and never let a cache
-                // miss erase a series we already have.
                 let freshScores = p.spirit_scores_history || [];
                 if (!freshScores.length && msgIndex > -1) {
                     freshScores = freshHistory.slice(0, msgIndex + 1)
@@ -1354,9 +1138,6 @@ export async function sendMessage(activeProfileData, user) {
 
                 await showConscienceAuditModal({ ...p, spirit_scores_history: freshScores });
             },
-            // Redo re-asks the prompt that produced this answer — the clean
-            // typed text (userMessage), not the outgoing prompt with document
-            // context appended, so redoing never re-injects a stale attachment.
             { animate: true, onRedo: () => retryHandler(userMessage) }
         );
 
@@ -1368,17 +1149,13 @@ export async function sendMessage(activeProfileData, user) {
         if (initialResponse.newTitle) {
             updateMeta.title = initialResponse.newTitle;
 
-            // The truncation shows immediately; a generated title lands in the
-            // database a beat later (background thread on the light model).
-            // Check and stop as soon as it differs — if generation failed,
-            // the truncation simply stays, which was the old behaviour.
             const convoId = currentConversationId;
             const truncated = initialResponse.newTitle;
             [2500, 7000, 15000].forEach(delay => setTimeout(async () => {
                 try {
-                    if (convoId !== currentConversationId) return; // switched away
+                    if (convoId !== currentConversationId) return;
                     const link = document.querySelector(`a[data-id="${convoId}"] .convo-title`);
-                    if (link && link.textContent !== truncated) return; // already updated
+                    if (link && link.textContent !== truncated) return;
                     const convos = await api.fetchConversations();
                     const fresh = (Array.isArray(convos) ? convos : []).find(c => c.id === convoId);
                     if (fresh && fresh.title && fresh.title !== truncated) {
@@ -1386,7 +1163,7 @@ export async function sendMessage(activeProfileData, user) {
                         if (link) { link.textContent = fresh.title; link.title = fresh.title; }
                         uiAuthSidebar.updateChatTitle(fresh.title);
                     }
-                } catch (e) { /* keep the truncation */ }
+                } catch (e) {   }
             }, delay));
         }
 
@@ -1405,9 +1182,6 @@ export async function sendMessage(activeProfileData, user) {
             return;
         }
 
-        // If the connection dropped mid-flight (e.g. net::ERR_NETWORK_CHANGED),
-        // the backend may still be finishing the turn. Poll audit_result and
-        // reload the conversation instead of leaving the chat dead.
         if ((!error.status || error.status === 502 || error.status === 504) && aiMessageId && currentAbortController) {
             clearInterval(statusPollInterval);
             const recovered = await recoverInFlightTurn(aiMessageId, currentAbortController.signal);
@@ -1422,23 +1196,21 @@ export async function sendMessage(activeProfileData, user) {
                         const link = document.querySelector(`a[data-id="${currentConversationId}"] .convo-title`);
                         if (link) { link.textContent = fresh.title; link.title = fresh.title; }
                     }
-                } catch (e) { /* ignore sidebar refresh errors */ }
+                } catch (e) {   }
                 await switchConversation(currentConversationId, activeProfileData, user, showConscienceAuditModal, true);
                 return;
             }
         }
 
-        // FIX: Ensure loading indicator is removed on error
         if (loadingIndicator && loadingIndicator.parentNode) loadingIndicator.remove();
         ui.clearLoadingInterval();
 
-        // Check for 429 status OR error message
         if (error.status === 429 || (error.message && error.message.includes('DEMO_LIMIT_REACHED'))) {
             ui.showModal('demo_limit');
             const failedMsg = document.querySelector(`[data-message-id="${userMessageId}"]`);
             if (failedMsg) failedMsg.remove();
         } else {
-            console.error("Message send failed:", error); // Keep log
+            console.error("Message send failed:", error);
             uiMessages.displayMessage('ai', 'Sorry, an error occurred.', new Date(), null, null, null);
             ui.showToast(error.message || 'An unknown error occurred.', 'error');
         }
@@ -1446,9 +1218,7 @@ export async function sendMessage(activeProfileData, user) {
         ui.elements.messageInput.value = originalMessage;
         autoSize();
     } finally {
-        // Double check loading indicator removal in case of other exit paths (though catch covers errors)
         if (loadingIndicator && loadingIndicator.parentNode) loadingIndicator.remove();
-        // Reset Button Style
         buttonIcon.classList.remove('hidden');
         buttonIcon.innerHTML = `
            <svg class="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
@@ -1461,31 +1231,22 @@ export async function sendMessage(activeProfileData, user) {
 
         buttonLoader.classList.add('hidden');
 
-        ui.elements.sendButton.classList.remove('canceling'); // Revert to green
+        ui.elements.sendButton.classList.remove('canceling');
 
         ui.elements.sendButton.disabled = false;
 
         currentAbortController = null;
         currentAiMessageId = null;
 
-        // Re-focus and check input state
         ui.elements.messageInput.focus();
-        // Since input is empty after send, disable it again if needed
         ui.elements.sendButton.disabled = ui.elements.messageInput.value.trim().length === 0;
     }
 }
 
-// True only when the server says the audit is finished. A null spirit_score
-// with a 'complete' status is legitimate (Spirit can decline to score a turn),
-// so status is the authority here, not the presence of a score.
 export function auditIsComplete(res) {
     return !!res && res.status === 'complete';
 }
 
-// Whether the live path still needs to poll. `audit_status` is the server's own
-// word for it; a missing score alone is not proof of incompleteness, but on this
-// path it means the chip, the conflict note and the trend are all still absent,
-// so it is worth one confirming fetch.
 export function auditNeedsPolling(initialResponse) {
     if (!initialResponse) return false;
     if (initialResponse.audit_status && initialResponse.audit_status !== 'complete') return true;
@@ -1493,20 +1254,11 @@ export function auditNeedsPolling(initialResponse) {
     return s === null || s === undefined;
 }
 
-/**
- * Applies a finished audit to the cache and the rendered message.
- * Returns 'complete' (applied), 'pending' (try again later), or 'unavailable'
- * (not_found / cancelled / error — stop asking).
- */
 async function fetchAndApplyAuditResult(messageId) {
     if (!currentConversationId) return 'unavailable';
     try {
         const auditResult = await api.fetchAuditResult(messageId);
         if (!auditResult || auditResult.status === 'not_found') return 'unavailable';
-        // Do NOT write a pending audit into the cache. This used to hardcode
-        // audit_status:'complete' below regardless of what came back, so calling
-        // it too early stamped the row complete with a null score — which also
-        // disabled the reload-path retry, since that is gated on 'pending'.
         if (auditResult.status === 'pending') return 'pending';
         if (!auditIsComplete(auditResult)) return 'unavailable';
 
@@ -1526,7 +1278,6 @@ async function fetchAndApplyAuditResult(messageId) {
             await cache.saveConvoHistory(currentConversationId, history);
         }
 
-        // Server-derived when available (get_audit_result), else from cache.
         const spiritScoresHistory = Array.isArray(auditResult.spirit_scores_history)
             && auditResult.spirit_scores_history.length
             ? auditResult.spirit_scores_history.slice()
@@ -1542,9 +1293,6 @@ async function fetchAndApplyAuditResult(messageId) {
 
         uiMessages.updateMessageWithAudit(messageId, payload, async (p) => {
             const idx = history.findIndex(m => m.message_id === p.message_id);
-            // spiritScoresHistory came from the server (auditResult), so it is
-            // authoritative; the cache recomputation is only a fallback for a
-            // payload that predates the server-derived series.
             const freshScores = spiritScoresHistory.length
                 ? [...spiritScoresHistory]
                 : (idx > -1
@@ -1559,10 +1307,6 @@ async function fetchAndApplyAuditResult(messageId) {
     }
 }
 
-// The audit can land after process_prompt returns. Without this, that turn keeps
-// spirit_score null in the cache for the whole session — no score chip, no
-// conflict note, and a spirit_scores_history one entry short, which silently
-// drops the Alignment Trend on every later turn until a reload.
 function _pollForAudit(messageId, attempts = 0) {
     const MAX_ATTEMPTS = 10;
     const DELAY = 2000;
@@ -1571,8 +1315,6 @@ function _pollForAudit(messageId, attempts = 0) {
     setTimeout(async () => {
         if (!currentConversationId) return;
         const outcome = await fetchAndApplyAuditResult(messageId);
-        // 'complete' applied it; 'unavailable' means cancelled/missing — either
-        // way there is nothing to gain by asking again.
         if (outcome === 'pending') _pollForAudit(messageId, attempts + 1);
     }, DELAY);
 }
@@ -1585,54 +1327,24 @@ export function autoSize() {
     const sendButton = ui.elements.sendButton;
 
     const hasText = input.value.trim().length > 0;
-    // Enable send if there is text OR at least one pending file attachment
     sendButton.disabled = !hasText && pendingFiles.length === 0;
 
-    // Snap the height to WHOLE LINES. Setting height = scrollHeight raw was the
-    // wobble: scrollHeight reports 25-26px for a single 24px line depending on
-    // font metrics and zoom, so the box drifted a pixel or two per keystroke and
-    // the centred text visibly shifted. Snapping means the height is always
-    // exactly N lines — it moves in clean 1-line steps or not at all.
-    //
-    // One path for every state: an empty textarea measures as one line, so the
-    // old special case (a hardcoded 24px that disagreed with the markup's
-    // min-height and made first paint differ from typed-then-deleted) is gone
-    // rather than reconciled.
     const cs = window.getComputedStyle(input);
-    const lineHeight = parseFloat(cs.lineHeight) || 24;   // 24px at text-base
-    // scrollHeight includes padding, so dividing it by the line height counts
-    // padding as text. That is precisely how 16px of CSS padding made one line
-    // measure as two: 24+16=40, round(40/24)=2, and the box grew on the first
-    // keystroke and never shrank. Subtract it before dividing, add it back when
-    // setting, and the snap is correct whatever padding the CSS carries.
+    const lineHeight = parseFloat(cs.lineHeight) || 24;
     const padY = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
-    const MAX_LINES = 5;                                  // 120px, under max-h-32
+    const MAX_LINES = 5;
 
-    // Collapse before measuring, or scrollHeight can never shrink below the
-    // previous height when lines are deleted. 'auto', deliberately not '0px':
-    // auto is not interpolable, so the browser snaps instantly even if some
-    // CSS transition covers height — a '0px' collapse is a length, animates,
-    // and the synchronous scrollHeight read then sees the OLD height, which
-    // is exactly how the box once grew but never shrank back. min-height in
-    // the markup keeps the layout from flashing during this reflow.
     input.style.height = 'auto';
     const lines = Math.max(1, Math.min(MAX_LINES,
         Math.round((input.scrollHeight - padY) / lineHeight)));
     input.style.height = `${Math.round(lines * lineHeight + padY)}px`;
 
-    // Scrollbar only once the cap is actually exceeded. Leaving overflow on
-    // auto let the scrollbar flicker in during the measurement pass, and its
-    // appearance changes the wrap width — which changes scrollHeight, which is
-    // its own feedback loop of jiggle.
     input.style.overflowY =
         input.scrollHeight > lines * lineHeight + padY + 1 ? 'auto' : 'hidden';
 }
 
-// Rewrap on viewport changes: a resize alters the wrap width, so the snapped
-// line count is stale until the next keystroke. Cheap enough to run raw.
 window.addEventListener('resize', () => autoSize());
 
-// --- CONVERSATION RENAMING/DELETING/PINNING ---
 
 export async function handleConfirmRename(activeProfileData, user) {
     const { id, oldTitle } = convoToRename;
@@ -1640,9 +1352,8 @@ export async function handleConfirmRename(activeProfileData, user) {
 
     if (newTitle && newTitle !== oldTitle) {
         try {
-            await cache.updateConvoInList(id, { title: newTitle }); // Optimistic UI update
+            await cache.updateConvoInList(id, { title: newTitle });
 
-            // NEW: Only refresh the list, do not switch chat or scroll
             await refreshConvoListOnly(activeProfileData, user, ui.showModal);
 
             const response = await api.renameConversation(id, newTitle);
@@ -1653,7 +1364,6 @@ export async function handleConfirmRename(activeProfileData, user) {
                 ui.showToast('Conversation renamed.', 'success');
             }
 
-            // Reload conversations again after server response
             await refreshConvoListOnly(activeProfileData, user, ui.showModal);
 
             if (id === currentConversationId) {
@@ -1661,7 +1371,7 @@ export async function handleConfirmRename(activeProfileData, user) {
             }
         } catch (error) {
             ui.showToast('Could not rename conversation.', 'error');
-            await cache.updateConvoInList(id, { title: oldTitle }); // Rollback
+            await cache.updateConvoInList(id, { title: oldTitle });
         }
     }
     ui.closeModal();
@@ -1673,22 +1383,17 @@ export async function handleConfirmDelete(activeProfileData, user) {
     if (!id) return;
 
     try {
-        await cache.deleteConvo(id); // Optimistic UI update
+        await cache.deleteConvo(id);
 
         if (id === currentConversationId) {
             currentConversationId = null;
         }
 
-        // NEW: Only refresh the list, then if the current chat was deleted, start a new one
         await refreshConvoListOnly(activeProfileData, user, ui.showModal);
 
         if (currentConversationId === null) {
-            // If deleted chat was the active one, start a fresh view
 
-            // --- THIS IS THE FIX ---
-            // Use the shared helper
             await startNewConversation(false, activeProfileData, user, createDefaultPromptHandler(activeProfileData, user));
-            // --- END FIX ---
         }
 
         const response = await api.deleteConversation(id);
@@ -1699,12 +1404,10 @@ export async function handleConfirmDelete(activeProfileData, user) {
             ui.showToast('Conversation deleted.', 'success');
         }
 
-        // Reload to clean up the queue/ensure final state
         await refreshConvoListOnly(activeProfileData, user, ui.showModal);
 
     } catch (error) {
         ui.showToast('Could not delete conversation.', 'error');
-        // Note: Delete rollback is complex, rely on next sync to fix list if API failed but queue is cleared.
     }
 
     ui.closeModal();
@@ -1713,7 +1416,6 @@ export async function handleConfirmDelete(activeProfileData, user) {
 
 export async function handleConfirmClearAll(activeProfileData, user) {
     try {
-        // Optimistic UI: drop only loose (non-project) chats; project chats stay.
         const kept = (await cache.loadConvoList()).filter(c => c.project_id);
         await cache.saveConvoList(kept);
         currentConversationId = null;

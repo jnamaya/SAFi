@@ -1,54 +1,4 @@
 #!/usr/bin/env python3
-"""Install and manage MCP tool servers from the operator's console.
-
-WHY A CLI EXISTS WHEN THERE IS ALREADY A SCREEN
------------------------------------------------
-The screen can only install HOSTED servers, and that is not a limitation to be
-worked around: starting a package server runs someone else's code on this host,
-which is deployment-level trust and cannot belong to anyone holding an admin
-login in a browser (GOVERNANCE_BACKLOG 48).
-
-The consequence is that the browser reaches the minority of the ecosystem, and
-the least reliable part of it: hosted servers are exactly the ones most likely
-to want OAuth, and measured against the public registry on 2026-08-14 only four
-of ten answered anonymously. The npm and pypi servers that make up most of the
-ecosystem work reliably and were unreachable.
-
-Whoever runs this CLI already has shell on the host, so installing a package
-server here adds no privilege that was not already held. That is the whole
-argument: the CLI is not a bypass, it is the place the decision already lives.
-
-WHERE THIS SITS IN THE PIPELINE
--------------------------------
-    1. install here, on the host
-    2. SAFi connects and asks the server what tools it has
-    3. those tools appear in Settings -> Tools Catalog, visible and INACTIVE
-    4. a policy editor enables specific tools and blocks the rest
-    5. an agent is assigned the tools its policy allows
-    6. the Will authorizes every call by exact name
-
-This command is step 1 only. It grants nothing, and nothing it does can widen
-what any existing agent may do.
-
-NO RESTART NEEDED
------------------
-Writing the file is not enough on its own: each gunicorn worker read it at boot.
-Every write here also bumps the shared generation counter, which is how the GUI
-already tells other workers to catch up, so a server added here appears in the
-running app within one request per worker.
-
-Usage:
-  scripts/safi_mcp.py list
-  scripts/safi_mcp.py search <term>
-  scripts/safi_mcp.py add <registry-name> [--key NAME]
-  scripts/safi_mcp.py add --url https://example.com/mcp [--transport http|sse]
-  scripts/safi_mcp.py add --url https://example.com/mcp --auth oauth
-  scripts/safi_mcp.py add --command npx --args="-y,@scope/server@1.2.3" [--env K=V]
-  scripts/safi_mcp.py add --command node --args="scripts/start.js" --cwd /app/mcp/thing
-  scripts/safi_mcp.py check [--key NAME]
-  scripts/safi_mcp.py remove <key>
-  scripts/safi_mcp.py enable <key> | disable <key>
-"""
 import argparse
 import json
 import os
@@ -56,26 +6,17 @@ import re
 import sys
 from pathlib import Path
 
-# The script's own directory goes on sys.path[0] automatically, and this file
-# must not be importable as `mcp`: the SDK is imported by name deep inside
-# mcp_runtime, and a script called mcp.py shadowed it for its own process
-# ("cannot import name StdioServerParameters from mcp"). Hence safi_mcp.py, and
-# hence dropping the script directory rather than trusting the name alone.
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path[:] = [p for p in sys.path if os.path.abspath(p or ".") != _HERE]
 sys.path.insert(0, os.path.dirname(_HERE))
 
-from safi_app.config import Config, _load_mcp_servers  # noqa: E402
-from safi_app.core import mcp_runtime  # noqa: E402
-from safi_app.core.services import mcp_install, mcp_registry  # noqa: E402
-from safi_app.core.tool_connectors import CONNECTOR_TOOLS  # noqa: E402
+from safi_app.config import Config, _load_mcp_servers
+from safi_app.core import mcp_runtime
+from safi_app.core.services import mcp_install, mcp_registry
+from safi_app.core.tool_connectors import CONNECTOR_TOOLS
 
 KEY_SAFE = re.compile(r"[^a-z0-9_]+")
 
-# npx/uvx fetch from the network at every boot unless the package is pinned, so
-# an unpinned entry means the code running on this host can change without
-# anyone touching this deployment. Warned about rather than refused: pinning is
-# the operator's call, and some internal packages are versioned elsewhere.
 UNPINNED_WARNING = (
     "warning: no version pin. This command fetches the package at every boot, so "
     "what runs here can change without anyone changing this deployment. Pin it "
@@ -100,11 +41,6 @@ def read_servers() -> dict:
 
 
 def write_servers(servers: dict) -> None:
-    """Write the file, then tell the running app to re-read it.
-
-    The bump is best effort: a CLI run on a host whose database is down should
-    still be able to edit the file, and say plainly that a restart is needed.
-    """
     path = _server_file()
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
@@ -136,20 +72,6 @@ def unique_key(base: str, servers: dict) -> str:
 
 
 def check_runtime_available(params: dict) -> None:
-    """Refuse a stdio server whose launcher is not installed here.
-
-    Most registry packages are npm, and a host with no Node could never start
-    one. Without this check the CLI would happily write a definition that can
-    never start, and the failure would surface later as a server that is simply
-    absent. Say it now, name the missing binary, and let the operator decide
-    whether to install the runtime.
-
-    `shutil.which` decides, so this adapts to wherever it runs rather than
-    assuming: the Docker image carries node, npm and npx (see the Dockerfile's
-    copy from `node:22-slim`), while a bare-metal host or a venv outside the
-    container may carry none of them. That is the case this exists for, and the
-    hints below are worded for it.
-    """
     import shutil
 
     if (params.get("transport") or "stdio") != "stdio":
@@ -158,8 +80,6 @@ def check_runtime_available(params: dict) -> None:
     if not command or shutil.which(command):
         return
     hint = {
-        # The container image ships Node, so npx missing means this is running
-        # somewhere else: a bare-metal host, or a venv outside the container.
         "npx": "install Node.js on this host (the Docker image already has it)",
         "uvx": "install uv (pip install uv), which provides uvx",
         "docker": "the docker CLI is not available inside this container",
@@ -181,8 +101,6 @@ def probe_and_report(key: str, params: dict) -> bool:
     print(f"  {key}: ok, {len(result['tools'])} tool(s): {', '.join(result['tools'][:8])}")
     return True
 
-
-# --- commands ----------------------------------------------------------------
 
 def cmd_list(args) -> int:
     servers = read_servers()
@@ -218,8 +136,6 @@ def cmd_search(args) -> int:
 
 
 def _entry_from_registry(name: str) -> dict:
-    """Build a server definition from a registry entry, preferring a hosted
-    endpoint and falling back to the package the entry publishes."""
     try:
         entry = mcp_registry.get_server(name, config=Config)
     except mcp_registry.RegistryError as e:
@@ -318,10 +234,6 @@ def cmd_add(args) -> int:
     check_runtime_available(params)
 
     if params.get("auth") == "oauth":
-        # An OAuth server refuses anonymous connections by design, so the MCP
-        # probe would only prove what the spec already promises. What CAN be
-        # checked without a token is the discovery chain: the server's
-        # protected-resource metadata and its IdP's endpoints.
         from safi_app.core.services import mcp_oauth
         try:
             discovery = mcp_oauth.discover(params["url"])

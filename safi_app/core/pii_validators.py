@@ -1,4 +1,3 @@
-"""Generic engine for caller-supplied sensitive-identifier validator data."""
 from __future__ import annotations
 
 import re
@@ -19,7 +18,6 @@ def _compile_pattern(pattern: str) -> re.Pattern:
 
 
 def catalogue(specs: Optional[Mapping[str, Dict[str, Any]]] = None) -> List[Dict[str, str]]:
-    """Render the supplied validator definitions for a configuration surface."""
     return [
         {"key": key, "label": spec.get("label", key), "note": spec.get("note", "")}
         for key, spec in (specs or {}).items()
@@ -30,7 +28,6 @@ def normalize(
     keys: Optional[Sequence[str]],
     specs: Optional[Mapping[str, Dict[str, Any]]] = None,
 ) -> List[str]:
-    """Keep only identifiers declared in the caller-provided validator set."""
     if not keys or not specs:
         return []
     given = {str(key).strip().lower() for key in keys}
@@ -103,7 +100,6 @@ def scan(
     enabled: Optional[Sequence[str]],
     specs: Optional[Mapping[str, Dict[str, Any]]] = None,
 ) -> List[Finding]:
-    """Find and validate matches described by the supplied catalogue data."""
     catalog = specs or {}
     keys = normalize(enabled, catalog)
     if not keys or not text:
@@ -144,7 +140,6 @@ def redact(
 
 
 def summarize(findings: Sequence[Finding]) -> str:
-    """Summarize match counts without including the matched values."""
     counts: Dict[str, int] = {}
     for finding in findings or []:
         counts[finding.label] = counts.get(finding.label, 0) + 1

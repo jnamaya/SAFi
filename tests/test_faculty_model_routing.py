@@ -1,4 +1,3 @@
-"""Automatic Conscience preference and faculty-model separation."""
 import os
 
 from safi_app.config import (
@@ -20,14 +19,6 @@ LLM_MODELS = [
 
 
 def test_blank_faculty_env_falls_back_to_the_detected_default():
-    """.env.example ships blank faculty lines; a blank must not shadow the default.
-
-    The appliance wizard leaves Conscience empty on purpose, and
-    load_dotenv() turns that into an empty string. If Config treated it as a
-    set value, CONSCIENCE_MODEL would be "" instead of the local alias, and
-    every reader that bypasses the resolver (auth.py, policy_api_routes.py)
-    would be handed a model that does not exist.
-    """
     monkey_env = {"SAFI_CONSCIENCE_MODEL": "  "}
     saved = {k: os.environ.get(k) for k in monkey_env}
     try:
@@ -133,6 +124,3 @@ def test_resolve_effective_faculty_models_resolves_local_sentinel(monkeypatch):
     )
     assert intellect == "safi-qwen3-8b"
     assert conscience == "openai/gpt-oss-20b"
-
-
-

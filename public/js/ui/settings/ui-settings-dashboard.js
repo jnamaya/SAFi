@@ -1,11 +1,3 @@
-// Audit Hub (native): the org's observe surface over governance records.
-// Replaces the embedded Streamlit dashboard — same tab, same sidebar entry,
-// but session-authenticated (no dashboard JWT, no iframe) and DB-backed
-// (encrypted governance_records via audit_api.py, never disk logs).
-// Observe stays observe: dispositions live in the Review tab; the one write
-// this surface causes is the server-side audit_export custody log.
-// Vocabulary: Alignment (/10) and Consistency (%) — null renders N/A, never
-// a default.
 import * as ui from '../ui.js';
 import * as api from '../../core/api.js';
 import { renderConscienceReport, attachTabSwitching } from './ui-modal-conscience.js';
@@ -26,12 +18,10 @@ function fmtDate(v) {
     return isNaN(d) ? esc(v) : d.toLocaleString();
 }
 
-// Alignment is spirit_score /10; null renders N/A, never a default.
 function alignmentLabel(score) {
     return (score === null || score === undefined) ? 'N/A' : `${Number(score).toFixed(1)} / 10`;
 }
 
-// Consistency = (1 − drift) × 100%; null renders N/A.
 function consistencyLabel(drift) {
     return (drift === null || drift === undefined) ? 'N/A' : `${Math.round((1 - drift) * 100)}%`;
 }
@@ -52,9 +42,6 @@ const CONSISTENCY_HELP =
     'turns accumulate against a finished policy, so it’s best to test a policy through to ' +
     'stability before relying on it in production.';
 
-// The WillGate is pure code with a finite set of exit paths, so its reason
-// codes are enumerable and translated deterministically — ported verbatim
-// from the Streamlit Audit Hub.
 const WILL_REASON_EXPLANATIONS = {
     alignment_within_threshold: 'The draft passed structural checks and all hard gates, and its alignment score met the approval threshold.',
     hard_gates_passed: 'All non-negotiable (hard-gate) values passed the governance audit.',
@@ -87,12 +74,7 @@ function explainWillReason(code, decision) {
         const category = code.split(':', 2)[1].replace(/_/g, ' ');
         return `Blocked before generation: the prompt matched an injection-attack pattern (${category}).`;
     }
-    if (code.startsWith("Tool '")) return code; // already a human-readable sentence
-    // Tool-risk gate exits (will.py approve_tool_call, batch intent gate) also
-    // return full human-readable sentences rather than snake_case codes — show
-    // them verbatim instead of mislabeling them "unrecognized". A snake_case
-    // code never contains spaces or uppercase letters, so anything that does
-    // is treated as pre-written prose.
+    if (code.startsWith("Tool '")) return code;
     if (code.includes(' ') && (/[.!?]$/.test(code) || /[A-Z]/.test(code) || code.includes(':'))) {
         return code;
     }
@@ -111,9 +93,6 @@ function decisionBadge(decision) {
     return `<span class="${BADGE} ${cls}">${esc(label)}</span>`;
 }
 
-// The digest is rendered beside the verdict so a reader can copy it, compare it
-// against an earlier export, and re-walk the chain — a badge alone is our
-// assertion, not evidence.
 function chainHash(chain) {
     if (!chain?.entry_hash) return '';
     const h = String(chain.entry_hash);
@@ -123,9 +102,6 @@ function chainHash(chain) {
 
 function chainBadge(chain) {
     if (!chain) return '';
-    // valid === null means there are no trail entries at all. That is an absence
-    // of evidence, not a pass: this used to fall through to the green tick and
-    // claim "verified" over zero entries, which is what a purged trail looks like.
     if (chain.valid === null || chain.valid === undefined || !chain.entries) {
         return `<span class="${BADGE} bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200" title="No chat_audit_trail entries exist for this turn, so there is nothing to verify. Expected if the trail was purged under the retention policy.">No trail entries</span>`;
     }
@@ -152,7 +128,6 @@ function rangeDates() {
     return { from: new Date(Date.now() - days * 86400000).toISOString() };
 }
 
-// Local date (YYYY-MM-DD) for the native <input type="date"> value.
 function todayLocalISO() {
     const d = new Date();
     const p = n => String(n).padStart(2, '0');
@@ -172,10 +147,6 @@ function entityParams() {
     return p;
 }
 
-// D1 URL-synced filter state: the hub's shareable query (mode, entity, user,
-// range, dates) lives in the tab's hash-free query string so a filtered view
-// can be bookmarked, linked, or restored after a reload. replaceState keeps
-// the history clean — navigating back does not replay filter states.
 function syncUrl() {
     const p = new URLSearchParams();
     p.set('mode', state.mode);
@@ -204,7 +175,6 @@ function restoreFromUrl() {
     }
 }
 
-// ---------------------------------------------------------------------------
 
 export async function renderSettingsDashboardTab() {
     ui._ensureElements();
@@ -217,14 +187,12 @@ export async function renderSettingsDashboardTab() {
     try {
         const orgRes = await api.getMyOrganization();
         org = orgRes ? orgRes.organization : null;
-    } catch (e) { /* fall through */ }
+    } catch (e) {   }
     if (!org) {
         container.innerHTML = `<p class="text-sm text-gray-500">You need an organization (and the admin, editor, or auditor role) to use the Audit Hub.</p>`;
         return;
     }
     orgId = org.id;
-    // view defaults to 'consistency' so the card's heading and its y-axis agree
-    // on load; it used to open on 'deviation' under a "Consistency Trend" title.
     state = { mode: 'agent', entity: '', user_id: '', range: '30d',
               scope: 'prompt',
               dateFrom: daysAgoLocalISO(30), dateTo: todayLocalISO(),
@@ -233,7 +201,7 @@ export async function renderSettingsDashboardTab() {
 
     try {
         state.filters = await api.getAuditFilters(orgId);
-    } catch (e) { /* pickers stay empty; data may simply not exist yet */ }
+    } catch (e) {   }
     restoreFromUrl();
 
     container.innerHTML = `
@@ -255,9 +223,6 @@ export async function renderSettingsDashboardTab() {
     refreshData();
 }
 
-// 2.2 Multi-select filters: the backend already accepts comma-joined filter
-// values via _as_id_list (database.py), so the UI stores selections as a
-// comma-joined string and renders native multi-selects.
 const csv = s => String(s || '').split(',').map(v => v.trim()).filter(Boolean);
 const joined = sel => csv([...sel.selectedOptions].map(o => o.value)).join(',');
 
@@ -282,8 +247,6 @@ function renderControls() {
         ${sel('ah-mode', [['agent', 'By agent'], ['policy', 'By policy']], state.mode)}
         ${multiSel('ah-entity', opts.map(o => [o, String(o).replace(/_/g, ' ')]), state.entity)}
         ${userOpts.length > 0 ? multiSel('ah-user',
-            // C3: the __none__ sentinel (UNATTRIBUTED_USER in database.py)
-            // makes NULL-user_id records selectable instead of unreachable.
             userOpts.map(u => [u.user_id, u.name || u.user_id])
                 .concat([['__none__', '(no user — unattributed)']]), state.user_id) : ''}
         ${sel('ah-range', [['7d', 'Last 7 days'], ['30d', 'Last 30 days'], ['all', 'All time'], ['custom', 'Custom']], state.range)}
@@ -319,8 +282,6 @@ function renderControls() {
     el.querySelector('#ah-export')?.addEventListener('click', () => {
         window.open(api.auditExportUrl(orgId, { ...entityParams(), filter: state.filter || undefined }), '_blank');
     });
-    // D3: plaintext CSV of the visible explorer rows — no decryption, so no
-    // evidence-log entry (compare the JSON export, which is logged).
     el.querySelector('#ah-csv')?.addEventListener('click', () => {
         const cols = ['created_at', 'profile_key', 'user_name', 'user_id',
                       'intellect_model', 'spirit_score', 'drift',
@@ -346,16 +307,10 @@ function refreshData() {
     renderExplorer();
 }
 
-// --- C2: per-policy breakdown --------------------------------------------------
 
-// One aggregate row per policy so a weak policy is visible at a glance
-// instead of requiring a hand-built filter per policy. Plaintext aggregates
-// only — the endpoint never decrypts anything.
 async function loadPolicyBreakdown() {
     const el = document.getElementById('ah-policy');
     if (!el) return;
-    // In By-policy mode the entity picker already scopes a single policy —
-    // a breakdown across policies would just echo that filter back.
     if (state.mode === 'policy' && state.entity && !state.entity.includes(',')) {
         el.innerHTML = '';
         return;
@@ -364,7 +319,7 @@ async function loadPolicyBreakdown() {
     try {
         items = (await api.getAuditByPolicy(orgId, entityParams())).items || [];
     } catch (e) {
-        el.innerHTML = '';   // non-critical card; never block the page
+        el.innerHTML = '';
         return;
     }
     if (items.length === 0) { el.innerHTML = ''; return; }
@@ -397,8 +352,6 @@ async function loadPolicyBreakdown() {
                 </table>
             </div>
         </div>`;
-    // Clicking a row pins the explorer to that policy — same affordance as
-    // the trend-chart cross-filter (2.6).
     el.querySelectorAll('[data-policy-row]').forEach(tr =>
         tr.addEventListener('click', () => {
             state.mode = 'policy';
@@ -409,9 +362,7 @@ async function loadPolicyBreakdown() {
         }));
 }
 
-// --- KPI row -----------------------------------------------------------------
 
-// Same thresholds as the per-message gauge (ui-modal-conscience.js).
 function gaugeSvg(score) {
     const hasScore = score !== null && score !== undefined;
     const s = hasScore ? Math.max(0, Math.min(10, score)) : 0;
@@ -478,25 +429,18 @@ async function loadKpis() {
         </div>`;
 }
 
-// --- Consistency trend ---------------------------------------------------------
 
-// Fixed categorical order (see --ah-series-N in styles.css). Slots are handed
-// out by position in the org's agent roster, NOT by position in the filtered
-// result — narrowing the range must never repaint the lines that survive.
 const AH_SERIES_SLOTS = 8;
 
 function seriesColor(profileKey) {
     const roster = [...(state.filters.profiles || [])].map(String).sort();
     const i = roster.indexOf(String(profileKey));
-    // An agent absent from the roster (deleted, or a NULL profile_key row) gets
-    // the last slot rather than colliding with slot 1.
     const slot = i < 0 ? AH_SERIES_SLOTS : (i % AH_SERIES_SLOTS) + 1;
     return `var(--ah-series-${slot})`;
 }
 
 const humanAgent = k => String(k || '').replace(/_/g, ' ') || 'unattributed';
 
-// What the y-axis is actually showing, so the heading can never contradict it.
 const VIEW_METRIC = {
     consistency: 'Consistency Trend',
     drift: 'Drift Trend',
@@ -504,8 +448,6 @@ const VIEW_METRIC = {
     flagged: 'Flagged Turns',
 };
 
-// The heading names the real scope. Previously it read "Agent Consistency
-// Trend" in every state — including "All agents", and including policy mode.
 function trendHeading() {
     const metric = VIEW_METRIC[state.view] || 'Consistency Trend';
     const scope = state.entity
@@ -527,23 +469,16 @@ async function loadTrend() {
         el.innerHTML = `<p class="text-sm text-red-500">Failed to load the trend: ${esc(e.message || e)}</p>`;
         return;
     }
-    // The flagged view counts events, so it doesn't need a drift score on the
-    // bucket — only the drift views do.
     const bucketUsable = b => state.view === 'flagged'
         ? (b.turns || 0) > 0
         : b.avg_drift !== null && b.avg_drift !== undefined;
     const scored = buckets.filter(bucketUsable);
 
-    // One line per agent. Drift is per-agent by construction (spirit_memory is
-    // keyed on profile_name), so pooling it across agents is turn-weighted and
-    // describes no agent in particular — splitting is what makes the label true.
     const split = rawSeries
         .map(s => ({ key: s.profile_key, label: humanAgent(s.profile_key),
                      color: seriesColor(s.profile_key), days: toDays(s.buckets.filter(bucketUsable)) }))
         .filter(s => s.days.length > 0);
 
-    // Past the palette's fixed slots, N lines stop being readable. Fall back to
-    // the pooled line and say so, rather than cycling hues into spaghetti.
     const tooMany = split.length > AH_SERIES_SLOTS;
     const perAgent = split.length > 1 && !tooMany;
     const series = perAgent
@@ -589,16 +524,13 @@ async function loadTrend() {
     el.querySelector('#ah-view')?.addEventListener('change', e => { state.view = e.target.value; loadTrend(); });
     el.querySelector('#ah-points')?.addEventListener('change', e => { state.showPoints = e.target.checked; loadTrend(); });
 
-    // 2.6 Trend → Explorer cross-filtering: click a point/bucket to pin the
-    // Explorer (and KPIs) to that day. The backend treats date_to as
-    // exclusive (created_at<date_to), so the "to" bound is the next day.
     el.querySelector('#ah-trend-chart svg')?.addEventListener('click', e => {
         const svg = e.currentTarget;
         const W = +svg.getAttribute('data-w') || 800;
         const PL = +svg.getAttribute('data-pl') || 46;
         const PR = +svg.getAttribute('data-pr') || 12;
         const rect = svg.getBoundingClientRect();
-        const vx = (e.clientX - rect.left) / rect.width * W;   // viewBox coords
+        const vx = (e.clientX - rect.left) / rect.width * W;
         const ts = plottable.flatMap(s => s.days.map(d => d.t));
         if (!ts.length) return;
         const tMin = Math.min(...ts), tMax = Math.max(...ts);
@@ -625,17 +557,9 @@ function toDays(bkts) {
     })).sort((a, b) => a.t - b.t);
 }
 
-// SVG line chart over daily buckets, one line per series. Moving average is
-// turn-weighted over a trailing window of state.maDays days — the smoothing
-// (like the view mode) is a display choice, mirroring the Streamlit selectors.
-//
-// `series` is [{key, label, color, days:[{t, drift, n}]}]. A single pooled
-// series renders exactly as this chart always did.
 function buildTrendChart(series) {
     const windowMs = state.maDays * 86400000;
 
-    // Turn-weighted trailing mean, computed within a series — never across
-    // them, which is the whole point of the split.
     const movingAvg = days => days.map((d, i) => {
         let num = 0, den = 0;
         for (let k = i; k >= 0 && d.t - days[k].t < windowMs; k--) {
@@ -648,9 +572,6 @@ function buildTrendChart(series) {
     const prepared = series.map(s => {
         const days = s.days;
         const totalN = days.reduce((a, d) => a + d.n, 0) || 1;
-        // Each series deviates from its OWN period average: "is this agent off
-        // its own norm" is the only question the deviation view can answer once
-        // the lines are per-agent. For one pooled series this is unchanged.
         const ownAvg = days.reduce((a, d) => a + d.drift * d.n, 0) / totalN;
         const ma = movingAvg(days);
         let raw, smooth;
@@ -661,8 +582,6 @@ function buildTrendChart(series) {
             raw = days.map(d => d.drift - ownAvg);
             smooth = ma.map(v => v - ownAvg);
         } else if (state.view === 'flagged') {
-            // Counts, not smoothed scores: the spike IS the signal. Keep the
-            // MA so long windows stay readable, but always draw raw too.
             raw = days.map(d => d.flagged);
             smooth = [...raw];
         } else {
@@ -688,9 +607,6 @@ function buildTrendChart(series) {
     const tMin = Math.min(...allT), tMaxRaw = Math.max(...allT);
     const tMax = tMaxRaw === tMin ? tMin + 1 : tMaxRaw;
 
-    // ≤4 series are direct-labeled as well as legended, so identity never rests
-    // on hue alone — this is also the relief the palette's light-mode contrast
-    // warning requires. More than that and the labels would collide.
     const labelled = prepared.length > 1 && prepared.length <= 4;
     const W = 800, H = 260, PL = 46, PT = 12, PB = 28;
     const PR = labelled ? 116 : 12;
@@ -709,9 +625,6 @@ function buildTrendChart(series) {
 
     const path = s => s.smooth.map((v, i) => `${x(s.days[i].t).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
 
-    // Direct labels: nudge apart vertically so two series ending at a similar
-    // value stay legible. Text stays in muted ink with a colored dot carrying
-    // identity, rather than coloring the text itself.
     const endLabels = [];
     if (labelled) {
         const ends = prepared.map(s => ({
@@ -741,8 +654,6 @@ function buildTrendChart(series) {
                 ${state.showPoints ? s.raw.map((v, i) =>
                     `<circle cx="${x(s.days[i].t).toFixed(1)}" cy="${y(v).toFixed(1)}" r="3" fill="${s.color}" fill-opacity="0.3"><title>${esc(s.label)} · ${dateLabel(s.days[i].t)}: ${fmt(v)} (${s.days[i].n} turns)</title></circle>`).join('') : ''}
                 ${s.days.length === 1
-                    // A one-day series draws nothing as a polyline; show the point
-                    // so the agent isn't silently missing from the chart.
                     ? `<circle cx="${x(s.days[0].t).toFixed(1)}" cy="${y(s.smooth[0]).toFixed(1)}" r="3.5" fill="${s.color}"><title>${esc(s.label)} · ${dateLabel(s.days[0].t)}: ${fmt(s.smooth[0])}</title></circle>`
                     : `<polyline fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="${path(s)}"><title>${esc(s.label)}</title></polyline>`}
             `).join('')}
@@ -756,12 +667,9 @@ function buildTrendChart(series) {
         <p class="text-xs text-gray-400 mt-1">${esc(yLabel)} · ${state.view === 'flagged' ? 'daily counts, unsmoothed' : `${state.maDays}-day moving average`} over ${dayCount} day${dayCount === 1 ? '' : 's'}.</p>`;
 }
 
-// --- Log Explorer ----------------------------------------------------------------
 
-// In-flight guard (2.10d): each render bumps a token; a stale response is
-// discarded so fast typing never paints an older result over a newer one.
 let explorerToken = 0;
-let lastExplorerItems = [];   // D3: last rendered explorer rows (CSV export source)
+let lastExplorerItems = [];
 let explorerSearchTimer = null;
 
 function ensureExplorerFrame(el) {
@@ -873,9 +781,7 @@ async function fetchExplorerRows() {
             offset: state.offset,
         });
     } catch (e) {
-        if (token !== explorerToken) return;   // superseded by a newer query
-        // Auto-fallback: the decrypt cap only applies to the prompt scope.
-        // Transparently retry the query as a plaintext scan (no cap).
+        if (token !== explorerToken) return;
         if (state.q && state.scope !== 'plaintext' && /cap \d+\)/.test(String(e.message || e))) {
             state.scope = 'plaintext';
             const sel = document.getElementById('ah-scope');
@@ -893,10 +799,10 @@ async function fetchExplorerRows() {
         contentEl.innerHTML = `<p class="text-sm text-red-500">Failed to load events: ${esc(e.message || e)}</p>${hint}`;
         return;
     }
-    if (token !== explorerToken) return;       // stale response, drop it
+    if (token !== explorerToken) return;
     const items = res.items || [];
     const total = res.total || 0;
-    lastExplorerItems = items;   // D3: CSV export downloads the visible rows
+    lastExplorerItems = items;
 
     const rows = items.map(i => `
         <tr class="border-b border-gray-100 dark:border-neutral-800 hover:bg-gray-50 dark:hover:bg-neutral-800 cursor-pointer" data-audit-event="${i.message_pk}">
@@ -941,7 +847,6 @@ async function fetchExplorerRows() {
         tr.addEventListener('click', () => renderDetail(tr.getAttribute('data-audit-event'))));
 }
 
-// --- Drill-down --------------------------------------------------------------------
 
 function textCard(title, body, help = '') {
     return `
@@ -952,10 +857,6 @@ function textCard(title, body, help = '') {
         </div>`;
 }
 
-// 2.5 Per-value audit breakdown: the aggregate spirit_score is opaque on its
-// own. `profile_values` (already fetched for the conscience modal) carries each
-// value's name, weight and importance; the ledger carries its per-turn score.
-// Rendered as compact bars so a reviewer sees WHY a turn scored as it did.
 function valuesBreakdownCard(values, ledger) {
     if (!Array.isArray(values) || values.length === 0) return '';
     const ledgerRows = Array.isArray(ledger) ? ledger : [];
@@ -969,7 +870,6 @@ function valuesBreakdownCard(values, ledger) {
         const weight = Number(v.weight);
         const importance = Number(v.importance);
         const score = scoreFor(name);
-        // score runs -3..+3 in the two-tier model; map to 0..100% bar width.
         const pct = score === null ? null : Math.max(0, Math.min(100, ((score + 3) / 6) * 100));
         const scoreCls = score === null ? 'text-gray-400'
             : score <= -1 ? 'text-red-500' : score < 1 ? 'text-gray-500' : 'text-green-600';
@@ -993,20 +893,9 @@ function valuesBreakdownCard(values, ledger) {
         </div>`;
 }
 
-// Renders the agent's tool loop — what it DID, not just what it said.
-//
-// The governance capture had no tool field at all until 2026-07-31: each tool
-// call was journaled into the hash-chained trail, but the Audit Hub and the
-// examiner export both read the capture, so the record was tamper-evident and
-// unreadable by the people it exists for. `params` values are clipped
-// server-side, so this never renders a payload.
 function toolCallsCard(calls) {
     if (!Array.isArray(calls) || calls.length === 0) return '';
     const rows = calls.map(c => {
-        // Orchestrator records use tool/params; agentic tool proposals use
-        // tool_name/parameters, and returned client (e.g. safi-cli) results use
-        // tool_name/arguments. Read all three shapes so older and newer turns
-        // remain legible in the same audit timeline.
         const tool = c.tool || c.tool_name || 'unknown tool';
         const rawParams = c.params ?? c.parameters ?? c.arguments ?? {};
         const paramsObject = rawParams && typeof rawParams === 'object' && !Array.isArray(rawParams)
@@ -1054,26 +943,19 @@ async function renderDetail(messagePk) {
     }
     const ev = doc.event || {};
     const r = doc.record || {};
-    // D2 cross-surface deep link: the drill-down already joins review_queue, so
-    // the badge is now a link — it switches to the Review tab and opens the
-    // sampled item there instead of forcing the reviewer to hunt for it.
     const reviewNote = doc.review
         ? `<button type="button" data-open-review="${esc(String(doc.review.queue_id ?? doc.review.id ?? ''))}" class="${BADGE} bg-green-100 text-green-800 dark:bg-green-900/60 dark:text-green-200 capitalize hover:ring-2 hover:ring-green-400" title="This turn was sampled into the supervisory review queue. Click to open it in the Review tab.">In review queue · ${esc(doc.review.status)} &rarr;</button>`
         : '';
-    // Org governance records deliberately survive member deletion — flag it.
     const deletedNote = !doc.chat
         ? `<span class="${BADGE} bg-gray-100 text-gray-700 dark:bg-neutral-800 dark:text-gray-300" title="The member deleted this conversation. The organization's governance record is retained and will be destroyed by the retention policy.">Conversation deleted by member</span>`
         : '';
 
-    // Which model performed the policy audit. New records carry it in the
-    // encrypted capture; older ones fall back to chat_history.model_attribution
-    // ("provider/model"), which is lost if the member deleted the conversation.
     let auditModel = r.conscienceModel || null;
     if (!auditModel && doc.chat && doc.chat.model_attribution) {
         try {
             const attr = JSON.parse(doc.chat.model_attribution).conscience || '';
             auditModel = attr.split('/').slice(1).join('/') || attr;
-        } catch { /* unparseable legacy value — omit */ }
+        } catch {   }
     }
 
     let auditValues = r.profileValues ?? doc.chat?.profile_values ?? [];
@@ -1201,9 +1083,8 @@ async function renderDetail(messagePk) {
             <button id="ah-dl-entry" class="px-3 py-1.5 text-xs border border-gray-300 dark:border-neutral-600 rounded-lg">Download this record (JSON)</button>
         </div>`;
 
-    attachTabSwitching(el); // for the conscience report inside Policy Audit
+    attachTabSwitching(el);
     el.querySelector('#ah-back')?.addEventListener('click', () => renderExplorer());
-    // D2: badge click → switch to the Review tab and open the sampled item.
     el.querySelector('[data-open-review]')?.addEventListener('click', e => {
         const id = e.currentTarget.getAttribute('data-open-review');
         if (!id) return;

@@ -9,16 +9,13 @@ import httpx
 from bs4 import BeautifulSoup
 from typing import Optional, Dict, Any, Tuple
 
-# Section labels as they appear on the readings source, mapped to the canonical
-# titles the rest of the pipeline expects (must match `allowed_titles` below and
-# the keys handled in handle_bible_scholar_commands).
 _READING_LABELS = {
     "first reading": "First Reading",
-    "reading 1": "First Reading",      # USCCB
-    "reading i": "First Reading",       # USCCB (Roman numerals on some days)
+    "reading 1": "First Reading",
+    "reading i": "First Reading",
     "second reading": "Second Reading",
-    "reading 2": "Second Reading",      # USCCB
-    "reading ii": "Second Reading",     # USCCB
+    "reading 2": "Second Reading",
+    "reading ii": "Second Reading",
     "gospel": "Gospel",
     "gospel reading": "Gospel",
     "psalm": "Responsorial Psalm",
@@ -26,17 +23,9 @@ _READING_LABELS = {
     "responsorial": "Responsorial Psalm",
 }
 
-# --- USCCB (primary, authoritative) ---
-# USCCB's edge WAF 403s datacenter IPs on the HTML pages, but the RSS feed is
-# served without that block, so we read the feed directly. Each <item> is one
-# day's readings (newest first, ~10 days deep) with the full page HTML escaped
-# inside <description>. USCCB publishes on US Eastern time.
 _USCCB_RSS_URL = "https://bible.usccb.org/readings.rss"
 _USCCB_TZ = ZoneInfo("America/New_York")
 
-# USCCB's WAF fingerprints the TLS handshake and 403s Python's default cipher
-# list (curl and browsers pass). Offering a browser-like cipher suite is enough
-# to get through; certificate verification stays fully enabled.
 _USCCB_SSL_CONTEXT = ssl.create_default_context()
 _USCCB_SSL_CONTEXT.set_ciphers(
     "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:"
@@ -45,17 +34,11 @@ _USCCB_SSL_CONTEXT.set_ciphers(
     "AES128-GCM-SHA256:AES256-GCM-SHA384"
 )
 
-# Matches the trailing " of <Weekday> <date>" the source appends to the first
-# reading's citation, e.g. "2 Timothy 1.1-3, 6-12 of Wednesday June 3, 2026".
-# Anchored on the weekday so book names containing " of " (e.g. "Song of Songs")
-# are left intact.
 _DATE_SUFFIX_RE = re.compile(
     r"(?:^|\s+)of\s+((?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b.*)$",
     re.IGNORECASE,
 )
 
-# The source writes chapter/verse with a period ("Mark 12.18-27"); the Bible RAG
-# keyword search expects the colon form ("Mark 12:18-27").
 _CHAPTER_VERSE_RE = re.compile(r"(\d)\.(\d)")
 
 
@@ -63,16 +46,6 @@ def _normalize_citation(citation: str) -> str:
     return _CHAPTER_VERSE_RE.sub(r"\1:\2", citation).strip()
 
 
-# --- Request parsing --------------------------------------------------------
-#
-# Two separate lists, because "does this prompt want readings at all" and "which
-# reading does it want" are different questions and conflating them is what broke
-# four of the phrases below.
-#
-# TRIGGERS are deliberately explicit. A bare "psalm" or "gospel" is ordinary
-# conversation for this agent ("which psalm is about..."), and triggering on it
-# would fetch the day's readings and override the RAG query with today's
-# citation — answering a general question with today's liturgy.
 _READING_TRIGGERS = [
     "first reading", "second reading", "gospel reading", "responsorial psalm",
     "today's gospel", "todays gospel", "gospel for today",
@@ -83,9 +56,6 @@ _READING_TRIGGERS = [
     "all the readings", "all readings", "the readings for",
 ]
 
-# SELECTORS run only on a prompt that already triggered, so a bare "psalm" or
-# "gospel" is safe here. Order matters: the specific forms are checked before the
-# looser ones. Selecting nothing is meaningful — it means "all of them".
 _READING_SELECTORS = [
     ("first reading", "First Reading"),
     ("reading 1", "First Reading"),
@@ -101,7 +71,6 @@ _ISO_DATE_RE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
 
 
 def _requested_reading(prompt_lower: str) -> Optional[str]:
-    """Which single reading the prompt asks for, or None meaning all of them."""
     for phrase, title in _READING_SELECTORS:
         if phrase in prompt_lower:
             return title
@@ -109,14 +78,6 @@ def _requested_reading(prompt_lower: str) -> Optional[str]:
 
 
 def _requested_date(prompt_lower: str, today=None):
-    """
-    The day the prompt asks about, or None for today.
-
-    Accepts `tomorrow`, `yesterday`, a weekday name (the next occurrence, or
-    today when it is that weekday), and an explicit ISO `YYYY-MM-DD` — which is
-    what a scheduled caller uses, since it needs no interpretation. Returns a
-    `datetime.date`, or None when the prompt says nothing about a day.
-    """
     today = today or datetime.now(_USCCB_TZ).date()
 
     iso = _ISO_DATE_RE.search(prompt_lower)
@@ -124,7 +85,7 @@ def _requested_date(prompt_lower: str, today=None):
         try:
             return date(int(iso.group(1)), int(iso.group(2)), int(iso.group(3)))
         except ValueError:
-            pass  # 2026-13-45 and friends: fall through to the other cues
+            pass
 
     if "tomorrow" in prompt_lower:
         return today + timedelta(days=1)
@@ -138,13 +99,6 @@ def _requested_date(prompt_lower: str, today=None):
     return None
 
 def _parse_usccb_item_description(description_html: str) -> list:
-    """
-    Extract [{'title', 'citation', 'text'}] from one RSS item's description.
-    Each reading is an '<h4>Reading 1  <a href=...>Amos 7:10-17</a></h4>'
-    heading; the label is the h4 text minus the link, the citation is the
-    link text. Non-reading headings (Alleluia, Sequence, ...) aren't in
-    _READING_LABELS and are skipped.
-    """
     soup = BeautifulSoup(description_html, "html.parser")
     full_passages = []
     for h4 in soup.find_all("h4"):
@@ -160,26 +114,12 @@ def _parse_usccb_item_description(description_html: str) -> list:
             full_passages.append({
                 "title": title,
                 "citation": _normalize_citation(citation),
-                "text": "",  # RAG supplies the actual verse text
+                "text": "",
             })
     return full_passages
 
 
 async def _fetch_usccb_rss(log: logging.Logger, target_date=None) -> Optional[Dict[str, Any]]:
-    """
-    Primary source: the USCCB daily-readings RSS feed. Picks the item whose
-    link date-code (MMDDYY) matches `target_date` (default: today in US Eastern
-    time), preferring the plain daily entry over -Vigil/-Day variants on
-    solemnities.
-
-    `target_date` is a `datetime.date`. The feed carries roughly ten days, so
-    nearby dates resolve and anything outside that window simply finds no item
-    and returns None — which is why a caller that asks for a far date gets the
-    same "no readings" path as a caller whose fetch failed.
-
-    Returns the standard readings dict, or None if the fetch/parse yields
-    nothing usable (so the caller can fall back).
-    """
     headers = {
         "Accept": "application/rss+xml, application/xml, text/xml, */*",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -202,10 +142,6 @@ async def _fetch_usccb_rss(log: logging.Logger, target_date=None) -> Optional[Di
         log.warning("USCCB RSS feed had no item for %s (%s).", day.isoformat(), date_code)
         return None
 
-    # Solemnities publish -Vigil/-Day variants alongside the plain entry, and
-    # the plain MMDDYY(.cfm) item is then only a stub linking to them. Try the
-    # plain entry first, then Mass during the Day, and use the first item that
-    # actually contains readings.
     def _rank(item) -> int:
         link = (item.findtext("link") or "").strip()
         if re.search(rf"/{date_code}(?:\.cfm)?$", link):
@@ -230,17 +166,6 @@ async def _fetch_usccb_rss(log: logging.Logger, target_date=None) -> Optional[Di
 
 
 async def _fetch_readings_from_source(log: logging.Logger, target_date=None) -> Dict[str, Any]:
-    """
-    Fetch a day's readings. Tries the USCCB RSS feed (authoritative) first,
-    then falls back to the livingwithchrist.ca scrape if USCCB is unreachable
-    or unparseable. Returns a dict with 'date'/'full_passages' or an 'error'.
-
-    `target_date` (a `datetime.date`) is honoured by USCCB only — the fallback
-    scrape publishes one page, always today's. So a dated request that falls
-    through to the fallback is refused rather than answered with the wrong day:
-    silently returning today's readings under tomorrow's heading is worse than
-    saying nothing, since the caller cannot tell the difference.
-    """
     try:
         usccb = await _fetch_usccb_rss(log, target_date=target_date)
     except Exception as e:
@@ -261,12 +186,7 @@ async def _fetch_readings_from_source(log: logging.Logger, target_date=None) -> 
 
 
 async def _fetch_livingwithchrist(log: logging.Logger) -> Dict[str, Any]:
-    """
-    Fallback source: scrape livingwithchrist.ca.
-    Returns a dictionary with 'date' and 'full_passages' or an 'error'.
-    """
     try:
-        # beholdvancouver.org now 302-redirects here; we target it directly.
         url = "https://readings.livingwithchrist.ca/"
         headers = {
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
@@ -279,10 +199,6 @@ async def _fetch_livingwithchrist(log: logging.Logger) -> Dict[str, Any]:
 
         soup = BeautifulSoup(resp.text, "html.parser")
 
-        # Layout: a section label heading (e.g. "First reading", "Gospel")
-        # precedes its citation. The first reading's citation lives in the
-        # <h1 class="title-b"> as "<citation> of <weekday date>"; the remaining
-        # readings use an <h3 class="title-c"> citation following their label.
         full_passages = []
         reading_date = None
         current_title = None
@@ -296,7 +212,7 @@ async def _fetch_livingwithchrist(log: logging.Logger) -> Dict[str, Any]:
                 current_title = label
                 continue
 
-            if "title-b" in classes:  # first reading: "<citation> of <date>"
+            if "title-b" in classes:
                 m = _DATE_SUFFIX_RE.search(text)
                 if m and not reading_date:
                     reading_date = m.group(1).strip()
@@ -305,7 +221,7 @@ async def _fetch_livingwithchrist(log: logging.Logger) -> Dict[str, Any]:
                     full_passages.append({
                         "title": current_title or "First Reading",
                         "citation": citation,
-                        "text": "",  # RAG supplies the actual verse text
+                        "text": "",
                     })
                 current_title = None
 
@@ -345,12 +261,7 @@ async def handle_bible_scholar_commands(
     active_profile_name: str, 
     log: logging.Logger
 ) -> Tuple[str, Optional[Dict[str, Any]]]:
-    """Handle a readings request for the Bible Scholar; return the ORIGINAL
-    prompt plus the generic faculty payload (rag_query_override,
-    preformatted_context_string, or plugin_error)."""
 
-    # The orchestrator carries both the display name and its underscore-sanitized
-    # form as active_profile_name, so both must be matched.
     if active_profile_name not in ["the bible scholar", "the_bible_scholar"]:
         return user_prompt, None
 
@@ -381,9 +292,6 @@ async def handle_bible_scholar_commands(
     if requested_reading_key:
         found = next((p for p in passages if p.get("title") == requested_reading_key), None)
         if found is None:
-            # A real liturgical answer, not a lookup failure: weekdays have no
-            # Second Reading. Say which readings the day DOES have so the agent
-            # can offer them instead of reporting a malfunction.
             available = ", ".join(p["title"] for p in passages)
             return original_user_prompt, {
                 "plugin_error": (
@@ -399,17 +307,8 @@ async def handle_bible_scholar_commands(
             ),
         }
 
-    # The all-readings branch used to be unreachable: 'today's reading', 'daily
-    # reading', 'mass reading' and 'reading for today' all matched the trigger
-    # list, selected nothing, and produced "couldn't find a specific 'None'".
-    #
-    # Driving the digest off what the source lists — rather than off the weekday —
-    # is also what makes a weekday solemnity correct: the Second Reading appears
-    # because the day has one, not because it is a Sunday.
     manifest = "; ".join(f"{p['title']} — {p['citation']}" for p in passages)
     return original_user_prompt, {
-        # A list: the Intellect runs one retrieval per citation and merges the
-        # results, so every reading's verse text reaches the model.
         "rag_query_override": [p["citation"] for p in passages],
         "preformatted_context_string": (
             f"CONTEXT: The user is asking for ALL of the readings for {day_label}. "

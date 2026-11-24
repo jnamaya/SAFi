@@ -1,16 +1,3 @@
-"""
-Policy-content approval (backlog 57f): IT writes policies, legal activates
-them.
-
-The assertions that matter: the policies row keeps the APPROVED content
-while a change is pending (the compiler reads that row, so this is the whole
-enforcement), tool widenings still route to the TOOL approvers separately, a
-designated policy-approver group replaces the admin|auditor fallback, SoD
-and the sole-approver non-independence carry over, and both the submission
-and the outcome reach the requester's inbox.
-
-Requires local MySQL. Run:  venv/bin/python tests/test_policy_approval.py
-"""
 import sys
 import uuid
 import unittest
@@ -145,15 +132,12 @@ class TheHold(PolicyApprovalBase):
         self.assertEqual(pending[0]['payload']['worldview'], "Draft two")
 
     def test_restore_is_held_like_any_other_change(self):
-        """Version restore must not be the one door around the approvers."""
         editor = self._client(self.editor, 'editor')
-        # Build version history: v+1 via an approved change.
         self._submit(editor, worldview="Second worldview")
         rid = tool_approval_store.list_policy_changes(self.org, 'pending')[0]['id']
         self._client(self.admin, 'admin').post(f'/api/policies/change-requests/{rid}/approve')
         target_version = self._row().get('version')
         self.assertEqual(self._row()['worldview'], "Second worldview")
-        # Roll forward again so restoring target_version is a real change.
         self._submit(editor, worldview="Third worldview")
         rid = tool_approval_store.list_policy_changes(self.org, 'pending')[0]['id']
         self._client(self.admin, 'admin').post(f'/api/policies/change-requests/{rid}/approve')
@@ -209,8 +193,6 @@ class TheActivation(PolicyApprovalBase):
         self.assertEqual(r.status_code, 200)
 
     def test_author_cannot_activate_their_own_change(self):
-        # The admin submits (admins clear the editor ladder) with the auditor
-        # available as another fallback reviewer.
         self._submit(self._client(self.admin, 'admin'), worldview="Admin's edit")
         rid = tool_approval_store.list_policy_changes(self.org, 'pending')[0]['id']
         r = self._client(self.admin, 'admin').post(f'/api/policies/change-requests/{rid}/approve')
@@ -261,7 +243,6 @@ class NamedPolicyApprovers(PolicyApprovalBase):
         self.assertIn('policy_approvers_changed', events)
 
     def test_the_two_designations_are_independent(self):
-        # A TOOL approver group must confer nothing over POLICY changes.
         gid = sharing_store.create_group(self.org, "AI Committee", self.admin)
         sharing_store.add_group_member(gid, self.member, self.admin)
         r = self._client(self.admin, 'admin').put('/api/agents/tool-approvers',
@@ -270,7 +251,6 @@ class NamedPolicyApprovers(PolicyApprovalBase):
         rid = self._file()
         member = self._client(self.member, 'member')
         self.assertEqual(member.post(f'/api/policies/change-requests/{rid}/approve').status_code, 403)
-        # And the fallback still holds for policy changes.
         self.assertEqual(self._client(self.auditor, 'auditor')
                          .post(f'/api/policies/change-requests/{rid}/approve').status_code, 200)
 

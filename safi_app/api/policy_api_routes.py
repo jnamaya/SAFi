@@ -11,23 +11,13 @@ from datetime import datetime
 from ..core.services.model_routing import detect_provider as _detect_provider, build_providers_config as _build_providers_config
 from ..core.rbac import get_current_org_id
 from ..core.services.provider_governance import activate_org
-# Single source of truth with the governance compiler: what the compiler would
-# strip (ordinary value) or raise on (hard gate) at chat time, we reject at
-# save time — the author is looking at the form, not at a user's failed chat.
 from ..core.faculties.synderesis import _has_usable_rubric
 from ..role_config import ROLE_CONFIG
 
 policy_api_bp = Blueprint('policy_api', __name__)
 
 
-# The DB getters are intentionally org-unfiltered (historical resolution relies
-# on it), so the guard belongs here, at the endpoints. Mirrors the working
-# pattern in knowledge_api._can_read. Returns (policy, error_response); the
-# caller does: p, err = _load_policy_for_read(pid); if err: return err.
-
 def _visible_policy(policy, user_id, org_id):
-    """Read visibility mirrors list_policies: demo templates, the caller's own
-    personal policy, or a policy owned by the caller's org."""
     if not policy:
         return False
     if policy.get('is_demo'):
@@ -42,20 +32,15 @@ def _visible_policy(policy, user_id, org_id):
 
 
 def _writable_policy(policy, user_id, org_id):
-    """Writes only to the caller's org policy or their own personal (no-org)
-    policy — never a demo template or another org's policy."""
     if not policy or policy.get('is_demo'):
         return False
     pol_org = policy.get('org_id')
     if pol_org is not None:
         return str(pol_org) == str(org_id)
-    # Personal policy (no org): only its creator may write it.
     return bool(policy.get('created_by')) and policy.get('created_by') == user_id
 
 
 def _load_policy_for_read(policy_id):
-    """(policy, None) when the caller may read it, else (None, response).
-    404 (not 403) on a cross-org id so existence is not confirmed."""
     user = session.get('user')
     if not user:
         return None, (jsonify({"error": "Unauthorized"}), 401)
@@ -66,7 +51,6 @@ def _load_policy_for_read(policy_id):
 
 
 def _load_policy_for_write(policy_id):
-    """(policy, None) when the caller may modify it, else (None, response)."""
     user = session.get('user')
     if not user:
         return None, (jsonify({"error": "Unauthorized"}), 401)
@@ -79,8 +63,6 @@ def _load_policy_for_write(policy_id):
 
 
 def _declared_tools(will_rules):
-    """The policy's declared allowed_tools list, or None when it declares
-    nothing (legacy list-form policies and dicts without the key)."""
     if isinstance(will_rules, dict):
         at = will_rules.get('allowed_tools')
         if isinstance(at, list):
@@ -97,10 +79,6 @@ def _norm(v):
 
 
 def _policy_content_diff(current, data):
-    """Which governance-bearing fields this submission changes, against the
-    approved row (backlog 57f). Runs AFTER the tool carve-out, so a save
-    whose only change was a tool widening diffs empty here and files no
-    content request."""
     changed = []
     for field, col in (('name', 'name'), ('worldview', 'worldview'),
                        ('values', 'values_weights'), ('will_rules', 'will_rules')):
@@ -124,11 +102,6 @@ def _policy_content_diff(current, data):
 
 
 def _hold_tool_widening(data, old_rules, org_id):
-    """Backlog 57d: additions to a policy's DECLARED allowed_tools wait for
-    an approver, because the declared list is the pre-approved menu agents
-    draw from freely. Mutates data['will_rules'] so the save carries only
-    the already-approved tools; removals and undeclaring pass through
-    (narrowing never waits). Returns (held_additions, requested_target)."""
     new_list = _declared_tools(data.get('will_rules'))
     if new_list is None or not org_id:
         return [], None
@@ -141,31 +114,12 @@ def _hold_tool_widening(data, old_rules, org_id):
     return additions, sorted(set(new_list))
 
 
-# The policy wizard's closing "getting started" panel prints an endpoint URL
-# and pastes it into a copy-pasteable Teams bot. That URL was hardcoded to the
-# public demo host, so every self-hoster — and every localhost developer — was
-# handed a snippet that pointed their bot at somebody else's SAFi, authenticated
-# with a key that instance has never heard of. It would fail as a 401 from a
-# domain the reader never typed.
-#
-# WEB_BASE_URL is the right source: it is what the OAuth callback and CORS
-# origins already derive from, so if it is wrong the deployment is already
-# broken in more visible ways. Resolved server-side rather than from
-# window.location.origin so the endpoint URL is always the real backend host.
-
 def _bot_endpoint_url():
     from ..config import Config
     return f"{Config.WEB_BASE_URL.rstrip('/')}/api/bot/process_prompt"
 
 
 def _is_publicly_reachable():
-    """False when the endpoint is a loopback address.
-
-    Teams, Slack and every other webhook caller reach the endpoint from the
-    internet. On a laptop the URL is correct and still unusable, and saying so
-    is the difference between a five-minute fix and an afternoon of debugging
-    Azure. Not a security control — purely a truthful hint in the guide.
-    """
     from ..config import Config
     host = Config.WEB_BASE_URL.lower()
     return not any(h in host for h in ("localhost", "127.0.0.1", "0.0.0.0", "::1"))
@@ -209,8 +163,6 @@ def validate_policy_data(data):
                         "scoring. Give it an importance or mark it non-negotiable."
                     )
 
-    # will_rules may be either a legacy list of strings or a structured dict
-    # ({structural_requirements, early_prompt_blacklist, allowed_tools, rules}).
     if 'will_rules' in data and not isinstance(data['will_rules'], (list, dict)):
         errors.append("will_rules must be a list or dict.")
 
@@ -233,9 +185,6 @@ def create_policy():
 
         org_id = user.get('org_id')
 
-        # Idempotency guard: a policy with this name already exists in the same
-        # scope (org, or creator for personal). This stops a double-submit /
-        # network retry from creating identical duplicate policies.
         existing = db.find_policy_by_name(data.get("name"), org_id=org_id, created_by=user_id)
         if existing:
             return jsonify({
@@ -244,7 +193,7 @@ def create_policy():
                 "policy_id": existing['id'],
             }), 409
 
-        org_prefix = "p" # Default personal
+        org_prefix = "p"
         
         if org_id:
             org = db.get_organization(org_id)
@@ -252,28 +201,19 @@ def create_policy():
                 if org.get('domain_verified') and org.get('domain_to_verify'):
                     org_prefix = org['domain_to_verify'].replace('.', '_').lower()
                 elif org.get('name'):
-                    # No verified domain: first 12 chars of the org name plus
-                    # a random token, to avoid collisions.
                     import secrets
                     safe_name = re.sub(r'[^a-z0-9]', '', org['name'].lower())[:12]
-                    suffix = secrets.token_hex(2) # 4 chars
+                    suffix = secrets.token_hex(2)
                     org_prefix = f"{safe_name}_{suffix}"
         
         slug = re.sub(r'[^a-z0-9]', '_', data.get("name", "").lower()).strip('_')
         readable_id = f"{org_prefix}_{slug}"
 
-        # Declaring a tool list at creation is the birth of that
-        # authorization, so it is held for approval like any widening
-        # (backlog 57d): the policy saves with an empty declared list and a
-        # pending request for the full one.
         pending_tools, target_tools = _hold_tool_widening(data, None, org_id)
 
         policy_config = {
             "business_unit":      data.get("business_unit", ""),
             "scope_statement":    data.get("scope_statement", ""),
-            # The human-facing description. Stored as its own field; older
-            # builds embedded it in worldview as an HTML comment, which the
-            # wizard still reads as a legacy fallback.
             "context":            data.get("context", ""),
             "ethical_memory":     data.get("ethical_memory", 0.90),
             "alignment_threshold": data.get("alignment_threshold", 0.5),
@@ -289,9 +229,6 @@ def create_policy():
             policy_config=policy_config
         )
         
-        # Policies carry their own version history, so the log records the
-        # governance surface — how many standards, how many block — rather than
-        # duplicating content the versions table already holds.
         _vals = data.get("values") or []
         db.append_compliance_log(user.get('org_id'), 'policy_created', f"user:{user_id}", {
             "policy_id": pid, "name": data.get("name"),
@@ -360,19 +297,10 @@ def update_policy(policy_id):
         valid, msg = validate_policy_data(data)
         if not valid: return jsonify({"error": msg}), 400
 
-        # Widening the declared tool list waits for an approver (backlog
-        # 57d); the save proceeds with the already-approved tools.
         org_id = get_current_org_id()
         pending_tools, target_tools = _hold_tool_widening(
             data, policy.get('will_rules'), org_id)
 
-        # Content changes wait for the POLICY approvers (backlog 57f): the
-        # row keeps the approved content, and the submission becomes a
-        # pending change request. IT writes policies; legal activates them.
-        # Personal (no-org) policies apply directly: there is no org
-        # authority to protect. Tool widenings above already went to THEIR
-        # approvers, so a save whose only change is tools files no content
-        # request.
         pending_change_id = None
         changed = _policy_content_diff(policy, data) if org_id else []
         if changed:
@@ -389,7 +317,6 @@ def update_policy(policy_id):
             policy_config = {
                 "business_unit":      data.get("business_unit", ""),
                 "scope_statement":    data.get("scope_statement", ""),
-                # Same legacy HTML-comment fallback the create route reads.
                 "context":            data.get("context", ""),
                 "ethical_memory":     data.get("ethical_memory", 0.90),
                 "alignment_threshold": data.get("alignment_threshold", 0.5),
@@ -419,9 +346,7 @@ def update_policy(policy_id):
             db.append_compliance_log(org_id, 'tool_request_created', f"user:{user_id}", {
                 "policy": policy_id, "request": rid, "added": pending_tools})
 
-        # Return existing or freshly minted credentials for the wizard's UI.
         keys = db.get_policy_keys(policy_id)
-        # Keys created before hashing was introduced exist as hashes only; mask those.
         if keys:
             api_key = keys[0].get('key', 'sk_************************')
         else:
@@ -444,10 +369,6 @@ def update_policy(policy_id):
         current_app.logger.error(f"update_policy error: {e}")
         return jsonify({"error": "An internal error occurred."}), 500
 
-# Policy-content approvals (backlog 57f): editors submit, the designated
-# policy approvers (or the admin|auditor fallback) activate. Same SoD,
-# sole-approver, and evidence pattern as tool approvals, separately routed
-# because the deciding bodies differ (AI committee vs legal, in Nelson's org).
 
 def _policy_reviewer_context():
     user = session.get('user')
@@ -542,8 +463,6 @@ def approve_policy_change(request_id):
 @policy_api_bp.route('/policies/change-requests/<request_id>/reject',
                      methods=['POST'], strict_slashes=False)
 def reject_policy_change(request_id):
-    # A policy approver rejects; the AUTHOR may also cancel their own
-    # submission, which needs no separation of duties.
     user = session.get('user')
     if not user:
         return jsonify({"error": "Unauthorized"}), 401
@@ -649,11 +568,6 @@ def restore_policy_version_endpoint(policy_id, version):
         policy, err = _load_policy_for_write(policy_id)
         if err: return err
 
-        # 57f: a restore is a content change like any other, or it would be
-        # the one door around the policy approvers (restore an old version
-        # instead of editing). For org policies the version's content goes
-        # through the SAME holds: tool widenings to the tool approvers,
-        # content to the policy approvers. Personal policies apply directly.
         org_id = get_current_org_id()
         if not org_id or not policy.get('org_id'):
             ok = db.restore_policy_version(policy_id, version, restored_by=user_id)
@@ -821,13 +735,6 @@ async def generate_policy_content_endpoint():
         from safi_app.core.services.llm_provider import LLMProvider
         from safi_app.config import Config
         
-        # Most wizard tasks are short drafting jobs the light model handles well.
-        # The ones that WRITE GOVERNANCE are not: a rubric per standard is
-        # structured output the light model degenerates on. Measured on a real
-        # policy, gpt-oss-20b returned a bare "{}" — two characters — where the
-        # Conscience model returned a full analysis. A degenerate "{}" is the
-        # dangerous shape because it PARSES, so it reaches the author as an
-        # empty finding rather than a failure.
         _DOCUMENT_TASKS = ('compile_rules', 'ai_standards')
         model = Config.CONSCIENCE_MODEL if gen_type in _DOCUMENT_TASKS else Config.BACKEND_MODEL
         detected_provider = _detect_provider(model)
@@ -846,14 +753,11 @@ async def generate_policy_content_endpoint():
             "providers": _build_providers_config(Config),
             "routes": { "intellect": route_cfg }
         }
-        activate_org(get_current_org_id())  # provider allow-list applies to wizard calls too
+        activate_org(get_current_org_id())
         provider = LLMProvider(llm_config)
         
         prompt = ""
         sys_prompt = "You are an AI Governance Consultant."
-        # Drafting types (agent, style, worldview) want some latitude; the
-        # document types are extraction, where latitude means inventing clauses
-        # that are not in the source. Set per branch.
         gen_temperature = 0.7
         gen_max_tokens = 4096
 
@@ -924,12 +828,6 @@ async def generate_policy_content_endpoint():
                  "Return a JSON array of exactly 5 rule strings. Each rule describes grounds for rejection."
              )
         
-        # Compiles plain-language prohibitions into hard-gate values the engine
-        # actually enforces. Prose rules reach no enforcement path on their own:
-        # WillGate is deterministic and reads only structural_requirements,
-        # hard-gate values in the Conscience ledger, and tool constraints. A
-        # written rule therefore governs nothing until it becomes a value with a
-        # rubric, which is what this produces.
         elif gen_type == 'compile_rules':
              raw_rules = data.get('rules') or []
              if not isinstance(raw_rules, list):
@@ -940,20 +838,9 @@ async def generate_policy_content_endpoint():
              if len(rules) > 25:
                  return jsonify({"error": "Too many rules to compile at once (max 25)."}), 400
 
-             # Strict-JSON output, so no sampling latitude: at 0.7 this branch
-             # returned malformed JSON often enough to fail a real import.
              gen_temperature = 0.0
-             # Each gate carries a full rubric, and the definitions block makes
-             # them longer. At the 4096 default the reply is truncated mid-object,
-             # which surfaces as "invalid JSON" and hides the real cause.
              gen_max_tokens = 8192
 
-             # Definitions from the source document, when this is pass 2 of the
-             # document flow. A policy that enumerates what a term covers ("Personal
-             # Information means name, signature, passport number, ...") turns a
-             # rubric the Conscience has to interpret into one it can check. Most
-             # documents do not provide this; wasting it when they do is the
-             # difference between a usable gate and an inconsistent one.
              definitions_block = ""
              raw_defs = data.get('definitions') or []
              if isinstance(raw_defs, list) and raw_defs:
@@ -1021,12 +908,6 @@ async def generate_policy_content_endpoint():
                  '      { "score": -1.0, "criteria": "States or estimates a specific person\'s pay." } ] } }'
              )
 
-        # Candidate org-wide AI standards from a short description, not from a
-        # document. Importing a policy PDF was tried and withdrawn: classifying
-        # 28k characters produced a surface where a wrong answer and an empty one
-        # look identical, and the output lands in the tier that governs every
-        # agent. This is the small-input, small-output shape instead — the same
-        # one the charter's value generator has been reliable with.
         elif gen_type == 'ai_standards':
              sys_prompt += " Output JSON Array only."
              prompt = (
@@ -1129,9 +1010,6 @@ async def generate_policy_content_endpoint():
                 if "}" in cleaned: cleaned = cleaned[:cleaned.rfind("}")+1]
                 parsed = json.loads(cleaned)
             except json.JSONDecodeError as e:
-                # Log enough to tell truncation from malformation. A bare 422
-                # sent an operator hunting through a 15-page document for a
-                # clause that was never the problem.
                 current_app.logger.warning(
                     "compile_rules returned unparseable JSON (%d chars, %d rules): %s | tail=%r",
                     len(cleaned), len(rules), e, cleaned[-200:],
@@ -1143,10 +1021,6 @@ async def generate_policy_content_endpoint():
                     "The model returned malformed JSON. Try again."
                 )}), 422
 
-            # hard_gate and weight are set here, never taken from the model: a
-            # gate the Conscience cannot score fails closed on EVERY request
-            # (synderesis._validate_value_rubrics raises, and the agent stops
-            # loading), so a malformed rubric must be dropped rather than saved.
             gates = []
             dropped = []
             for g in (parsed.get("gates") or []):
@@ -1162,12 +1036,6 @@ async def generate_policy_content_endpoint():
                     })
                     continue
 
-                # Refuse omission-based failure criteria, whatever the prompt was
-                # told. A standard whose -1.0 reads "does not include X" fires on
-                # every response that never raised the topic — which is how a
-                # required disclosure blocked every answer an agent gave. The
-                # obligation is real; it belongs to the disclaimer check, which
-                # APPENDS the missing text instead of refusing the turn.
                 fail = next((c for c in guide if isinstance(c, dict) and float(c.get("score", 0)) < 0), None)
                 fail_text = str((fail or {}).get("criteria") or (fail or {}).get("descriptor") or "").lower()
                 if any(p in fail_text for p in (
@@ -1205,7 +1073,7 @@ async def generate_policy_content_endpoint():
                  if "]" in cleaned: cleaned = cleaned[:cleaned.rfind("]")+1]
                  
                  parsed = json.loads(cleaned)
-                 return jsonify({"ok": True, "content": parsed}) # Return object, not string
+                 return jsonify({"ok": True, "content": parsed})
              except json.JSONDecodeError:
                  return jsonify({"ok": False, "error": "AI generated invalid JSON. Please try again."}), 422
 

@@ -1,43 +1,23 @@
 import * as ui from '../ui.js';
 
-// Whether the current user may open the Audit Hub. Set once from app.js, which
-// already computes exactly this rule for the nav (`canSeeDashboard`), so the
-// role list has ONE definition rather than a copy that can drift.
-//
-// Defaults to FALSE — fail closed. The previous guard read
-// `payload.user_role === 'member'`, and `user_role` was never set on any
-// payload, so it was permanently `undefined`: the check always passed and every
-// member was shown a link to a surface they get a 403 from.
 let canSeeDashboard = false;
 
 export function setConscienceDashboardAccess(allowed) {
     canSeeDashboard = allowed === true;
 }
 
-/**
- * Main function to build and inject the Conscience ("Ethical Reasoning") modal content.
- * @param {object} payload - The audit payload from the message
- */
 export function setupConscienceModalContent(payload) {
     ui._ensureElements();
     const container = ui.elements.conscienceDetails;
     if (!container) return;
-    container.innerHTML = ''; // Clear previous content
+    container.innerHTML = '';
 
     const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-    // Raw agent keys (e.g. "the_fiduciary") can reach us for historical turns
-    // from non-active agents; make them readable.
     const profileName = payload.profile ? String(payload.profile).replace(/_/g, ' ') : null;
-    // Point-in-time provenance persisted with the turn. policy_name is a
-    // display nicety resolved by the caller when possible; the persisted
-    // policy_id (humanized) is the fallback, and policy_version pins the
-    // exact policy revision that was in force.
     const rawPolicyId = (payload.policy_id && payload.policy_id !== 'standalone') ? payload.policy_id : null;
     const policyName = payload.policy_name || (rawPolicyId ? String(rawPolicyId).replace(/_/g, ' ') : null);
     const policyVersion = rawPolicyId ? (payload.policy_version ?? null) : null;
 
-    // Scored values come from the governing policy (two-tier model), so name
-    // the policy when we know it; agent wording is the standalone fallback.
     const evaluatedAgainst = policyName
         ? `the standards of <strong class="text-gray-700 dark:text-gray-300">${esc(policyName)}</strong>${policyVersion ? ` (v${esc(policyVersion)})` : ''}, the policy governing ${profileName ? `<strong class="text-gray-700 dark:text-gray-300">${esc(profileName)}</strong>` : 'this agent'}`
         : `${profileName ? `<strong class="text-gray-700 dark:text-gray-300">${esc(profileName)}</strong>'s` : "this agent's"} values and standards`;
@@ -47,8 +27,6 @@ export function setupConscienceModalContent(payload) {
         ? ` · <span class="text-xs font-mono px-1.5 py-0.5 rounded bg-gray-100 dark:bg-neutral-800 text-gray-600 dark:text-gray-300">Auditor: ${esc(model)}</span>`
         : '';
 
-    // Build the report body from the shared string builders, then attach the
-    // modal-specific listeners (copy button, dashboard link).
     container.innerHTML = `
         <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">
             This report shows how this response was evaluated against ${evaluatedAgainst}.${auditorBadge}
@@ -59,13 +37,6 @@ export function setupConscienceModalContent(payload) {
     attachModalEventListeners(container, payload);
 }
 
-/**
- * Pure string builder for the governance report (score gauge + trend +
- * grouped ledger tabs). Reused outside the conscience modal (e.g. the Review
- * tab's detail pane): pass an idPrefix so tab-panel ids stay unique when the
- * report renders in more than one container, and call attachTabSwitching()
- * on the host container afterwards.
- */
 export function renderConscienceReport(payload, idPrefix = '') {
     const ledger = payload.ledger || [];
     let values = payload.values || [];
@@ -82,10 +53,6 @@ export function renderConscienceReport(payload, idPrefix = '') {
         groups[key].sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
     });
 
-    // Open on Conflicts whenever there are any. The costs are asymmetric — a
-    // missed conflict ships a misaligned answer, a noticed non-issue costs the
-    // reviewer five seconds — so the default view must not be the flattering
-    // one. Falls back to Upholds only when the turn is genuinely clean.
     const active = groups.conflicts.length > 0 ? 'conflicts' : 'upholds';
 
     return `
@@ -174,20 +141,12 @@ function renderRedirectContext(payload, ledger) {
         </section>`;
 }
 
-/**
- * Renders the "Score & Trend" dashboard card.
- * @param {object} payload 
- */
 function renderScoreAndTrend(payload) {
-    // --- Radial Gauge ---
-    // A missing score means the audit hasn't completed (or failed) — show N/A,
-    // never a default value that reads as a real result.
     const hasScore = payload.spirit_score !== null && payload.spirit_score !== undefined;
     const score = hasScore ? Math.max(0, Math.min(10, payload.spirit_score)) : 0;
-    const circumference = 50 * 2 * Math.PI; // 314
+    const circumference = 50 * 2 * Math.PI;
     const offset = hasScore ? circumference - (score / 10) * circumference : circumference;
 
-    // Thresholds: >= 7 Green, >= 4 Yellow, < 4 Red
     const getScoreColor = (s) => {
         if (s >= 7) return 'text-green-500';
         if (s >= 4) return 'text-yellow-500';
@@ -242,16 +201,10 @@ function renderScoreAndTrend(payload) {
         </div>
     `;
 
-    // --- Sparkline ---
     const scores = (payload.spirit_scores_history || [])
-        .filter(s => s !== null && s !== undefined) // Filter out null/undefined
-        .slice(-10); // Get last 10
+        .filter(s => s !== null && s !== undefined)
+        .slice(-10);
 
-    // A trend needs history. Single-record contexts (Audit Hub drill-down,
-    // Review detail pane) never pass any — the record is evidence of ONE turn,
-    // and trend-over-time lives in the Audit Hub chart. Render the gauge alone
-    // rather than a "not enough data" placeholder that reads like missing
-    // evidence. Also covers a first chat turn (one point).
     if (scores.length < 2) {
         return `<div class="flex justify-center conscience-trend-grid rounded-lg p-5 mb-6">${radialGauge}</div>`;
     }
@@ -262,7 +215,6 @@ function renderScoreAndTrend(payload) {
         const width = 200, height = 60, padding = 5;
         const maxScore = 10, minScore = 0;
         const range = maxScore - minScore;
-        // Map scores to X,Y coordinates
         const points = scores.map((s, i) => {
             const x = (i / (scores.length - 1)) * (width - 2 * padding) + padding;
             const y = height - padding - ((s - minScore) / range) * (height - 2 * padding);
@@ -271,7 +223,6 @@ function renderScoreAndTrend(payload) {
 
         const lastPoint = points.split(' ').pop().split(',');
         
-        // Construct closed path for dynamic background gradient fill under trendline
         const fillPoints = `${points} ${width - padding},${height - padding} ${padding},${height - padding}`;
 
         sparkline = `
@@ -314,9 +265,6 @@ function renderScoreAndTrend(payload) {
     return `<div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-center conscience-trend-grid rounded-lg p-5 mb-6">${radialGauge}${sparkline}</div>`;
 }
 
-/**
- * Renders a single tab button.
- */
 function renderTabButton(key, title, count, isActive, idPrefix = '') {
     const groupConfig = {
         upholds: { icon: 'M5 13l4 4L19 7', color: 'green' },
@@ -325,7 +273,6 @@ function renderTabButton(key, title, count, isActive, idPrefix = '') {
     };
     const config = groupConfig[key];
 
-    // Responsive Layout Styles
     const layoutClasses = "flex-1 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 py-3 sm:py-4 px-1 sm:px-3 text-center border-b-2 font-medium text-xs sm:text-sm focus:outline-none transition-colors duration-200";
 
     const badgeColorClass = {
@@ -355,9 +302,6 @@ function renderTabButton(key, title, count, isActive, idPrefix = '') {
     `;
 }
 
-/**
- * Renders a single tab panel with its ledger items.
- */
 function renderTabPanel(key, items, isActive, idPrefix = '', values = []) {
     let content = '';
     if (items.length > 0) {
@@ -373,9 +317,6 @@ function renderTabPanel(key, items, isActive, idPrefix = '', values = []) {
     `;
 }
 
-/**
- * Renders a single ledger item.
- */
 function renderLedgerItem(item, key, values = []) {
     const score = Number(item.score);
     const scoreText = Number.isFinite(score)
@@ -447,14 +388,6 @@ function renderLedgerItem(item, key, values = []) {
     `;
 }
 
-/**
- * Attaches event listeners for tabs, copy button, and dashboard link.
- */
-/**
- * Wires the Upholds/Conflicts/Neutral tab switching for a rendered
- * conscience report, scoped to the given container. Exported so other
- * surfaces embedding renderConscienceReport() can reuse it.
- */
 export function attachTabSwitching(container) {
     const tabButtons = container.querySelectorAll('.tab-btn');
     const tabPanels = container.querySelectorAll('.tab-panel');
@@ -463,7 +396,6 @@ export function attachTabSwitching(container) {
         btn.addEventListener('click', () => {
             const targetId = btn.getAttribute('data-tab-target');
 
-            // Update button styles
             tabButtons.forEach(b => {
                 b.classList.remove('active');
                 b.setAttribute('aria-current', 'false');
@@ -472,7 +404,6 @@ export function attachTabSwitching(container) {
             btn.classList.add('active');
             btn.setAttribute('aria-current', 'page');
 
-            // Show/hide panels
             tabPanels.forEach(panel => {
                 if ('#' + panel.id === targetId) {
                     panel.classList.remove('hidden');
@@ -487,40 +418,26 @@ export function attachTabSwitching(container) {
 function attachModalEventListeners(container, payload) {
     attachTabSwitching(container);
 
-    // --- "Show More" logic ---
-    // This is now handled by the persistent, delegated listener in ui-settings-core.js
 
-    // --- Copy button logic ---
-    // We must re-attach this to the button inside the modal shell (which is in ui.js)
     const copyBtn = document.getElementById('copy-audit-btn');
     if (copyBtn) {
-        // Clone to remove old listeners and prevent memory leaks
         const newCopyBtn = copyBtn.cloneNode(true);
         copyBtn.parentNode.replaceChild(newCopyBtn, copyBtn);
-        // Add the fresh listener with the new payload
         newCopyBtn.addEventListener('click', () => copyAuditToClipboard(payload));
     }
 
-    // --- Dashboard Link logic ---
     const dashboardLink = container.querySelector('#view-full-dashboard-link');
     if (dashboardLink && canSeeDashboard) {
         dashboardLink.addEventListener('click', (e) => {
             e.preventDefault();
-            // 1. Close this modal
             ui.closeModal();
-            // 2. Hide the chat view
             ui.elements.chatView.style.display = 'none';
             ui.elements.chatView.classList.add('hidden');
 
-            // 3. Show the control panel
             ui.elements.controlPanelView.classList.remove('hidden');
 
-            // 4. Mobile overlay only. Hiding the sidebar and zeroing the chat's
-            //    offset is one CSS rule keyed on the panel being visible, so this
-            //    no longer needs its own copy of "match app.js".
             ui.closeSidebar();
 
-            // 5. Programmatically click the dashboard tab
             if (ui.elements.cpNavDashboard) {
                 ui.elements.cpNavDashboard.click();
             }
@@ -528,11 +445,7 @@ function attachModalEventListeners(container, payload) {
     }
 }
 
-/**
- * Copies a plain-text summary of the audit to the clipboard.
- */
 function copyAuditToClipboard(payload) {
-    // Implementation same as original
     let text = `SAFi Ethical Reasoning Audit\n`;
     text += `Profile: ${payload.profile || 'N_A'}\n`;
     const copyPolicyId = (payload.policy_id && payload.policy_id !== 'standalone') ? payload.policy_id : null;

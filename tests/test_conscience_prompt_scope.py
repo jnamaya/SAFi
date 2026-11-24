@@ -1,4 +1,3 @@
-"""Tests for Phase 1 Conscience Prompt Scope Preflight."""
 import asyncio
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -39,7 +38,6 @@ class TestConsciencePromptScope(unittest.IsolatedAsyncioTestCase):
         self.mock_llm.run_conscience.assert_awaited_once()
 
     async def test_orchestrator_phase_one_blocks_out_of_scope_prompt(self):
-        # Set up an orchestrator with preflight_prompt_scope enabled
         orch = SAFi.__new__(SAFi)
         orch.log = MagicMock()
         orch.store = MagicMock()
@@ -71,7 +69,6 @@ class TestConsciencePromptScope(unittest.IsolatedAsyncioTestCase):
             }
         }
 
-        # Phase 0 passes
         orch.phase_zero.evaluate_prompt.return_value = (True, "safe")
         orch.activate_org = MagicMock()
         orch.activate_agent = MagicMock()
@@ -81,7 +78,6 @@ class TestConsciencePromptScope(unittest.IsolatedAsyncioTestCase):
         orch._is_cancelled = MagicMock(return_value=False)
         orch.trigger_agent_redirect = AsyncMock(return_value={"finalOutput": "Redirected", "willDecision": "violation"})
 
-        # Conscience scope preflight scores out-of-scope (-1.0)
         orch.conscience.evaluate_prompt_scope = AsyncMock(return_value=[
             {
                 "value": "Domain Scope Adherence",
@@ -98,10 +94,8 @@ class TestConsciencePromptScope(unittest.IsolatedAsyncioTestCase):
             client_owned_tools=[{"name": "bash"}],
         )
 
-        # Intellect generation MUST NEVER BE CALLED because Phase 1 blocked it!
         orch.intellect_engine.generate.assert_not_called()
 
-        # trigger_agent_redirect must have been called with phase_one_scope
         orch.trigger_agent_redirect.assert_awaited_once()
         _, kwargs = orch.trigger_agent_redirect.call_args
         self.assertEqual(kwargs.get("will_stage"), "phase_one_scope")
@@ -140,7 +134,6 @@ class TestConsciencePromptScope(unittest.IsolatedAsyncioTestCase):
             }
         }
 
-        # Phase 0 passes
         orch.phase_zero.evaluate_prompt.return_value = (True, "safe")
         orch.activate_org = MagicMock()
         orch.activate_agent = MagicMock()
@@ -149,7 +142,6 @@ class TestConsciencePromptScope(unittest.IsolatedAsyncioTestCase):
         orch._resolve_history_window = MagicMock(return_value=(5, 4000))
         orch._is_cancelled = MagicMock(return_value=False)
 
-        # Conscience scope preflight passes (1.0)
         orch.conscience.evaluate_prompt_scope = AsyncMock(return_value=[
             {
                 "value": "Domain Scope Adherence",
@@ -159,7 +151,6 @@ class TestConsciencePromptScope(unittest.IsolatedAsyncioTestCase):
             }
         ])
 
-        # Intellect returns a direct response (no tools)
         orch.intellect_engine.generate = AsyncMock(return_value=(
             {"type": "message", "content": "Here is the Apache config."},
             "reflection",
@@ -186,7 +177,6 @@ class TestConsciencePromptScope(unittest.IsolatedAsyncioTestCase):
             client_owned_tools=[{"name": "bash"}],
         )
 
-        # In-scope prompt passed Phase 1 and proceeded to Intellect!
         orch.intellect_engine.generate.assert_awaited_once()
 
     async def test_orchestrator_skips_scope_preflight_on_tool_continuation_turn(self):
@@ -248,7 +238,6 @@ class TestConsciencePromptScope(unittest.IsolatedAsyncioTestCase):
             "reason": None,
         })
 
-        # When client_tool_results is present (continuation turn):
         result = await orch.process_prompt(
             user_prompt="Inspect apache2.conf on local-VM",
             user_id="user_123",
@@ -257,7 +246,6 @@ class TestConsciencePromptScope(unittest.IsolatedAsyncioTestCase):
             client_tool_results=[{"tool_name": "bash", "result": "active (running)"}],
         )
 
-        # Conscience scope preflight must NOT be called on continuation turn!
         orch.conscience.evaluate_prompt_scope.assert_not_called()
         orch.intellect_engine.generate.assert_awaited_once()
 
@@ -283,7 +271,6 @@ class TestConsciencePromptScope(unittest.IsolatedAsyncioTestCase):
         orch.mu_history = []
         orch.last_drift = 0.0
         orch.mcp_manager = None
-        # Chatbot profile: NO execution tools (mutating tools), has scope statement
         orch.profile = {
             "name": "academic_tutor",
             "title": "Academic Tutor",
@@ -313,14 +300,12 @@ class TestConsciencePromptScope(unittest.IsolatedAsyncioTestCase):
             "willDecision": "approve", "ledger": [], "reason": None,
         })
 
-        # Process a prompt with NO client_owned_tools (pure chatbot turn)
         await orch.process_prompt(
             user_prompt="Help me with quadratic equations",
             user_id="user_123",
             conversation_id="conv_456",
         )
 
-        # Chatbot with a scope_statement now runs prompt scope preflight!
         orch.conscience.evaluate_prompt_scope.assert_awaited_once()
         orch.intellect_engine.generate.assert_awaited_once()
 
@@ -346,13 +331,12 @@ class TestConsciencePromptScope(unittest.IsolatedAsyncioTestCase):
         orch.mu_history = []
         orch.last_drift = 0.0
         orch.mcp_manager = None
-        # Agent with execution tools (bash) but NO preflight_prompt_scope specified in will_rules
         orch.profile = {
             "name": "software_engineer",
             "title": "Software Engineer",
             "scope_statement": "Software engineering and repository development.",
             "allowed_tools": ["bash", "read", "write"],
-            "will_rules": {},  # omitted!
+            "will_rules": {},
         }
         orch.context_budgeter = MagicMock(return_value="{}")
         orch._resolve_history_window = MagicMock(return_value=(5, 4000))
@@ -384,11 +368,9 @@ class TestConsciencePromptScope(unittest.IsolatedAsyncioTestCase):
             client_owned_tools=[{"name": "bash"}],
         )
 
-        # CLI agent with execution tools MUST call prompt scope preflight by default!
         orch.conscience.evaluate_prompt_scope.assert_awaited_once()
         orch.intellect_engine.generate.assert_awaited_once()
 
 
 if __name__ == "__main__":
     unittest.main()
-

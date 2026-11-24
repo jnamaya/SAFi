@@ -1,26 +1,3 @@
-"""
-Negative tests for the chat_audit_trail hash chain: corrupt a stored chain and
-assert detection fires, at the right entry.
-
-WHY THIS FILE EXISTS. Every other chain assertion in tests/ is positive — 15
-occurrences of assertTrue(...["valid"]) on untouched chains. That tests the
-happy path of a function whose only job is the unhappy path. Demonstrated
-2026-07-30: replacing _verify_chain_entries with a stub that recomputes nothing
-and returns valid=True still passed all 33 test files. An untested detector is
-an unevidenced control, and tamper-evidence is the load-bearing claim in
-docs/SEC_COMPLIANCE_READINESS.md.
-
-Chains are built through the real write path (insert_turn_atomic ->
-update_message_content -> update_audit_results), not hand-assembled rows —
-otherwise this tests the fixture. Tampering is raw SQL, restored in finally.
-
-Two cases are asserted to PASS, deliberately: a full re-chain and a tail
-truncation. Those are the real limits of an unkeyed per-message chain, and
-pinning them as known-passing is what stops a later reader assuming they are
-covered. See the class docstring for TestKnownForgeryLimits.
-
-Requires local MySQL. Run:  venv/bin/python tests/test_tamper_detection.py
-"""
 import json
 import sys
 import unittest
@@ -58,7 +35,6 @@ _TRAIL_COLS = ("id", "message_pk", "message_id", "conversation_id", "action",
 
 
 class _ChainFixture(unittest.TestCase):
-    """Builds a real multi-entry chain per test and restores it afterwards."""
 
     @classmethod
     def setUpClass(cls):
@@ -72,7 +48,6 @@ class _ChainFixture(unittest.TestCase):
         cls.cid = str(uuid.uuid4())
         _exec("INSERT INTO conversations (id, user_id, title) VALUES (%s, %s, 'tamper test')",
               (cls.cid, cls.uid))
-        # Two turns: one under test, one to source a foreign entry from.
         cls.mid = cls._turn("TAMPER prompt one", "TAMPER answer one")
         cls.mid_other = cls._turn("TAMPER prompt two", "TAMPER answer two")
         cls.pk = cls._pk(cls.mid)
@@ -83,10 +58,6 @@ class _ChainFixture(unittest.TestCase):
         mid = str(uuid.uuid4())
         assert db.insert_turn_atomic(cls.cid, prompt, mid)
         db.update_message_content(mid, answer, audit_status="complete")
-        # A SECOND content write, so the 'update' entry journals the previous
-        # value — which is Fernet ciphertext. Without this, every state in the
-        # fixture records a prior value of NULL and test_10 skips instead of
-        # exercising the ciphertext path.
         db.update_message_content(mid, answer + " (revised)", audit_status="complete")
         db.update_audit_results(mid, [{"value": "honesty", "score": 1}], 9,
                                 "tamper note", "tamper_agent", ["honesty"],
@@ -110,7 +81,6 @@ class _ChainFixture(unittest.TestCase):
         ]:
             _exec(sql, params)
 
-    # --- helpers -------------------------------------------------------------
 
     def entries(self, pk=None):
         return _rows("SELECT * FROM chat_audit_trail WHERE message_pk=%s ORDER BY id",
@@ -140,8 +110,6 @@ class _ChainFixture(unittest.TestCase):
 
 
 class TestTamperIsDetected(_ChainFixture):
-    """Each test mutates one thing and asserts WHERE detection fires. A bare
-    'valid is False' is not evidence — 'entry N is where it diverges' is."""
 
     def assert_detected_at(self, entry_id, msg=""):
         v = db.verify_message_audit_trail(self.pk)
@@ -150,7 +118,6 @@ class TestTamperIsDetected(_ChainFixture):
                          f"detected, but blamed the wrong entry — {msg}")
 
     def test_01_record_contents_cannot_be_edited(self):
-        """The compliance case: someone rewrites what the system decided."""
         target = self._saved[1]
         state = json.loads(target["state"]) if target["state"] else {}
         state["_injected"] = "will_decision was never approve"
@@ -159,7 +126,6 @@ class TestTamperIsDetected(_ChainFixture):
         self.assert_detected_at(target["id"], "state edited")
 
     def test_02_attribution_cannot_be_rewritten(self):
-        """Who approved this is the question an examiner asks first."""
         target = self._saved[1]
         _exec("UPDATE chat_audit_trail SET actor=%s WHERE id=%s",
               ("user:somebody-else", target["id"]))
@@ -172,8 +138,6 @@ class TestTamperIsDetected(_ChainFixture):
         self.assert_detected_at(target["id"], "event_at backdated")
 
     def test_04_message_binding_cannot_be_swapped(self):
-        """message_id is inside the payload, so an entry cannot be re-pointed
-        at a different message and keep its hash."""
         target = self._saved[1]
         _exec("UPDATE chat_audit_trail SET message_id=%s WHERE id=%s",
               (self.mid_other, target["id"]))
@@ -186,21 +150,17 @@ class TestTamperIsDetected(_ChainFixture):
         self.assert_detected_at(target["id"], "entry_hash overwritten")
 
     def test_06_broken_link_is_detected(self):
-        """prev_hash is the link itself; cutting it must not pass."""
         target = self._saved[2]
         _exec("UPDATE chat_audit_trail SET prev_hash=%s WHERE id=%s",
               ("f" * 64, target["id"]))
         self.assert_detected_at(target["id"], "prev_hash rewritten")
 
     def test_07_deleting_a_middle_entry_is_detected(self):
-        """Removing the inconvenient step. Detection lands on the FOLLOWING
-        entry, whose prev_hash no longer matches the recomputed tip."""
         removed, following = self._saved[1], self._saved[2]
         _exec("DELETE FROM chat_audit_trail WHERE id=%s", (removed["id"],))
         self.assert_detected_at(following["id"], "middle entry deleted")
 
     def test_08_reordering_two_entries_is_detected(self):
-        """Order is by id, so swapping ids reorders the chain."""
         a, b = self._saved[1], self._saved[2]
         spare = 10 ** 9 + 7
         _exec("UPDATE chat_audit_trail SET id=%s WHERE id=%s", (spare, a["id"]))
@@ -210,8 +170,6 @@ class TestTamperIsDetected(_ChainFixture):
         self.assertIs(v["valid"], False, "reordering went undetected")
 
     def test_09_foreign_entry_spliced_in_is_detected(self):
-        """A genuine, internally valid entry from ANOTHER message, inserted into
-        this chain. Its hash was computed over a different message_pk."""
         alien = self.entries(self.pk_other)[1]
         cols = [c for c in _TRAIL_COLS if c != "id"]
         vals = [self.pk if c == "message_pk" else alien[c] for c in cols]
@@ -221,8 +179,6 @@ class TestTamperIsDetected(_ChainFixture):
         self.assertIs(v["valid"], False, "spliced foreign entry went undetected")
 
     def test_10_ciphertext_tampering_is_detected_without_the_key(self):
-        """The chain covers encrypted state as stored, so corruption is caught
-        without decrypting anything — the verifier never needs the Fernet key."""
         if not crypto.is_enabled():
             self.skipTest("encryption not configured in this environment")
         target = next((e for e in self._saved
@@ -235,8 +191,6 @@ class TestTamperIsDetected(_ChainFixture):
         self.assert_detected_at(target["id"], "ciphertext in state altered")
 
     def test_11_empty_chain_is_not_a_pass(self):
-        """Deleting the WHOLE chain leaves nothing to verify. Absence of
-        evidence must not report as verified (fixed in b1479db)."""
         _exec("DELETE FROM chat_audit_trail WHERE message_pk=%s", (self.pk,))
         v = db.verify_message_audit_trail(self.pk)
         self.assertIsNone(v["valid"], "0 entries must be null, never true")
@@ -245,20 +199,8 @@ class TestTamperIsDetected(_ChainFixture):
 
 
 class TestKnownForgeryLimits(_ChainFixture):
-    """Cases that PASS verification, on purpose.
-
-    These are the real limits of an unkeyed per-message chain. They are asserted
-    here so the limits are pinned and visible rather than assumed to be covered:
-    if either of these ever starts failing, the threat model changed and this
-    file should be revisited, not 'fixed'.
-    """
 
     def test_12_full_rechain_is_NOT_detected(self):
-        """Edit an entry, then recompute it and every successor. The chain is
-        unkeyed and we recompute with the same public function an attacker has,
-        so the result verifies clean. This is what an out-of-DB HMAC key closes:
-        without the key the attacker cannot produce the successor hashes.
-        """
         import hashlib
         target_idx = 1
         entries = [dict(e) for e in self._saved]
@@ -287,11 +229,6 @@ class TestKnownForgeryLimits(_ChainFixture):
                       "the forgery must actually be present, or this proves nothing")
 
     def test_13_tail_truncation_is_NOT_detected(self):
-        """Delete the most recent entries. The surviving prefix is internally
-        consistent, so per-chain verification cannot see the loss — nothing in
-        the table records how many entries there should be. This is a SECOND,
-        independent reason to anchor an entry COUNT externally, not just a root.
-        """
         tail = self._saved[-1]
         _exec("DELETE FROM chat_audit_trail WHERE id=%s", (tail["id"],))
         v = db.verify_message_audit_trail(self.pk)

@@ -2,14 +2,7 @@ let _isOpen = false;
 let _openFlyout = null;
 let _closeTimer = null;
 
-// Long enough to cross the gap between a row and its flyout on a diagonal —
-// the classic cascading-menu problem. Closing on mouseleave with no grace
-// period makes the submenu impossible to reach.
 const FLYOUT_CLOSE_DELAY = 220;
-// Breathing room against the top of the window, and a floor below which a
-// scrolling list is more annoying than an overflowing one. The floor is worth
-// roughly four rows plus the panel's own padding — less than that and the
-// scroll thumb is taller than the window it scrolls.
 const MIN_VIEWPORT_GAP = 12;
 const FLYOUT_MIN_HEIGHT = 176;
 const DESKTOP = typeof window !== 'undefined'
@@ -32,7 +25,6 @@ export function initComposerMenu({ onAttachFile }) {
 
     _initFlyouts();
 
-    // Escape unwinds one level: an open flyout first, then the panel.
     document.addEventListener('keydown', (e) => {
         if (e.key !== 'Escape' || !_isOpen) return;
         if (_openFlyout) {
@@ -51,10 +43,6 @@ export function initComposerMenu({ onAttachFile }) {
     });
 }
 
-/**
- * Category rows open a flyout: on hover for a mouse, on click for everything
- * (touch has no hover, and a tap that only "hovers" opens nothing).
- */
 function _initFlyouts() {
     document.querySelectorAll('#composer-plus-menu [data-flyout]').forEach(wrap => {
         const trigger = wrap.querySelector('.submenu-trigger');
@@ -79,7 +67,6 @@ function _initFlyouts() {
     });
 }
 
-/** Opens one flyout and closes the rest. Pass null to close them all. */
 function _setFlyout(wrap) {
     clearTimeout(_closeTimer);
     document.querySelectorAll('#composer-plus-menu [data-flyout]').forEach(w => {
@@ -93,22 +80,6 @@ function _setFlyout(wrap) {
     _openFlyout = wrap || null;
 }
 
-/**
- * Two corrections once a flyout is on screen.
- *
- * SIDE: it opens to the right by default; near the viewport edge that runs off
- * screen, so flip to the left. Desktop only — below md it is an inline
- * accordion with no side to flip to.
- *
- * HEIGHT: the flyout is anchored by its BOTTOM (md:bottom-0), so it grows
- * upward out of the row. That is the only direction with room: the panel hangs
- * above the composer, which is already at the bottom of the window, so a
- * downward flyout was guaranteed to run past the bottom edge and cut the list
- * off. Growing upward can still overshoot the top on a short window, so cap it
- * at the space actually above it — the markup's md:max-h is the ceiling a tall
- * window gets, this is the one a short window gets, and either way the overflow
- * scrolls rather than being clipped.
- */
 function _keepOnScreen(panel) {
     panel.classList.remove('flyout-left');
     panel.style.maxHeight = '';
@@ -118,7 +89,6 @@ function _keepOnScreen(panel) {
     const r = panel.getBoundingClientRect();
     if (r.right > window.innerWidth - 8) panel.classList.add('flyout-left');
 
-    // r.bottom is fixed by the anchor, so everything above it is the room.
     const room = r.bottom - MIN_VIEWPORT_GAP;
     if (r.height > room) {
         panel.style.maxHeight = `${Math.max(FLYOUT_MIN_HEIGHT, room)}px`;
@@ -132,11 +102,6 @@ function _toggleMenu() {
     _syncExpanded();
 }
 
-/**
- * Exported because the lists inside this panel are rendered by three other
- * modules, and choosing an item has to dismiss the panel that contains it.
- * They used to hide their own container, which no longer exists as a popover.
- */
 export function closeComposerMenu() {
     _setFlyout(null);
     _isOpen = false;
@@ -144,23 +109,11 @@ export function closeComposerMenu() {
     _syncExpanded();
 }
 
-/** aria-expanded has to track the menu, not the click that opened it — the
- *  menu is closed from five places and a stale "true" tells a screen reader
- *  the opposite of what is on screen. */
 function _syncExpanded() {
     document.getElementById('composer-plus-btn')
         ?.setAttribute('aria-expanded', String(_isOpen));
 }
 
-/**
- * The category rows show the current selection underneath their label.
- *
- * These were no-ops for exactly one commit, when every list was rendered
- * inline and its own check mark showed the selection — a subtitle then was a
- * second copy that could disagree. Flyouts changed that: the list is hidden
- * until you hover it, so the row is now the only way to see what is active
- * without opening anything.
- */
 export function updateAgentLabel(name) {
     const el = document.getElementById('plus-agent-current');
     if (el) el.textContent = name || 'None';
@@ -171,7 +124,6 @@ export function updateModelLabel(name) {
     if (el) el.textContent = name || 'None';
 }
 
-/** Connector count, so the row says something before it is opened. */
 export function updateDataSourcesLabel(connectedCount) {
     const el = document.getElementById('plus-data-current');
     if (!el) return;
@@ -180,10 +132,6 @@ export function updateDataSourcesLabel(connectedCount) {
         : 'None connected';
 }
 
-// AI disclosure (EU AI Act Art. 50(1)) below the composer. When the active
-// agent is policy-governed, the generic sentence becomes a "this policy" link
-// that opens the policy details modal; standalone/built-in agents keep the
-// static fallback text baked into index.html.
 export function updateAiDisclosure(profile, onViewPolicy) {
     const el = document.getElementById('ai-disclosure');
     if (!el) return;

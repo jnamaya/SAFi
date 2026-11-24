@@ -1,15 +1,3 @@
-"""
-Concurrency test for db.insert_turn_atomic (double-submit proper fix).
-
-Fires many threads inserting a turn with the SAME message_id at once — the
-double-submit race. Exactly one must win; every loser must leave NOTHING
-behind (no orphaned duplicate user row), and message ordering must stay
-user-before-assistant.
-
-Requires the local MySQL instance (uses a throwaway conversation, cleaned up).
-
-Run:  venv/bin/python tests/test_insert_turn_atomic.py
-"""
 import sys
 import uuid
 import unittest
@@ -20,10 +8,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from safi_app.persistence import database as db
 
-# conversations.user_id is a FK to users.id, so the test owns its user rather
-# than assuming one. It previously hardcoded a public-widget id that happened
-# to exist on one machine; anywhere else the FK rejected the insert and every
-# test in the file errored.
 TEST_USER = f"insert_atomic_{uuid.uuid4().hex[:12]}"
 THREADS = 8
 
@@ -69,7 +53,7 @@ class TestInsertTurnAtomic(unittest.TestCase):
 
     def test_ordering_user_before_ai(self):
         db.insert_turn_atomic(self.conv, "hi", str(uuid.uuid4()))
-        rows = self._rows()  # returned in id order
+        rows = self._rows()
         self.assertEqual(rows[0]["role"], "user")
         self.assertEqual(rows[1]["role"], "ai")
 

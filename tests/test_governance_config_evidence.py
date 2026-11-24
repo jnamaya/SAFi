@@ -1,24 +1,3 @@
-"""
-Changing governance config must leave evidence.
-
-WHY. `org_compliance_log` is the append-only record an auditor reads. Knowledge
-bases, connectors, provider allow-lists and review dispositions all wrote to it;
-the Charter, AI Standards, org governance settings and policies did not. So the
-actions with the WIDEST blast radius were the ones with no record of who changed
-what, when.
-
-That is not a tidiness point. On 2026-08-09 an AI standard was added that
-blocked every response from every agent in an organization, and nothing in SAFi
-could answer "who added it, and when" — the question this product exists to
-answer.
-
-Asserted at the source, because the alternative is a live database and an
-authenticated admin session per endpoint; what matters is that each write path
-calls the log with an event name and an actor, and that the payload carries the
-few fields an auditor actually needs.
-
-Run:  venv/bin/python tests/test_governance_config_evidence.py
-"""
 import re
 import sys
 import unittest
@@ -30,7 +9,6 @@ ROOT = Path(__file__).resolve().parent.parent
 ORGS = (ROOT / "safi_app" / "api" / "organizations.py").read_text(encoding="utf-8")
 POLICIES = (ROOT / "safi_app" / "api" / "policy_api_routes.py").read_text(encoding="utf-8")
 
-# Every governance-config write path, and the event it must record.
 EXPECTED = [
     (ORGS, 'charter_saved'),
     (ORGS, 'charter_deleted'),
@@ -55,16 +33,10 @@ class EveryWritePathLeavesEvidence(unittest.TestCase):
                               f"no compliance entry for {event}")
 
     def test_every_append_names_an_actor(self):
-        """An entry without an actor answers 'what' but not 'who', which is half
-        the question."""
         for src in (ORGS, POLICIES):
-            # A generous window rather than paren matching: the arguments
-            # contain nested calls and dicts, so any cheap delimiter rule cuts
-            # them in the wrong place.
             calls = [frag[:260] for frag in src.split("append_compliance_log(")[1:]]
             self.assertTrue(calls)
             for call in calls:
-                # Either an inline f"user:{id}" or a local `actor` holding one.
                 named = "user:" in call or re.search(r",\s*actor\s*,", call)
                 self.assertTrue(named,
                                 f"an append_compliance_log call records no actor: {call[:90]}")
@@ -73,9 +45,6 @@ class EveryWritePathLeavesEvidence(unittest.TestCase):
 class ThePayloadsAnswerAuditQuestions(unittest.TestCase):
 
     def test_ai_standards_entry_names_the_non_negotiable_ones(self):
-        """The specific question that could not be answered: which standards
-        were non-negotiable on the day responses started being stopped. A count
-        is not enough — the names are what identify the culprit."""
         self.assertIn('"non_negotiable": sorted(v[\'name\'] for v in cleaned if v.get(\'hard_gate\'))', ORGS)
 
     def test_ai_standards_entry_records_the_deterministic_settings(self):
@@ -83,8 +52,6 @@ class ThePayloadsAnswerAuditQuestions(unittest.TestCase):
             self.assertIn(field, ORGS)
 
     def test_settings_entry_keeps_before_and_after(self):
-        """governance_split and spirit_beta change how every agent is scored, so
-        the values are the evidence — not merely that something moved."""
         self.assertIn('"before": before', ORGS)
         self.assertIn('"after": settings', ORGS)
 
@@ -93,26 +60,16 @@ class ThePayloadsAnswerAuditQuestions(unittest.TestCase):
         self.assertIn('"mission_changed"', ORGS)
 
     def test_policy_entries_reference_the_version_not_the_content(self):
-        """Policies already have policy_versions and a restore endpoint, so the
-        log points at the version instead of duplicating config."""
         self.assertIn('"version": _after.get(\'version\')', POLICIES)
 
 
 class RoleChangesAreVisibleNotJustRecorded(unittest.TestCase):
-    """`update_member_role` already journals to auth_events with prior role, new
-    role and sessions revoked. But auth_events has NO reader — no endpoint, no
-    UI — so that record sits where nobody can look at it. The compliance log is
-    what records_api surfaces, so governance-relevant identity events are
-    mirrored there."""
 
     def test_role_change_captures_both_sides(self):
         self.assertIn('"prior_role": prior', ORGS)
         self.assertIn('"new_role": new_role', ORGS)
 
     def test_admin_transitions_are_called_out_explicitly(self):
-        """Admin is the role that can rewrite the Charter, the AI Standards and
-        every policy, so granting or revoking it should not have to be inferred
-        by comparing two role strings."""
         self.assertIn('"admin_granted"', ORGS)
         self.assertIn('"admin_revoked"', ORGS)
 

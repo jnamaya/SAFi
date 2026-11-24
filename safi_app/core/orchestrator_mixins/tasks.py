@@ -1,13 +1,3 @@
-"""
-Background work that runs OFF the request path: conversation titles,
-summaries, profile extraction and work-context memory.
-
-These are conveniences, not agent speech — a title or a summary is metadata
-derived from the user's own words — so unlike the faculties they are not
-governed turn by turn. They still ride the org's provider and usage context
-(ContextVars, copied into the worker thread by _submit_bg) and still fail
-open: a background failure logs and returns, never fails the turn.
-"""
 from __future__ import annotations
 import json as _json
 import re as _re
@@ -19,21 +9,12 @@ from ..services.provider_governance import assert_provider_allowed, ProviderNotA
 
 
 def _record_backend_usage(provider, model, resp):
-    """Backend completions bypass LLMProvider._chat_completion, so they record
-    their own usage rows (closes the item-61 gap). Attribution rides the same
-    ContextVars, copied into these threads by _submit_bg. Never raises."""
     from ..services.usage_tracking import extract_usage, record_usage
     shape = provider if provider in ("anthropic", "gemini") else "openai"
     usage = extract_usage(shape, resp)
     if usage:
         record_usage("background", provider, model, usage[0], usage[1])
 
-
-# --- Work-context memory: deterministic merge ----------------------------------
-# The extractor LLM emits only a DELTA (upserts/removals) for the latest exchange.
-# We merge it into the stored memory in Python so existing items can NEVER be
-# silently dropped just because the model didn't re-type them. This is the
-# durability guarantee — it does not depend on the model behaving.
 
 _CTX_LIST_FIELDS = ["projects", "tasks", "decisions", "people", "milestones", "vendors", "notes"]
 _CTX_ID_FIELD = {
@@ -43,7 +24,6 @@ _CTX_ID_FIELD = {
     "people": "name",
     "vendors": "name",
 }
-# Soft cap per list (high enough that normal use never hits it; only guards runaway growth).
 _CTX_CAP = 40
 
 
@@ -52,7 +32,6 @@ def _ctx_norm(s) -> str:
 
 
 def _ctx_identity(cat: str, item) -> str:
-    """Stable identity for an entry, used for upsert-in-place, dedup, and removal."""
     if not isinstance(item, dict):
         return ""
     if cat == "milestones":
@@ -61,21 +40,6 @@ def _ctx_identity(cat: str, item) -> str:
 
 
 def merge_agent_context(current: dict, delta: dict, stamp: dict | None = None) -> dict:
-    """
-    Merge a model-produced delta into the stored work-context memory.
-
-    Additive by default: any existing entry the delta does not explicitly upsert
-    or remove is carried forward unchanged. Accepts either the delta shape
-    ({"upserts": {...}, "removals": {...}}) or a legacy full-object shape (whose
-    present categories are treated as upserts) — both are safe, neither drops data.
-
-    `stamp` (e.g. {"updated": "2026-08-15", "src": "<message_id>"}) is applied in
-    Python — never requested from the model — to every entry an upsert creates or
-    actually changes. It gives each entry an age (so eviction and the injection
-    budget can prefer dropping stale items) and provenance (which governed turn
-    stated it — the write-side half of backlog 50). Plain-string notes stay
-    unstamped; changing their shape would break every stored memory.
-    """
     current = current if isinstance(current, dict) else {}
     out = {k: list(current.get(k) or []) for k in _CTX_LIST_FIELDS}
 
@@ -83,7 +47,6 @@ def merge_agent_context(current: dict, delta: dict, stamp: dict | None = None) -
         upserts = delta.get("upserts") or {}
         removals = delta.get("removals") or {}
     elif isinstance(delta, dict):
-        # Legacy/full-object output — treat present categories as upserts (still additive).
         upserts = {k: delta.get(k) for k in _CTX_LIST_FIELDS if k in delta}
         removals = {}
     else:
@@ -110,7 +73,7 @@ def merge_agent_context(current: dict, delta: dict, stamp: dict | None = None) -
             if not ident or ident == "|":
                 continue
             if ident in index:
-                target = out[cat][index[ident]]  # update in place; non-empty new values win
+                target = out[cat][index[ident]]
                 changed = False
                 for f, v in it.items():
                     if v not in (None, "", []) and target.get(f) != v:
@@ -124,7 +87,6 @@ def merge_agent_context(current: dict, delta: dict, stamp: dict | None = None) -
                 out[cat].append(it)
                 index[ident] = len(out[cat]) - 1
 
-    # --- Apply removals (explicit only: resolved/done/cancelled) ---
     for cat in _CTX_LIST_FIELDS:
         rem = removals.get(cat)
         if not isinstance(rem, list) or not rem:
@@ -142,11 +104,6 @@ def merge_agent_context(current: dict, delta: dict, stamp: dict | None = None) -
         remset.discard("")
         out[cat] = [it for it in out[cat] if _ctx_identity(cat, it) not in remset]
 
-    # Evict by staleness, not position: keep the _CTX_CAP most recently updated
-    # entries. Position alone could drop an active project while a stale one
-    # survived. Entries without an `updated` stamp (pre-stamp rows) count as
-    # oldest; original list order is preserved among what is kept, and breaks
-    # ties, so pre-stamp behaviour (keep the tail) is unchanged.
     for cat in _CTX_LIST_FIELDS:
         if len(out[cat]) > _CTX_CAP:
             if cat == "notes":
@@ -163,17 +120,6 @@ def merge_agent_context(current: dict, delta: dict, stamp: dict | None = None) -
 
 
 def apply_memory_budget(context_json: str, max_chars: int) -> str:
-    """
-    Bound the work-context memory injected into the prompt, the way
-    _apply_context_budget bounds RAG context: whole entries only, oldest first,
-    and the model is TOLD something was omitted rather than left to guess.
-
-    Read-side only. The full memory stays in the database and remains the merge
-    base for the extractor; truncating that copy would persist the loss on the
-    next merge and silently break the anti-shrink guarantee. Fails open: any
-    parse problem returns the input unchanged, because a malformed budget must
-    degrade to "no budget", never to "no memory".
-    """
     if not context_json or max_chars <= 0 or len(context_json) <= max_chars:
         return context_json
     try:
@@ -184,7 +130,6 @@ def apply_memory_budget(context_json: str, max_chars: int) -> str:
         def _size(obj) -> int:
             return len(_json.dumps(obj, ensure_ascii=False))
         while _size(parsed) > max_chars:
-            # Drop from the front (oldest) of whichever list is longest.
             cat = max(
                 (c for c in _CTX_LIST_FIELDS if isinstance(parsed.get(c), list) and parsed[c]),
                 key=lambda c: len(parsed[c]),
@@ -206,11 +151,6 @@ def apply_memory_budget(context_json: str, max_chars: int) -> str:
 class BackgroundTasksMixin:
     @staticmethod
     def _clean_title(raw):
-        """Normalizes a model-produced title, or returns None to keep the
-        truncation fallback. Models wrap titles in quotes, prefix them with
-        "Title:", add trailing periods, and occasionally answer with a
-        paragraph — every one of those must degrade to "no title" rather than
-        reach the sidebar."""
         if not raw or not str(raw).strip():
             return None
         t = str(raw).strip().splitlines()[0].strip()
@@ -220,24 +160,11 @@ class BackgroundTasksMixin:
         t = t.rstrip('.…').strip()
         if not t:
             return None
-        # A real title is a few words. Anything longer is the model chatting
-        # (a refusal, an apology, a summary) and the fallback is better.
         if len(t) > 70:
             return None
         return t
 
     def _run_title_thread(self, conversation_id, user_prompt, ai_response, initial_title):
-        """Replace the first-50-chars truncation with a generated title, the way
-        every mainstream chat product names conversations: one cheap call on the
-        light model, off the request path, fed the first exchange (the reply is
-        what disambiguates a vague opener).
-
-        This is a LABEL derived from the user's own words — metadata, not agent
-        speech — which is why it may run ungoverned like the summarizer on the
-        same route, where the suggested-prompts feature could not. Two hard
-        rules: a user rename is never overwritten (the guard re-reads the title
-        and writes only if it still equals the truncation this turn set), and
-        every failure keeps the truncation, which was yesterday's behaviour."""
         try:
             raw = self._backend_completion(
                 "You name conversations. Reply with the title only — no quotes, no explanation.",
@@ -251,7 +178,6 @@ class BackgroundTasksMixin:
                 return
             current = db.get_conversation_title(conversation_id)
             if current is not None and current != initial_title:
-                # Renamed (by the user, or anything else) since this turn began.
                 return
             db.rename_conversation(conversation_id, title)
         except Exception as e:
@@ -298,18 +224,6 @@ class BackgroundTasksMixin:
             self.log.warning(f"User profile update thread failed: {e}")
 
     def _get_backend_sync_client(self, provider: str, model: str | None = None):
-        """
-        Lazily builds and caches a synchronous client for the given provider, from
-        the same provider config the LLMProvider uses (build_providers_config), so
-        background threads can reach every provider the faculties can. The active
-        org's own key (backlog 64) wins over the deployment key, same layering as
-        the faculty path, so background work bills to the org's key too. Returns
-        None when neither key exists. Cache is keyed (provider, key, base_url) so a
-        rotated key or a dedicated local Conscience/light server endpoint
-        (SAFI_CONSCIENCE_BASE_URL) gets its own client without colliding with the
-        main Intellect server. Gemini is excluded — its google-genai client is
-        already sync-capable; the gemini branch below handles its override.
-        """
         cache = getattr(self, "_backend_sync_clients", None)
         if cache is None:
             cache = self._backend_sync_clients = {}
@@ -325,8 +239,6 @@ class BackgroundTasksMixin:
                 or "conscience" in (model or "").lower()
             ):
                 details["base_url"] = conscience_url
-        # Same precedence as the faculty path (org key > deployment key > .env),
-        # so background work is billed to the same key the turn was.
         api_key = resolve_provider_key(provider, details.get("api_key"))
         base_url = details.get("base_url")
         cache_key = (provider, api_key, base_url)
@@ -349,27 +261,10 @@ class BackgroundTasksMixin:
 
     def _backend_completion(self, system_prompt: str, user_content: str, model: str | None = None,
                             temperature: float | None = None, json_mode: bool = True):
-        """
-        Synchronous completion for background tasks (summaries, note-taker,
-        suggestions), routed to whichever provider serves `model` — any provider
-        the faculties support works here too. Returns raw model text, or None.
-
-        json_mode enables native JSON constraints where the API supports them
-        (OpenAI-compatible response_format / Gemini response_mime_type); Anthropic
-        has no equivalent, so it gets a system-prompt instruction instead and
-        callers' fence-tolerant parsers handle the rest.
-
-        model defaults to BACKEND_MODEL (general-purpose); the note-taker passes
-        NOTETAKER_MODEL, the summarizer SUMMARIZER_MODEL. temperature defaults to
-        AGENT_MEMORY_TEMPERATURE; callers that want variety pass their own.
-        """
         if model is None:
             model = self.config.BACKEND_MODEL
         if temperature is None:
             temperature = self.config.AGENT_MEMORY_TEMPERATURE
-        # Per-org provider governance, asserted on the provider that actually
-        # receives content. Background conveniences degrade gracefully: skip,
-        # never reroute.
         provider = detect_provider(model)
         try:
             assert_provider_allowed(provider, context=f"backend:{model}")
@@ -379,9 +274,6 @@ class BackgroundTasksMixin:
         try:
             if provider == "gemini":
                 client = getattr(self, "clients", {}).get("gemini")
-                # Stored-key overlay: same layering as the faculty path
-                # (org key > deployment key > .env). Cached alongside the sync
-                # clients, keyed by the key.
                 from ..services.deployment_keys import resolve_provider_key
                 from ..services.model_routing import build_providers_config
                 env_gemini_key = (build_providers_config(self.config)
@@ -433,15 +325,11 @@ class BackgroundTasksMixin:
                     b.text for b in resp.content if getattr(b, "type", "") == "text"
                 ).strip()
                 if json_mode:
-                    # No native JSON mode: the model may fence the object anyway,
-                    # and some callers parse with plain json.loads — trim to the
-                    # outermost braces so they always get a bare object.
                     start, end = text.find("{"), text.rfind("}")
                     if start != -1 and end > start:
                         text = text[start:end + 1]
                 return text
 
-            # OpenAI-compatible providers (Groq, OpenAI, DeepSeek, Mistral, Zhipu, Cerebras, Local)
             client = self._get_backend_sync_client(provider, model=model)
             if client is None:
                 self.log.warning(f"[Backend] {provider} client unavailable; skipping.")
@@ -464,13 +352,10 @@ class BackgroundTasksMixin:
             return None
 
     def _backend_json_completion(self, system_prompt: str, user_content: str, model: str | None = None, temperature: float | None = None):
-        """JSON-mode wrapper kept for existing callers (note-taker, suggestions)."""
         return self._backend_completion(system_prompt, user_content, model=model,
                                         temperature=temperature, json_mode=True)
 
     def _extract_agent_context_raw(self, current_context_json: str, user_prompt: str, ai_response: str):
-        """The model's raw candidate-context string, or None. NOTETAKER_MODEL,
-        unparsed — merge_agent_context is what makes it safe to act on."""
         context_prompt_config = self.application_prompts.get("agent_context_extractor")
         if not context_prompt_config:
             return None
@@ -484,19 +369,6 @@ class BackgroundTasksMixin:
         )
 
     def _run_agent_context_update_thread(self, user_id: str, agent_id: str, current_context_json: str, user_prompt: str, ai_response: str, message_id: str | None = None):
-        """
-        Runs the per-agent work context memory update in a background thread.
-        Extracts only explicitly stated, durable, work-relevant facts — no inference.
-
-        The model's output is treated as CANDIDATE facts and merged into the existing
-        context in code (merge_agent_context), so an under-performing extraction can never
-        drop previously-stored projects/people/tasks (anti-shrink). Invalid model JSON
-        leaves the stored memory unchanged rather than overwriting it with garbage.
-
-        `message_id` becomes each touched entry's `src` stamp: the governed turn
-        the fact came from, so a remembered item can be traced back to an
-        audited exchange (backlog 50, write side).
-        """
         raw = self._extract_agent_context_raw(current_context_json, user_prompt, ai_response)
         if raw is None:
             return
@@ -507,7 +379,6 @@ class BackgroundTasksMixin:
         try:
             delta = _json.loads(raw)
         except Exception:
-            # Unparseable extractor output: leave stored memory untouched (anti-corruption).
             self.log.warning("[AgentMemory] extractor returned non-JSON; leaving memory unchanged.")
             return
         try:
@@ -515,8 +386,6 @@ class BackgroundTasksMixin:
             if message_id:
                 stamp["src"] = str(message_id)
             merged = merge_agent_context(current, delta, stamp=stamp)
-            # An empty delta merges to the same content; skip the pointless
-            # re-encrypt-and-write (idle Q&A turns used to rewrite the row).
             if _json.dumps(merged, sort_keys=True) == _json.dumps(
                     {k: current.get(k) or [] for k in _CTX_LIST_FIELDS}, sort_keys=True):
                 return

@@ -1,16 +1,3 @@
-"""Native Audit Hub API: the observe surface over governance_records.
-
-Org-scoped, session-authenticated, admin|editor|auditor — the same auth
-regime as every other tab (no dashboard JWT, no query-string credentials).
-Observe stays observe: no write actions live here — dispositions belong to
-the Review API. The one exception is evidence ABOUT observation: downloads
-of decrypted governance data custody-log 'audit_export' (counts + filters,
-never content) to org_compliance_log, mirroring the examiner export.
-
-KPI/trend/explorer endpoints read plaintext filter/aggregate columns only;
-decryption happens exclusively in the drill-down, prompt search, and export
-paths (see database.py's governance-records section for the caps).
-"""
 import hashlib
 import json
 from datetime import datetime, timedelta, timezone
@@ -34,8 +21,6 @@ def _org_forbidden(org_id):
 
 def _actor_email():
     user = session.get('user') or {}
-    # Local appliance accounts have a username and no email (identity.py shim);
-    # attribute to the best identifier we have rather than 'unknown'.
     return (user.get('email') or user.get('username')
             or user.get('name') or user.get('id') or "unknown")
 
@@ -53,9 +38,6 @@ def _parse_date(value):
 
 
 def _common_filters():
-    """Parses the filter params shared by every read endpoint. Returns
-    (kwargs, error_response). Dates default to the last 30 days so an
-    unbounded query never scans the whole table by accident."""
     flt = request.args.get("filter")
     if flt and flt not in VALID_FILTERS:
         return None, (jsonify({"error": f"filter must be one of {', '.join(VALID_FILTERS)}"}), 400)
@@ -93,7 +75,7 @@ def audit_summary(org_id):
     filters, err = _common_filters()
     if err:
         return err
-    filters.pop("flt", None)  # KPIs always cover the whole window
+    filters.pop("flt", None)
     try:
         summary = db.governance_summary(org_id, **filters)
         summary["range"] = {"from": filters["date_from"].isoformat(),
@@ -107,15 +89,13 @@ def audit_summary(org_id):
 @audit_bp.route('/organizations/<org_id>/audit/by-policy', methods=['GET'])
 @require_any_role(*OBSERVER_ROLES)
 def audit_by_policy(org_id):
-    """C2: per-policy aggregate so a weak policy is visible without
-    hand-building a filter per policy. Plaintext aggregates only."""
     if _org_forbidden(org_id):
         return jsonify({"error": "Forbidden"}), 403
     filters, err = _common_filters()
     if err:
         return err
     filters.pop("flt", None)
-    filters.pop("policy_id", None)  # the breakdown spans all policies
+    filters.pop("policy_id", None)
     try:
         return jsonify({"items": db.governance_by_policy(org_id, **filters)})
     except Exception as e:
@@ -134,12 +114,9 @@ def audit_trend(org_id):
     filters, err = _common_filters()
     if err:
         return err
-    filters.pop("flt", None)  # the trend tracks all turns, like the KPIs
+    filters.pop("flt", None)
     try:
         payload = {"buckets": db.governance_trend(org_id, bucket=bucket, **filters)}
-        # Per-agent split so the chart can draw one line per agent instead of a
-        # turn-weighted pool that describes no agent. Only meaningful when the
-        # scope isn't already a single agent. `buckets` keeps its exact shape.
         if not filters.get("profile"):
             payload["series"] = db.governance_trend_by_profile(
                 org_id, bucket=bucket, **filters)
@@ -168,10 +145,6 @@ def audit_events(org_id):
         return jsonify({"error": "scope must be 'prompt' or 'plaintext'"}), 400
     try:
         if q:
-            # Two-path search (proposal 2.10a/b): scope=plaintext is a cheap
-            # SQL LIKE over chat_history.user turns; the default prompt path
-            # decrypts the capped window once and pages the full match set in
-            # memory, so offset pagination no longer re-decrypts.
             rows, total, window = db.search_governance_events(
                 org_id, q, limit=limit, offset=offset, scope=scope, **filters)
             return jsonify({"items": rows, "total": total, "window": window,
@@ -205,9 +178,6 @@ def audit_event_detail(org_id, message_pk):
 @audit_bp.route('/organizations/<org_id>/audit/export', methods=['GET'])
 @require_any_role(*OBSERVER_ROLES)
 def audit_export(org_id):
-    """Filtered records download, decrypted. Custody-logs 'audit_export'
-    (counts + filters, never content) BEFORE streaming — the Streamlit Hub
-    was the one surface that produced records invisibly; this closes it."""
     if _org_forbidden(org_id):
         return jsonify({"error": "Forbidden"}), 403
     filters, err = _common_filters()
@@ -225,8 +195,6 @@ def audit_export(org_id):
         "exported_by": _actor_email(),
         "org_id": org_id,
         "count": len(rows),
-        # Says plainly what the hashes do and do not establish, in the artifact
-        # itself — a recipient reading only the file should not overstate it.
         "integrity": {
             "hash_algorithm": "SHA-256",
             "per_record": "records[].integrity carries that turn's chat_audit_trail "
@@ -246,8 +214,6 @@ def audit_export(org_id):
         },
         "records": rows,
     }
-    # Serialize once, digest those exact bytes, serve those exact bytes — a
-    # digest over a second serialization would be a digest of a different file.
     body = json.dumps(payload, indent=2, default=str)
     digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
 
@@ -263,16 +229,11 @@ def audit_export(org_id):
             },
         })
     except Exception as e:
-        # Custody log is the point of this surface — no evidence, no export. The
-        # body is built before this only so the digest can be logged with it;
-        # nothing has been sent to the client yet, so refusing here still means
-        # no records leave without an evidence entry.
         current_app.logger.error(f"audit_export custody log failed — refusing export: {e}")
         return jsonify({"error": "Internal Server Error"}), 500
 
     fname = f"safi-audit-export-{org_id[:8]}-{filters['date_from'].date()}-{filters['date_to'].date()}.json"
     return Response(body, mimetype="application/json", headers={
         "Content-Disposition": f"attachment; filename={fname}",
-        # org_compliance_log holds the authoritative copy; this is for scripts.
         "X-SAFi-Export-SHA256": digest,
     })

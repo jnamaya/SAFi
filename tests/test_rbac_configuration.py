@@ -1,4 +1,3 @@
-"""RBAC mechanics consume host-provided role data."""
 import sys
 import unittest
 from pathlib import Path

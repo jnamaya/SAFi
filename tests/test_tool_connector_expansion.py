@@ -1,28 +1,3 @@
-"""
-Connector-level authorization: the wizard grants "web_search", the model calls
-"web_news", and the Will matches exactly.
-
-Before the fix, mcp_manager expanded connector names into per-function schemas
-while WillGate compared the function name against the unexpanded list. An agent
-granted a multi-function connector was offered its tools and could use none of
-them; web_news was blocked while web_search worked. The connectors that
-appeared to work did so only because their single function shared the
-connector's name. (The three multi-function connectors that motivated the fix,
-github, google_drive and sharepoint, all retired 2026-08-15 in favour of MCP
-servers; web_search is the multi-function case that remains, and the mechanism
-now also governs every discovered server.)
-
-The load-bearing test here is test_mapping_matches_the_real_builder: it calls the
-actual mcp_manager schema builder for every connector and asserts the emitted
-names match CONNECTOR_TOOLS. Adding a function to a connector without updating
-the table fails here rather than silently shipping an unauthorizable tool.
-
-The retired names earn their own tests. "sharepoint" survives in agents'
-stored tools_json; it must expand to itself, authorize nothing callable, and
-never resurrect the old functions.
-
-Run:  venv/bin/python tests/test_tool_connector_expansion.py
-"""
 import asyncio
 import sys
 import unittest
@@ -36,7 +11,6 @@ from safi_app.core.tool_connectors import CONNECTOR_TOOLS, expand_connectors
 
 
 def compile_profile(tools, policy_allowed=None):
-    """What synderesis stamps for an agent granted `tools`."""
     profile = {"tools": list(tools)}
     if policy_allowed is not None:
         profile["will_rules"] = {"allowed_tools": list(policy_allowed)}
@@ -53,7 +27,6 @@ def authorize(tool, profile, params=None):
 class TestMappingIsPinnedToReality(unittest.TestCase):
 
     def test_mapping_matches_the_real_builder(self):
-        # Calls production mcp_manager, not a copy of its table.
         from safi_app.core.services.mcp_manager import MCPManager
         mgr = MCPManager({})
 
@@ -71,8 +44,6 @@ class TestMappingIsPinnedToReality(unittest.TestCase):
                     f"the table cannot be authorized by the Will.")
 
     def test_every_gated_connector_appears_in_the_table(self):
-        # A connector the builder gates on but the table omits would expand to
-        # itself, which authorizes nothing callable.
         import re
         src = (Path(__file__).resolve().parent.parent
                / "safi_app/core/services/mcp_manager.py").read_text(encoding="utf-8")
@@ -83,9 +54,6 @@ class TestMappingIsPinnedToReality(unittest.TestCase):
                          f"CONNECTOR_TOOLS: {sorted(missing)}")
 
     def test_retired_connectors_stay_retired(self):
-        # The builder must not gate on a retired name, and the table must not
-        # carry one. A reappearance here means someone resurrected a built-in
-        # whose successor is an MCP server.
         for retired in ("github", "google_drive", "sharepoint"):
             with self.subTest(connector=retired):
                 self.assertNotIn(retired, CONNECTOR_TOOLS)
@@ -103,15 +71,11 @@ class TestConnectorGrantAuthorizesItsFunctions(unittest.TestCase):
                         f"granting '{connector}' must authorize '{fn}'")
 
     def test_web_news_no_longer_blocked(self):
-        # Granting the connector expands to all of its declared functions.
         profile = compile_profile(["web_search"])
         self.assertEqual(authorize("web_news", profile), "approve")
 
 
 class TestRetiredKeysFailClosed(unittest.TestCase):
-    """Agents' tools_json still carries the retired names. Each must be inert:
-    expand to itself, authorize none of its old functions, and leave the
-    connectors that still exist unaffected."""
 
     def test_a_stored_retired_grant_authorizes_nothing(self):
         profile = compile_profile(["web_search", "sharepoint"])
@@ -144,7 +108,6 @@ class TestExpansionDoesNotOverGrant(unittest.TestCase):
         self.assertEqual(authorize("web_delete_history", profile), "violation")
 
     def test_policy_can_narrow_within_a_connector(self):
-        # Agent granted both search tools, policy permits only the news one.
         profile = compile_profile(["web_search"], policy_allowed=["web_news"])
         self.assertEqual(profile["allowed_tools"], ["web_news"])
         self.assertNotEqual(authorize("web_news", profile), "violation")

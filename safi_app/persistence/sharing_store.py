@@ -1,31 +1,3 @@
-"""
-Scoped agent sharing (backlog 55): custom groups and per-agent grants.
-
-An agent's visibility data and the host's role policy determine baseline
-organization access. This module adds per-user and per-group grants as pure
-widening: a grant can add access but cannot remove baseline access.
-
-WHY IT IS NOT IN database.py
-----------------------------
-database.py is manifest-covered because it creates the hash-chained audit
-ledgers. Who may use which agent inside an organization is Section III org
-configuration, the same tier as conversation ownership and knowledge-base
-visibility, both of which already live outside the manifest. Same boundary
-reasoning as mcp_store.py.
-
-THE RESOLVER
-------------
-can_use_agent() is the single authorization answer for agent USE. Every
-entry point that resolves an agent_key from user input must call it: the
-profile switch, the chat turn, the schedule validator, the scheduled runner.
-Visibility used to be enforced on listing only, which meant a private agent
-was hidden but not protected. Order of checks: owner, configured authority,
-configured visibility, then grants; anything else is denied.
-
-Grants are org-scoped at write time (the grant row carries the agent's
-org_id) and re-checked org-scoped at read time, so a grant can never leak an
-agent across organizations even if rows are tampered with directly.
-"""
 from __future__ import annotations
 
 import logging
@@ -40,16 +12,6 @@ _COLLATION_RE = re.compile(r'^[a-z0-9_]+$')
 
 
 def _target_collation(cursor) -> str:
-    """The collation of the tables these tables JOIN against.
-
-    Learned the hard way (demo outage 2026-08-17): CREATE TABLE with only a
-    charset takes the server's default collation, which on MySQL 8 is
-    utf8mb4_0900_ai_ci, while a database that has lived since 5.7 holds its
-    tables at utf8mb4_unicode_ci. The first join then throws 1267 ("illegal
-    mix of collations") and every caller that unions grants into a listing
-    loses the whole listing. So the new tables copy the collation of
-    `agents`, whatever it is on this deployment, instead of trusting the
-    server default to match."""
     cursor.execute(
         "SELECT TABLE_COLLATION FROM information_schema.TABLES "
         "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'agents'")
@@ -57,16 +19,10 @@ def _target_collation(cursor) -> str:
     coll = (row[0] if row else None) or 'utf8mb4_unicode_ci'
     return coll if _COLLATION_RE.match(coll) else 'utf8mb4_unicode_ci'
 
-# v1 grants confer USE only. 'can_edit' is deliberately absent: a grant that
-# let a member edit an agent's values or will_rules would override the role
-# ladder on governance content, and that is a separate decision (backlog 55).
 GRANT_LEVELS = ('can_use',)
 
 
 def init_schema() -> None:
-    """Create the sharing tables if absent. Called once at boot, after
-    db.init_db(). No foreign keys (house style); delete paths clean up
-    dependent rows explicitly instead."""
     conn = db.get_db_connection()
     cursor = conn.cursor()
     try:
@@ -102,8 +58,6 @@ def init_schema() -> None:
                 INDEX idx_nested_child (child_group_id)
             ) ENGINE=InnoDB DEFAULT CHARSET={charset} COLLATE={coll}
         """)
-        # agent_key matches agents.agent_key (VARCHAR(100) string key, not a
-        # UUID). grantee_id is a users.id (VARCHAR(255)) or a custom_groups.id.
         cursor.execute(f"""
             CREATE TABLE IF NOT EXISTS agent_visibility_grants (
                 agent_key VARCHAR(100) NOT NULL,
@@ -117,10 +71,6 @@ def init_schema() -> None:
                 INDEX idx_grants_grantee (grantee_id)
             ) ENGINE=InnoDB DEFAULT CHARSET={charset} COLLATE={coll}
         """)
-        # Converge tables that already exist at a different collation (the
-        # 2026-08-17 rollout created them at the server default before this
-        # guard existed). CONVERT rewrites the rows, but these tables are
-        # small by construction.
         cursor.execute(
             "SELECT TABLE_NAME, TABLE_COLLATION FROM information_schema.TABLES "
             "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN "
@@ -142,16 +92,7 @@ def init_schema() -> None:
         conn.close()
 
 
-# ---------------------------------------------------------------------------
-# The resolver
-# ---------------------------------------------------------------------------
-
 def can_use_agent(user_id, role, org_id, agent, role_config=None) -> bool:
-    """May `user_id` (with `role`, in `org_id`) use this DB agent row?
-
-    Deny by default. Built-in agents never reach this function: they are not
-    rows, and callers treat them as platform-wide.
-    """
     if not agent or not user_id:
         return False
     if str(agent.get('created_by') or '') == str(user_id):
@@ -171,7 +112,6 @@ def can_use_agent(user_id, role, org_id, agent, role_config=None) -> bool:
 
 
 def get_user_group_names(user_id, org_id) -> set:
-    """Return lowercase names of all custom groups this user belongs to in org_id (direct or nested)."""
     if not user_id or not org_id:
         return set()
     conn = None
@@ -210,7 +150,6 @@ def get_user_group_names(user_id, org_id) -> set:
 
 
 def get_user_group_details(user_id, org_id) -> list:
-    """Return full custom_groups rows this user belongs to in org_id (direct or nested)."""
     if not user_id or not org_id:
         return []
     conn = None
@@ -249,22 +188,6 @@ def get_user_group_details(user_id, org_id) -> list:
 
 
 def can_use_built_in_or_custom_agent(user_id, role, org_id, agent_key, role_config=None) -> bool:
-    """Authorize access to either a built-in agent (sysadmin, security_engineer,
-    software_engineer) or a custom DB agent.
-
-    Admins always have full access across all agents.
-    
-    Built-in agents:
-    - sysadmin: requires role 'admin' OR membership in a group named/granted 'sysadmin',
-      'sysadmins', 'it-admins', 'it-infrastructure', 'infrastructure'.
-    - security_engineer: requires role 'admin' OR membership in a group
-      named/granted 'secops', 'security', 'security_engineer', 'infosec'.
-    - software_engineer: requires role 'admin' OR membership in a group
-      named/granted 'developers', 'developer', 'software_engineer', 'engineering', 'devs'.
-
-    Custom DB agents:
-    - Resolved via can_use_agent().
-    """
     if not user_id or not agent_key:
         return False
 
@@ -276,7 +199,6 @@ def can_use_built_in_or_custom_agent(user_id, role, org_id, agent_key, role_conf
 
     key = str(agent_key).lower().strip()
 
-    # Check built-in agents
     if key == "sysadmin":
         if has_grant("sysadmin", user_id, org_id):
             return True
@@ -310,21 +232,16 @@ def can_use_built_in_or_custom_agent(user_id, role, org_id, agent_key, role_conf
         return bool(user_groups & allowed_group_names)
 
     if key == "safi":
-        # General conversational assistant available to all authenticated org members
         return True
 
-    # Check custom DB agent
     raw_agent = db.get_agent(agent_key)
     if raw_agent:
         return can_use_agent(user_id, role, org_id, raw_agent, role_config)
 
-    # Unrecognized agent fails closed
     return False
 
 
 def get_first_usable_agent(user_id, role, org_id, role_config=None):
-    """Return the key of the first agent this user is authorized to use,
-    or None if the user has access to no agents."""
     if not user_id:
         return None
     from ..profile_resolver import AGENTS
@@ -351,12 +268,6 @@ def get_first_usable_agent(user_id, role, org_id, role_config=None):
 
 
 def has_grant(agent_key, user_id, org_id) -> bool:
-    """True when a can_use grant reaches this user directly or via a group
-    they belong to, scoped to `org_id` on both the grant and the group.
-
-    Fails CLOSED: a storage error here denies grant-based access (and is
-    logged loudly) rather than crashing the caller. Owner and configured
-    visibility access are decided before this is consulted, so they are unaffected."""
     if not agent_key or not user_id or not org_id:
         return False
     try:
@@ -402,14 +313,6 @@ def _has_grant_query(agent_key, user_id, org_id) -> bool:
 
 
 def granted_agents(user_id, org_id):
-    """Full agent rows this user can use through grants, for the pickers.
-    The join re-asserts the org scope so a stray grant row cannot surface a
-    foreign org's agent.
-
-    Fails EMPTY: grants only widen a listing, so when this query breaks the
-    caller must still get its base list. The 2026-08-17 demo outage was this
-    exact failure unguarded: a collation mismatch threw inside the caller's
-    try-block and took the user's own agents down with it."""
     if not user_id or not org_id:
         return []
     try:
@@ -458,10 +361,6 @@ def _granted_agents_query(user_id, org_id):
         conn.close()
 
 
-# ---------------------------------------------------------------------------
-# Grants
-# ---------------------------------------------------------------------------
-
 def set_grant(agent_key, grantee_type, grantee_id, org_id, granted_by,
               permission_level='can_use') -> None:
     if permission_level not in GRANT_LEVELS:
@@ -506,7 +405,6 @@ def revoke_grant(agent_key, grantee_type, grantee_id) -> bool:
 
 
 def list_grants(agent_key):
-    """Grants on one agent, with display names resolved for the dialog."""
     conn = db.get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:
@@ -535,7 +433,6 @@ def list_grants(agent_key):
 
 
 def delete_grants_for_agent(agent_key) -> None:
-    """Called when an agent is deleted, so grants cannot outlive it."""
     conn = db.get_db_connection()
     cursor = conn.cursor()
     try:
@@ -548,9 +445,6 @@ def delete_grants_for_agent(agent_key) -> None:
 
 
 def remove_user_from_org_sharing(user_id, org_id) -> None:
-    """Off-boarding: drop the user's direct grants in this org and their
-    memberships in this org's groups. Groups they created stay: a group is
-    an org asset, not a personal one."""
     conn = db.get_db_connection()
     cursor = conn.cursor()
     try:
@@ -570,10 +464,6 @@ def remove_user_from_org_sharing(user_id, org_id) -> None:
         cursor.close()
         conn.close()
 
-
-# ---------------------------------------------------------------------------
-# Groups
-# ---------------------------------------------------------------------------
 
 def create_group(org_id, name, owner_id, model_policy='default') -> str:
     group_id = str(uuid.uuid4())
@@ -666,8 +556,6 @@ def list_groups(org_id):
 
 
 def delete_group(group_id) -> None:
-    """Delete the group, its memberships, its nested relationships, and every grant made to it,
-    so a deleted group cannot keep conferring access through orphaned rows."""
     conn = db.get_db_connection()
     cursor = conn.cursor()
     try:
@@ -686,13 +574,11 @@ def delete_group(group_id) -> None:
 
 
 def add_nested_group(parent_group_id: str, child_group_id: str, added_by: str = "") -> bool:
-    """Include a child group inside a parent group (nested group membership)."""
     if not parent_group_id or not child_group_id or str(parent_group_id) == str(child_group_id):
         return False
     conn = db.get_db_connection()
     cursor = conn.cursor()
     try:
-        # Check reverse link to prevent direct cyclic loop
         cursor.execute(
             "SELECT 1 FROM group_nested_groups WHERE parent_group_id=%s AND child_group_id=%s",
             (child_group_id, parent_group_id),
@@ -712,7 +598,6 @@ def add_nested_group(parent_group_id: str, child_group_id: str, added_by: str = 
 
 
 def remove_nested_group(parent_group_id: str, child_group_id: str) -> bool:
-    """Remove a child group from a parent group."""
     conn = db.get_db_connection()
     cursor = conn.cursor()
     try:
@@ -728,7 +613,6 @@ def remove_nested_group(parent_group_id: str, child_group_id: str) -> bool:
 
 
 def list_nested_groups(parent_group_id: str) -> list:
-    """Return all child groups included in parent_group_id."""
     conn = db.get_db_connection()
     cursor = conn.cursor(dictionary=True)
     try:

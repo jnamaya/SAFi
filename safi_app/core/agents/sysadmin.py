@@ -1,4 +1,3 @@
-"""Governed general systems-administration profile for SAFi CLI clients."""
 from typing import Any, Dict
 
 

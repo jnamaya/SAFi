@@ -16,15 +16,9 @@ from ..core.services.provider_governance import activate_org
 agent_api_bp = Blueprint('agent_api', __name__)
 
 def validate_agent_data(data):
-    # Under the two-tier governance model an agent is a role: its scored values
-    # and rules are inherited from the org Charter and the attached Policy, so it
-    # need not define its own. Name/key are validated by the caller.
     return (True, "")
 
 
-# Knowledge bases shipped with the image and referenced by the built-in agent
-# files. They are not rows in `knowledge_bases`, so the ownership check below
-# would otherwise reject an admin editing the SAFi Steward.
 _BUILTIN_KNOWLEDGE_BASES = frozenset(
     p.get("rag_knowledge_base") for p in ALL_AGENTS.values()
     if isinstance(p, dict) and p.get("rag_knowledge_base")
@@ -32,10 +26,6 @@ _BUILTIN_KNOWLEDGE_BASES = frozenset(
 
 
 def _validate_knowledge_base(kb_name, user_id, user):
-    """Returns an error string when the caller may not attach `kb_name`.
-
-    Empty/None means "no knowledge base", which is always allowed.
-    """
     if not kb_name:
         return None
     if kb_name in _BUILTIN_KNOWLEDGE_BASES:
@@ -57,20 +47,6 @@ def _validate_knowledge_base(kb_name, user_id, user):
     return "You do not have access to that knowledge base."
 
 def policy_tool_ceiling(policy_id):
-    """The tools a policy authorizes, expanded to function names.
-
-    Returns None when nothing narrows: no policy, a legacy list-form policy, or
-    a structured policy that never declared `allowed_tools`. None means "this
-    policy does not narrow", which is the same reading Synderesis applies at
-    compile time, and it must not be confused with an explicit empty list, which
-    means "no tools at all".
-
-    This exists because the ceiling used to be applied only in the browser. The
-    agent wizard resolved the policy client-side and filtered the picker, so
-    every way that lookup could fail (a stale policy object, an unparsed
-    will_rules, a legacy shape) ended with the full catalogue on screen and a
-    save that stored tools the policy does not allow.
-    """
     if not policy_id or policy_id == 'standalone':
         return None
     try:
@@ -91,13 +67,6 @@ def policy_tool_ceiling(policy_id):
 
 
 def _known_tool_functions(connectors):
-    """The individual function names inside the connectors this deployment has.
-
-    A policy or an agent may name functions directly rather than a whole
-    connector, so the save guard has to accept those too. Built from the same
-    expansion the Will ultimately enforces, never from a second hand-written
-    list.
-    """
     from ..core.tool_connectors import expand_connectors
     return set(expand_connectors(sorted(connectors)))
 
@@ -125,17 +94,11 @@ def save_agent():
         key = key.lower().strip().replace(" ", "_")
         key = "".join(c for c in key if c.isalnum() or c == '_')
         
-        # Check the FULL built-in catalog, not just the enabled subset — a custom
-        # agent must never shadow a built-in key that could be enabled later.
         if key in ALL_AGENTS: return jsonify({"error": "Reserved name"}), 409
 
         is_valid, err = validate_agent_data(data)
         if not is_valid: return jsonify({"error": err}), 400
 
-        # A tool must be one this deployment actually has. The picker only
-        # offers real ones, but the picker is a UI and offering is not checking:
-        # a crafted request could otherwise put any string into an agent's tool
-        # list, where it would sit looking authorized and fail at the Will.
         requested_tools = [t for t in (data.get('tools') or []) if isinstance(t, str)]
         if requested_tools:
             from ..core.services.mcp_manager import MCPManager, is_guest
@@ -152,13 +115,6 @@ def save_agent():
                     "error": "Not available to this account: " + ", ".join(sorted(unknown))
                 }), 400
 
-            # And it must be one the governing policy authorizes. The wizard
-            # already filters the picker, but a filter is a courtesy: without
-            # this, a stale browser or a crafted request stores tools the policy
-            # forbids. They would be stripped at compile time and blocked by the
-            # Will, so nothing unsafe happens, but the agent would sit there
-            # listing tools it can never use, which is exactly the confusion
-            # this check exists to prevent.
             ceiling = policy_tool_ceiling(data.get('policy_id', 'standalone'))
             if ceiling is not None:
                 from ..core.tool_connectors import expand_connectors
@@ -173,44 +129,21 @@ def save_agent():
                                  + ". Enable them in the policy's Tools & Controls step first."
                     }), 400
 
-        # Governance requirement (enforced per-branch, AFTER auth/existence checks
-        # so 403/404/409 take precedence over business validation): under the
-        # two-tier value model an agent inherits its scored values from a Policy
-        # and/or the org Charter. With neither it is ungoverned and cannot be scored.
         pid = data.get('policy_id', 'standalone')
         has_policy = bool(pid) and pid != 'standalone'
         has_charter = bool(db.get_charter(user.get('org_id'))) if user.get('org_id') else False
         governed = has_policy or has_charter
         UNGOVERNED_MSG = "This agent has no governance. Set an Organization Charter (Settings → Organization) or attach a Policy before saving."
 
-        # A knowledge base must be one the caller can actually read. Without
-        # this, `rag_knowledge_base` is a free-text field that an editor could
-        # point at another user's corpus by id — the retriever refuses unsafe
-        # *paths*, but a valid id belonging to someone else is not unsafe, just
-        # unauthorized. Authorization is the API's job, not the retriever's.
         kb_error = _validate_knowledge_base(data.get('rag_knowledge_base'), user_id, user)
         if kb_error:
             return jsonify({"error": kb_error}), 403
 
         existing = db.get_agent(key)
 
-        # Backlog 57b: WIDENING an org agent's tool list waits for a second
-        # person; narrowing never does. Additions are split out here and
-        # filed as a pending request after the row write succeeds, so the
-        # agent keeps running on its current tool set until an admin or
-        # auditor applies them. Personal (no-org) agents are exempt: there
-        # is no org authority to protect and no reviewer to wait for.
         requested_full = list(requested_tools)
         pending_additions = []
         tools_to_save = requested_tools
-        # 57d refinement: a policy's DECLARED allowed_tools is the
-        # pre-approved menu, so agent additions within it apply immediately
-        # (the validation above already refused anything beyond it, and the
-        # declared list itself only widens through a reviewed
-        # policy-widening request). The agent-level gate remains only where
-        # no ceiling is declared (standalone, charter-only, legacy
-        # policies): there the agent addition IS the birth of the
-        # authorization.
         if user.get('org_id') and policy_tool_ceiling(data.get('policy_id', 'standalone')) is None:
             old_tools = (existing.get('tools') or []) if (existing and request.method == 'PUT') else []
             pending_additions = sorted(set(requested_tools) - set(old_tools))
@@ -246,8 +179,6 @@ def save_agent():
             if not exist: return jsonify({"error": "Not found"}), 404
             
             is_owner = (exist.get('created_by') == user_id)
-            # An admin may edit agents IN THEIR OWN ORG only, not another org's
-            # (backlog 70): the admin bypass previously had no org constraint.
             exist_org = exist.get('org_id')
             same_org = exist_org is not None and str(exist_org) == str(get_current_org_id())
             is_admin = check_permission('admin')
@@ -277,7 +208,6 @@ def save_agent():
                 history_max_chars=data.get('history_max_chars')
             )
 
-        # File the pending widening (57b) only after the row write succeeded.
         request_id = None
         if pending_additions:
             request_id = tool_approval_store.create_request(
@@ -289,12 +219,6 @@ def save_agent():
             except Exception as e:
                 current_app.logger.error(f"tool-request evidence failed for {key}: {e}")
 
-        # Tool-list changes are the highest-consequence capability change an
-        # agent can receive, and until backlog 57a they left no record. Old
-        # list comes from the pre-update row (empty on create); best-effort,
-        # so evidence failure never blocks the save it describes. Compares
-        # what was actually SAVED: pending additions are not on the agent
-        # yet and get their own tool_request_* evidence instead.
         if user.get('org_id'):
             try:
                 old_tools = sorted(existing.get('tools') or []) if (existing and request.method == 'PUT') else []
@@ -309,7 +233,6 @@ def save_agent():
             except Exception as e:
                 current_app.logger.error(f"tool-change evidence failed for {key}: {e}")
 
-        # Synchronize sharing grants if grants or shared_groups is supplied in payload
         if user.get('org_id') and ('grants' in data or 'shared_groups' in data):
             try:
                 desired_grants = set()
@@ -375,7 +298,6 @@ def list_all_agents():
     org_id = user.get('org_id') if user else None
     user_role = user.get('role') or ROLE_CONFIG["default_role"] if user else None
 
-    # Check for API key in headers (for CLI and programmatic clients)
     if not user_id:
         raw_key = request.headers.get("X-API-KEY") or request.headers.get("Authorization", "")
         if raw_key.startswith("Bearer "):
@@ -393,7 +315,6 @@ def list_all_agents():
             except Exception as e:
                 current_app.logger.warning(f"Error resolving policy from API key in list_all_agents: {e}")
 
-    # Explicit client-supplied user identity override (e.g. from safi-cli)
     x_user_id = request.headers.get("X-User-ID") or request.args.get("user_id")
     if x_user_id:
         u_det = db.get_user_details(x_user_id)
@@ -412,11 +333,8 @@ def list_all_agents():
     from ..persistence import sharing_store
     sys_agents = []
     for k, v in AGENTS.items():
-        # Filter built-in agents by user role and group permissions
         if user_id and not sharing_store.can_use_built_in_or_custom_agent(user_id, user_role, org_id, k, ROLE_CONFIG):
             continue
-        # Compile through get_profile() so built-ins carry the same governed
-        # view (scope, hard gates, policy/org names) the UI shows for DB agents.
         try:
             a = get_profile(k, org_id=org_id)
         except Exception:
@@ -432,7 +350,6 @@ def list_all_agents():
                 user_id, org_id, user_role or ROLE_CONFIG["default_role"],
                 ROLE_CONFIG["visibility_roles"],
             )
-            # Explicit grants widen the configured visibility result.
             seen_keys = {a.get('agent_key') or a.get('key') for a in raw_list}
             if user_id:
                 for granted in sharing_store.granted_agents(user_id, org_id):
@@ -441,9 +358,6 @@ def list_all_agents():
                         raw_list.append(granted)
             for agent in raw_list:
                 try:
-                    # get_profile() is the sole compiler — it returns the full
-                    # governed view (role + Policy + Charter), so the details modal
-                    # shows charter mission in the worldview + charter/policy values.
                     merged = get_profile(agent['key'], org_id=org_id)
 
                     merged['key'] = agent['key']
@@ -468,11 +382,6 @@ def get_agent(key):
         sess_org_id = (session.get('user') or {}).get('org_id')
         agent = get_profile(clean, org_id=sess_org_id)
         
-        # Cross-org guard (backlog 70): db.get_agent is org-unfiltered, so the
-        # full raw config of a custom agent may only be returned to the owning
-        # org or the creator. Built-in agents have no DB row (raw is None) and
-        # stay visible via the merged profile. 404 on a cross-org key so it
-        # does not confirm existence.
         raw = db.get_agent(clean)
         if raw:
              uid = session.get('user')['id']
@@ -529,7 +438,6 @@ def delete_agent(key):
     if agent.get('created_by') != uid: return jsonify({"error": "Unauthorized"}), 403
     
     db.delete_agent(clean)
-    # Grants must not outlive the agent (no FKs, so cleanup is explicit).
     sharing_store.delete_grants_for_agent(clean)
 
     global_safi_cache.invalidate_profile(clean)
@@ -538,7 +446,6 @@ def delete_agent(key):
 
 @agent_api_bp.route('/generate/rubric', methods=['POST'], strict_slashes=False)
 async def generate_rubric():
-    # strict_slashes=False: without it this route 405s on a trailing slash.
     user = session.get('user')
     if not user: return jsonify({"error": "Unauthorized"}), 401
 
@@ -549,7 +456,6 @@ async def generate_rubric():
 
         from safi_app.core.services.llm_provider import LLMProvider
         
-        # Wizard drafting runs on the configured backend model.
         model = Config.BACKEND_MODEL
         detected_provider = _detect_provider(model)
         route_cfg = { "provider": detected_provider, "model": model }
@@ -565,7 +471,7 @@ async def generate_rubric():
             "providers": _build_providers_config(Config),
             "routes": { "intellect": route_cfg }
         }
-        activate_org(get_current_org_id())  # provider allow-list applies to wizard calls too
+        activate_org(get_current_org_id())
         provider = LLMProvider(llm_config)
         
         system_prompt = (
@@ -616,7 +522,6 @@ async def generate_values():
         
         from safi_app.core.services.llm_provider import LLMProvider
         
-        # Wizard drafting runs on the configured backend model.
         model = Config.BACKEND_MODEL
         detected_provider = _detect_provider(model)
         route_cfg = { "provider": detected_provider, "model": model }
@@ -632,7 +537,7 @@ async def generate_values():
             "providers": _build_providers_config(Config),
             "routes": { "intellect": route_cfg }
         }
-        activate_org(get_current_org_id())  # provider allow-list applies to wizard calls too
+        activate_org(get_current_org_id())
         provider = LLMProvider(llm_config)
         
         system_prompt = (
@@ -707,7 +612,7 @@ async def generate_scope():
             "providers": _build_providers_config(Config),
             "routes": { "intellect": route_cfg }
         }
-        activate_org(get_current_org_id())  # provider allow-list applies to wizard calls too
+        activate_org(get_current_org_id())
         provider = LLMProvider(llm_config)
 
         system_prompt = (
@@ -737,13 +642,7 @@ async def generate_scope():
         return jsonify({"ok": False, "error": "An internal error occurred."}), 500
 
 
-# Agent sharing (backlog 55): per-agent can_use grants to users and groups.
-# Grants only widen the visibility ladder, never narrow it, and are org-scoped:
-# an agent with no org cannot be shared, and a grantee must be in the same org.
-
 def _share_authority(key):
-    """Returns (agent, error_response). The caller may manage sharing when
-    they own the agent or are an admin of the agent's org."""
     user = session.get('user')
     user_id = (user.get('id') or user.get('sub')) if user else None
     if not user_id:
@@ -772,8 +671,6 @@ def list_agent_shares(key):
     if err:
         return err
     org_id = agent['org_id']
-    # Candidates ride along so the dialog needs one request. The member list
-    # is already org-visible via GET /organizations/<id>/members.
     try:
         role_order = sorted(ROLE_CONFIG["levels"], key=ROLE_CONFIG["levels"].get, reverse=True)
         members = db.get_organization_members(org_id, role_order)
@@ -840,15 +737,7 @@ def revoke_agent_share(key, grantee_type, grantee_id):
     return jsonify({"ok": True, "removed": removed})
 
 
-# Tool-grant approvals (backlog 57b). Additions wait here; the author may not
-# approve their own request unless they are the org's only eligible reviewer,
-# in which case the sign-off is recorded as non-independent (KB pattern).
-
 def _reviewer_context():
-    """(user_id, email, org_id, error_response) for the review endpoints.
-    Eligibility is the ACTIVE approver set (backlog 57e): the org's
-    designated approver group when one exists and has members, otherwise
-    the admin|auditor fallback."""
     user = session.get('user')
     if not user:
         return None, None, None, (jsonify({"error": "Unauthorized"}), 401)
@@ -888,9 +777,6 @@ def approve_tool_request(request_id):
     if req['status'] != 'pending':
         return jsonify({"error": f"This request is already {req['status']}."}), 409
 
-    # Separation of duties: authors do not approve their own widening. The
-    # sole-reviewer exception prevents a one-admin org from deadlocking and
-    # stamps the non-independence on the request row itself.
     self_approved = False
     if str(req['requested_by']) == str(uid):
         if tool_approval_store.other_reviewer_exists(
@@ -900,9 +786,6 @@ def approve_tool_request(request_id):
                                      "approver must decide it."}), 403
         self_approved = True
 
-    # Policy-widening request (backlog 57d): apply the requested declared
-    # list to the policy's will_rules. Agents under that policy then add
-    # these tools freely, which is the point of reviewing at the policy.
     if req.get('request_type') == 'policy':
         target = req.get('target_tools') or []
         if not tool_approval_store.apply_policy_tools(req['policy_id'], target):
@@ -932,9 +815,6 @@ def approve_tool_request(request_id):
                                             reason='agent no longer exists')
         return jsonify({"error": "The agent no longer exists; request closed."}), 409
 
-    # Re-check the policy ceiling AT APPROVAL TIME: the policy may have
-    # narrowed since the request was filed, and approval is the moment the
-    # capability becomes real.
     added = req.get('added') or []
     ceiling = policy_tool_ceiling(agent.get('policy_id'))
     if ceiling is not None:
@@ -966,7 +846,6 @@ def approve_tool_request(request_id):
 
 @agent_api_bp.route('/agents/tool-approvers', methods=['GET'], strict_slashes=False)
 def get_tool_approvers():
-    """The org's approver designation (backlog 57e), for the settings UI."""
     user = session.get('user')
     if not user or not check_permission('admin'):
         return jsonify({"error": "Forbidden"}), 403
@@ -982,9 +861,6 @@ def get_tool_approvers():
 
 @agent_api_bp.route('/agents/tool-approvers', methods=['PUT'], strict_slashes=False)
 def set_tool_approvers():
-    """Designate (or clear) the approver group. Admin-only and
-    evidence-logged: choosing who authorizes capability is itself a
-    governance-config change."""
     user = session.get('user')
     if not user or not check_permission('admin'):
         return jsonify({"error": "Forbidden"}), 403
@@ -1012,8 +888,6 @@ def set_tool_approvers():
 @agent_api_bp.route('/agents/tool-requests/acknowledge',
                     methods=['POST'], strict_slashes=False)
 def acknowledge_tool_outcomes():
-    """The requester dismisses their decided requests from the inbox
-    (backlog 57c). Scoped to the caller's own rows by construction."""
     user = session.get('user')
     if not user:
         return jsonify({"error": "Unauthorized"}), 401
@@ -1025,9 +899,6 @@ def acknowledge_tool_outcomes():
 @agent_api_bp.route('/agents/tool-requests/<request_id>/reject',
                     methods=['POST'], strict_slashes=False)
 def reject_tool_request(request_id):
-    # A reviewer rejects; the AUTHOR may also hit this to cancel their own
-    # request, which needs no separation of duties (withdrawing a widening
-    # is narrowing).
     user = session.get('user')
     if not user:
         return jsonify({"error": "Unauthorized"}), 401
@@ -1068,8 +939,6 @@ def list_available_tools():
             policy_id=policy_id,
         )
 
-        # Mark what the given policy authorizes, so the picker shows the same
-        # answer the save path enforces rather than deriving its own.
         ceiling = policy_tool_ceiling(policy_id)
         if ceiling is not None:
             from ..core.tool_connectors import expand_connectors

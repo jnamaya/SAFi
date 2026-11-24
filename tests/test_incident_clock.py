@@ -1,8 +1,3 @@
-"""
-Pure unit tests for the Reg S-P 30-day notification clock (no DB).
-
-Run:  venv/bin/python tests/test_incident_clock.py
-"""
 import sys
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -70,7 +65,6 @@ class TestClock(unittest.TestCase):
         c = compute_notification_clock(
             incident(firm_aware_at=NOW - timedelta(days=5), ag_delay=True,
                      ag_delay_until=NOW + timedelta(days=1)), now=NOW)
-        # due stays at aware+30 (25 days out), not the earlier AG date
         self.assertEqual(c["days_remaining"], 25)
 
     def test_vendor_notice_within_72h(self):
@@ -92,7 +86,6 @@ class TestClock(unittest.TestCase):
         self.assertIsNone(c["vendor_notice_late"])
 
     def test_mysql_naive_datetime_input(self):
-        # Rows come back from MySQL as naive datetimes
         c = compute_notification_clock(
             incident(firm_aware_at=datetime(2026, 7, 1, 9, 0, 0)), now=NOW)
         self.assertEqual(c["state"], "running")

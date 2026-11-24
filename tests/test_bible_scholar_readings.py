@@ -1,25 +1,3 @@
-"""
-The Bible Scholar's readings plugin: which prompts fire it, which reading they
-select, and which day they ask about.
-
-WHY. Trigger detection and reading selection were one tangled block, and the two
-questions are not the same. `individual_reading_commands` fired the plugin for
-`today's reading`, `daily reading`, `mass reading` and `reading for today`, then
-the selection ladder only knew `first reading` / `second reading` / `gospel`, so
-those four fetched the day and reported:
-
-    I found the readings for today, but couldn't find a specific 'None'.
-
-Four of the nine documented phrases — the four a person is most likely to type.
-Selecting nothing now means "all of them", which is also what makes a weekday
-solemnity correct: the Second Reading appears because the day HAS one, not
-because the caller guessed the weekday.
-
-The Responsorial Psalm was a third bug in the same block: parsed by
-`_READING_LABELS`, mapped by the RSS parser, and unreachable from any prompt.
-
-Run:  venv/bin/python tests/test_bible_scholar_readings.py
-"""
 import asyncio
 import logging
 import sys
@@ -31,12 +9,11 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from safi_app.core.plugins import bible_scholar_readings as R  # noqa: E402
+from safi_app.core.plugins import bible_scholar_readings as R
 
 LOG = logging.getLogger("test_readings")
 LOG.addHandler(logging.NullHandler())
 
-# A weekday: First Reading, Psalm, Gospel — no Second Reading.
 WEEKDAY = {
     "date": "Wednesday August 12, 2026",
     "full_passages": [
@@ -45,7 +22,6 @@ WEEKDAY = {
         {"title": "Gospel", "citation": "Matthew 18:15-20", "text": ""},
     ],
 }
-# A Sunday or a solemnity: all four.
 SUNDAY = {
     "date": "Sunday August 16, 2026",
     "full_passages": [
@@ -60,15 +36,6 @@ PROFILE = "the_bible_scholar"
 
 
 def run(prompt, source=WEEKDAY, profile=PROFILE):
-    """
-    Drive the handler with the network stubbed out. Returns the payload, and
-    records the date the handler asked for on `run.last_date`.
-
-    The side effect is a PLAIN function on purpose: `_fetch_readings_from_source`
-    is an `async def`, so `patch.object` installs an AsyncMock, which awaits the
-    side effect's return value for you. An async side effect here hands back an
-    unawaited coroutine and the handler fails on `"error" in scraped_data`.
-    """
     run.last_date = None
 
     def _record(log, target_date=None):
@@ -85,9 +52,6 @@ def run(prompt, source=WEEKDAY, profile=PROFILE):
 class TriggeringIsSeparateFromSelecting(unittest.TestCase):
 
     def test_a_non_readings_prompt_does_not_fire_at_all(self):
-        """The plugin must stay out of ordinary conversation — firing would
-        override the RAG query with today's citation and answer a general
-        question with today's liturgy."""
         for prompt in ("which psalm is about trust?",
                        "tell me about the gospel of Mark",
                        "what does Amos teach?",
@@ -99,8 +63,6 @@ class TriggeringIsSeparateFromSelecting(unittest.TestCase):
         self.assertIsNone(run("first reading", profile="the_fiduciary"))
 
     def test_every_documented_phrase_produces_a_usable_payload(self):
-        """The regression this file exists for: no phrase may come back as an
-        error mentioning None."""
         for prompt in ("first reading", "second reading", "gospel reading",
                        "today's gospel", "today's reading", "daily reading",
                        "mass reading", "reading for today", "gospel for today",
@@ -132,8 +94,6 @@ class SelectingNothingMeansEverything(unittest.TestCase):
             self.assertIn(fragment, ctx)
 
     def test_a_weekday_digest_has_no_second_reading_and_says_so_by_omission(self):
-        """Driven by what the source lists, not by the weekday — which is what
-        makes a weekday solemnity come out right without a calendar."""
         payload = run("today's readings", source=WEEKDAY)
         self.assertEqual(len(payload["rag_query_override"]), 3)
         self.assertNotIn("Second Reading", payload["preformatted_context_string"])
@@ -158,18 +118,13 @@ class SingleReadingSelection(unittest.TestCase):
                 self.assertEqual(run(prompt)["rag_query_override"], citation)
 
     def test_the_psalm_is_reachable(self):
-        """It was parsed and mapped, and no prompt could ask for it."""
         self.assertEqual(run("responsorial psalm")["rag_query_override"],
                          "Psalm 113:1-6")
 
     def test_a_single_reading_override_stays_a_string(self):
-        """Only the all-readings branch returns a list; the Intellect branches on
-        the type, so a one-element list here would change the retrieval path."""
         self.assertIsInstance(run("first reading")["rag_query_override"], str)
 
     def test_asking_for_a_reading_the_day_lacks_is_answered_liturgically(self):
-        """A weekday has no Second Reading. That is a fact about the day, not a
-        lookup failure, so the payload names what the day does have."""
         payload = run("second reading", source=WEEKDAY)
         err = payload["plugin_error"]
         self.assertIn("no Second Reading", err)
@@ -185,7 +140,6 @@ class DateRequests(unittest.TestCase):
         self.assertIsNone(run.last_date)
 
     def test_iso_dates_pass_straight_through(self):
-        """The form a scheduled caller uses, because it needs no interpreting."""
         run("the readings for 2026-08-15")
         self.assertEqual(run.last_date, date(2026, 8, 15))
 
@@ -194,20 +148,17 @@ class DateRequests(unittest.TestCase):
         self.assertIsNone(run.last_date)
 
     def test_relative_and_weekday_cues(self):
-        today = date(2026, 8, 12)  # a Wednesday
+        today = date(2026, 8, 12)
         self.assertEqual(R._requested_date("readings for tomorrow", today), date(2026, 8, 13))
         self.assertEqual(R._requested_date("yesterday's readings", today), date(2026, 8, 11))
         self.assertEqual(R._requested_date("sunday's readings", today), date(2026, 8, 16))
         self.assertIsNone(R._requested_date("today's readings", today))
 
     def test_a_weekday_cue_naming_today_resolves_to_today(self):
-        today = date(2026, 8, 12)  # Wednesday
+        today = date(2026, 8, 12)
         self.assertEqual(R._requested_date("wednesday readings", today), today)
 
     def test_a_dated_request_is_refused_rather_than_answered_with_today(self):
-        """The fallback source serves one page — always today's. Returning it
-        under another day's heading is undetectable to the caller, so a dated
-        request that USCCB cannot satisfy fails instead."""
         async def _go():
             with patch.object(R, "_fetch_usccb_rss", return_value=None):
                 return await R._fetch_readings_from_source(LOG, target_date=date(2099, 1, 1))

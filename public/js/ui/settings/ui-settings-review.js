@@ -1,34 +1,19 @@
-// Review tab: the org's human-oversight act surface (FINRA 3110/3120
-// supervisory review; EU AI Act Art. 14). Sampled turns land in the queue
-// via the server-side hook; reviewers (admin|auditor — editors are content
-// authors and don't supervise themselves) approve or override each item.
-// Review is post-hoc supervision, never a delivery gate: an override does
-// NOT retract a delivered message — it records the firm's documented
-// supervisory determination about it, hash-chained into the audit trail.
-// The Audit Hub stays observe-only; this tab is where governance data gets
-// acted on. Vocabulary: Alignment (/10) and Consistency (%) — never faculty
-// names as UI labels (glossary bridge lives in exports only).
 import * as ui from '../ui.js';
 import * as api from '../../core/api.js';
 import { renderConscienceReport, attachTabSwitching } from './ui-modal-conscience.js';
 
 let orgId = null;
 let currentUser = null;
-// Multi-select filter state: arrays (rows match ANY selected value).
 let filters = { status: ['pending'], trigger: [], from: '', to: '' };
-let sort = { key: 'created_at', desc: true }; // server-side sort (see _parse_sort)
+let sort = { key: 'created_at', desc: true };
 let offset = 0;
-let pageSize = 50;                            // T3c: page-size control (10–200)
-let selected = new Set();                     // queue ids checked for bulk Approve
-let lastItems = [];                           // last rendered page, for j/k nav
-let cursor = 0;                               // keyboard cursor into lastItems
-let loadSeq = 0;                              // guards stale queue responses
+let pageSize = 50;
+let selected = new Set();
+let lastItems = [];
+let cursor = 0;
+let loadSeq = 0;
 let keysBound = false;
 
-// --- URL-synced filter state (Tier 1) ----------------------------------------
-// The queue view is linkable: filters, sort, page size and offset live in the
-// URL so a filtered view can be shared/bookmarked (and the Audit Hub drill-down
-// stays stable). replaceState only — no history spam on every keystroke.
 
 function syncUrl() {
     const p = new URLSearchParams();
@@ -60,15 +45,10 @@ function readUrl() {
     if (off > 0) offset = off;
 }
 
-// D2 cross-surface deep link: the Audit Hub drill-down links into the Review
-// queue. Switches to the Review tab (clicking the sidebar nav so the core
-// module's own tab logic runs), waits for the async tab render, then opens the
-// queue item directly instead of leaving the reviewer to hunt for it.
 export async function openReviewItemDeep(queueId) {
     if (!document.getElementById('review-queue')) {
         const nav = document.querySelector('[data-tab="review"]');
         if (nav) nav.click();
-        // renderSettingsReviewTab fetches the org before it builds the DOM.
         for (let i = 0; i < 50 && !document.getElementById('review-queue'); i++) {
             await new Promise(r => setTimeout(r, 100));
         }
@@ -101,12 +81,10 @@ function age(v) {
     return `${Math.floor(mins / (60 * 24))}d ago`;
 }
 
-// Alignment is spirit_score /10; null renders N/A, never a default.
 function alignmentLabel(score) {
     return (score === null || score === undefined) ? 'N/A' : `${Number(score).toFixed(1)} / 10`;
 }
 
-// Consistency = (1 − drift) × 100%; null renders N/A.
 function consistencyLabel(drift) {
     return (drift === null || drift === undefined) ? 'N/A' : `${Math.round((1 - drift) * 100)}%`;
 }
@@ -138,9 +116,6 @@ function statusBadge(status) {
     return `<span class="${BADGE} ${map[status] || map.pending} capitalize">${esc(status)}</span>`;
 }
 
-// The digest is rendered beside the verdict so a reader can copy it, compare it
-// against an earlier export, and re-walk the chain — a badge alone is our
-// assertion, not evidence.
 function chainHash(chain) {
     if (!chain?.entry_hash) return '';
     const h = String(chain.entry_hash);
@@ -150,9 +125,6 @@ function chainHash(chain) {
 
 function chainBadge(chain) {
     if (!chain) return '';
-    // valid === null means there are no trail entries at all. That is an absence
-    // of evidence, not a pass: this used to fall through to the green tick and
-    // claim "verified" over zero entries, which is what a purged trail looks like.
     if (chain.valid === null || chain.valid === undefined || !chain.entries) {
         return `<span class="${BADGE} bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200" title="No chat_audit_trail entries exist for this turn, so there is nothing to verify. Expected if the trail was purged under the retention policy.">No trail entries</span>`;
     }
@@ -163,7 +135,6 @@ function chainBadge(chain) {
 
 const isAdmin = () => currentUser?.role === 'admin';
 
-// ---------------------------------------------------------------------------
 
 export async function renderSettingsReviewTab() {
     const root = document.getElementById('review-content');
@@ -174,14 +145,14 @@ export async function renderSettingsReviewTab() {
     try {
         const orgRes = await api.getMyOrganization();
         org = orgRes ? orgRes.organization : null;
-    } catch (e) { /* fall through */ }
+    } catch (e) {   }
     if (!org) {
         root.innerHTML = `<p class="text-sm text-gray-500">You need an organization (and the admin or auditor role) to run supervisory review.</p>`;
         return;
     }
     orgId = org.id;
     selected = new Set();
-    readUrl(); // URL-synced state: a shared/bookmarked link reproduces the view
+    readUrl();
 
     root.innerHTML = `
         <div id="review-alerts"></div>
@@ -190,8 +161,6 @@ export async function renderSettingsReviewTab() {
         <div id="review-config" class="settings-card mt-6"></div>
     `;
 
-    // Long ledger reasons render with an .expand-btn — same delegated
-    // listener the conscience modal gets in ui-settings-core.js.
     root.addEventListener('click', (event) => {
         if (event.target.classList.contains('expand-btn')) {
             const reasonText = event.target.previousElementSibling;
@@ -203,14 +172,13 @@ export async function renderSettingsReviewTab() {
         }
     });
 
-    bindKeys(); // j/k/Enter/A — one-shot global binding, guarded by keysBound
+    bindKeys();
     loadAlerts();
     loadStats();
     renderQueueList();
     renderConfigCard();
 }
 
-// --- Alerts strip (Art. 72 monitoring journal, in-app surface) -------------
 
 async function loadAlerts() {
     const el = document.getElementById('review-alerts');
@@ -253,9 +221,6 @@ function summariseAlert(a) {
     return '';
 }
 
-// --- Coverage stats strip ---------------------------------------------------
-// Custom date range (Tier 1): the API already accepted from/to; the UI now
-// exposes it, and both CSV exports inherit the same window.
 let statsFrom = '';
 let statsTo = '';
 
@@ -351,10 +316,7 @@ async function loadStats() {
     }
 }
 
-// --- Queue list --------------------------------------------------------------
 
-// Multi-select popover: <details> keeps it dependency-free; checkboxes toggle
-// array membership and re-fetch. Rows match ANY selected value.
 function multiSel(id, label, opts, selectedArr) {
     const on = (v) => selectedArr.includes(v) ? 'checked' : '';
     return `<details id="${id}" class="relative">
@@ -385,7 +347,6 @@ function sortHeader(colKey, label) {
 async function renderQueueList() {
     const el = document.getElementById('review-queue');
     if (!el) return;
-    // Skeleton rows, not a spinner: the table shape stays put while loading.
     el.innerHTML = `<div class="animate-pulse space-y-2 py-6">${'<div class="h-9 bg-gray-100 dark:bg-neutral-800 rounded-lg"></div>'.repeat(6)}</div>`;
     const seq = ++loadSeq;
     let res;
@@ -397,11 +358,11 @@ async function renderQueueList() {
             limit: pageSize, offset,
         });
     } catch (e) {
-        if (seq !== loadSeq) return; // a newer request superseded this failure
+        if (seq !== loadSeq) return;
         el.innerHTML = `<p class="text-sm text-red-500">Failed to load the review queue: ${esc(e.message || e)}</p>`;
         return;
     }
-    if (seq !== loadSeq) return; // stale response — a newer filter already re-rendered
+    if (seq !== loadSeq) return;
     const items = res.items || [];
     const total = res.total || 0;
     lastItems = items;
@@ -491,8 +452,6 @@ async function renderQueueList() {
         e.stopPropagation();
         const id = Number(chk.dataset.bulk);
         chk.checked ? selected.add(id) : selected.delete(id);
-        // Restripe the bulk bar in place — cheaper than a refetch round-trip
-        // for a pure selection change.
         const bar = document.getElementById('review-bulk-approve');
         if (selected.size && !bar) refetch();
         else if (!selected.size && bar) refetch();
@@ -508,8 +467,6 @@ async function renderQueueList() {
     syncUrl();
 }
 
-// Bulk Approve: per-item results, because each disposition is one-shot and
-// races (someone else reviewed it, or self-review) must not abort the batch.
 async function bulkApprove() {
     const ids = [...selected];
     if (!ids.length) return;
@@ -529,9 +486,6 @@ async function bulkApprove() {
     renderQueueList();
 }
 
-// --- Keyboard navigation (Tier 2): j/k move the cursor, Enter opens the
-// detail pane, A approves the cursor row (one-shot, no bulk shortcut for
-// override — rationale discipline). Bound once; ignores typing in inputs.
 function bindKeys() {
     if (keysBound) return;
     keysBound = true;
@@ -564,7 +518,6 @@ function bindKeys() {
     });
 }
 
-// --- Detail pane --------------------------------------------------------------
 
 async function renderDetail(queueId) {
     const el = document.getElementById('review-queue');
@@ -581,18 +534,17 @@ async function renderDetail(queueId) {
     const q = doc.queue;
     const turn = doc.turn;
 
-    // Parse persisted JSON strings (ledger, attribution) defensively.
     let ledger = [];
-    try { ledger = JSON.parse(turn?.conscience_ledger || '[]') || []; } catch (e) { /* leave empty */ }
+    try { ledger = JSON.parse(turn?.conscience_ledger || '[]') || []; } catch (e) {   }
     let profileValues = [];
     try {
         profileValues = Array.isArray(turn?.profile_values)
             ? turn.profile_values
             : JSON.parse(turn?.profile_values || '[]');
         if (!Array.isArray(profileValues)) profileValues = [];
-    } catch (e) { /* legacy/malformed row — omit rubric descriptions */ }
+    } catch (e) {   }
     let attribution = null;
-    try { attribution = turn?.model_attribution ? JSON.parse(turn.model_attribution) : null; } catch (e) { /* opaque */ }
+    try { attribution = turn?.model_attribution ? JSON.parse(turn.model_attribution) : null; } catch (e) {   }
 
     const detail = q.trigger_detail || {};
     const willDecision = turn?.will_decision ?? detail.will_decision;
@@ -708,7 +660,6 @@ function renderActionBar() {
         </div>`;
 }
 
-// --- Config card ---------------------------------------------------------------
 
 async function renderConfigCard() {
     const el = document.getElementById('review-config');
@@ -806,7 +757,6 @@ async function renderConfigCard() {
                 low_alignment: el.querySelector('#rvc-low-align').checked,
                 alignment_threshold: num('#rvc-align-thr'),
                 drift_spike: el.querySelector('#rvc-drift').checked,
-                // Consistency floor X% ⇔ drift threshold 1 − X/100
                 drift_threshold: Math.round((1 - floor / 100) * 100) / 100,
             },
             alerts: {

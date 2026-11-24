@@ -1,5 +1,3 @@
-"""Tests for client-side context management, response schema, and keyring fallback."""
-
 import sys
 import unittest
 from pathlib import Path
@@ -41,7 +39,7 @@ class TestTruncation(unittest.TestCase):
     def test_overflow_summarized_in_harness_note(self):
         res = self._results(70)
         out = truncate_tool_results(res, total_cap=60)
-        self.assertEqual(len(out), 61)  # 60 entries + 1 harness_note
+        self.assertEqual(len(out), 61)
         self.assertEqual(out[0]["tool_name"], "harness_note")
         self.assertIn("dropped", out[0]["result"])
 

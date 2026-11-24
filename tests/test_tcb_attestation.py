@@ -1,28 +1,3 @@
-"""
-Measured boot: verify at startup, stamp every record, strict mode opt-in.
-
-WHY (backlog 39). The integrity manifest answered "is this tree genuine?" as a
-by-hand question. These three rows make it ambient:
-
-  * create_app() verifies the Core Loop once and logs the fingerprint — or the
-    taint, loudly. Like a Linux taint flag, a mismatch does NOT stop the app by
-    default: AGPL grants forks the right to RUN modified code; only the NAME is
-    conditional (agreement §IV). Taint is representation and evidence, never
-    permission.
-  * Every governance record carries the TCB stamp — fingerprint plus
-    intact/tainted — the way an oops report carries taint flags. An examiner
-    reading a record sees WHICH TCB produced it, not just what it decided.
-  * SAFI_ENFORCE_INTEGRITY=strict refuses to start on anything but
-    verified-intact, "unverifiable" included: a deployment that cannot attest
-    is not intact for a deployment that demanded attestation.
-
-The status is computed once and cached deliberately: it describes the files the
-process IMPORTED at boot. Re-hashing per record would measure the disk, not the
-running process — on-disk drift detection is the next row, deliberately unbuilt.
-
-Needs the disposable stack (tree copies + a real turn's record):
-    docker compose -f docker-compose.test.yml run --rm --build tests -k attestation
-"""
 import logging
 import os
 import shutil
@@ -35,7 +10,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from safi_app.core import integrity  # noqa: E402
+from safi_app.core import integrity
 
 DB_SRC = (ROOT / "safi_app" / "persistence" / "database.py").read_text(encoding="utf-8")
 APP_INIT = (ROOT / "safi_app" / "__init__.py").read_text(encoding="utf-8")
@@ -51,9 +26,6 @@ class BootVerification(unittest.TestCase):
         self.assertEqual(s["fingerprint"], s["expected_fingerprint"])
 
     def test_the_status_agrees_with_the_canonical_checker(self):
-        """The module must reuse scripts/verify_integrity.py, not reimplement
-        it — two hash implementations would eventually disagree, and the one
-        an auditor runs by hand must be the one the app ran at boot."""
         import json as j, subprocess
         p = subprocess.run([sys.executable, str(ROOT / "scripts" / "verify_integrity.py"),
                             "--json"], capture_output=True, text=True, timeout=120)
@@ -77,9 +49,8 @@ class BootVerification(unittest.TestCase):
             self.assertFalse(s["intact"])
 
     def test_an_unverifiable_tree_is_a_third_answer(self):
-        """'Could not check' must never be reported as intact OR tainted."""
         with tempfile.TemporaryDirectory(prefix="safi-att-") as d:
-            s = integrity.get_status(root=Path(d))  # no manifest, no files
+            s = integrity.get_status(root=Path(d))
             self.assertEqual(s["state"], "unverifiable")
             self.assertFalse(s["intact"])
             self.assertIsNone(s["fingerprint"])
@@ -93,10 +64,6 @@ class TheTcbStamp(unittest.TestCase):
         self.assertTrue(stamp["intact"])
 
     def test_every_governance_record_is_stamped_at_the_single_writer(self):
-        """Stamped in _insert_governance_record — the one writer every
-        governance path funnels through — so no path can mint an unattested
-        record. setdefault, so a replayed capture keeps the TCB it was
-        actually produced under."""
         at = DB_SRC.index("def _insert_governance_record")
         body = DB_SRC[at:DB_SRC.index("def ", at + 10)]
         self.assertIn("tcb_stamp", body)
@@ -118,10 +85,8 @@ class StrictMode(unittest.TestCase):
             return integrity.enforce_at_boot(logging.getLogger("t"), status=status)
 
     def test_default_mode_boots_tainted_loudly(self):
-        """AGPL permits running modified code; the default must therefore run.
-        The loudness is the taint flag; the records carry the evidence."""
         s = self._boot(self.TAINTED, "")
-        self.assertEqual(s["state"], "modified")  # returned, not raised
+        self.assertEqual(s["state"], "modified")
 
     def test_strict_refuses_a_tainted_tcb(self):
         with self.assertRaises(RuntimeError) as cm:
@@ -129,8 +94,6 @@ class StrictMode(unittest.TestCase):
         self.assertIn("refusing", str(cm.exception))
 
     def test_strict_refuses_unverifiable_too(self):
-        """A deployment that demanded attestation cannot accept 'could not
-        check' as a pass — that would make deleting the manifest a bypass."""
         with self.assertRaises(RuntimeError):
             self._boot(self.UNVERIFIABLE, "strict")
 
@@ -146,10 +109,6 @@ class StrictMode(unittest.TestCase):
 
 
 class FingerprintPin(unittest.TestCase):
-    """SAFI_EXPECTED_FINGERPRINT: the operator's out-of-band anchor. The
-    manifest ships inside the tree it guards, so a tamper can regenerate it;
-    the pin lives in config provisioned apart from the code and holds every
-    boot to the value a human copied from a published release."""
 
     INTACT = StrictMode.INTACT
 
@@ -167,10 +126,8 @@ class FingerprintPin(unittest.TestCase):
         self.assertTrue(s["intact"])
 
     def test_mismatched_pin_boots_loudly_in_default_mode(self):
-        """Same AGPL posture as the taint flag: default mode runs, the log
-        carries the alarm."""
         s = self._boot(self.INTACT, "", "a" * 64)
-        self.assertTrue(s["intact"])  # returned, not raised
+        self.assertTrue(s["intact"])
 
     def test_strict_refuses_a_mismatched_pin(self):
         with self.assertRaises(RuntimeError) as cm:
@@ -178,9 +135,6 @@ class FingerprintPin(unittest.TestCase):
         self.assertIn("SAFI_EXPECTED_FINGERPRINT", str(cm.exception))
 
     def test_unverifiable_tree_does_not_count_as_a_pin_match(self):
-        """fingerprint=None must not slip past the pin: strict already refuses
-        the unverifiable state itself, and the pin comparison must not crash
-        or masquerade as a pass on the way there."""
         with self.assertRaises(RuntimeError):
             self._boot(StrictMode.UNVERIFIABLE, "strict", "a" * 64)
 

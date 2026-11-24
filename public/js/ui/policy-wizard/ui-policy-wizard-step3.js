@@ -74,5 +74,5 @@ export function renderScopeStep(container, policyData) {
 }
 
 export function validateScopeStep(policyData) {
-    return true; // Scope is optional but recommended
+    return true;
 }

@@ -1,10 +1,3 @@
-"""Tests for the appliance setup wizard (safi-browser-setup.py).
-
-The wizard normally runs as root on a fresh appliance, so it is loaded here by
-path with its side-effecting collaborators redirected at tmp_path. What is
-exercised is the decision logic: which models are offered, what the operator is
-allowed to choose, and exactly what lands in .env.
-"""
 import importlib.machinery
 import importlib.util
 import json
@@ -24,8 +17,6 @@ WIZARD_PATH = SBIN / "safi-browser-setup.py"
 LOCAL_MODULE = SBIN / "safi-appliance-stage/safi_local.py"
 
 os.environ["SAFI_LOCAL_MODULE"] = str(LOCAL_MODULE)
-# On a build host neither /etc/safi/local-models.json nor the staged copy under
-# /usr/local/sbin exists; point the resolver at the repo source.
 os.environ["SAFI_CATALOGUE"] = str(LOCAL_MODULE.parent / "local-models.json")
 
 
@@ -54,7 +45,6 @@ def _hw(ram=0, vram=0, disk=500 << 30, driver=None, usable=False, vendor=None):
 
 
 class FakeSetup:
-    """Stand-in for /var/www/safi/scripts/setup.py."""
 
     @staticmethod
     def parse_template(_path):
@@ -71,7 +61,6 @@ class FakeSetup:
 
 @pytest.fixture
 def env_paths(tmp_path, monkeypatch):
-    """Redirect every path the wizard writes to."""
     env_file = tmp_path / "safi.env"
     pin_file = tmp_path / "setup.pin"
     done_file = tmp_path / "done"
@@ -102,16 +91,9 @@ def _commit(env_paths, choice, admin=None):
     return env_paths["env"].read_text()
 
 
-# --------------------------------------------------------------------------
-# model picker
-# --------------------------------------------------------------------------
-
 def test_picker_offers_the_whole_catalogue():
     result = wizard.model_choices(_hw(ram=32 << 30))
     assert result["available"] is True
-    # Derived from the catalogue rather than hardcoded, so adding a model does
-    # not require editing this test -- and so a model silently dropped from the
-    # catalogue still fails here.
     catalogue = safi_local.load_catalogue()
     assert [m["id"] for m in result["models"]] == [m["id"] for m in catalogue["models"]]
 
@@ -145,10 +127,6 @@ def test_picker_degrades_when_hardware_is_unknown():
     assert result["models"] == []
 
 
-# --------------------------------------------------------------------------
-# choice validation
-# --------------------------------------------------------------------------
-
 def test_local_choice_records_alias_and_backend():
     choice = wizard.validate_choice({"model": "qwen3-8b"}, _hw(ram=32 << 30))
     assert choice == {"mode": "local", "model": "qwen3-8b",
@@ -172,8 +150,6 @@ def test_force_cpu_downgrades_the_backend():
 
 
 def test_a_model_too_big_for_the_box_is_refused_server_side():
-    # The browser disables these options, but a crafted POST must not be able
-    # to start a 20 GB download on a 4 GB VM.
     with pytest.raises(ValueError) as exc:
         wizard.validate_choice({"model": "qwen3-32b"}, _hw(ram=4 << 30))
     assert "does not fit" in str(exc.value)
@@ -202,8 +178,6 @@ def test_cloud_choice_records_provider_and_key():
 
 
 def test_retired_high_retention_providers_are_not_offered():
-    # DeepSeek and Zhipu are absent from the wizard because PROVIDER_METADATA
-    # records zdr=False for both.
     for provider in ("DEEPSEEK_API_KEY", "ZHIPU_API_KEY"):
         with pytest.raises(ValueError) as exc:
             wizard.validate_cloud({"provider": provider, "api_key": "abc"})
@@ -216,18 +190,12 @@ def test_offered_cloud_providers_all_have_a_probe():
 
 
 def test_probe_urls_match_the_apps_routing():
-    # A key that passes the probe must be the same shape the app will use, so
-    # these mirror model_routing.build_providers_config.
     assert wizard.PROVIDER_PROBES["GROQ_API_KEY"][0] == "https://api.groq.com/openai/v1/models"
     assert wizard.PROVIDER_PROBES["CEREBRAS_API_KEY"][0] == "https://api.cerebras.ai/v1/models"
     assert wizard.PROVIDER_PROBES["MISTRAL_API_KEY"][0] == "https://api.mistral.ai/v1/models"
     assert wizard.PROVIDER_PROBES["ANTHROPIC_API_KEY"][1] == "x-api-key"
     assert wizard.PROVIDER_PROBES["GEMINI_API_KEY"][1] == "query"
 
-
-# --------------------------------------------------------------------------
-# commit
-# --------------------------------------------------------------------------
 
 def test_local_commit_writes_the_chosen_alias_to_every_faculty(env_paths):
     text = _commit(env_paths, {"mode": "local", "model": "qwen3-32b",
@@ -240,7 +208,6 @@ def test_local_commit_writes_the_chosen_alias_to_every_faculty(env_paths):
 
 
 def test_local_commit_leaves_conscience_unpinned(env_paths):
-    """Conscience stays auto-selectable so the operator can choose an independent auditor."""
     text = _commit(env_paths, {"mode": "local", "model": "qwen3-32b",
                                "alias": "safi-qwen3-32b", "backend": "cuda-13.4",
                                "size": 19762149024})
@@ -265,18 +232,12 @@ def test_cloud_commit_writes_only_the_selected_provider(env_paths):
 
 
 def test_commit_keeps_sso_off(env_paths):
-    # The appliance operator authenticates locally; Google/Microsoft sign-in has
-    # no registered identity here and is a dead end on the sign-in page.
     text = _commit(env_paths, {"mode": "cloud", "provider": "GROQ_API_KEY",
                                "api_key": "sk-test"})
     assert "SAFI_SSO_ENABLED=false" in text
 
 
 def test_commit_makes_software_engineer_the_default_agent(env_paths):
-    """The appliance ships the Software Engineer agent: it must be both
-    enabled (SAFI_BUILTIN_AGENTS) and the default profile (SAFI_PROFILE). A
-    default profile that is not enabled is absent from the active catalog and
-    every conversation would reset to it in a KeyError/fallback loop."""
     text = _commit(env_paths, {"mode": "cloud", "provider": "GROQ_API_KEY",
                                "api_key": "sk-test"})
     assert "SAFI_PROFILE=software_engineer" in text
@@ -298,8 +259,6 @@ def test_commit_removes_the_pin_and_marks_done(env_paths):
 
 
 def test_commit_erases_the_stored_admin_password(env_paths):
-    # The state file holds the admin password while a model downloads, so it
-    # must not survive setup.
     wizard.write_state({"choice": {"mode": "cloud", "provider": "GROQ_API_KEY",
                                    "api_key": "sk"},
                         "admin": {"username": "admin",
@@ -316,13 +275,8 @@ def test_state_file_is_root_only(env_paths):
 
 def test_env_file_is_written_private(env_paths):
     _commit(env_paths, {"mode": "cloud", "provider": "GROQ_API_KEY", "api_key": "sk"})
-    # gunicorn reads this as safi:www-data; anything looser leaks the API key.
     assert oct(env_paths["env"].stat().st_mode)[-3:] == "600"
 
-
-# --------------------------------------------------------------------------
-# rendering
-# --------------------------------------------------------------------------
 
 def test_choose_page_has_the_pin_and_both_modes():
     page = wizard.page_choose(hardware=_hw(ram=32 << 30))
@@ -386,9 +340,6 @@ def test_progress_page_hides_finish_while_a_local_model_downloads():
 def test_progress_page_offers_finish_immediately_for_a_cloud_key():
     page = wizard.page_progress(
         {"choice": {"mode": "cloud", "provider": "GROQ_API_KEY"}}, "424242")
-    # Assert on the button, not on a bare "display:none": the page's inline
-    # stylesheet contains .hidden{display:none!important}, so a page-wide
-    # substring check fails on CSS that has nothing to do with the button.
     assert 'id="finish" style="display:none"' not in page
     assert 'id="finish"' in page
     assert "Groq" in page
@@ -417,10 +368,6 @@ def test_pages_escape_the_error_they_are_given():
     assert "&lt;script&gt;" in page
 
 
-# --------------------------------------------------------------------------
-# decide later
-# --------------------------------------------------------------------------
-
 def test_the_choose_page_offers_deciding_later():
     page = wizard.page_choose(hardware=_hw(ram=32 << 30))
     assert 'value="later"' in page
@@ -428,9 +375,6 @@ def test_the_choose_page_offers_deciding_later():
 
 
 def test_a_resumed_visit_explains_the_admin_password_is_asked_again():
-    # Finishing setup rewrites .env from the template, so a password captured on
-    # a first pass would have to be kept somewhere for the second. The page says
-    # so rather than silently asking twice.
     page = wizard.page_choose(hardware=_hw(ram=32 << 30), resume=True)
     assert "Setup was deferred" in page
     assert "password is asked again" in page

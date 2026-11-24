@@ -1,33 +1,3 @@
-"""
-API routes for user-created knowledge bases (RAG corpora).
-
-AUTHORIZATION MODEL — three distinct gates, deliberately not one
-----------------------------------------------------------------
-1. **Build/attach: `editor`+.** Not a new rule — creating an agent is already
-   `editor`+ (`agent_api_routes.py`), and a `member` (Operator) cannot build an
-   agent at all, so cannot attach a corpus to one. Knowledge bases inherit that
-   gate rather than inventing a parallel one.
-
-2. **Read: visibility ladder**, identical to agents. Owner always; org members
-   as their role clears `knowledge_bases.visibility`.
-
-3. **Approve: `admin|auditor` via `require_any_role` — never
-   `require_role('auditor')`.** The role ladder puts `editor` (3) ABOVE
-   `auditor` (2), so `require_role` would let the very editors who upload
-   documents approve their own. This is the trap `rbac.py` documents and
-   `review_api.py` avoids; it is the single easiest line in this file to get
-   wrong. Separation of duties itself lives in the persistence layer
-   (`set_knowledge_base_document_status` raises SelfReviewError) so that a
-   future batch or scripted path inherits it.
-
-APPROVAL ATTACHES TO SHARING, NOT TO DOCUMENTS
-----------------------------------------------
-A private KB has no eligible approver — self-approval is exactly what
-separation of duties forbids, and reviewing a document only its uploader can
-retrieve would be a rubber stamp. So a private KB's documents are 'private'
-and indexable on upload; the moment a KB is shared org-wide every document
-becomes 'pending' and must be approved by someone else before it is indexed.
-"""
 from flask import Blueprint, session, jsonify, request, current_app
 
 from ..config import Config
@@ -42,7 +12,6 @@ knowledge_bp = Blueprint('knowledge', __name__)
 
 REVIEWER_ROLES = tuple(ROLE_CONFIG["reviewer_roles"])
 
-# Visibility values that mean "shared with the org" — i.e. approval applies.
 SHARED_VISIBILITIES = tuple(
     value for value in ROLE_CONFIG["visibility_roles"] if value != "private"
 )
@@ -54,7 +23,6 @@ def _actor():
 
 
 def _can_read(kb, user_id, org_id, role):
-    """Owner always; otherwise the org visibility ladder, same as agents."""
     if not kb:
         return False
     if str(kb.get('created_by')) == str(user_id):
@@ -71,13 +39,6 @@ def _can_read(kb, user_id, org_id, role):
 
 
 def _can_write(kb, user_id):
-    """Mutating a KB's contents is the owner's right.
-
-    Mirrors delete_agent, which checks `created_by == uid` rather than rank:
-    an org admin governs *whether* a corpus may be shared and *what* it may
-    contain (via approval), which is a different power from editing someone
-    else's working set.
-    """
     return bool(kb) and str(kb.get('created_by')) == str(user_id)
 
 
@@ -99,34 +60,13 @@ def _shape(kb, documents=None, review_detail=True):
     if documents is not None:
         out["documents"] = [_shape_doc(d, include_review_detail=review_detail)
                             for d in documents]
-        # Kept for everyone: an operator must be able to tell that the agent is
-        # grounded in less than the full list. That is the honest signal; the
-        # reasons behind it are not theirs.
         out["pending_count"] = sum(1 for d in documents if d.get("status") == "pending")
     elif "pending_count" in kb:
-        # From list_knowledge_bases, which counts in SQL rather than making the
-        # list view fetch every document just to render a card.
         out["pending_count"] = int(kb["pending_count"] or 0)
     return out
 
 
 def _shape_doc(doc, include_review_detail=True):
-    """Shapes one document for the API.
-
-    `include_review_detail=False` strips the REVIEW TRAIL — who uploaded it, who
-    reviewed it, when, why it was rejected — while keeping the inventory
-    (filename, status, size). That split exists because a rejection reason is
-    review deliberation and routinely contains exactly what the rejection was
-    protecting: "contains unreleased vendor pricing", "draft not cleared by
-    legal", "includes a staff member's salary band". `reason_enc` is encrypted
-    at rest for that reason, and handing the plaintext to every member who can
-    read the knowledge base defeats the point.
-
-    Operators still see WHICH documents exist and whether they are in use —
-    that transparency is the product's whole claim about grounding, and the
-    filenames already appear in answer citations. What they do not see is the
-    governance conversation about them.
-    """
     out = {
         "id": doc["id"],
         "filename": doc["filename"],
@@ -147,24 +87,15 @@ def _shape_doc(doc, include_review_detail=True):
 
 
 def _sees_review_detail(kb, user_id, role):
-    """The owner (who needs it to manage the corpus) and reviewers (who need it
-    to review). Not every member of the org."""
     return (str(kb.get('created_by')) == str(user_id)) or (role in REVIEWER_ROLES)
 
 
 def _sole_reviewer(user_id, org_id):
-    """True when the caller is the org's only configured reviewer.
-
-    Drives the UI only — the authoritative check runs inside
-    set_knowledge_base_document_status, in the same transaction as the write,
-    so a stale UI can never turn into an unauthorized approval.
-    """
     if not org_id:
         return False
     return db.count_other_eligible_reviewers(
         org_id, user_id, reviewer_roles=ROLE_CONFIG["reviewer_roles"]
     ) == 0
-
 
 
 @knowledge_bp.route('/knowledge-bases', methods=['GET'], strict_slashes=False)
@@ -180,19 +111,6 @@ def list_knowledge_bases():
 
 @knowledge_bp.route('/knowledge-bases/available', methods=['GET'], strict_slashes=False)
 def list_available_knowledge_bases():
-    """The agent wizard's picker. Only KBs that can actually ground an answer.
-
-    A KB with no indexed vectors would look configured on the agent and answer
-    nothing — the same 'allowed is not the same as useful' failure the
-    connector tab already fixed.
-
-    `?include_builtin=1` also returns the corpora shipped with the image
-    (`safi`, `bible_bsb_v1`, …). The POLICY wizard needs those: a policy that
-    restricts knowledge but cannot list the built-ins would silently un-ground
-    the Steward with no way for an admin to authorize it back. The AGENT wizard
-    does not pass the flag — it preserves a built-in on the agent it is
-    editing, but should not offer `bible_bsb_v1` to an arbitrary new agent.
-    """
     user_id, _ = _actor()
     if not user_id:
         return jsonify({"error": "Authentication required."}), 401
@@ -246,30 +164,19 @@ def get_knowledge_base(kb_id):
         return jsonify({"error": "Authentication required."}), 401
     kb = db.get_knowledge_base(kb_id)
     if not _can_read(kb, user_id, get_current_org_id(), get_current_role()):
-        # 404 not 403: a KB the caller cannot see should not be confirmed to exist.
         return jsonify({"error": "Not found."}), 404
     role = get_current_role()
     documents = db.list_knowledge_base_documents(kb_id)
     body = _shape(kb, documents,
                   review_detail=_sees_review_detail(kb, user_id, role))
-    # Lets the detail view offer approval on the caller's own uploads, and say
-    # plainly that the sign-off will be recorded as non-independent.
     body["sole_reviewer"] = (role in REVIEWER_ROLES
                              and _sole_reviewer(user_id, get_current_org_id()))
-    # Drives the read-only rendering: a member gets an inventory, not a console.
     body["can_manage"] = _can_write(kb, user_id)
     return jsonify(body)
 
 
 @knowledge_bp.route('/knowledge-bases/<kb_id>', methods=['PUT'])
 def update_knowledge_base(kb_id):
-    """Rename, re-describe, or change visibility.
-
-    Changing visibility is the approval trigger. Sharing re-flags every
-    'private' document as 'pending' and rebuilds, so a corpus cannot become
-    org-readable while carrying unreviewed content — the vectors have to go
-    away before anyone else can retrieve them, not after review catches up.
-    """
     user_id, _ = _actor()
     kb = db.get_knowledge_base(kb_id)
     if not kb or not _can_read(kb, user_id, get_current_org_id(), get_current_role()):
@@ -279,9 +186,6 @@ def update_knowledge_base(kb_id):
 
     data = request.get_json(force=True, silent=True) or {}
 
-    # Same bound the create route applies. Without it a long name reaches a
-    # VARCHAR(255) column and surfaces as a 500 rather than a message the
-    # author can act on.
     if 'name' in data and len((data.get('name') or '').strip()) > 255:
         return jsonify({"error": "Name is too long (max 255 characters)."}), 400
 
@@ -313,8 +217,6 @@ def update_knowledge_base(kb_id):
             db.append_compliance_log(
                 get_current_org_id(), 'kb_unshared', f'user:{user_id}',
                 {"kb_id": kb_id, "name": kb['name']})
-        # Rebuild either way: sharing must drop unreviewed vectors, unsharing
-        # restores the owner's own documents.
         enqueue_rebuild(kb_id)
         updated = db.get_knowledge_base(kb_id)
 
@@ -339,10 +241,6 @@ def delete_knowledge_base(kb_id):
             kb['org_id'], 'kb_deleted', f'user:{user_id}',
             {"kb_id": kb_id, "name": kb['name'], "chunk_count": kb.get('chunk_count') or 0})
 
-    # An agent still pointing at this KB would keep a dangling name. Retrieval
-    # already degrades to "no documents found" rather than erroring, so this
-    # is reported, not repaired — silently rewriting someone's agent config is
-    # worse than telling them.
     return jsonify({"ok": True})
 
 
@@ -359,16 +257,8 @@ def reindex_knowledge_base(kb_id):
     return jsonify(_shape(db.get_knowledge_base(kb_id)))
 
 
-
 @knowledge_bp.route('/knowledge-bases/<kb_id>/documents', methods=['POST'])
 def upload_document(kb_id):
-    """Extracts a file's text and stores it in the KB, then queues a rebuild.
-
-    The extraction ceiling here is the indexer's, NOT Config.MAX_DOCUMENT_CHARS
-    (50k). That limit exists to bound a single prompt; applied to indexing it
-    would silently store the first chapter of a long PDF and let the agent
-    answer confidently from a truncated corpus.
-    """
     user_id, _ = _actor()
     kb = db.get_knowledge_base(kb_id)
     if not kb or not _can_read(kb, user_id, get_current_org_id(), get_current_role()):
@@ -410,7 +300,6 @@ def upload_document(kb_id):
     if not (text or '').strip():
         return jsonify({"error": "No readable text found in that document."}), 400
 
-    # A shared KB's uploads are unreviewed until someone else signs off.
     status = 'pending' if kb.get('visibility') in SHARED_VISIBILITIES else 'private'
     doc = db.add_knowledge_base_document(
         kb_id=kb_id, filename=file.filename, text=text,
@@ -422,8 +311,6 @@ def upload_document(kb_id):
             {"kb_id": kb_id, "document_id": doc["id"], "filename": file.filename,
              "sha256": doc.get("sha256"), "char_count": total_chars, "status": status})
 
-    # Queue regardless: for a private KB this indexes the new text; for a
-    # shared one it is a no-op on content but keeps status honest.
     enqueue_rebuild(kb_id)
 
     return jsonify({"document": _shape_doc(doc),
@@ -449,18 +336,14 @@ def delete_document(kb_id, doc_id):
         db.append_compliance_log(
             kb['org_id'], 'kb_document_deleted', f'user:{user_id}',
             {"kb_id": kb_id, "document_id": doc_id, "filename": doc.get("filename")})
-    # Without this the deleted document's vectors keep answering questions.
     enqueue_rebuild(kb_id)
     return jsonify({"ok": True, "knowledge_base": _shape(db.get_knowledge_base(kb_id))})
-
 
 
 @knowledge_bp.route('/knowledge-bases/<kb_id>/documents/<doc_id>/review',
                     methods=['POST'])
 @require_any_role(*REVIEWER_ROLES)
 def review_document(kb_id, doc_id):
-    """Approve or reject one document. `admin|auditor` only — see the module
-    docstring for why this is set membership and not the role ladder."""
     user_id, email = _actor()
     kb = db.get_knowledge_base(kb_id)
     if not kb:
@@ -485,7 +368,6 @@ def review_document(kb_id, doc_id):
             reason=data.get('reason'), org_id=kb['org_id'],
             reviewer_roles=ROLE_CONFIG["reviewer_roles"])
     except SelfReviewError as e:
-        # 403, not 400: the request was well formed, the actor was wrong.
         return jsonify({"error": str(e)}), 403
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -493,7 +375,6 @@ def review_document(kb_id, doc_id):
     if not updated:
         return jsonify({"error": "Not found."}), 404
 
-    # Approval changes what may be retrieved, so the index must follow.
     from ..core.services.kb_indexer import enqueue_rebuild
     enqueue_rebuild(kb_id)
 
@@ -504,11 +385,6 @@ def review_document(kb_id, doc_id):
 @knowledge_bp.route('/knowledge-bases/pending-reviews', methods=['GET'])
 @require_any_role(*REVIEWER_ROLES)
 def list_pending_reviews():
-    """Every document awaiting sign-off across the org — the reviewer's inbox.
-
-    Self-uploaded rows are included but flagged: hiding them would make the
-    queue look empty to the one person who cannot clear it, which reads as
-    'nothing to do' rather than 'someone else must do this'."""
     user_id, _ = _actor()
     org_id = get_current_org_id()
     if not org_id:

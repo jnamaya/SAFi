@@ -1,16 +1,3 @@
-"""Rich interactive prompt input for the SAFi CLI.
-
-Prefers ``prompt_toolkit`` when it is installed and the session is attached to a
-TTY. That path gives true multi-line editing (Enter submits, Alt+Enter / Ctrl+J
-insert a newline), bracketed paste so pasted code blocks don't submit early,
-history, and inline completion.
-
-When ``prompt_toolkit`` is unavailable (or stdin is not a TTY, e.g. piped input
-or tests) it degrades to an enhanced GNU readline path: bracketed paste lets a
-multi-line paste land in the buffer, and a trailing backslash continues onto the
-next line. No hard dependency is introduced.
-"""
-
 from __future__ import annotations
 
 import math
@@ -20,7 +7,6 @@ import shutil
 import sys
 import time
 from typing import Callable, List, Optional
-
 
 
 from . import ui
@@ -52,8 +38,6 @@ except Exception:
         pass
 
     class FileHistory:
-        """Stub used only when prompt_toolkit is absent; never instantiated
-        because _HAS_PROMPT_TOOLKIT is False (see using_prompt_toolkit)."""
 
         def __init__(self, filename: str) -> None:
             self.filename = filename
@@ -74,12 +58,10 @@ CompletionsFn = Callable[[str, str], List[str]]
 
 
 def using_prompt_toolkit() -> bool:
-    """Whether the rich prompt_toolkit input path is active for this session."""
     return _HAS_PROMPT_TOOLKIT and sys.stdin.isatty()
 
 
 def collect_multiline(initial: str) -> str:
-    """Join backslash-continued input lines so a prompt can span several lines."""
     parts = [initial]
     while parts[-1].rstrip().endswith("\\"):
         parts[-1] = parts[-1].rstrip()[:-1]
@@ -92,7 +74,6 @@ def collect_multiline(initial: str) -> str:
 
 
 def wakeup_prompt_session() -> bool:
-    """Wake up the active prompt session if a background task or prompt needs the terminal."""
     try:
         app = getattr(_SESSION, "app", None) if _SESSION is not None else None
         if app is None:
@@ -130,7 +111,6 @@ def read_prompt(
     history_path: Optional[str] = None,
     default: str = "",
 ) -> Optional[Any]:
-    """Read one (possibly multi-line) prompt from the user."""
     if using_prompt_toolkit():
         return _read_prompt_toolkit(agent_label, completions_fn, history_path, default=default)
     return _read_prompt_readline(agent_label)
@@ -150,18 +130,6 @@ def _get_divider(cols: Optional[int] = None) -> str:
 
 
 def _terminal_columns() -> int:
-    """Best-available terminal width, preferring prompt_toolkit's live app.
-
-    Width sources in priority order:
-    1. The running prompt_toolkit Application's output size. This is the
-       *exact* width prompt_toolkit lays the prompt out with, so dividers
-       built from it can never disagree with the render (the ioctl on
-       sys.__stdout__ can, e.g. when pt renders through a wrapped/alternate
-       output, or the width was captured before a pane resize).
-    2. ioctl on the real stdout TTY (ignores stale COLUMNS).
-    3. ioctl on the controlling terminal.
-    4. shutil fallback (COLUMNS env, then 80).
-    """
     try:
         from prompt_toolkit.application import get_app
 
@@ -195,10 +163,6 @@ def _prompt_style():
             "safi-dim": "#64748b",
             "safi-spinner": f"bold {ui.COLOR_BRAND_400}",
             "safi-step": "#94a3b8" if not ui.IS_LIGHT_THEME else "#475569",
-            # Typed text deliberately has NO explicit color: it inherits the
-            # terminal's default foreground, which always contrasts with the
-            # terminal's own background. Guessing (near-white on a light
-            # terminal) made typed text invisible; this is detection-proof.
             "": "",
             "auto-suggest": f"{ui.COLOR_PROMPT_AGENT} italic",
             "bottom-toolbar": f"noinherit {ui.COLOR_PROMPT_DIVIDER}",
@@ -239,8 +203,6 @@ def _prompt_key_bindings():
     def _submit(event):
         buf = event.current_buffer
         if buf.text.count("```") % 2 == 1:
-            # Unbalanced code fence: Enter continues the block instead of
-            # submitting a half-finished prompt.
             buf.insert_text("\n")
             return
         buf.validate_and_handle()
@@ -257,8 +219,6 @@ def _prompt_key_bindings():
     return kb
 
 
-# Original SAFi-logo spinner: the flower-glyph sequence at ~150ms/frame,
-# rendered in the brand green via the safi-spinner style.
 _SPINNER_FRAMES = ["❃", "✿", "❀", "❁", "❈", "❉"]
 
 
@@ -320,7 +280,6 @@ def _bottom_divider_text() -> "FormattedText":
         queued_items = prompt_q.peek_all() if prompt_q else []
 
         if is_busy or active_tasks or queued_items:
-            # 1. Build right-side text (Ctrl+C, scheduled tasks info)
             right_parts: List[tuple[str, str]] = []
             right_len = 0
 
@@ -353,7 +312,6 @@ def _bottom_divider_text() -> "FormattedText":
                 right_parts.append(("class:safi-dim", s_q_hint))
                 right_len += len(s_q_hint)
 
-            # 2. Build left-side text (queued prompt awaiting execution)
             left_parts: List[tuple[str, str]] = []
             left_len = 0
 
@@ -365,7 +323,7 @@ def _bottom_divider_text() -> "FormattedText":
                 q_prefix = "⏳ Queued: " if count == 1 else f"⏳ Queued ({count}): "
                 q_suffix = f" (+{count - 1} more)" if count > 1 else ""
 
-                fixed_len = len(margin) + len(q_prefix) + len(q_suffix) + 2  # +2 for quotes
+                fixed_len = len(margin) + len(q_prefix) + len(q_suffix) + 2
                 avail_prompt = max(4, cols - right_len - fixed_len - 3)
 
                 if len(prompt_raw) > avail_prompt:
@@ -381,7 +339,6 @@ def _bottom_divider_text() -> "FormattedText":
 
                 left_len = len(margin) + len(q_prefix) + len(prompt_preview) + 2 + len(q_suffix)
 
-            # 3. Calculate gap between left and right sides
             gap = max(1, cols - left_len - right_len - 2)
             if not left_parts:
                 gap = max(0, cols - right_len - 2)
@@ -403,7 +360,6 @@ _bottom_toolbar = _bottom_divider_text
 
 
 class SafiPromptSession(_SessionBase):
-    """Prompt session that places the bottom border immediately below the input line."""
 
     def _create_layout(self) -> "Layout":
         layout = super()._create_layout()
@@ -414,8 +370,6 @@ class SafiPromptSession(_SessionBase):
             ),
             filter=~is_done,
         )
-        # Attach directly to the inner HSplit containing the prompt and input buffer,
-        # and prevent the default buffer window from stretching down the terminal.
         for container in (
             getattr(layout.container.children[0], "alternative_content", None),
             getattr(layout.container.children[0], "content", None),
@@ -437,7 +391,6 @@ def _continuation(width: int, line_number: int, is_soft_wrap: bool) -> "Formatte
 
 
 class _CallbackCompleter(_CompleterBase):
-    """Adapt SAFi's ``(line, text) -> List[str]`` completions to prompt_toolkit."""
 
     def __init__(self, fn: CompletionsFn):
         self._fn = fn
@@ -454,12 +407,6 @@ class _CallbackCompleter(_CompleterBase):
 
 
 class _TrimmingHistory(FileHistory):
-    """FileHistory that never lets the file grow unboundedly.
-
-    Every TRIM_INTERVAL appends it drops consecutive duplicates and rewrites
-    the file atomically with only the most recent MAX_ENTRIES lines. Between
-    trims it behaves exactly like FileHistory (plain appends).
-    """
 
     TRIM_INTERVAL = 500
     MAX_ENTRIES = 1000
@@ -482,8 +429,6 @@ class _TrimmingHistory(FileHistory):
             entries = list(self.load_history_strings())
         except Exception:
             return
-        # load_history_strings() yields newest-first, so keeping the head of
-        # the list keeps the most recent entries.
         trimmed = _TrimmingHistory._drop_consecutive_dupes(entries)[: self.MAX_ENTRIES]
         oldest_first = list(reversed(trimmed))
         try:
@@ -493,8 +438,6 @@ class _TrimmingHistory(FileHistory):
             try:
                 with os.fdopen(fd, "w", encoding="utf-8") as fh:
                     for entry in oldest_first:
-                        # Match FileHistory.store_string's format: a comment
-                        # separator line, then each physical line "+"-prefixed.
                         fh.write("\n# trimmed\n")
                         for line in entry.split("\n"):
                             fh.write("+" + line + "\n")
@@ -506,7 +449,6 @@ class _TrimmingHistory(FileHistory):
                     pass
                 raise
         except Exception:
-            # Trimming is best-effort; never break the input loop over it.
             pass
 
     @staticmethod
@@ -546,16 +488,10 @@ def _read_prompt_toolkit(
 ) -> Optional[Any]:
     global _SESSION_COMPLETER_FN
     session = _get_session(history_path)
-    # Swap the active completer when the caller's completion source changes
-    # (e.g. after an agent switch) so stale suggestions never leak across.
     if completions_fn is not _SESSION_COMPLETER_FN:
         session.completer = _CallbackCompleter(completions_fn) if completions_fn else None
         _SESSION_COMPLETER_FN = completions_fn
     try:
-        # Pass a callable so the prompt (and its divider) is built at RENDER
-        # time, when prompt_toolkit's Application is running. _terminal_columns()
-        # then reads app.output.get_size() (the exact width pt lays out with)
-        # instead of a pre-render ioctl that can disagree with the render.
         with patch_stdout(raw=True):
             return session.prompt(
                 lambda: _prompt_text(agent_label),

@@ -1,20 +1,3 @@
-# safi_app/persistence/crypto.py
-"""Application-level encryption at rest for sensitive columns.
-
-Fernet (AES-128-CBC + HMAC) via SAFI_ENCRYPTION_KEY. The key accepts a
-comma-separated list: the first key encrypts, all keys decrypt (MultiFernet),
-so rotation is prepending a new key and re-running the backfill script.
-
-Dual-read contract: decrypt_value() passes non-token values through unchanged,
-so rows written before encryption was enabled keep working. Ciphertext is
-recognizable — Fernet tokens are urlsafe-base64 and always start "gAAAA"
-(version byte 0x80 + timestamp). A plaintext value starting with that prefix
-would be silently misclassified, which is why decrypt falls back to returning
-the raw value when the token fails to authenticate.
-
-When SAFI_ENCRYPTION_KEY is unset the module is a passthrough (plaintext
-mode); Config.validate() forbids that in production.
-"""
 import logging
 from typing import Optional, Sequence
 
@@ -44,28 +27,20 @@ def _get_fernet() -> MultiFernet:
 
 
 def is_enabled() -> bool:
-    """True when a master key is configured (encryption active)."""
     return bool(Config.ENCRYPTION_KEY.strip())
 
 
 def is_token(value) -> bool:
-    """True when the value looks like Fernet ciphertext."""
     return isinstance(value, str) and value.startswith(FERNET_PREFIX)
 
 
 def encrypt_value(value: Optional[str]) -> Optional[str]:
-    """Encrypts a string for storage. None/empty pass through; already-encrypted
-    values pass through (idempotency guard for re-runs and copy paths)."""
     if value is None or value == "" or not is_enabled() or is_token(value):
         return value
     return _get_fernet().encrypt(value.encode("utf-8")).decode("ascii")
 
 
 def decrypt_value(value):
-    """Decrypts a stored value. Non-token values (legacy plaintext rows, None,
-    non-strings) return unchanged. An unverifiable token returns unchanged with
-    a warning rather than raising — serving ciphertext is recoverable once the
-    right key is restored; a hard failure would take the whole read path down."""
     if not is_token(value):
         return value
     if not is_enabled():
@@ -79,7 +54,6 @@ def decrypt_value(value):
 
 
 def decrypt_fields(row: Optional[dict], fields: Sequence[str]) -> Optional[dict]:
-    """Decrypts the named fields of a dict-cursor row in place. None-safe."""
     if row is None:
         return None
     for f in fields:

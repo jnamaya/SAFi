@@ -1,23 +1,3 @@
-"""The settings surface for PII checks: a fixed menu, and only a fixed menu.
-
-GOVERNANCE_BACKLOG 83. The engine is tested in test_pii_validators.py and
-test_pii_gate.py. What matters here is the boundary an admin can reach:
-
-  * the catalogue the UI renders comes from the detectors themselves, so a
-    check's precision note cannot drift from its implementation;
-  * the save route accepts validator KEYS and nothing else. There is no
-    free-text field anywhere in this path by design, and this file is what
-    stops one being added by accident. A caller-supplied pattern would run on
-    every turn inside the deterministic tier, where there is no timeout and no
-    model to blame for a catastrophic backtrack.
-
-Route-level checks are done against the module's validation logic rather than
-by standing up Flask with a session: the rule being protected is "only known
-keys survive", and that lives in pii_validators.normalize plus the route's
-rejection branch.
-
-Run:  python tests/test_pii_settings_api.py
-"""
 import re
 import sys
 import unittest
@@ -25,8 +5,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from safi_app.core import pii_validators as engine  # noqa: E402
-from safi_app.security_policy import PII_CATALOGUE  # noqa: E402
+from safi_app.core import pii_validators as engine
+from safi_app.security_policy import PII_CATALOGUE
 
 
 class ConfiguredValidators:
@@ -71,8 +51,6 @@ class TheCatalogueIsServedFromTheDetectors(unittest.TestCase):
 
 
 class OnlyKnownKeysSurviveTheSaveRoute(unittest.TestCase):
-    """The property that makes 'no user-supplied regex' true rather than
-    merely intended."""
 
     def test_the_route_rejects_unknown_keys(self):
         i = ROUTES.index("pii = structural.get('pii_validators')")
@@ -86,7 +64,6 @@ class OnlyKnownKeysSurviveTheSaveRoute(unittest.TestCase):
         self.assertIn("must be an array", ROUTES[i:i + 400])
 
     def test_a_regex_is_not_a_valid_key(self):
-        """The specific thing being prevented."""
         for attempt in (r"\d{3}-\d{2}-\d{4}", ".*", "(a+)+$", "ssn|custom"):
             with self.subTest(attempt=attempt):
                 self.assertEqual(pv.normalize([attempt]), [],
@@ -96,16 +73,12 @@ class OnlyKnownKeysSurviveTheSaveRoute(unittest.TestCase):
         self.assertEqual(pv.normalize(["ssn", r"\d+", "iban"]), ["ssn", "iban"])
 
     def test_an_empty_list_is_a_legitimate_value(self):
-        """Unticking the master switch must actually turn the checks off, so []
-        has to be storable and distinct from 'not supplied'."""
         self.assertEqual(pv.normalize([]), [])
 
 
 class TheUiSendsOnlyCheckboxes(unittest.TestCase):
 
     def test_there_is_no_free_text_input_for_patterns(self):
-        """A text box here would be the whole hazard. The panel must contain
-        checkboxes and nothing that accepts typed input."""
         start = ORG_UI.index('charter-pii-panel')
         panel = ORG_UI[start:start + 900]
         self.assertNotIn('type="text"', panel)
@@ -115,22 +88,10 @@ class TheUiSendsOnlyCheckboxes(unittest.TestCase):
         self.assertIn(".pii-check:checked", ORG_UI)
 
     def test_unticking_the_master_switch_sends_an_empty_list(self):
-        """Not 'omit the key'. Omitting would leave the previous value in place,
-        so turning the feature off would silently fail."""
         i = ORG_UI.index("const piiOn")
         self.assertIn("[]", ORG_UI[i:i + 400])
 
     def test_the_copy_states_the_real_coverage(self):
-        """GOVERNANCE_BACKLOG 84, both halves.
-
-        The label briefly read "in this organization's agents" with a warning
-        that the shipped agents were exempt, because they were: org AI
-        Standards only merged into agents belonging to the org. Once the floor
-        was scoped to the ACTING USER's org instead, the exemption went away
-        and that warning became the inaccurate one. Coverage claims have been
-        wrong in both directions here, so this pins the current truth: it does
-        cover every agent, and the copy says WHY, because "it follows the
-        person typing" is the sentence that makes it predictable."""
         start = ORG_UI.index('charter-block-pii')
         card = ORG_UI[start:start + 2200]
         self.assertIn("including the ones SAFi ships with", card)
@@ -140,14 +101,10 @@ class TheUiSendsOnlyCheckboxes(unittest.TestCase):
                          "the exemption warning is now false")
 
     def test_the_panel_renders_the_precision_note(self):
-        """An admin should see that the routing-number check is the loosest one
-        before enabling it, not after."""
         self.assertIn("c.note", ORG_UI)
 
 
 class TheStoredKeyIsTheOneSynderesisReads(unittest.TestCase):
-    """A rename on either side would silently disable the whole feature: the
-    org list would save fine and never reach an agent."""
 
     def test_the_key_matches_end_to_end(self):
         syn = (Path(__file__).resolve().parent.parent / "safi_app" / "core"

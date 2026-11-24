@@ -1,17 +1,3 @@
-"""
-Governed-answer document export (backlog 66).
-
-The contract, pinned here:
-
-- render() produces a real DOCX (a ZIP, magic PK\\x03\\x04) and a real PDF
-  (magic %PDF) from markdown answer text.
-- The transparency footer is present in both formats.
-- Format and input validation reject empty text, oversized text, and unknown
-  formats, so the endpoint returns 400 rather than 500.
-
-Pure unit test: no DB, no network. It only needs python-docx, markdown, and
-xhtml2pdf, which the image installs from requirements.txt.
-"""
 import io
 import sys
 import unittest
@@ -55,7 +41,6 @@ class DocxExport(unittest.TestCase):
         self.assertEqual(ext, "docx")
         self.assertIn("wordprocessingml", mimetype)
         self.assertTrue(content.startswith(b"PK\x03\x04"), "not a ZIP/DOCX container")
-        # The DOCX is a zip; document.xml must carry the body text and footer.
         with zipfile.ZipFile(io.BytesIO(content)) as z:
             xml = z.read("word/document.xml").decode("utf-8", "replace")
         self.assertIn("Quarterly Summary", xml)
@@ -86,7 +71,6 @@ class MarkdownExport(unittest.TestCase):
         self.assertEqual(ext, "md")
         self.assertEqual(mimetype, "text/markdown")
         out = content.decode("utf-8")
-        # Faithful source: the original markdown is preserved verbatim.
         self.assertIn("# Quarterly Summary", out)
         self.assertIn("| Alpha | 1 |", out)
         self.assertIn("exported from SAFi", out, "transparency footer missing")

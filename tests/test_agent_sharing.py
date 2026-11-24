@@ -1,16 +1,3 @@
-"""
-Scoped agent sharing (backlog 55) and use-path enforcement (backlog 55b).
-
-The load-bearing assertion is the 55b regression: before this feature, the
-visibility ladder gated LISTING only. PUT /me/profile wrote active_profile
-with no validation and the chat path trusted it, so any authenticated user
-could converse with any private agent in any org by key. These tests pin the
-door shut at both entry points, then cover the widening half: grants to users
-and to groups, org scoping, revocation, group deletion, and offboarding
-cleanup.
-
-Requires local MySQL. Run:  venv/bin/python tests/test_agent_sharing.py
-"""
 import sys
 import uuid
 import unittest
@@ -121,8 +108,6 @@ class TheResolver(SharingTestBase):
             "a deleted group kept conferring access through orphaned rows")
 
     def test_grant_never_crosses_orgs(self):
-        # Even a directly inserted cross-org grant row must not resolve:
-        # the resolver re-asserts the org scope on read.
         _exec("INSERT INTO agent_visibility_grants "
               "(agent_key, grantee_type, grantee_id, org_id) VALUES (%s,'user',%s,%s)",
               (self.agent_key, self.outsider, self.other_org))
@@ -139,7 +124,6 @@ class TheResolver(SharingTestBase):
 
 
 class UsePathEnforcement(SharingTestBase):
-    """The 55b regression tests: knowing a key is not access."""
 
     def test_profile_switch_denied_without_access(self):
         client = self.app.test_client()
@@ -161,8 +145,6 @@ class UsePathEnforcement(SharingTestBase):
         self.assertEqual(r.status_code, 200)
 
     def test_chat_turn_denied_after_revoke(self):
-        """A stored active_profile must not outlive the grant: the chat path
-        re-resolves on every turn, 403s, and heals the stored selection."""
         sharing_store.set_grant(self.agent_key, 'user', self.member, self.org, self.owner)
         db.update_user_profile(self.member, self.agent_key)
         sharing_store.revoke_grant(self.agent_key, 'user', self.member)
@@ -280,13 +262,6 @@ class ShareAndGroupApi(SharingTestBase):
 
 
 class CollationConvergence(SharingTestBase):
-    """Regression for the 2026-08-17 demo outage. The sharing tables were
-    created with only a charset, so they took the server-default collation
-    (utf8mb4_0900_ai_ci on MySQL 8) while a database alive since 5.7 holds
-    `agents` at utf8mb4_unicode_ci. The first grants join threw 1267 inside
-    list_all_agents' try-block, and every custom agent vanished from the GUI.
-    init_schema now copies the collation of `agents` and converges tables
-    that already drifted."""
 
     def _coll_of(self, table):
         conn = db.get_db_connection()
@@ -311,14 +286,11 @@ class CollationConvergence(SharingTestBase):
         sharing_store.init_schema()
         self.assertEqual(self._coll_of('agent_visibility_grants'), agents_coll)
 
-        # And the exact query that died in production runs clean again.
         sharing_store.set_grant(self.agent_key, 'user', self.member, self.org, self.owner)
         rows = sharing_store._granted_agents_query(self.member, self.org)
         self.assertEqual([r['key'] for r in rows], [self.agent_key])
 
     def test_listing_survives_a_broken_grants_query(self):
-        """Grants only widen, so a grants-side failure must degrade to the
-        base list, never blank it."""
         original = sharing_store._granted_agents_query
         sharing_store._granted_agents_query = lambda *a: (_ for _ in ()).throw(RuntimeError("boom"))
         try:

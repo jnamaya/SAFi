@@ -1,30 +1,25 @@
-"""Generate response drafts and tool proposals without executing tools."""
+"""Intellect (Intellectus) — Apprehension, Deliberation, and Proposal.
+
+In Thomas Aquinas's Summa Theologiae (I, q. 79), the intellect is the rational
+power that apprehends truth, weighs evidence, and deliberates over means to an
+end — yet apprehension alone does not authorize action without the governance
+of the will and conscience.
+
+In SAFi, this module generates candidate responses and tool proposals from the
+underlying language model while remaining strictly isolated from execution
+authority and self-audit.
+"""
+
 from __future__ import annotations
 from typing import List, Dict, Any, Tuple, Optional
 import json
 import logging
 import re
-# Retriever is imported lazily inside __init__ — see the note there.
-# Follow-up turns carry no retrievable content of their own. "Yes, give me the
-# full text and the historical background" was embedded verbatim, matched the most
-# history-shaped passages in the corpus, and never retrieved the passage under
-# discussion — so the model recited it from memory and the Conscience correctly
-# scored it -1 on the agent's grounding value.
-#
-# ORDER IS NOT COSMETIC. all-MiniLM-L6-v2 truncates its input, and measured on this
-# deployment a phrase placed AFTER ~2700 characters of preceding text embeds at
-# cosine 0.012 against itself alone — indistinguishable from noise. The same phrase
-# placed first scores 0.616. History must therefore follow the prompt: if anything
-# is dropped it has to be the history, never the question.
+
 _RAG_HISTORY_TAIL_CHARS = 400
 _RAG_STANDALONE_CHARS = 80
 _CITATION_LIKE = re.compile(r"\b[A-Za-z]+\s+\d+\b")
 
-# Length alone is NOT a usable signal for "this is a follow-up". Tested against a
-# real case: a substantive 73-character question sits under any threshold generous
-# enough to catch a 55-character follow-up, and augmenting it let a stale citation
-# in the history capture the citation path and return the wrong section outright.
-# A follow-up has to be recognised by SHAPE, not size.
 _CONTINUATION = re.compile(
     r"^\s*(yes|yeah|yep|ok|okay|sure|please|go ahead|continue|more|and|also)\b"
     r"|^\s*(tell|show|give|send)\s+me\s+(more|the\s+(full|rest|whole))\b"
@@ -34,22 +29,6 @@ _CONTINUATION = re.compile(
 _RAG_TERSE_CHARS = 40
 
 
-# The orchestrator hands the Intellect `prompt_with_date` (orchestrator.py:481),
-# not the raw question:
-#
-#     Current Date: Sunday, August 02, 2026. 01:09:18 Z
-#
-#     USER QUERY: can you give me the full text
-#
-# That header has always gone into the embedding, and it is measurably harmful:
-# on a corpus full of dated events, regnal years and census numbers, every
-# observed bad retrieval came back date-shaped. The retriever was faithfully
-# matching the timestamp.
-#
-# It also silently disabled the history augmentation below: the header alone is
-# ~48 characters and contains "August 02", so every prompt looked long enough to
-# stand alone AND citation-shaped. Stripped here rather than in the orchestrator so
-# the model still SEES the date (it needs it) while retrieval does not.
 _DATE_HEADER = re.compile(r"^Current Date:[^\n]*\n+\s*USER QUERY:\s*", re.I)
 
 
@@ -58,25 +37,13 @@ def _strip_date_header(prompt: str) -> str:
 
 
 def _rag_query(user_prompt: Any, recent_turns: str) -> Any:
-    """Build the retrieval query, folding in recent turns only when the prompt is
-    too thin to retrieve on its own.
-
-    Augmenting unconditionally would be worse than the bug: blending the previous
-    topic into a substantive question drags stale results in, and on a
-    citation-indexed corpus a stale CITATION in the history would trigger the
-    keyword path and return the wrong section. So a prompt that is long enough, or
-    already names something citation-shaped, is left exactly as it is.
-    """
     if not isinstance(user_prompt, str):
         return user_prompt
     prompt = _strip_date_header(user_prompt)
     if not recent_turns:
-        # Still worth returning the stripped prompt: the date header pollutes the
-        # embedding whether or not there is history to add.
         return prompt or user_prompt
     if len(prompt) >= _RAG_STANDALONE_CHARS or _CITATION_LIKE.search(prompt):
         return prompt
-    # Must actually look like a continuation, not merely be short.
     if not (_CONTINUATION.search(prompt) or len(prompt) < _RAG_TERSE_CHARS):
         return prompt
     tail = recent_turns.strip()[-_RAG_HISTORY_TAIL_CHARS:]
@@ -84,26 +51,6 @@ def _rag_query(user_prompt: Any, recent_turns: str) -> Any:
 
 
 def _apply_context_budget(chunks: List[str], max_context_chars: int = 0) -> str:
-    """Join retrieved chunks, up to Config.MAX_CONTEXT_CHARS, and SAY SO when
-    anything is dropped.
-
-    This is the single choke point every agent and both retrieval paths pass
-    through — which is why the bound is applied here rather than in the
-    retriever — and the Conscience audits the same block, so it is paid for
-    twice a turn.
-
-    The default is no bound. Truncating retrieval is not a pure token cost:
-    the dropped evidence leaves the Conscience unable to verify what the
-    Intellect asserted, and the notice that follows tells the model the
-    passage is incomplete and not to complete it from memory. Both suppress
-    confidence on exactly the grounding-fidelity values the notice exists to
-    protect. `k` on the retriever bounds a runaway corpus; this remains an
-    operator override for deployments that would rather pay the tokens.
-
-    When a bound IS set, whole chunks are kept or dropped — never cut
-    mid-chunk, which would end a passage mid-sentence and invite the model to
-    complete it from memory.
-    """
     limit = max_context_chars
     if not limit:
         return "\n\n".join(chunks)
@@ -111,7 +58,7 @@ def _apply_context_budget(chunks: List[str], max_context_chars: int = 0) -> str:
     kept: List[str] = []
     used = 0
     for chunk in chunks:
-        cost = len(chunk) + 2  # the "\n\n" join
+        cost = len(chunk) + 2
         if kept and used + cost > limit:
             break
         kept.append(chunk)
@@ -130,12 +77,6 @@ def _apply_context_budget(chunks: List[str], max_context_chars: int = 0) -> str:
 
 
 def normalize_tool_calls(tool_calls: Any) -> List[Dict[str, Any]]:
-    """Normalise a provider tool_calls array into [{tool_name, parameters}].
-
-    Keeps EVERY call (the orchestrator may batch several per turn). Argument
-    shapes vary by provider — a dict (OpenAI SDK, Anthropic input, Gemini args),
-    or a raw JSON string — so coerce strings and drop malformed/nameless entries.
-    """
     normalized: List[Dict[str, Any]] = []
     if not isinstance(tool_calls, list):
         return normalized
@@ -160,14 +101,6 @@ def normalize_tool_calls(tool_calls: Any) -> List[Dict[str, Any]]:
 
 
 class IntellectEngine:
-    """
-    Core cognitive faculty.
-    Constructs context and prompts, then delegates execution to the LLMProvider.
-
-    Air Gap of Intent: this class NEVER executes tools. It intercepts any tool
-    call the LLM requests and returns it as a typed "tool_call" intent so the
-    orchestrator can route it through the WillGate before acting.
-    """
 
     def __init__(
         self,
@@ -204,35 +137,9 @@ class IntellectEngine:
         tools_override: Optional[List[Dict[str, Any]]] = None,
         tool_results_supplied: int = 0,
     ) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[str]]:
-        """
-        Generates a typed intent proposal without executing any tools.
-
-        Returns a 3-tuple of (intent, reflection, retrieved_context) where intent is:
-          - {"type": "text", "content": <str>}
-              A direct text response ready for Will evaluation.
-          - {"type": "tool_call", "tool_name": <str>, "parameters": <dict>}
-              A tool invocation proposal the orchestrator must gate before executing.
-          - None
-              A hard provider failure; caller should inspect self.last_error.
-
-        tools_override replaces the MCP tool catalogue for this call, in the
-        same name/description/input_schema shape. A coding harness (opencode,
-        Claude Code) owns and executes its own tools, so it supplies the
-        catalogue per request; Intellect still only proposes the call. It wins
-        over MCP because the harness is the only party that can actually run
-        them — an MCP server listed here would advertise tools this process
-        cannot reach.
-
-        tool_results_supplied is the count of tool outputs the caller has
-        already embedded in user_prompt for this turn. It appends a "use the
-        results, do not repeat the call" note to the USER turn (never the system
-        prompt, whose byte-stability is what preserves the KV-cache prefix); it
-        never executes anything.
-        """
 
         self.last_error = None
 
-        # --- 0. Tools, for informing the LLM only; never executed here ---
         if tools_override is not None:
             tools: List[Dict[str, Any]] = list(tools_override)
         else:
@@ -240,9 +147,7 @@ class IntellectEngine:
             if self.mcp_manager:
                 tools = await self.mcp_manager.get_tools_for_agent(self.profile)
 
-        # --- 1. RAG & Plugin Context ---
         if precomputed_retrieved_context is not None:
-            # Reuse context from the first Intellect call (retry / tool-agent follow-up).
             retrieved_context_string = precomputed_retrieved_context
         else:
             query_for_rag = _rag_query(user_prompt, recent_turns)
@@ -251,14 +156,6 @@ class IntellectEngine:
 
             retrieved_context_string = ""
             if self.retriever:
-                # A plugin may override with a LIST of queries when one request
-                # covers several distinct passages, e.g. a daily digest that
-                # cites several sections of its corpus at once. One search per
-                # query, concatenated in the order the plugin gave them,
-                # deduplicated because adjacent citations legitimately retrieve
-                # overlapping chunks. A single joined query does not work here:
-                # keyword search over three concatenated citations matches none
-                # of them well.
                 if isinstance(query_for_rag, (list, tuple)):
                     retrieved_docs, seen = [], set()
                     for one_query in query_for_rag:
@@ -271,9 +168,6 @@ class IntellectEngine:
                 else:
                     retrieved_docs = self.retriever.search(query_for_rag)
                 if retrieved_docs:
-                    # Rendering policy belongs to the host profile resolver. The
-                    # generic fallback uses only the retriever's required text
-                    # field; it does not introduce application-specific labels.
                     format_string = self.profile.get("rag_format_string") or "{text_chunk}"
                     formatted_chunks = []
                     for doc in retrieved_docs:
@@ -295,31 +189,11 @@ class IntellectEngine:
             if "plugin_error" in plugin_context:
                 plugin_context_string += f"CONTEXT ERROR: {plugin_context['plugin_error']}\n\n"
 
-        # --- 2. Prompt Construction ---
         worldview = self.profile.get("worldview", "")
         style = self.profile.get("style", "")
 
         full_context_injection = "\n\n".join(filter(None, [plugin_context_string, retrieved_context_string]))
 
-        # Retrieved evidence reaches the model by exactly one of two routes.
-        #
-        # 1. The agent's worldview carries a {retrieved_context} placeholder and
-        #    positions the evidence itself. Every built-in RAG agent does this.
-        #
-        # 2. It does not, and the block below appends the evidence as its own
-        #    labelled section.
-        #
-        # Route 2 did not exist until 2026-08-08, and its absence was a silent,
-        # total failure for every WIZARD-BUILT agent: a custom worldview has no
-        # placeholder, so the context was retrieved, formatted, returned to the
-        # orchestrator (which stored it in the governance record and handed it to
-        # the Conscience) and NEVER PUT IN THE PROMPT. The agent was genuinely
-        # oblivious to its own knowledge base while every diagnostic said the
-        # documents had been retrieved — because they had been.
-        #
-        # `retrieved_context` is deliberately NOT in the system_prompt list
-        # below; keeping the two routes mutually exclusive is what stops the
-        # evidence being injected twice for the built-ins.
         retrieved_context_injection = ""
         if "{retrieved_context}" in worldview:
             worldview = worldview.format(
@@ -344,13 +218,6 @@ class IntellectEngine:
             if memory_summary else ""
         )
 
-        # Recent verbatim history is NOT placed in the system prompt. The
-        # system prompt is the cached KV prefix, and for a client-owned loop the
-        # server's history fallback grows between steps (step 0's own rows are
-        # committed before step 1), which changed the system prompt and forced a
-        # full ~9.5k-token re-evaluation every step. Appending it to the USER
-        # turn instead keeps the system prompt byte-stable while the history
-        # still reaches the model.
         recent_turns_block = (
             f"RECENT CONVERSATION (last few turns verbatim):\n<recent_turns>{recent_turns}</recent_turns>"
             if recent_turns else ""
@@ -376,7 +243,6 @@ class IntellectEngine:
         if agent_context_json and agent_context_json not in ("{}", "null", ""):
             try:
                 parsed = json.loads(agent_context_json)
-                # At least one non-empty array, or there is no memory to inject.
                 if any(v for v in parsed.values() if isinstance(v, list) and v):
                     template = self.prompt_config.get(
                         "agent_context_template",
@@ -394,14 +260,6 @@ class IntellectEngine:
 
         tools_injection = ""
         if tools:
-            # This catalogue sits at the very START of the prompt, so it must be
-            # byte-identical across every step of a turn. A per-step variation
-            # (e.g. "results already present") changes the prefix and makes the
-            # server discard its KV cache and re-evaluate the entire prompt on
-            # each step. The "do not repeat an answered call" rule is therefore
-            # stated unconditionally here; the per-step reminder that results are
-            # present is appended to the USER turn below, where appending cannot
-            # invalidate the cached prefix.
             tools_injection = (
                 "AVAILABLE TOOLS (You MUST use these tools if the user needs them):\n"
                 + "\n".join([f"- {t['name']}: {t['description']}" for t in tools])
@@ -431,9 +289,6 @@ class IntellectEngine:
         else:
             current_user_prompt = user_prompt
 
-        # Per-step reminder that tool output is already in the turn. Kept in the
-        # USER message (appended) rather than the system prompt so the cached
-        # prefix stays intact between steps; see tools_injection above.
         if tool_results_supplied:
             results_note = (
                 f"\n\nSYSTEM NOTE: {tool_results_supplied} tool result(s) for this turn are "
@@ -446,9 +301,6 @@ class IntellectEngine:
             elif isinstance(current_user_prompt, list):
                 current_user_prompt.append(results_note)
 
-        # Recent verbatim history rides the USER turn (appended last) so the
-        # cached system-prompt prefix is never invalidated by its growth between
-        # steps. See recent_turns_block above.
         if recent_turns_block:
             if isinstance(current_user_prompt, str):
                 current_user_prompt = current_user_prompt + "\n\n" + recent_turns_block
@@ -457,7 +309,6 @@ class IntellectEngine:
 
         final_context_for_audit = full_context_injection if full_context_injection else (retrieved_context_string or "")
 
-        # --- 3. Single LLM Call — No Tool Execution ---
         response_tuple = await self.llm_provider.run_intellect(
             system_prompt=system_prompt,
             user_prompt=current_user_prompt,
@@ -472,9 +323,6 @@ class IntellectEngine:
             raw_turn = None
 
         if not answer:
-            # Prefer the provider's actual cause (bad key, rate limit, model not
-            # found, no egress) over the generic symptom — see
-            # LLMProvider.explain_provider_error.
             cause = getattr(self.llm_provider, "last_intellect_error", None)
             self.last_error = (
                 f"could not reach the language model — {cause}" if cause
@@ -483,18 +331,11 @@ class IntellectEngine:
             )
             return None, r_t, final_context_for_audit
 
-        # --- 4. Detect and Intercept Tool Call Intent (never execute here) ---
         if isinstance(answer, str) and answer.strip().startswith('{') and '"tool_calls"' in answer:
             try:
                 payload = json.loads(answer)
                 tool_calls = payload.get("tool_calls")
                 if tool_calls and isinstance(tool_calls, list):
-                    # The provider parses the WHOLE tool_calls array; keep every
-                    # call here instead of only the first. The orchestrator decides
-                    # how many to actually run per turn (a batch of independent
-                    # reads, or list+grep+read). Each call still passes the
-                    # deterministic WillGate individually and each result is
-                    # scanned by Phase Zero, so batching never loosens governance.
                     normalized = normalize_tool_calls(tool_calls)
                     if normalized:
                         first = normalized[0]
@@ -551,9 +392,6 @@ class IntellectEngine:
             f"Guidance: {system_directive}"
         )
 
-        # Do NOT pass the original user_prompt: it may carry injection content
-        # that the model reproduces even under a corrective directive. The
-        # system_directive already supplies the full context for the redirect.
         response_tuple = await self.llm_provider.run_intellect(
             system_prompt=system_prompt,
             user_prompt=redirect_task,
@@ -567,9 +405,6 @@ class IntellectEngine:
             answer, r_t, context = response_tuple
             
         if not answer:
-            # Prefer the provider's actual cause (bad key, rate limit, model not
-            # found, no egress) over the generic symptom — see
-            # LLMProvider.explain_provider_error.
             cause = getattr(self.llm_provider, "last_intellect_error", None)
             self.last_error = (
                 f"could not reach the language model — {cause}" if cause

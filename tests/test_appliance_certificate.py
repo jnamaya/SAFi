@@ -1,4 +1,3 @@
-"""Appliance TLS certificates include their advertised names and can be trusted."""
 import importlib.machinery
 import importlib.util
 import os

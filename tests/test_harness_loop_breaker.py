@@ -1,33 +1,4 @@
 #!/usr/bin/env python3
-"""Regression tests for the harness tool-call loop and tool-result persistence.
-
-WHY THIS EXISTS. A coding harness drives tool calling natively and re-sends
-the user's ORIGINAL message on every turn. That is fine while the model is
-making progress and catastrophic when it is not: one real conversation reached
-896 persisted rows, 97 identical `glob("**/conscience.py")` proposals and 15
-identical reads of `/workspace/conscience.py` — a path that exists neither in
-the container nor on the host. It never exited.
-
-Two separate defects, and only one of them is a loop:
-
-  1. NOTHING STOPPED IT. Every one of those proposals was legitimately
-     authorised, so the Will approved every one. A governance gate is the wrong
-     instrument for "you are repeating yourself"; only a repetition counter can
-     catch it.
-
-  2. THE EVIDENCE WAS DISCARDED. The endpoint folded tool results into
-     `full_prompt` but persisted `user_prompt`, so chat_history held only the
-     user's words. Not one tool result the agent had ever seen was recorded, and
-     the omission was invisible because the record looked complete.
-
-The counter is windowed, not streak-based, and that is itself pinned here: the
-observed loop ALTERNATED glob and read, so a consecutive-streak counter scored it
-as 1 and never tripped. A first attempt at this fix used a streak and would not
-have stopped the loop it was written for.
-
-No database is required. Run:
-    venv/bin/python tests/test_harness_loop_breaker.py
-"""
 import asyncio
 import json
 import sys
@@ -54,7 +25,6 @@ READ = {"tool_name": "read", "arguments": {"filePath": "/workspace/conscience.py
 
 
 class RepeatCounterTests(unittest.TestCase):
-    """The breaker counts exact results inside this user turn only."""
 
     def test_counts_repeats_across_an_alternating_loop(self):
         results = [GLOB, READ, GLOB, READ, GLOB, READ, GLOB]
@@ -86,7 +56,6 @@ class RepeatCounterTests(unittest.TestCase):
             )
 
     def test_old_conversation_results_are_not_in_this_turn(self):
-        """The gateway supplies only post-latest-user results; no DB history."""
         self.assertEqual(
             count_current_turn_tool_repeats([], "glob", GLOB["arguments"]), 0
         )
@@ -102,7 +71,6 @@ class BreakerConfigurationTests(unittest.TestCase):
         self.assertGreaterEqual(HARNESS_TOOL_REPEAT_LIMIT, 2)
 
     def test_endpoint_uses_the_counter(self):
-        """Wiring test: the counter exists but an unreferenced copy is dead code."""
         src = (Path(conv.__file__).resolve().parent.parent / "core" / "orchestrator.py").read_text()
         self.assertIn("count_current_turn_tool_repeats", src)
         self.assertIn("HARNESS_TOOL_REPEAT_LIMIT", src)
@@ -141,15 +109,8 @@ class HarnessWorkspaceContextTests(unittest.TestCase):
         )
 
 class ToolResultPersistenceTests(unittest.TestCase):
-    """Tool results must reach the persisted row, not just the model."""
 
     def test_persisted_prompt_includes_tool_results(self):
-        """insert_turn_atomic must receive the prompt that carried the results.
-
-        Checks the actual composition rather than the source text: the bug was
-        that the endpoint computed full_prompt and then persisted a different
-        variable, so both existed and only one was recorded.
-        """
         user_prompt = "can you review the conscience.py file in this codebase?"
         tool_results = [{
             "tool_name": "glob",
@@ -163,10 +124,9 @@ class ToolResultPersistenceTests(unittest.TestCase):
         ])
         full_prompt = f"{user_prompt}\n\n{tool_history}"
         self.assertIn("conscience.py", full_prompt)
-        self.assertIn(full_prompt, full_prompt)  # what is sent is what is stored
+        self.assertIn(full_prompt, full_prompt)
 
     def test_endpoint_persists_full_prompt_not_user_prompt(self):
-        """The adapter hands results to the orchestrator, which persists them."""
         api_src = Path(conv.__file__).read_text()
         orch_src = (Path(conv.__file__).resolve().parent.parent / "core"
                     / "orchestrator.py").read_text()
@@ -264,7 +224,6 @@ class ToolGateEnforcementTests(unittest.TestCase):
         self.assertIn('will_stage=will_stage_final', src)
 
     def test_tool_results_are_not_empty_for_the_model(self):
-        """The prompt the model receives must carry the results."""
         tool_results = [{"tool_name": "read", "arguments": {}, "result": "file body"}]
         tool_history = "\n".join([
             f"TOOL RESULT — {tr.get('tool_name', 'unknown')} called with "
@@ -274,7 +233,6 @@ class ToolGateEnforcementTests(unittest.TestCase):
         self.assertIn("file body", tool_history)
 
     def test_client_owned_branch_precedes_and_excludes_mcp_executor(self):
-        """An approved harness proposal returns to the client, never local MCP."""
         src = (Path(conv.__file__).resolve().parent.parent / "core"
                / "orchestrator.py").read_text()
         branch_start = src.index("if client_owned:", src.index("# Journal only after both deterministic"))
@@ -429,7 +387,6 @@ class HarnessProgressEndpointTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
-        # Verify get_or_create received the API key's policy for fiduciary
         mock_get_or_create.assert_called_once()
         call_kwargs = mock_get_or_create.call_args.kwargs
         self.assertEqual(call_kwargs.get("policy_id"), "safinstitute_org_safi_financial_advisory_policy")
@@ -437,7 +394,6 @@ class HarnessProgressEndpointTests(unittest.TestCase):
         data = response.get_json()
         self.assertEqual(data.get("policyName"), "Pro Financial Advisory Policy")
         self.assertEqual(data.get("policyId"), "safinstitute_org_safi_financial_advisory_policy")
-        # Verify client_owned_tools is None when tools is omitted
         self.assertIsNone(fake_safi.process_prompt.call_args.kwargs.get("client_owned_tools"))
 
     def test_harness_preserves_server_mcp_tools_when_client_sends_tools_for_fiduciary(self):
@@ -501,7 +457,6 @@ class HarnessProgressEndpointTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
-        # Verify get_or_create received the API key's policy for software_engineer
         mock_get_or_create.assert_called_once()
         call_kwargs = mock_get_or_create.call_args.kwargs
         self.assertEqual(call_kwargs.get("policy_id"), "coding-policy-1")
@@ -539,14 +494,6 @@ class HarnessProgressEndpointTests(unittest.TestCase):
 
 
 class TaskStateBlockTests(unittest.TestCase):
-    """The client-owned scratchpad tells the model what it already did.
-
-    A coding CLI re-sends the original request every hop and carries no plan of
-    its own, so the model re-derives intent each step: it re-reads files it
-    already read and asks the user for guidance mid-task. The scratchpad is the
-    deterministic fix and must survive history truncation, so it is rebuilt from
-    the full tool-result list, not the truncated one.
-    """
 
     def test_renders_actions_with_repeat_counts_and_plan(self):
         results = [
@@ -597,7 +544,6 @@ class TaskStateBlockTests(unittest.TestCase):
         self.assertIn("If all requested deliverables have been written, output your final response now", block)
         self.assertIn("Do NOT ask the user", block)
 
-        # Redundant post-deliverable read/write/bash on the generated report must be caught
         self.assertTrue(_is_redundant_post_deliverable_call(
             "read", {"path": "ceres.org_security_report.html", "offset": 236, "limit": 320}, results
         ))
@@ -610,7 +556,6 @@ class TaskStateBlockTests(unittest.TestCase):
         self.assertTrue(_is_redundant_post_deliverable_call(
             "bash", {"command": "echo \"final check done\""}, results
         ))
-        # Unrelated file operations remain permitted
         self.assertFalse(_is_redundant_post_deliverable_call(
             "read", {"path": "other_file.py"}, results
         ))

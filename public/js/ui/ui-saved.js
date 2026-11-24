@@ -1,7 +1,3 @@
-// js/ui/ui-saved.js
-// Saved content: the save-to-folder picker (anchored to the bookmark button in
-// the message action bar) and the "Saved" browser modal opened from the sidebar.
-
 import * as api from '../core/api.js';
 import * as ui from './ui.js';
 
@@ -12,7 +8,6 @@ const iconCopy = `<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-
 const iconOpen = `<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>`;
 const iconClose = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>`;
 
-// --- Save-to-folder picker -------------------------------------------------
 
 function closeSavePicker() {
     document.querySelector('.save-picker-menu')?.remove();
@@ -23,10 +18,6 @@ function _outsideClose(e) {
     if (!e.target.closest('.save-picker-menu')) closeSavePicker();
 }
 
-/**
- * Small anchored dropdown asking which folder the answer goes to.
- * onPick(projectId|null) is called once; null = saved loose.
- */
 export function showSavePicker(anchor, projects, onPick) {
     closeSavePicker();
 
@@ -59,7 +50,6 @@ export function showSavePicker(anchor, projects, onPick) {
 
     document.body.appendChild(menu);
 
-    // Position near the anchor, clamped to the viewport.
     const r = anchor.getBoundingClientRect();
     const mw = menu.offsetWidth, mh = menu.offsetHeight;
     let left = Math.min(r.left, window.innerWidth - mw - 8);
@@ -68,13 +58,11 @@ export function showSavePicker(anchor, projects, onPick) {
     menu.style.left = `${Math.max(8, left)}px`;
     menu.style.top = `${top}px`;
 
-    // Defer so the click that opened the picker doesn't immediately close it.
     setTimeout(() => document.addEventListener('click', _outsideClose, true), 0);
 }
 
-// --- Saved content browser modal -------------------------------------------
 
-let _modalState = null; // { items, projects, filter, onJump }
+let _modalState = null;
 
 function closeSavedModal() {
     document.getElementById('saved-content-modal')?.remove();
@@ -132,7 +120,6 @@ function _renderList() {
         const card = document.createElement('div');
         card.className = 'border border-neutral-200 dark:border-neutral-800 rounded-xl overflow-hidden';
 
-        // Header row (click to expand/collapse)
         const head = document.createElement('button');
         head.type = 'button';
         head.className = 'w-full flex items-start justify-between gap-3 px-4 py-3 text-left hover:bg-neutral-50 dark:hover:bg-neutral-800/60 transition-colors';
@@ -154,7 +141,6 @@ function _renderList() {
             <svg class="w-4 h-4 mt-1 shrink-0 text-neutral-400 transition-transform saved-chevron" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>`;
         head.querySelector('.saved-title').textContent = item.title || 'Saved item';
 
-        // Body (rendered markdown + actions), hidden until expanded
         const body = document.createElement('div');
         body.className = 'hidden border-t border-neutral-200 dark:border-neutral-800';
         body.innerHTML = `
@@ -186,7 +172,6 @@ function _renderList() {
             });
         }
 
-        // Move-to-folder select
         const moveWrap = document.createElement('label');
         moveWrap.className = 'inline-flex items-center gap-1.5 text-xs text-neutral-500 dark:text-neutral-400 ml-auto';
         const select = document.createElement('select');
@@ -215,7 +200,6 @@ function _renderList() {
         moveWrap.appendChild(select);
         actions.appendChild(moveWrap);
 
-        // Two-step delete (no browser confirm dialogs elsewhere in the app)
         let armed = false, disarmTimer = null;
         const delBtn = mkAction(iconTrash, 'Delete', async () => {
             if (!armed) {
@@ -255,11 +239,6 @@ function _modalStateSafeJump(conversationId) {
 
 let _jumpHandler = null;
 
-/**
- * Opens the Saved content browser.
- * opts.projects — current folder list (for names, filter, move targets)
- * opts.onJumpToConversation(id) — navigate to the origin conversation
- */
 export async function openSavedModal(opts = {}) {
     closeSavedModal();
     _jumpHandler = opts.onJumpToConversation || null;

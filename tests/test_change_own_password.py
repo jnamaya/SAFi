@@ -1,10 +1,3 @@
-"""Self-service password change (POST /api/me/password).
-
-Covers the temp-credential handover flow: a user who can authenticate with
-the current password may replace it; nobody else can. OAuth/SCIM-only
-identities must be refused (no password to change, and must not silently
-gain an appliance credential).
-"""
 import pytest
 from flask import Flask
 
@@ -18,8 +11,6 @@ def _make_app(user_row):
 
     @app.before_request
     def _seed_session():
-        # Slim-session shape: user_id is only present mid-request for a
-        # valid sid, which is exactly what change_my_password reads.
         from flask import session as flask_session
         flask_session["user_id"] = user_row["id"]
 
@@ -63,7 +54,7 @@ def test_wrong_current_password_rejected(monkeypatch, user_row):
         "new_password": "my-brand-new-pass",
     })
     assert r.status_code == 403
-    assert stored["hash"] == user_row["password_hash"]  # unchanged
+    assert stored["hash"] == user_row["password_hash"]
 
 
 def test_too_short_new_password(monkeypatch, user_row):

@@ -1,4 +1,3 @@
-"""Tests for per-IP demo turn cap on /api/cli/turn."""
 from unittest.mock import patch
 
 from flask import Flask

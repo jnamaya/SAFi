@@ -1,41 +1,3 @@
-"""
-The load-bearing invariant: enforcement is deterministic, discernment is not.
-
-WHY. SAFi's entire claim is that the model is a component it governs, not the
-thing it is. That holds only while the enforcing faculties decide nothing by
-judgement:
-
-  * Enforcement — every block, approval, redirect, retry and threshold decision
-    — is a fixed rule evaluated in Python. Phase Zero, Will, Spirit, Synderesis.
-  * Discernment — meaning, semantics, "is this actually harmful" — belongs to
-    the Intellect and the Conscience, the only two faculties that may call a
-    model.
-
-The line is NOT "the Will is independent of the models". Two of its passes
-consume the Conscience's ledger, which is correct and intended. The line is:
-
-    The Will may CONSUME the output of discernment. It must never PRODUCE it.
-
-Given the ledger, the Will is a pure function. That is what makes "anyone
-holding the audit record can recompute the outcome" true, and it is the only
-determinism claim this repo makes (DEVELOPER_GUIDE.md §5).
-
-This guards it mechanically because the prose version lives in CLAUDE.md, which
-is gitignored — it binds this working copy and nothing else. A source-level test
-is tracked, runs in CI, and survives a fresh clone.
-
-Two specific regressions this exists to stop, both real:
-
-  * Reviving the LLM-judged Will. The old "will_gate" prompt was removed from
-    `system_prompts.json` and `llm_provider.run_will` still exists; both are dead
-    and must stay dead. Reintroducing that call was proposed on 2026-08-09 and
-    rejected — it would put non-determinism back into the one component whose
-    value is that it has none.
-  * A deterministic check quietly migrating into a rubric because it was easier
-    to express there, which moves it from the Will's tier to the Conscience's.
-
-Run:  venv/bin/python tests/test_enforcement_is_deterministic.py
-"""
 import ast
 import re
 import sys
@@ -47,14 +9,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 REPO = Path(__file__).resolve().parent.parent
 FACULTIES = REPO / "safi_app" / "core" / "faculties"
 
-# Faculties that must reach a decision without ever consulting a model.
 DETERMINISTIC = ["phase_zero.py", "will.py", "spirit.py", "synderesis.py"]
 
-# The only two allowed to call one.
 DISCERNMENT = ["intellect.py", "conscience.py"]
 
-# Provider SDKs and the internal dispatch helper. A deterministic faculty that
-# imports any of these has already crossed the line, whatever it does with them.
 PROVIDER_IMPORTS = {"openai", "anthropic", "google", "groq", "mistralai", "cohere"}
 DISPATCH_CALLS = ("_chat_completion", "run_conscience", "run_intellect", "run_will")
 
@@ -64,8 +22,6 @@ def source(name):
 
 
 def code_only(text):
-    """Strip comments and docstrings so prose explaining a removed call — which
-    is useful history — cannot fail the guard."""
     tree = ast.parse(text)
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Module)):
@@ -108,8 +64,6 @@ class DeterministicFacultiesCallNoModel(unittest.TestCase):
                     )
 
     def test_03_will_never_uses_its_llm_provider_handle(self):
-        """WillGate keeps an llm_provider for interface symmetry with the other
-        faculties. Storing it is fine; using it is the violation."""
         code = code_only(source("will.py"))
         uses = re.findall(r"self\.llm_provider\s*\.", code)
         self.assertEqual(
@@ -119,9 +73,6 @@ class DeterministicFacultiesCallNoModel(unittest.TestCase):
         )
 
     def test_04_deterministic_faculties_await_nothing(self):
-        """An await in this tier means an I/O boundary, which in this codebase
-        means a model call. WillGate.evaluate_tool_intent is `async def` for the
-        caller's convenience and awaits nothing — that must stay true."""
         for name in DETERMINISTIC:
             with self.subTest(faculty=name):
                 tree = ast.parse(source(name))
@@ -133,8 +84,6 @@ class DeterministicFacultiesCallNoModel(unittest.TestCase):
                 )
 
     def test_05_the_llm_will_stays_dead(self):
-        """`run_will` and the removed "will_gate" prompt must never come back.
-        Wiring either back in is the exact regression this file exists to catch."""
         hits = []
         for path in (REPO / "safi_app").rglob("*.py"):
             if "__pycache__" in str(path) or path.name == "llm_provider.py":
@@ -150,8 +99,6 @@ class DeterministicFacultiesCallNoModel(unittest.TestCase):
 
 
 class DiscernmentFacultiesAreTheOnlyOnesThatThink(unittest.TestCase):
-    """The other half of the invariant — stated positively so the split is
-    documented by the test suite rather than only by prohibition."""
 
     def test_intellect_and_conscience_do_dispatch(self):
         found = False

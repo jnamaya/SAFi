@@ -1,18 +1,3 @@
-"""
-Unit tests for the reflection-leak fix in parsing_utils.
-
-Regression guard for 2026-07-11: the Intellect appends {"reflection": "..."}
-after its answer, but math-heavy reflections contain LaTeX markers (\\( t \\),
-\\alpha) that are invalid JSON escapes. json.loads rejected the blob, every
-strategy failed, and the Strategy-3 fallback shipped the RAW text — reflection
-blob included, sometimes quoting internal reflexion-retry coaching — to the
-frontend. Two layers now prevent this:
-  1. robust_json_parse repairs invalid escape sequences and retries, and
-  2. parse_intellect_response Strategy 3 strips an unparseable reflection
-     blob from the answer instead of ever shipping it.
-
-Run:  venv/bin/python tests/test_reflection_leak.py
-"""
 import sys
 import logging
 import unittest
@@ -62,7 +47,6 @@ class TestReflectionNeverLeaks(unittest.TestCase):
         self.assertNotIn('"reflection"', answer)
 
     def test_unparseable_blob_is_stripped_from_answer(self):
-        # Broken beyond repair: unescaped inner quotes.
         broken = '{"reflection": "the "coaching" note said "fix it""}'
         answer, reflection, _ = parse_intellect_response(f"{ANSWER}\n\n{broken}", log)
         self.assertEqual(answer, ANSWER)
@@ -70,8 +54,6 @@ class TestReflectionNeverLeaks(unittest.TestCase):
         self.assertIn("coaching", reflection)
 
     def test_blob_only_response_yields_empty_answer_for_retry(self):
-        # Whole message is an unparseable blob: answer must come back empty
-        # (run_intellect resamples on contentless) — not the raw blob.
         broken = '{"reflection": "only "a" blob"}'
         answer, _, _ = parse_intellect_response(broken, log)
         self.assertEqual(answer, "")

@@ -1,25 +1,3 @@
-"""
-Retired demo policies must not surface as Example Policies.
-
-WHY. The Governance tab's Example Policies section renders every policy that
-`list_policies` returns with `is_demo=TRUE`. When a demo agent is retired, its
-seeded policy row is deliberately KEPT in the database as point-in-time
-provenance for the governance records it once governed (see the demo host
-cleanup item in GOVERNANCE_BACKLOG.md: the Contoso row must not be deleted).
-Before this fix, that kept row still rendered as an example: the Contoso GenAI
-Use Policy was visible on the demo host months after the agent was removed.
-
-The contract, pinned here:
-
-- `list_policies` surfaces a demo row only when its id is in the CURRENT seed
-  set (DEMO_AGENT_POLICIES keys). An is_demo row with
-  any other id is a retired leftover and stays hidden.
-- `get_policy` stays unfiltered, so historical governance records that
-  reference a retired policy by id keep resolving it.
-
-Needs the disposable stack (it writes and deletes policy rows):
-    docker compose -f docker-compose.test.yml run --rm tests -k retired_demo
-"""
 import sys
 import unittest
 import uuid
@@ -46,8 +24,6 @@ class RetiredDemoPoliciesStayHidden(unittest.TestCase):
 
     def setUp(self):
         self.user = f"test_user_{uuid.uuid4().hex[:8]}"
-        # A demo-flagged row whose id is in no current seed set: exactly what a
-        # retired agent leaves behind.
         self.retired_pid = f"test_retired_demo_{uuid.uuid4().hex[:12]}"
         db.create_policy(
             name="Retired Demo Policy",
@@ -74,7 +50,6 @@ class RetiredDemoPoliciesStayHidden(unittest.TestCase):
             "list_policies — this is the Contoso GenAI Use Policy bug")
 
     def test_02_the_retired_row_still_resolves_by_id(self):
-        """Provenance: old governance records reference the policy by id."""
         row = db.get_policy(self.retired_pid)
         self.assertIsNotNone(
             row,
@@ -83,8 +58,6 @@ class RetiredDemoPoliciesStayHidden(unittest.TestCase):
         self.assertEqual(row["id"], self.retired_pid)
 
     def test_03_a_current_seed_id_is_still_listed(self):
-        """The filter must be membership in the seed set, not is_demo=FALSE
-        everywhere. Seed one current demo id if the test db lacks it."""
         current_pid = next(iter(DEMO_AGENT_POLICIES))
         created_here = False
         if not db.get_policy(current_pid):

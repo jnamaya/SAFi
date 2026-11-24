@@ -1,16 +1,6 @@
-/**
- * js/cache.js
- * Handles LOCAL UI STATE CACHING and Auth Token Persistence.
- */
-
-// PWA client (Capacitor retired 2026-08-19): device storage is the browser's
-// localStorage. These constants keep the storage wrapper's shape intact.
 const isNative = false;
 const Preferences = null;
 
-/**
- * A wrapper for native key-value storage.
- */
 const NativeStorage = {
   async get(key) {
     try {
@@ -37,16 +27,15 @@ const NativeStorage = {
     } catch (e) {
       if (e.name === 'QuotaExceededError' || e.code === 22) {
         console.warn(`Storage quota exceeded while saving ${key}. Attempting eviction...`);
-        const evicted = await evictOldCache(10); // Remove 10 items
+        const evicted = await evictOldCache(10);
         if (evicted) {
-          // Retry save
           try {
             const data = JSON.stringify(value);
             localStorage.setItem(key, data);
             console.log(`Retry save of ${key} successful after eviction.`);
           } catch (retryErr) {
             console.warn(`Failed to save ${key} after 10-item eviction. Trying scorched earth...`);
-            await evictOldCache(25); // Remove 25 items
+            await evictOldCache(25);
             try {
               localStorage.setItem(key, JSON.stringify(value));
               console.log(`Retry save of ${key} successful after aggressive eviction.`);
@@ -75,9 +64,6 @@ const NativeStorage = {
   }
 };
 
-/**
- * Utility to calculate current localStorage usage.
- */
 function getStorageUsage() {
   let total = 0;
   for (const x in localStorage) {
@@ -92,19 +78,13 @@ function getStorageUsage() {
   };
 }
 
-/**
- * Evicts cached items to free up space.
- * targetCount: How many items to attempt to remove.
- */
 async function evictOldCache(targetCount = 5) {
   try {
     const convos = await loadConvoList();
     let spacesCleared = 0;
 
-    // 1. Sort convos by last_updated (oldest first)
     const sortedConvos = [...convos].sort((a, b) => (a.last_updated || '').localeCompare(b.last_updated || ''));
 
-    // 2. Remove oldest conversation histories (the bulk of our custom cache)
     for (const c of sortedConvos) {
       if (spacesCleared >= targetCount) break;
       const historyKey = CACHE_KEYS.CONVO_PREFIX + c.id;
@@ -114,7 +94,6 @@ async function evictOldCache(targetCount = 5) {
       }
     }
 
-    // 3. Remove offline-manager cached GET requests (safi_cache_v1)
     if (spacesCleared < targetCount && !isNative && typeof localStorage !== 'undefined') {
       const cacheKeys = [];
       for (let i = 0; i < localStorage.length; i++) {
@@ -131,7 +110,6 @@ async function evictOldCache(targetCount = 5) {
       }
     }
 
-    // 4. Orphaned key cleanup (fallback)
     if (spacesCleared === 0 && !isNative && typeof localStorage !== 'undefined') {
       const keysToDelete = [];
       for (let i = 0; i < localStorage.length; i++) {
@@ -157,8 +135,6 @@ async function evictOldCache(targetCount = 5) {
   }
 }
 
-
-// --- AUTH TOKEN MANAGEMENT (Moved from old api_mobile.js) ---
 
 const TOKEN_KEY = "safi_auth_token";
 let _cachedToken = "";
@@ -202,38 +178,22 @@ export async function getAuthToken() {
   return _cachedToken;
 }
 
-// Function used by logout/delete account
 export async function clearAuthToken() {
   await setAuthToken("");
 }
 
 
-// --- CONVERSATION CACHE MANAGEMENT (From original cache.js) ---
-
 const CACHE_KEYS = {
   CONVO_LIST: 'safi_convo_list',
-  CONVO_PREFIX: 'safi_convo_' // Followed by convoId
+  CONVO_PREFIX: 'safi_convo_'
 };
 
-// Offline/PWA kill switch (Phase F): when the user's org forbids offline
-// mode, conversation content must not persist on the device. Auth token and
-// UI preferences are unaffected — only content caches are gated and purged.
 let persistenceAllowed = true;
 
-// --- Memory tier -----------------------------------------------------------
-// Always on, bounded, and never written to NativeStorage. persistenceAllowed
-// governs DURABILITY, not whether the app has working state: an in-heap Map
-// with the same lifetime as the DOM that is already displaying this content is
-// not "persisting on the device", which is what the kill switch exists to
-// prevent. Before this existed, disabling persistence made writes silent
-// no-ops while reads kept succeeding with [] — six loadConvoHistory call sites
-// quietly received an empty conversation, which is what broke the Alignment
-// Trend on every live turn for orgs on the default (offline_enabled: False).
 const _mem = new Map();
 const MEM_MAX_ENTRIES = 12;
 
 function _memSet(key, value) {
-  // Re-insert so iteration order is LRU: oldest key is first.
   _mem.delete(key);
   _mem.set(key, value);
   while (_mem.size > MEM_MAX_ENTRIES) {
@@ -244,7 +204,7 @@ function _memSet(key, value) {
 function _memGet(key) {
   if (!_mem.has(key)) return null;
   const value = _mem.get(key);
-  _memSet(key, value); // touch
+  _memSet(key, value);
   return value;
 }
 
@@ -257,8 +217,6 @@ export async function setPersistenceAllowed(allowed) {
   const changed = next !== persistenceAllowed;
   persistenceAllowed = next;
   if (!persistenceAllowed) {
-    // Say so exactly once. This used to be entirely silent, which is why an
-    // empty cache looked like a rendering bug for as long as it did.
     console.info('[cache] Local persistence is disabled by org policy — '
       + 'this session is memory-only; nothing is written to device storage.');
     _mem.clear();
@@ -274,10 +232,9 @@ export async function saveConvoList(conversations) {
   })));
   if (!persistenceAllowed) return 'memory-only';
   try {
-    // Ensure all objects have is_pinned property, defaulting to false if missing
     const sanitizedConversations = conversations.map(c => ({
       ...c,
-      is_pinned: c.is_pinned === true // Ensure it's explicitly boolean true, otherwise false
+      is_pinned: c.is_pinned === true
     }));
     await NativeStorage.set(CACHE_KEYS.CONVO_LIST, sanitizedConversations);
   } catch (e) {
@@ -291,7 +248,6 @@ export async function loadConvoList() {
     const convos = cached || (persistenceAllowed
       ? ((await NativeStorage.get(CACHE_KEYS.CONVO_LIST)) || [])
       : []);
-    // Sanitize on load to ensure old entries work
     return convos.map(c => ({
       ...c,
       is_pinned: c.is_pinned === true
@@ -315,11 +271,9 @@ export async function updateConvoInList(convoId, updates) {
     if (convoIndex > -1) {
       convos[convoIndex] = { ...convos[convoIndex], ...safeUpdates };
     } else {
-      // New conversation created offline, add it.
       convos.unshift({ id: convoId, ...safeUpdates });
     }
 
-    // Sorting will be handled by chat.js on render, but we ensure the cache is clean
     await saveConvoList(convos);
   } catch (e) {
     console.error('Failed to update convo in list cache:', e);
@@ -337,11 +291,6 @@ export async function deleteConvo(convoId) {
   }
 }
 
-/**
- * Returns what it actually did: 'persisted' | 'memory-only' | 'failed'.
- * Callers mostly ignore it, but a write path that reports success identically
- * whether it stored or discarded is what hid this bug — silence is the defect.
- */
 export async function saveConvoHistory(convoId, history) {
   const key = CACHE_KEYS.CONVO_PREFIX + convoId;
   _memSet(key, history);
@@ -362,7 +311,7 @@ export async function loadConvoHistory(convoId) {
   if (!persistenceAllowed) return [];
   try {
     const stored = (await NativeStorage.get(key)) || [];
-    if (stored.length) _memSet(key, stored); // warm the memory tier
+    if (stored.length) _memSet(key, stored);
     return stored;
   } catch (e) {
     console.error(`Failed to load history for ${convoId}:`, e);
@@ -383,8 +332,6 @@ export async function addMessageToHistory(convoId, message) {
 }
 
 export async function clearAllCache() {
-  // Memory first: it must never outlive a purge, or logout would leave one
-  // user's conversations readable to the next session in the same tab.
   _mem.clear();
   try {
     const convos = await loadConvoList();
@@ -396,9 +343,6 @@ export async function clearAllCache() {
         await NativeStorage.remove(CACHE_KEYS.CONVO_PREFIX + convo.id);
       }
     }
-    // Sweep stragglers not referenced by the list (web storage only —
-    // native Preferences has no key enumeration, but the list removal
-    // above covers everything saved through this module).
     try {
       const doomed = [];
       for (let i = 0; i < localStorage.length; i++) {

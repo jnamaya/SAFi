@@ -1,21 +1,3 @@
-"""
-Voice input wiring (backlog 74).
-
-The contract pinned here:
-
-- The feature is OFF by default. /api/audio/transcribe returns 404 unless
-  SAFI_VOICE_INPUT is enabled, so a stock deployment offers nothing.
-- The endpoint requires authentication.
-- When enabled, it runs the local transcription service and returns its text.
-  The transcription itself (whisper.cpp + ffmpeg) is mocked here: the wiring is
-  what this test owns, not the binary.
-- The transcription service reports itself unavailable when the binary or model
-  is missing, so the feature cannot be turned on where it cannot work.
-- /api/app-config advertises the flag so the frontend can show or hide the mic.
-
-Needs the disposable stack:
-    docker compose -f docker-compose.test.yml run --rm tests -k voice_input
-"""
 import io
 import sys
 import uuid
@@ -51,7 +33,6 @@ class VoiceInputWiring(unittest.TestCase):
         )
 
     def test_requires_authentication(self):
-        # No session at all.
         r = self.client.post("/api/audio/transcribe",
                              data={"file": (io.BytesIO(b"x"), "r.webm")},
                              content_type="multipart/form-data")
@@ -92,7 +73,6 @@ class VoiceInputWiring(unittest.TestCase):
         self.assertIn("too large", r.get_json()["error"].lower())
 
     def test_service_unavailable_without_binary(self):
-        # Enabled, but the whisper binary/model paths do not exist.
         with mock.patch.object(Config, "VOICE_INPUT_ENABLED", True), \
              mock.patch.object(Config, "WHISPER_CLI_PATH", "/nonexistent/whisper-cli"), \
              mock.patch.object(Config, "WHISPER_MODEL_PATH", "/nonexistent/model.bin"):

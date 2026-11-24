@@ -1,17 +1,4 @@
 #!/usr/bin/env python3
-"""Knowledge-base indexer service (SERVICE=indexer).
-
-Polls for knowledge bases queued for rebuild and builds their FAISS index from
-the APPROVED document subset. Runs as its own container from the same image as
-`app`, exactly as the retention purge scheduler does.
-
-Why a service and not a request handler: embedding a large corpus takes tens
-of seconds, gunicorn runs `--timeout 120`, and a rebuild triggered by an
-approval must not block the approver's HTTP response.
-
-Bare-metal deployments should run this under a systemd unit alongside the
-retention timer in deploy/systemd/.
-"""
 import logging
 import os
 import sys

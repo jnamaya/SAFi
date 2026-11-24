@@ -1,31 +1,3 @@
-"""
-OAuth 2.1 for MCP tool servers (GOVERNANCE_BACKLOG 48i).
-
-What is pinned here, and why each item earns a test:
-
-  * PKCE is S256 and the derivation is exactly RFC 7636's — a subtle slip in
-    base64url padding produces challenges some ASes accept and others refuse,
-    which debugging from the outside looks like a broken IdP.
-  * `resource` (RFC 8707) is sent at BOTH the authorization and token
-    endpoints. This parameter is the no-passthrough rule made concrete: it is
-    what binds the minted token's audience to the MCP server, so its absence
-    would not fail loudly — it would quietly produce tokens with the wrong or
-    no audience, which a strict server refuses and a sloppy one accepts.
-  * Discovery walks PRM (RFC 9728) then AS metadata (RFC 8414, with the OIDC
-    fallback), and failures name which half broke.
-  * Dynamic registration happens once and is reused, not once per login.
-  * The Flask routes: login redirects with the right parameters, the callback
-    refuses a state mismatch and a guest, and a good callback stores an
-    ENCRYPTED token row.
-  * End to end against a real Bearer-protected MCP server (uvicorn, in
-    process): a call with the right token executes and returns; a call with a
-    bad token comes back as a reconnect message, not a stack trace.
-
-The stub AS/PRM server records every request body so the assertions are on
-what was actually sent over the wire, not on what our code intended to send.
-
-Run:  venv/bin/python tests/test_mcp_oauth.py
-"""
 import base64
 import hashlib
 import json
@@ -46,10 +18,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from safi_app.core.services import mcp_oauth
 
 
-# ── A stub IdP + protected-resource metadata host ─────────────────────────────
-
 class _StubHandler(BaseHTTPRequestHandler):
-    calls = []          # (path, form_dict) for POSTs
+    calls = []
     register_count = 0
 
     def log_message(self, *args):
@@ -161,10 +131,9 @@ class DiscoveryAndFlowTests(unittest.TestCase):
         url = mcp_oauth.build_authorization_url(
             d, "client-1", "https://safi.example/cb", "state-1", "challenge-1")
         q = {k: v[0] for k, v in parse_qs(urlparse(url).query).items()}
-        self.assertEqual(q["response_type"], "code")   # never implicit
+        self.assertEqual(q["response_type"], "code")
         self.assertEqual(q["code_challenge_method"], "S256")
         self.assertEqual(q["code_challenge"], "challenge-1")
-        # RFC 8707: the audience request. THE parameter of this architecture.
         self.assertEqual(q["resource"], self.resource_url)
         self.assertEqual(q["state"], "state-1")
 
@@ -180,8 +149,6 @@ class DiscoveryAndFlowTests(unittest.TestCase):
         self.assertEqual(form["grant_type"], "authorization_code")
 
     def test_a_configured_secret_travels_in_the_body_not_basic_auth(self):
-        """GitHub's token endpoint accepts the secret only as a form field, and
-        RFC 6749 permits it, so the body is the shape that works everywhere."""
         import os
         d = mcp_oauth.discover(self.resource_url)
         os.environ["MCP_TEST_SECRET"] = "s3cr3t-from-env"
@@ -216,7 +183,7 @@ class DiscoveryAndFlowTests(unittest.TestCase):
 
     def test_dynamic_registration_happens_once(self):
         from safi_app import create_app
-        create_app()  # schema, for mcp_oauth_clients
+        create_app()
         _StubHandler.register_count = 0
         d = mcp_oauth.discover(self.resource_url)
         key = f"srv_{uuid.uuid4().hex[:8]}"
@@ -228,8 +195,6 @@ class DiscoveryAndFlowTests(unittest.TestCase):
                          "a second login must reuse the stored registration")
 
     def test_an_empty_env_reference_fails_at_home_not_at_the_idp(self):
-        """An unset ${VAR} must be a clear local error, never a redirect to the
-        IdP with a blank client_id (GitHub renders that as a bare 404)."""
         d = mcp_oauth.discover(self.resource_url)
         with self.assertRaises(mcp_oauth.OAuthConfigError) as ctx:
             mcp_oauth.ensure_client(
@@ -244,14 +209,6 @@ class DiscoveryAndFlowTests(unittest.TestCase):
 
 
 class BootWithOauthServerTests(unittest.TestCase):
-    """start() with an OAuth server in the file must return, not deadlock.
-
-    The regression that reached the demo host: start() held the runtime lock
-    and called the public register_offline, which takes it again. Every boot
-    with an OAuth server configured hung; resyncs worked because that path had
-    already been fixed. The watchdog thread is what makes this test FAIL fast
-    instead of hanging the suite if the deadlock ever returns.
-    """
 
     def test_boot_registers_an_oauth_server_and_returns(self):
         from safi_app.core import mcp_runtime
@@ -282,7 +239,6 @@ class BootWithOauthServerTests(unittest.TestCase):
 
 
 class RouteTests(unittest.TestCase):
-    """The Flask half: redirect out, validate back, store encrypted."""
 
     @classmethod
     def setUpClass(cls):
@@ -306,9 +262,6 @@ class RouteTests(unittest.TestCase):
         cls.user = f"oauth_{uuid.uuid4().hex[:8]}"
         cls._exec("INSERT INTO organizations (id, name) VALUES (%s, %s)",
                   (cls.org, "OAuth Test Org"))
-        # Admin, deliberately: the connect gate lets admins through always
-        # (bootstrap: the first sign-in is what discovers the catalog), so the
-        # flow tests run as one. Member-facing gating gets its own users below.
         cls._exec("INSERT INTO users (id, email, name, org_id, role) "
                   "VALUES (%s, %s, %s, %s, 'admin')",
                   (cls.user, f"{cls.user}@example.test", "OAuth", cls.org))
@@ -369,7 +322,6 @@ class RouteTests(unittest.TestCase):
 
         row = self.db.get_oauth_token(self.user, "mcp:authsrv")
         self.assertTrue(row and row["access_token"].startswith("at-authorization_code"))
-        # And encrypted at rest: the raw column must not be the plaintext.
         conn = self.db.get_db_connection()
         cur = conn.cursor()
         cur.execute("SELECT access_token FROM oauth_tokens WHERE user_id=%s AND provider=%s",
@@ -391,9 +343,6 @@ class RouteTests(unittest.TestCase):
         return member
 
     def test_a_member_with_no_agent_grant_cannot_connect(self):
-        """Connecting is the means to an agent's end. A member none of whose
-        agents carry the server's tools gets a refusal that says why, not an
-        invitation to grant a token nothing will read."""
         resp = self._client(self._member()).get("/api/mcp/auth/authsrv/login")
         self.assertEqual(resp.status_code, 403)
         self.assertIn("policy", resp.get_json()["error"])
@@ -440,7 +389,6 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(
             self._client().get("/api/mcp/auth/nonesuch/login").status_code, 404)
 
-    # ── revocation (offboarding, 48l) ────────────────────────────────────────
 
     def _seed_token(self, user=None):
         from datetime import datetime, timedelta
@@ -452,8 +400,6 @@ class RouteTests(unittest.TestCase):
         return [form for path, form in _StubHandler.calls if path == "/revoke"]
 
     def test_disconnect_revokes_at_the_server_first(self):
-        """The stored token is the proof of possession the revocation endpoint
-        needs, so the server hears about it BEFORE the row dies."""
         mcp_oauth.clear_discovery_cache()
         self._seed_token()
         _StubHandler.calls = []
@@ -472,8 +418,6 @@ class RouteTests(unittest.TestCase):
         self.assertIsNone(self.db.get_oauth_token(self.user, "mcp:authsrv"))
 
     def test_a_dead_gateway_never_blocks_a_disconnect(self):
-        """Best effort by design: the row must die even when the server is
-        unreachable, or an offboarding could be blocked by an outage."""
         mcp_oauth.clear_discovery_cache()
         self._seed_token()
         held, self.stub.RequestHandlerClass.do_POST = (
@@ -492,14 +436,10 @@ class RouteTests(unittest.TestCase):
         results = mcp_oauth.revoke_all_mcp_tokens(self.user)
         self.assertEqual({"authsrv": True}, results)
         self.assertIn({"token": "rt-1"}, self._revocations())
-        # The sweep revokes; deletion stays the caller's move (delete_user
-        # cascades it, the org-removal route deletes explicitly).
         self.assertIsNotNone(self.db.get_oauth_token(self.user, "mcp:authsrv"))
         self._exec("DELETE FROM oauth_tokens WHERE user_id=%s", (self.user,))
 
     def test_account_deletion_revokes_before_the_rows_die(self):
-        """/me/delete on a throwaway user: the gateway hears the revocation,
-        then the account and its rows are gone."""
         mcp_oauth.clear_discovery_cache()
         doomed = f"doomed_{uuid.uuid4().hex[:8]}"
         self._exec("INSERT INTO users (id, email, name, org_id, role) "
@@ -519,7 +459,6 @@ class RouteTests(unittest.TestCase):
 
 
 class LiveProtectedServerTests(unittest.TestCase):
-    """A real MCP server that demands a Bearer token, spoken to per user."""
 
     GOOD = "the-audience-bound-token"
 
@@ -533,16 +472,11 @@ class LiveProtectedServerTests(unittest.TestCase):
 
         @server.tool()
         def secure_echo(message: str) -> str:
-            """Echo, behind authorization."""
             return f"secure: {message}"
 
         inner = server.streamable_http_app()
 
         async def gated(scope, receive, send):
-            # The reference middleware's contract, minimally: a Bearer token or
-            # a 401. Audience validation is the resource server's job and is
-            # covered by the TypeScript reference; what SAFi's client side owes
-            # is presenting the token, which is exactly what this asserts.
             if scope["type"] == "http":
                 headers = {k.decode(): v.decode() for k, v in scope.get("headers", [])}
                 if headers.get("authorization") != f"Bearer {cls.GOOD}":
@@ -594,14 +528,6 @@ class LiveProtectedServerTests(unittest.TestCase):
 
 
 class ReferenceServerTests(unittest.TestCase):
-    """The Python reference resource server, driven with real signed JWTs.
-
-    This is the confused-deputy test in executable form: a token whose `aud`
-    is some OTHER service is refused even though the signature, issuer and
-    expiry are all valid. The TypeScript version of this reference compiled
-    and was never executed by CI; being Python is what lets the same suite
-    that tests the client also prove the server half.
-    """
 
     @classmethod
     def setUpClass(cls):
@@ -609,7 +535,6 @@ class ReferenceServerTests(unittest.TestCase):
         import uvicorn
         import importlib.util
 
-        # A real signing key, its public half served as the stub IdP's JWKS.
         cls.key = JsonWebKey.generate_key("RSA", 2048, is_private=True)
         public = cls.key.as_dict(is_private=False)
         public["kid"] = "test-key"
@@ -622,7 +547,6 @@ class ReferenceServerTests(unittest.TestCase):
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
 
-        # Bind the app first so RESOURCE_URI can carry the real port.
         import socket
         probe = socket.socket()
         probe.bind(("127.0.0.1", 0))
@@ -677,8 +601,6 @@ class ReferenceServerTests(unittest.TestCase):
         self.assertIn("member-42", out)
 
     def test_the_confused_deputy_is_refused(self):
-        """Valid signature, valid issuer, valid expiry, WRONG audience: a token
-        minted for some other service must not open this one."""
         import asyncio
         from safi_app.core import mcp_runtime
         token = self.mint(aud="https://some-other-service.example/api")

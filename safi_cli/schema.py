@@ -1,9 +1,3 @@
-"""Typed schema contract for the /api/agentic/process_prompt response.
-
-Turns silent ``KeyError``/``dict.get`` drift in main.py into a single,
-fail-loud normalization point: ``normalize_turn_response`` validates the
-server payload once and returns a well-formed dict every consumer can trust.
-"""
 from __future__ import annotations
 
 import logging
@@ -11,13 +5,11 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("safi.schema")
 
-# The server may omit "type" for final text-only turns; a payload with
-# neither "type" nor "finalOutput" is treated as malformed below.
 REQUIRED_KEYS: tuple = ()
 
 
 class SchemaError(ValueError):
-    """Raised when the server response violates the client's contract."""
+    pass
 
 
 def _as_str(value: Any, default: str = "") -> str:
@@ -31,7 +23,6 @@ def _as_list(value: Any) -> List[Dict[str, Any]]:
 
 
 def normalize_tool_proposal(prop: Dict[str, Any]) -> Dict[str, Any]:
-    """Coerce one tool proposal into canonical client-side shape."""
     out = dict(prop)
     name = _as_str(prop.get("tool_name") or prop.get("name") or prop.get("tool"))
     args = (
@@ -57,15 +48,9 @@ def normalize_tool_proposal(prop: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def normalize_turn_response(data: Any) -> Dict[str, Any]:
-    """Validate and normalize a process_prompt response payload.
-
-    Raises SchemaError when the payload is not a dict or lacks required keys,
-    so callers fail loudly instead of silently mis-rendering a turn.
-    """
     if not isinstance(data, dict):
         raise SchemaError(f"process_prompt response is {type(data).__name__}, expected object")
     if "type" not in data and "finalOutput" not in data:
-        # Legacy/simple payloads like {"ok": true} are treated as empty finals.
         if not data.get("ok"):
             raise SchemaError("process_prompt response has neither 'type' nor 'finalOutput'")
 

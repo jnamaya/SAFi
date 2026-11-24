@@ -1,25 +1,3 @@
-"""
-Data-source connector governance in the zero-catalog world.
-
-The delegated connectors this module governed retired one by one through
-2026-08-15 (github, google_drive, then microsoft/sharepoint, GOVERNANCE_BACKLOG
-48k), so CONNECTOR_METADATA is deliberately empty. The machinery stays, and
-what this suite now pins is different from what it pinned before:
-
-  * The retirement is total and fail-closed. Retired account keys refuse on
-    write, drop on read from lists stored before the retirement, and their
-    linking routes are GONE (404), not guarded. A resurrection of any of that
-    fails here first.
-  * The parts of the machinery that OUTLIVED the catalog still work, because
-    the MCP OAuth servers use them: oauth_tokens storage with org attribution
-    and evidence, the always-permitted generic disconnect, and the admin
-    visibility endpoint that must not leak across orgs or expose token
-    material.
-  * The admin allowlist API stays honest about an empty catalog rather than
-    erroring on it.
-
-Run:  venv/bin/python tests/test_connector_governance.py
-"""
 import sys
 import unittest
 import uuid
@@ -32,8 +10,6 @@ from safi_app.persistence import database as db
 from safi_app.core.services import connector_governance as cg
 from support import login_as
 
-# The oauth_tokens machinery's live consumers are MCP servers; exercise it the
-# way they use it, with a provider key in their namespace.
 MCP_PROVIDER = "mcp:workspace"
 
 
@@ -93,25 +69,18 @@ class TheCatalogIsEmpty(ConnectorGovernanceBase):
         self.assertEqual(frozenset(), cg.usable_connector_keys(self.uid, self.org_id, 'admin'))
 
     def test_every_key_fails_closed(self):
-        """With nothing in the catalog, assert_connector_allowed refuses
-        everything, retired keys included. There is no 'still works for old
-        names' path."""
         for key in ("microsoft", "google", "github", "dropbox"):
             with self.subTest(key=key):
                 with self.assertRaises(cg.ConnectorNotAllowedError):
                     cg.assert_connector_allowed(key, self.org_id)
 
     def test_retired_keys_refuse_on_write(self):
-        """An admin script replaying an old allowlist must fail loudly, not
-        store keys the catalog no longer knows."""
         for key in ("microsoft", "google", "github"):
             with self.subTest(key=key):
                 with self.assertRaises(ValueError):
                     db.set_org_connector_allowlist(self.org_id, [key], "admin@example.test")
 
     def test_stale_stored_lists_drop_on_read(self):
-        """Lists stored before the retirements read as empty rather than
-        resurrecting the keys. All three retired names are the live case."""
         _exec("UPDATE organizations SET settings=%s WHERE id=%s",
               ('{"connector_allowlist": ["microsoft", "google", "github"]}', self.org_id))
         cg.invalidate_org(self.org_id)
@@ -126,8 +95,6 @@ class TheCatalogIsEmpty(ConnectorGovernanceBase):
 
 
 class TheRoutesAreGone(ConnectorGovernanceBase):
-    """The linking routes were deleted with their connectors. 404, not a
-    guard: a guarded route implies the thing behind it still exists."""
 
     def setUp(self):
         self.client = self.app.test_client()
@@ -141,8 +108,6 @@ class TheRoutesAreGone(ConnectorGovernanceBase):
                     self.assertEqual(404, self.client.get(path).status_code)
 
     def test_disconnect_is_always_permitted(self):
-        """The generic disconnect outlives every catalog entry: it is how a
-        member removes ANY stored token, MCP ones included."""
         db.upsert_oauth_token(self.uid, MCP_PROVIDER, 'tok', org_id=self.org_id)
         r = self.client.post(f'/api/auth/{MCP_PROVIDER}/disconnect')
         self.assertEqual(200, r.status_code)
@@ -150,8 +115,6 @@ class TheRoutesAreGone(ConnectorGovernanceBase):
 
 
 class EvidenceAndVisibility(ConnectorGovernanceBase):
-    """The storage layer outlived the catalog; the MCP servers are its
-    consumers now, and every property the delegated world needed still holds."""
 
     def test_connect_writes_evidence_in_the_same_transaction(self):
         db.upsert_oauth_token(self.uid, MCP_PROVIDER, 'tok', scope='workspace.read',
@@ -165,16 +128,12 @@ class EvidenceAndVisibility(ConnectorGovernanceBase):
         self.assertIn("connector_disconnected", _log_events(self.org_id))
 
     def test_disconnecting_nothing_writes_nothing(self):
-        """A repeat disconnect, or a probe for a provider never linked, must not
-        manufacture history that did not happen."""
         before = _log_events(self.org_id).count("connector_disconnected")
         db.delete_oauth_token(self.uid, MCP_PROVIDER, org_id=self.org_id)
         after = _log_events(self.org_id).count("connector_disconnected")
         self.assertEqual(before, after)
 
     def test_no_org_still_stores_the_token(self):
-        """Single-user install: no evidence log to write to, but the connection
-        must still work."""
         db.upsert_oauth_token(self.uid, MCP_PROVIDER, 'tok', org_id=None)
         self.assertIn(MCP_PROVIDER, db.get_connected_providers(self.uid))
 
@@ -208,9 +167,6 @@ class AdminApi(ConnectorGovernanceBase):
         self.assertEqual([], r.get_json()["connectors"])
 
     def test_admin_can_still_write_the_empty_policy(self):
-        """'Members may link nothing' remains a coherent, storable policy even
-        with nothing to block; it will bind any future catalog entry from the
-        moment it exists."""
         login_as(self.client, self.uid, "admin", org_id=self.org_id)
         r = self.client.put(f'/api/organizations/{self.org_id}/connectors',
                             json={"allowlist": []})

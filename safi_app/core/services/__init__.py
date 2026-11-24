@@ -1,8 +1,3 @@
-"""Package facade for the external-facing service layer.
-
-I/O and parsing live here so the faculties stay purely logical; import from
-this module rather than reaching into the submodules.
-"""
 from .llm_provider import LLMProvider
 from .parsing_utils import (
     robust_json_parse, 

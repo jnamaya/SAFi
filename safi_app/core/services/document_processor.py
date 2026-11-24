@@ -1,13 +1,3 @@
-"""Uploaded-file text extraction (PDF, DOCX, XLSX, TXT, MD, CSV, images).
-
-IMAGES ARE OCR'd TO TEXT — the image bytes are never sent to a model. That is a
-governance decision, not a convenience: Phase Zero is a literal substring scan
-over the prompt and cannot see inside an image, so attaching image bytes would
-create an input channel the deterministic tier structurally cannot inspect.
-Turning the image into text first means it travels the same gated path as every
-other attachment. See GOVERNANCE_BACKLOG 32z for the sketch of how real vision
-could be governed, and why it is not built.
-"""
 import os
 import csv
 import io
@@ -19,9 +9,6 @@ log = logging.getLogger(__name__)
 IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.tiff', '.tif', '.webp', '.bmp'}
 ALLOWED_EXTENSIONS = {'.txt', '.md', '.pdf', '.docx', '.xlsx', '.csv'} | IMAGE_EXTENSIONS
 
-# A page yielding fewer than this many characters is treated as scanned rather
-# than genuinely sparse, and re-read with OCR when OCR is available. Set to
-# clear a stray header or page number without swallowing a real short page.
 _SCANNED_PAGE_CHAR_FLOOR = 40
 
 
@@ -31,11 +18,6 @@ def allowed_file(filename: str) -> bool:
 
 
 def extract_text(file_storage, filename: str, max_chars: int = 50000) -> Tuple[str, int]:
-    """Extract text from an uploaded file.
-
-    Returns (extracted_text, total_chars_before_truncation) — the second value
-    is measured BEFORE the max_chars cut, so callers can report the real size.
-    """
     ext = os.path.splitext(filename)[1].lower()
 
     if ext in ('.txt', '.md'):
@@ -94,11 +76,6 @@ def _extract_pdf(file_storage) -> str:
     for i, page in enumerate(reader.pages):
         text = (page.extract_text() or "").strip()
 
-        # A scanned page has an embedded image and no text layer, so pypdf
-        # returns nothing and the page silently disappears from the extraction.
-        # Before OCR existed, a fully scanned PDF raised "may be image-based" and
-        # a PARTLY scanned one was worse: it succeeded, returned only the typed
-        # pages, and looked complete.
         if len(text) < _SCANNED_PAGE_CHAR_FLOOR:
             ocr_text = _ocr_pdf_page_images(page)
             if ocr_text:
@@ -126,12 +103,9 @@ def _extract_pdf(file_storage) -> str:
 
 
 def _ocr_available() -> bool:
-    """True only when both the Python binding and the tesseract binary exist.
-    The wheel installs without the binary, so importing pytesseract proves
-    nothing on its own."""
     try:
-        import pytesseract  # noqa: F401
-        from PIL import Image  # noqa: F401
+        import pytesseract
+        from PIL import Image
     except ImportError:
         return False
     try:
@@ -143,14 +117,10 @@ def _ocr_available() -> bool:
 
 
 def _ocr_image_bytes(data: bytes) -> str:
-    """OCR raw image bytes. Returns '' on any failure — a caller reading a
-    scanned page must be able to fall through to whatever it had."""
     try:
         import pytesseract
         from PIL import Image
         with Image.open(io.BytesIO(data)) as img:
-            # Some scans arrive as 1-bit or palette images, which tesseract reads
-            # poorly; RGB is the reliable input.
             if img.mode not in ("RGB", "L"):
                 img = img.convert("RGB")
             return (pytesseract.image_to_string(img) or "").strip()
@@ -160,15 +130,6 @@ def _ocr_image_bytes(data: bytes) -> str:
 
 
 def _ocr_pdf_page_images(page) -> str:
-    """
-    OCR the images embedded in one PDF page.
-
-    Deliberately reads the page's own XObject images rather than rasterising the
-    page: rasterising needs Poppler or PyMuPDF, neither of which is a dependency,
-    and a scanned page is in practice one full-page image. A page whose text is
-    drawn as vectors will not be recovered this way — it is a limitation, not a
-    bug, and the extraction note tells the model OCR was involved.
-    """
     if not _ocr_available():
         return ""
     out = []
@@ -199,9 +160,6 @@ def _extract_image(file_storage, filename: str) -> str:
             "Images are read by OCR, so photographs, diagrams and charts without "
             "text will come back empty."
         )
-    # The provenance matters to whoever reads the answer: OCR output is a
-    # transcription, not the document, and the model should not present a
-    # misrecognised figure as if it were quoted.
     return (
         f"[OCR TRANSCRIPTION of the image {os.path.basename(filename)}. This text was "
         "recognised from pixels and may contain errors; treat exact figures, names and "

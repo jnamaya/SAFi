@@ -47,7 +47,6 @@ export function renderDefinitionStep(container, policyData) {
         </div>
     `;
 
-    // Listeners
     document.getElementById('pw-name')?.addEventListener('input', (e) => policyData.name = e.target.value);
     document.getElementById('pw-business-unit')?.addEventListener('input', (e) => policyData.business_unit = e.target.value);
     document.getElementById('pw-context')?.addEventListener('input', (e) => policyData.context = e.target.value);

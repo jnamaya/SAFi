@@ -1,8 +1,3 @@
-"""
-Tool output is screened by Phase Zero before the Intellect or the audit sees it.
-
-Run:  venv/bin/python tests/test_phase_zero_tool_result.py
-"""
 import inspect
 import sys
 import unittest

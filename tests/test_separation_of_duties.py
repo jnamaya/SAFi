@@ -1,16 +1,3 @@
-"""
-DB integration tests for the two authorization guards added 2026-07-27:
-
-- Separation of duties: a reviewer cannot dispose of a turn from their own
-  conversation (SelfReviewError).
-- Authority-role protection: neither a role change nor a removal may leave an
-  organization without any configured authority role.
-
-Both guards live in the persistence layer rather than the routes, so these
-tests exercise them where every caller inherits them.
-
-Run:  venv/bin/python tests/test_separation_of_duties.py
-"""
 import sys
 import uuid
 import unittest
@@ -43,7 +30,6 @@ def _fetchone(sql, params=()):
 
 
 class SelfReviewTest(unittest.TestCase):
-    """The author of a turn must not be able to sign it off."""
 
     @classmethod
     def setUpClass(cls):
@@ -74,7 +60,6 @@ class SelfReviewTest(unittest.TestCase):
         provider_governance.activate_org(None)
 
     def _queued_turn(self, owner):
-        """A conversation owned by `owner` with one turn flagged into the queue."""
         provider_governance.activate_org(self.org_id)
         cid, mid = str(uuid.uuid4()), str(uuid.uuid4())
         _exec("INSERT INTO conversations (id, user_id, title) VALUES (%s, %s, 'sod test')",
@@ -107,7 +92,6 @@ class SelfReviewTest(unittest.TestCase):
         self.assertEqual(after["status"], "pending")
 
     def test_another_reviewer_can_dispose(self):
-        """The guard must block only the author — not supervisory review itself."""
         row, _ = self._queued_turn(self.author)
         out = db.apply_review_action(self.org_id, row["id"], "approve", None,
                                      self.other, "other@example.test")
@@ -115,8 +99,6 @@ class SelfReviewTest(unittest.TestCase):
         self.assertEqual(out["reviewed_by"], self.other)
 
     def test_purged_conversation_does_not_block_review(self):
-        """An aged turn whose conversation is gone has no owner to compare
-        against; review must still be possible or the queue would jam."""
         row, cid = self._queued_turn(self.author)
         _exec("DELETE FROM conversations WHERE id=%s", (cid,))
         out = db.apply_review_action(self.org_id, row["id"], "approve", None,
@@ -125,7 +107,6 @@ class SelfReviewTest(unittest.TestCase):
 
 
 class LastAdminTest(unittest.TestCase):
-    """An org must never be left with zero admins."""
 
     def setUp(self):
         self.org_id = str(uuid.uuid4())
@@ -162,7 +143,6 @@ class LastAdminTest(unittest.TestCase):
                          "refused demotion must leave the role untouched")
 
     def test_cannot_remove_sole_admin(self):
-        """Removal strips admin as effectively as demotion, so it is guarded too."""
         with self.assertRaises(db.LastAuthorityRoleError):
             db.remove_member_from_org(
                 self.admin, self.org_id, actor="test",
@@ -182,7 +162,6 @@ class LastAdminTest(unittest.TestCase):
         self.assertEqual(self._role(self.second)["role"], 'admin')
 
     def test_demoting_a_non_admin_is_unaffected(self):
-        """The guard keys on losing the LAST admin, not on any role change."""
         db.update_member_role(self.second, self.org_id, 'auditor', actor="test",
                               administrator_roles=ROLE_CONFIG["organization_admin_roles"])
         self.assertEqual(self._role(self.second)["role"], 'auditor')

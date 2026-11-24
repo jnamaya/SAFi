@@ -47,12 +47,10 @@ from .turn_loop import DEFAULT_MAX_STEPS, run_agent_turn
 
 
 def _collect_multiline(initial: str) -> str:
-    """Join backslash-continued input lines so users can compose/paste multi-line prompts."""
     return prompt_input.collect_multiline(initial)
 
 
 def _archive_scratchpad(workspace_root: Path) -> None:
-    """Rotate .safi/scratchpad.md to .safi/scratchpad.prev.md on session reset."""
     try:
         sp = Path(workspace_root) / ".safi" / "scratchpad.md"
         if sp.is_file():
@@ -69,7 +67,6 @@ def show_config(
     current_conv: str,
     current_model: Optional[str] = None,
 ):
-    """Display current runtime settings and Policy API key status."""
     from rich.table import Table
     from rich import box
 
@@ -107,7 +104,6 @@ def show_config(
 
 
 def print_help():
-    """Print help menu."""
     commands = [
         ("/", "Open interactive command menu"),
         ("/agents", "Interactive agent selector & Policy API key status"),
@@ -253,7 +249,6 @@ def _handle_schedule_command(line: str, sched: Any, current_agent: str) -> None:
 
 
 def prompt_resume_session(current_conv: str, workspace_root: Path, target_arg: Optional[str] = None) -> str:
-    """List stored conversation sessions and resume a selected one."""
     sessions = config.list_sessions()
     if not sessions:
         ui.console.print(f"[{ui.COLOR_WARN}]No stored sessions yet. Start a conversation to create one.[/]")
@@ -338,7 +333,6 @@ def prompt_command_menu(
     current_user_name: Optional[str] = None,
     user_id: str = "cli_user",
 ) -> tuple[str, str, Optional[str], Optional[str], bool]:
-    """Display the interactive slash command menu when the user types '/'."""
     rows = [
         [str(idx), f"/{cmd}", action, desc]
         for idx, (cmd, action, desc) in enumerate(COMMAND_OPTIONS, 1)
@@ -629,7 +623,6 @@ def _compute_completions(
     client: Optional[SafiClient] = None,
     workspace_root: Optional[Path] = None,
 ) -> List[str]:
-    """Compute auto-completion matches for the given input line and current token."""
     line_clean = line.lstrip()
 
     if line_clean.startswith("/"):
@@ -707,7 +700,6 @@ _RICH_COMPLETION_ROOT: Optional[Path] = None
 
 
 def _rich_completions(line: str, text: str) -> List[str]:
-    """Completion source for the prompt_toolkit composer (slash cmds, agents, models, paths)."""
     try:
         return _compute_completions(line, text, _RICH_COMPLETION_CLIENT, _RICH_COMPLETION_ROOT)
     except Exception as exc:
@@ -716,7 +708,6 @@ def _rich_completions(line: str, text: str) -> List[str]:
 
 
 def setup_readline_completer(client: Optional[SafiClient] = None, workspace_root: Optional[Path] = None):
-    """Configure readline auto-completion for slash commands, agent names, model names, and file paths."""
     if not readline:
         return
 
@@ -771,7 +762,6 @@ def interactive_repl(
     auto_approve: bool = True,
     max_steps: int = DEFAULT_MAX_STEPS,
 ):
-    """Start an interactive command-line session."""
     current_agent = agent
     if AVAILABLE_AGENTS and current_agent not in AVAILABLE_AGENTS:
         current_agent = next(iter(AVAILABLE_AGENTS))
@@ -1039,8 +1029,6 @@ def interactive_repl(
                 cmd_head = parts[0].lower()
                 sub_arg = parts[1].strip().lower() if len(parts) > 1 else ""
 
-                # /compress with no args defaults to "compress"
-                # /memory with no args defaults to "show"
                 if not sub_arg:
                     if cmd_head in ("/compress", "/compact", "/summarize"):
                         sub_arg = "compress"
@@ -1254,7 +1242,6 @@ def interactive_repl(
                     ui.console.print(f"[bold {ui.COLOR_FAIL}]Unknown command:[/] '{line}'. Type [bold]/[/] to see options.")
                     continue
 
-            # Only erase lines manually when using readline fallback; prompt_toolkit uses erase_when_done=True
             if not rich_input and sys.stdout.isatty():
                 try:
                     cols = os.get_terminal_size(sys.__stdout__.fileno()).columns
@@ -1263,7 +1250,7 @@ def interactive_repl(
                 margin_len = ui.CLI_MARGIN if ui.CLI_MARGIN > 0 else 0
                 prompt_vis_len = margin_len + len(f" SAFi [{current_agent}] › ")
                 input_lines = line.splitlines() or [""]
-                lines_count = 1  # Account for top divider line
+                lines_count = 1
                 for idx_l, l_str in enumerate(input_lines):
                     prefix_len = prompt_vis_len if idx_l == 0 else len("    ")
                     total_len = prefix_len + len(l_str)
@@ -1299,11 +1286,6 @@ def interactive_repl(
 
 
 def _wizard_login_or_key(api_url: str, agent: str) -> str:
-    """Setup-wizard auth step: web username/password login (default), browser SSO, or manual key.
-
-    Returns the Policy API key (already saved to config), or an empty string
-    if the user skips.
-    """
     import getpass
 
     probe_client = SafiClient(api_url)
@@ -1337,7 +1319,6 @@ def _wizard_login_or_key(api_url: str, agent: str) -> str:
         use_sso = sso_enabled and identifier.lower() in ("sso", "google", "microsoft", "oauth")
 
         if not use_sso:
-            # Web-credential login: exchange username/password for a provisioned key.
             try:
                 password = getpass.getpass(
                     "Password (leave blank for Google/Microsoft browser SSO): "
@@ -1367,7 +1348,6 @@ def _wizard_login_or_key(api_url: str, agent: str) -> str:
             try:
                 payload = login_client.login(identifier, password, totp_code=totp_code, ldap=ldap_hint)
             except Exception as exc:
-                # Second chance: server demanded MFA we didn't supply.
                 if getattr(exc, "status_code", None) == 401 and not totp_code:
                     try:
                         totp_code = input("Multi-factor code required. Enter TOTP code: ").strip()
@@ -1383,8 +1363,6 @@ def _wizard_login_or_key(api_url: str, agent: str) -> str:
         if not new_key:
             ui.print_error("Server did not return an API key.")
             continue
-        # One policy key is valid for every agent - save it under all known
-        # agents so none is left without a key (active agent stays 'agent').
         login_client.api_key = new_key
         user_info = payload.get("user") or {}
         user_id_val = user_info.get("id") or ""
@@ -1429,11 +1407,6 @@ def _wizard_login_or_key(api_url: str, agent: str) -> str:
 
 
 def run_setup_wizard() -> tuple[str, str, Optional[str]]:
-    """Interactive onboarding wizard to configure SAFi CLI for the first time.
-
-    Returns:
-        (api_url, target_agent, api_key)
-    """
     from rich.panel import Panel
     from rich import box
 
@@ -1468,7 +1441,6 @@ def run_setup_wizard() -> tuple[str, str, Optional[str]]:
             config.clear_credentials()
             ui.console.print("[bold green]✓ Prior profile and credentials cleared.[/]\n")
 
-    # 1. Ask for SAFi Appliance URL
     existing_url = str(config.load_config().get("api_url") or "").strip() or prior_url or "https://localhost"
     ui.console.print("\n[bold white]1. SAFi Appliance Endpoint[/]")
     ui.console.print(
@@ -1516,7 +1488,6 @@ def run_setup_wizard() -> tuple[str, str, Optional[str]]:
             else:
                 ui.console.print("[dim]Please re-enter the correct endpoint URL.[/dim]")
 
-    # 2. Authenticate: web login (default) or manual Policy API key
     ui.console.print(f"\n[bold white]2. Authenticate[/]")
     default_probe_agent = config.get_default_agent() or "software_engineer"
     existing_key = config.resolve_agent_api_key(default_probe_agent) or config.load_config().get("api_key")
@@ -1574,5 +1545,3 @@ def run_setup_wizard() -> tuple[str, str, Optional[str]]:
         )
     )
     return chosen_url, chosen_agent, key_val or None
-
-

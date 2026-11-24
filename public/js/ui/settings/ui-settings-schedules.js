@@ -1,12 +1,3 @@
-/**
- * Scheduled Updates (backlog 54): personal agent digests on a timer.
- *
- * v1 rules the UI states plainly: delivery goes to the user's own account
- * email only; the runner executes each due schedule as a FULL governed turn
- * (the digest also appears as a conversation), and the email carries the
- * approved output. Schedules are a local time + weekday set in the user's
- * timezone, captured from the browser at creation.
- */
 import * as api from '../../core/api.js';
 import * as ui from '../ui.js';
 import { escapeHtml } from '../../core/utils.js';
@@ -14,7 +5,7 @@ import { escapeHtml } from '../../core/utils.js';
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 let _profiles = [];
-let _editing = null;   // the schedule being edited, or null for create mode
+let _editing = null;
 
 export async function renderSettingsSchedulesTab(profiles) {
     if (Array.isArray(profiles) && profiles.length) _profiles = profiles;
@@ -25,8 +16,6 @@ export async function renderSettingsSchedulesTab(profiles) {
     let data = { email_configured: false, schedules: [] };
     try {
         data = await api.fetchSchedules();
-        // Editing something that no longer exists (deleted elsewhere) resets
-        // the form to create mode rather than saving into a 404.
         if (_editing && !(data.schedules || []).some(s => s.id === _editing.id)) _editing = null;
     } catch (e) {
         container.innerHTML = `<p class="text-red-500 p-6">Could not load schedules: ${escapeHtml(e.message || '')}</p>`;
@@ -112,9 +101,6 @@ function _paint(container, data) {
         };
         try {
             if (_editing) {
-                // Deliberately no timezone in the update payload: editing a
-                // schedule from another timezone must not silently shift when
-                // it fires. The stored timezone stays until recreated.
                 await api.updateSchedule(_editing.id, payload);
                 _editing = null;
                 ui.showToast('Schedule updated.', 'success');

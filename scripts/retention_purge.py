@@ -47,7 +47,7 @@ from safi_app.persistence import database as db
 ACTOR = "system:retention-purge"
 BLAST_PCT = 0.25
 BLAST_ROWS = 100_000
-RETRYABLE = ("1205", "1213")  # lock wait timeout, deadlock
+RETRYABLE = ("1205", "1213")
 
 
 def get_conn():
@@ -86,14 +86,6 @@ def legal_hold_active(org_id):
 
 
 def hold_stopped(org_id, phase):
-    """True if a hold is active, meaning this phase must stop NOW.
-
-    Phase A has always re-checked between batches; B, B2 and C never did, so a
-    hold placed mid-run only stopped the phase that happened to be running.
-    `DATA_ERASURE_AND_RETENTION.md` §4 and `HIPAA_READINESS.md` both state that
-    a hold "suspends all destruction", so every loop that deletes has to ask,
-    not just the first one. GOVERNANCE_BACKLOG 2.
-    """
     if not legal_hold_active(org_id):
         return False
     print(f"  legal hold set mid-run — stopping {phase}")
@@ -105,9 +97,6 @@ def any_legal_hold(orgs):
 
 
 def backfill_trail_org_ids(conn):
-    """Incremental attribution of trail entries to orgs. Pass 1 is exact (via
-    live conversations); pass 2 approximates via the acting user for chains
-    whose conversation is already gone."""
     cur = conn.cursor()
     cur.execute(
         "UPDATE chat_audit_trail t "
@@ -152,7 +141,6 @@ def count_org_conversations(cur, org_id):
 
 
 def dry_run_counts(conn, org_id, cutoff):
-    """Read-only preview of exactly what a real run would destroy."""
     cur = conn.cursor()
     counts = {}
     cur.execute(
@@ -170,8 +158,6 @@ def dry_run_counts(conn, org_id, cutoff):
         (org_id, org_id, cutoff),
     )
     counts["conversations"], counts["chat_history"] = cur.fetchone()
-    # Trail chains purgeable now (orphans past cutoff) — post-A numbers will
-    # be higher; this is the pre-run floor, flagged as such in output.
     cur.execute(
         "SELECT COUNT(*), COALESCE(SUM(cnt), 0) FROM ("
         "  SELECT t.message_pk, COUNT(*) AS cnt FROM chat_audit_trail t "
@@ -182,9 +168,6 @@ def dry_run_counts(conn, org_id, cutoff):
         (org_id, cutoff),
     )
     counts["trail_chains_orphaned_now"], counts["trail_rows_orphaned_now"] = [int(v) for v in cur.fetchone()]
-    # governance_records are purged explicitly (no FK by design) — preview
-    # both the in-conversation records Phase A will take and the orphans
-    # (member-deleted conversations) Phase B2 will take.
     cur.execute(
         "SELECT COUNT(*) FROM governance_records g WHERE g.conversation_id IN ("
         "  SELECT id FROM (SELECT c2.id FROM conversations c2 "
@@ -229,7 +212,6 @@ def run_batch_with_retry(conn, fn, *args):
 
 
 def purge_conversation_batch(conn, org_id, ids):
-    """One transaction: stamp trail attribution, count evidence, delete."""
     cur = conn.cursor()
     placeholders = ", ".join(["%s"] * len(ids))
     cur.execute(
@@ -239,8 +221,6 @@ def purge_conversation_batch(conn, org_id, ids):
     )
     cur.execute(f"SELECT COUNT(*) FROM chat_history WHERE conversation_id IN ({placeholders})", tuple(ids))
     ch_rows = cur.fetchone()[0]
-    # governance_records carry no FK by design (org records must survive
-    # member deletion) — the retention purge is their explicit destroyer.
     cur.execute(f"DELETE FROM governance_records WHERE conversation_id IN ({placeholders})", tuple(ids))
     gov_rows = cur.rowcount
     cur.execute(f"DELETE FROM conversations WHERE id IN ({placeholders})", tuple(ids))
@@ -250,11 +230,8 @@ def purge_conversation_batch(conn, org_id, ids):
 
 
 def purge_trail_chains(conn, org_id, cutoff, batch_size, max_batches):
-    """Phase B: whole-chain deletion of orphaned, out-of-retention chains."""
     chains = rows = skipped_recent = skipped_mixed = batches = 0
     cur = conn.cursor()
-    # Anomaly counts (logged, never purged): chains mixing conversations
-    # (message_pk reuse) and chains still inside their retention window.
     cur.execute(
         "SELECT COUNT(*) FROM (SELECT t.message_pk FROM chat_audit_trail t "
         "LEFT JOIN chat_history ch ON ch.id = t.message_pk WHERE t.org_id = %s "
@@ -294,11 +271,6 @@ def purge_trail_chains(conn, org_id, cutoff, batch_size, max_batches):
 
 
 def purge_governance_orphans(conn, org_id, cutoff, batch_size):
-    """Phase B2: org governance records whose conversation a member deleted
-    (they deliberately survive user deletion; retention is their only exit).
-    Aged by the record's own created_at once the whole-conversation anchor is
-    gone — the conversation-level semantics of Phase A no longer apply to an
-    orphan."""
     total = 0
     cur = conn.cursor()
     while True:
@@ -354,7 +326,7 @@ def purge_org(conn, org, args):
         return
     years = cfg["retention_years"]
     if years is None:
-        return  # keep forever
+        return
     if years < 1:
         print(f"org {org_id}: retention_years {years} below floor — skipped")
         return
@@ -392,7 +364,6 @@ def purge_org(conn, org, args):
     done = {"conversations": 0, "chat_history": 0, "governance_records": 0}
     batches = 0
     try:
-        # Phase A
         while args.max_batches is None or batches < args.max_batches:
             if legal_hold_active(org_id):
                 print("  legal hold set mid-run — stopping this org")
@@ -408,24 +379,16 @@ def purge_org(conn, org, args):
             done["governance_records"] += gov_rows
             batches += 1
 
-        # Phase B
         chains, trail_rows, skip_recent, skip_mixed = purge_trail_chains(
             conn, org_id, cutoff, 500, args.max_batches)
 
-        # Phase B2: org governance records orphaned by member deletion
         done["governance_orphans"] = purge_governance_orphans(
             conn, org_id, cutoff, args.batch_size)
 
-        # Phase C
         done["saved_content"] = purge_aged_table(conn, org_id, cutoff, "saved_content", "created_at", args.batch_size)
         done["prompt_usage"] = purge_aged_table(conn, org_id, cutoff, "prompt_usage", "timestamp", args.batch_size)
         done["audit_snapshots"] = purge_aged_table(conn, org_id, cutoff, "audit_snapshots", "created_at", args.batch_size, pk="hash")
 
-        # Review-queue sweep: PENDING rows whose message this run (or an
-        # earlier one) destroyed — nothing left to review. Reviewed rows are
-        # deliberately kept: once the chain and its 'review' entries are
-        # purged, the queue row is the disposition's last remnant, and the
-        # coverage report counts it as purged.
         done["review_queue_orphans"] = db.sweep_orphaned_pending_reviews(org_id)
 
         db.append_compliance_log(org_id, "purge_completed", ACTOR, {
@@ -445,10 +408,6 @@ def purge_org(conn, org, args):
 
 
 def check_review_backlogs(args):
-    """Daily queue_backlog sweep (Art. 72): every org with a review config
-    gets its oldest-pending-item age checked; overdue queues journal an
-    alert (and fire the org's webhook, if configured). Runs on this timer —
-    not per-turn — plus opportunistically on queue reads in the API."""
     if args.dry_run:
         return
     from safi_app.core.services import review_alerts
@@ -457,7 +416,6 @@ def check_review_backlogs(args):
 
 
 def purge_log_files(args, orgs):
-    """Phase D: global JSONL file purge by filename date."""
     days = Config.LOG_RETENTION_DAYS
     if not days:
         return
@@ -469,8 +427,6 @@ def purge_log_files(args, orgs):
         return
     threshold = (datetime.now(timezone.utc) - timedelta(days=days)).date()
     victims = []
-    # Legacy logs were Fernet-encrypted in place (scripts/encrypt_jsonl_logs.py)
-    # and carry a .jsonl.enc suffix; retention applies to both forms.
     for f in list(log_dir.glob("*.jsonl")) + list(log_dir.glob("*.jsonl.enc")):
         m = re.search(r"-(\d{4}-\d{2}-\d{2})\.jsonl(\.enc)?$", f.name)
         if not m:
@@ -497,14 +453,9 @@ def purge_log_files(args, orgs):
 
 
 def purge_unattributed(conn, args, orgs):
-    """Manual-only sweep of pre-feature orphan chains with no derivable org.
-    Refuses unless every org has finite retention, N covers the longest one,
-    and no legal hold exists anywhere."""
     n = args.older_than_years
     configured = [db.get_org_retention_config(o["id"])["retention_years"] for o in orgs]
     cur0 = conn.cursor()
-    # Demo sandboxes are transient (24h cleanup) and owned by demo_* users;
-    # they don't count toward the every-org-has-finite-retention precondition.
     cur0.execute("SELECT COUNT(*) FROM organizations WHERE owner_id IS NULL OR owner_id NOT LIKE 'demo\\_%'")
     total_orgs = cur0.fetchone()[0]
     cur0.close()
@@ -552,18 +503,6 @@ def purge_unattributed(conn, args, orgs):
 
 
 def sweep_orphaned_public_users(args):
-    """Removes `public_*` user rows left with no conversation.
-
-    Runs here rather than as its own job because it is the tail of this one:
-    Phase A deletes conversations whose retention has ended, and each of those
-    leaves behind the user row the public widget minted for it. Without this
-    the rows accumulate forever and read as registered users in every count.
-
-    Not a destruction path in its own right — it only removes rows that have no
-    conversation AND no governance record, so it can never destroy evidence.
-    Anything with either is the retention engine's business, on the org's own
-    schedule.
-    """
     if args.dry_run:
         print("[dry-run] would sweep orphaned public_* user rows")
         return

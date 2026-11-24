@@ -1,4 +1,3 @@
-"""Admin-provisioned local (appliance) accounts: creation + password reset."""
 from flask import Flask, session
 
 from safi_app.api import organizations as orgs_api
@@ -31,7 +30,6 @@ def test_create_local_account_returns_one_time_password(monkeypatch):
     assert r.status_code == 201
     body = r.get_json()
     assert body["username"] == "nelson"
-    # Server-generated credential handed back exactly once.
     assert len(body["initial_password"]) >= 20
     assert logs and logs[0][1] == "local_account_created"
 

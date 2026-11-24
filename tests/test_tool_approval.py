@@ -1,16 +1,3 @@
-"""
-Tool-grant approvals (backlog 57b): widening an org agent's tool list waits
-for a second person; narrowing never does.
-
-The assertions that matter: the agent's live tool set is UNCHANGED while a
-request is pending (the whole point), authors cannot approve their own
-widening when another reviewer exists, the sole-reviewer exception is
-recorded as non-independent rather than deadlocking, a newer request
-supersedes an older pending one, and every transition leaves compliance
-evidence.
-
-Requires local MySQL. Run:  venv/bin/python tests/test_tool_approval.py
-"""
 import sys
 import uuid
 import unittest
@@ -168,8 +155,6 @@ class TheReview(ToolApprovalBase):
         self.assertEqual(client.post(f'/api/agents/tool-requests/{rid}/approve').status_code, 403)
 
     def test_author_cannot_self_approve_when_another_reviewer_exists(self):
-        # The admin authors a request on their own agent; the auditor exists,
-        # so separation of duties holds.
         _exec("UPDATE agents SET created_by=%s WHERE agent_key=%s",
               (self.admin, self.agent_key))
         client = self._client(self.admin, 'admin')
@@ -180,8 +165,6 @@ class TheReview(ToolApprovalBase):
         self.assertEqual(db.get_agent(self.agent_key).get('tools'), [])
 
     def test_sole_reviewer_self_approves_as_non_independent(self):
-        # Remove every other eligible reviewer, leaving the authoring admin
-        # alone: the exception applies and is recorded on the row.
         _exec("UPDATE users SET role='member' WHERE id IN (%s)", (self.auditor,))
         _exec("UPDATE agents SET created_by=%s WHERE agent_key=%s",
               (self.admin, self.agent_key))
@@ -225,9 +208,6 @@ class TheReview(ToolApprovalBase):
 
 
 class TheOutcome(ToolApprovalBase):
-    """57c: the requester sees the decision in their inbox until they
-    dismiss it. Superseded requests never notify: the requester caused
-    those themselves."""
 
     def _file_and_decide(self, decision, reason=None):
         self._put_tools(self._client(self.editor, 'editor'), ['send_email'])
@@ -265,11 +245,9 @@ class TheOutcome(ToolApprovalBase):
     def test_dismiss_clears_it_and_only_for_the_caller(self):
         self._file_and_decide('approve')
         editor = self._client(self.editor, 'editor')
-        # Another user's dismiss must not clear the editor's outcome.
         r = self._client(self.member, 'member').post('/api/agents/tool-requests/acknowledge')
         self.assertEqual(r.get_json()['cleared'], 0)
         self.assertIsNotNone(self._inbox_item(editor, 'my_tool_requests'))
-        # The requester's own dismiss does.
         r = editor.post('/api/agents/tool-requests/acknowledge')
         self.assertEqual(r.get_json()['cleared'], 1)
         self.assertIsNone(self._inbox_item(editor, 'my_tool_requests'))
@@ -277,13 +255,11 @@ class TheOutcome(ToolApprovalBase):
     def test_superseded_requests_never_notify(self):
         client = self._client(self.editor, 'editor')
         self._put_tools(client, ['send_email'])
-        self._put_tools(client, ['calendar'])  # supersedes the first
+        self._put_tools(client, ['calendar'])
         item = self._inbox_item(client, 'my_tool_requests')
         self.assertIsNone(item)
 
     def test_submission_shows_as_awaiting_review_until_decided(self):
-        """The requester sees their submission in the inbox while it waits,
-        and the row replaces itself with the outcome on decision."""
         client = self._client(self.editor, 'editor')
         self._put_tools(client, ['send_email'])
         self.assertIsNotNone(self._inbox_item(client, 'my_pending_requests'))
@@ -301,9 +277,6 @@ class TheOutcome(ToolApprovalBase):
         self.assertIsNone(self._inbox_item(member, 'my_pending_requests'))
 
     def test_self_approved_outcome_does_not_notify(self):
-        """A sole admin who approves their own request already knows the
-        outcome; notifying them created a row they could only dismiss
-        (found live by Nelson, 2026-08-18)."""
         _exec("UPDATE users SET role='member' WHERE id=%s", (self.auditor,))
         _exec("UPDATE agents SET created_by=%s WHERE agent_key=%s",
               (self.admin, self.agent_key))
@@ -315,13 +288,9 @@ class TheOutcome(ToolApprovalBase):
 
 
 class PolicyGate(ToolApprovalBase):
-    """57d: authorization is born at the policy's DECLARED allowed_tools.
-    Widening it waits; agents drawing from an approved list flow free;
-    undeclared policies keep the agent-level gate (covered by TheGate)."""
 
     def setUp(self):
         super().setUp()
-        # policies.org_id carries a real FK, so the org needs a row.
         _exec("INSERT INTO organizations (id, name) VALUES (%s, 'Approval Test Org')",
               (self.org,))
         self.policy_id = f"tap_policy_{uuid.uuid4().hex[:8]}"
@@ -358,9 +327,6 @@ class PolicyGate(ToolApprovalBase):
         self.assertEqual(pending[0]['policy_id'], self.policy_id)
 
     def test_policy_narrowing_is_a_content_change_not_a_tool_request(self):
-        """Narrowing files no TOOL request (nothing widens), but since 57f
-        it is still a policy-content change, so it waits for the POLICY
-        approvers rather than applying on save."""
         tool_approval_store.apply_policy_tools(self.policy_id, ['send_email', 'calendar'])
         client = self._client(self.editor, 'editor')
         r = self._put_policy_tools(client, ['send_email'])
@@ -386,7 +352,6 @@ class PolicyGate(ToolApprovalBase):
         self.assertEqual(len([e for e in db.list_compliance_log(self.org, limit=50)
                               if e['event_type'] == 'policy_tools_changed']), 1)
 
-        # The agent addition WITHIN the approved list applies immediately.
         with KNOWN:
             r = client.put('/api/agents', json={
                 "key": self.agent_key, "name": "Approval Agent",
@@ -395,7 +360,6 @@ class PolicyGate(ToolApprovalBase):
         self.assertEqual(r.get_json()['tools_pending_approval'], [])
         self.assertEqual(db.get_agent(self.agent_key).get('tools'), ['send_email'])
 
-        # Beyond the list is refused outright, not queued.
         with KNOWN:
             r = client.put('/api/agents', json={
                 "key": self.agent_key, "name": "Approval Agent",
@@ -417,8 +381,6 @@ class PolicyGate(ToolApprovalBase):
 
 
 class NamedApprovers(ToolApprovalBase):
-    """57e: a designated approver group REPLACES the admin|auditor default;
-    an unset or empty designation falls back so approvals never deadlock."""
 
     def _designate(self, member_ids, name="Legal"):
         from safi_app.persistence import sharing_store
@@ -437,14 +399,12 @@ class NamedApprovers(ToolApprovalBase):
     def test_designated_member_approves_and_admin_cannot(self):
         self._designate([self.member])
         rid = self._file_request()
-        # A plain member in the approver group decides...
         member = self._client(self.member, 'member')
         self.assertIsNotNone(next((i for i in member.get('/api/attention').get_json()['items']
                                    if i['key'] == 'tool_requests'), None),
                              "the designated approver never saw the request")
         self.assertEqual(member.post(f'/api/agents/tool-requests/{rid}/approve').status_code, 200)
         self.assertEqual(db.get_agent(self.agent_key).get('tools'), ['send_email'])
-        # ...and evidence recorded the designation itself.
         events = {e['event_type'] for e in db.list_compliance_log(self.org, limit=50)}
         self.assertIn('tool_approvers_changed', events)
 
@@ -458,7 +418,7 @@ class NamedApprovers(ToolApprovalBase):
         self.assertIsNone(item, "a replaced approver still saw the queue")
 
     def test_empty_group_falls_back_to_roles(self):
-        self._designate([])  # designated but empty: fallback must engage
+        self._designate([])
         rid = self._file_request()
         r = self._client(self.admin, 'admin').post(f'/api/agents/tool-requests/{rid}/approve')
         self.assertEqual(r.status_code, 200,
@@ -466,7 +426,7 @@ class NamedApprovers(ToolApprovalBase):
 
     def test_sod_holds_inside_the_group(self):
         self._designate([self.editor, self.member])
-        rid = self._file_request()  # editor is the author AND a group member
+        rid = self._file_request()
         editor = self._client(self.editor, 'editor')
         self.assertEqual(editor.post(f'/api/agents/tool-requests/{rid}/approve').status_code, 403)
 

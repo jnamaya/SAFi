@@ -13,7 +13,6 @@ import { renderSettingsKnowledgeTab, setKnowledgeCurrentUser,
 
 let currentUser = null;
 
-// NEW: Global state container for settings context
 const settingsState = {
     profiles: [],
     activeProfileKey: null,
@@ -27,47 +26,25 @@ const settingsState = {
 
 export function updateCurrentUser(u) {
     currentUser = u;
-    // Propagate to org module which needs it for member table
     setOrgCurrentUser(u);
-    // Review module needs the role: config editing is admin-only
     setReviewCurrentUser(u);
-    // Knowledge needs the role too: create is editor+, approve is admin|auditor
     setKnowledgeCurrentUser(u);
-    // My Profile shows the signed-in identity, org and role in its header
     setProfileIdentity(u);
 }
 
-/**
- * Updates the global settings state with data/callbacks from app.js.
- * This is required because ui-settings-core handles the navigation but app.js owns the data.
- */
 export function updateSettingsState(newState) {
     Object.assign(settingsState, newState);
-    // Also update local user reference if passed (redundant slightly but safe)
     if (newState.currentUser) {
         updateCurrentUser(newState.currentUser);
     }
 }
 
-/**
- * Sets up event listeners for the Control Panel navigation tabs.
- * This function is called once on application load.
- */
-/**
- * Sets up event listeners for the Control Panel navigation tabs (Sidebar).
- * This function is called once on application load.
- */
 export function setupControlPanelTabs() {
     ui._ensureElements();
     setupDelegatedModalListeners();
     ensureProfileModalExists();
 
-    // Mobile menu open/close is handled by the delegated click listener in
-    // app.js (single source of truth: #mobile-menu-btn opens, #close-mobile-menu
-    // and the backdrop close). A second direct listener here used to fire on the
-    // same clicks and double-toggle the drawer, so it has been removed.
 
-    // Sidebar Navigation Logic
     const sidebarButtons = document.querySelectorAll('.sidebar-item');
 
     sidebarButtons.forEach(btn => {
@@ -75,10 +52,8 @@ export function setupControlPanelTabs() {
             const tabId = btn.getAttribute('data-tab');
             if (!tabId) return;
 
-            // 1. Hide all tab contents
             document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
 
-            // 1.5 Force Close Inline Wizard if open
             const wizardView = document.getElementById('agent-wizard-view');
             if (wizardView) {
                 wizardView.classList.add('hidden');
@@ -90,19 +65,13 @@ export function setupControlPanelTabs() {
                 pwView.classList.remove('flex');
             }
 
-            // 2. Show selected tab content
             const selectedContent = document.getElementById('tab-' + tabId);
             if (selectedContent) selectedContent.classList.remove('hidden');
 
-            // 3. Update Sidebar Active State
             sidebarButtons.forEach(el => el.classList.remove('active'));
             btn.classList.add('active');
 
-            // 4. Update Mobile Menu Active State
-            // (If we had separate mobile buttons, which we might inject dynamically or have static duplicates)
 
-            // 5. Trigger Lazy Loading
-            // 5. Trigger Lazy Loading
             if (tabId === 'dashboard') {
                 import('./ui-settings-dashboard.js').then(m => m.renderSettingsDashboardTab());
             } else if (tabId === 'governance') {
@@ -121,7 +90,6 @@ export function setupControlPanelTabs() {
                 import('./ui-settings-schedules.js').then(m =>
                     m.renderSettingsSchedulesTab(settingsState.profiles));
             } else if (tabId === 'agents') {
-                // Pass args from state
                 renderSettingsProfileTab(
                     settingsState.profiles,
                     settingsState.activeProfileKey,
@@ -129,7 +97,6 @@ export function setupControlPanelTabs() {
                     currentUser
                 );
             } else if (tabId === 'settings') {
-                // Pass args from state
                 renderSettingsAppTab(
                     settingsState.currentTheme,
                     settingsState.onThemeChange,
@@ -147,27 +114,16 @@ export function setupControlPanelTabs() {
                 import('../ui-attention.js').then(m => m.renderSettingsInboxTab());
             }
 
-            // The Knowledge tab polls while an index builds. Leaving the tab
-            // must stop that, or a backgrounded Control Panel keeps hitting
-            // the API every three seconds for the rest of the session.
             if (tabId !== 'knowledge') stopKnowledgePolling();
         });
     });
 }
 
 
-// --- FIX: NEW FUNCTION FOR ONE-TIME LISTENERS ---
-/**
- * Attaches persistent, delegated event listeners to modal containers.
- * This runs ONLY ONCE on app load to prevent duplicate listeners.
- */
 function setupDelegatedModalListeners() {
-    // --- "Show More" logic for Conscience Modal ---
     const conscienceContainer = ui.elements.conscienceDetails;
     if (conscienceContainer) {
         conscienceContainer.addEventListener('click', function (event) {
-            // This single listener handles all "Show More" clicks inside
-            // the conscience modal, even on dynamic content.
             if (event.target.classList.contains('expand-btn')) {
                 const reasonText = event.target.previousElementSibling;
                 if (reasonText && reasonText.classList.contains('reason-text')) {
@@ -179,13 +135,6 @@ function setupDelegatedModalListeners() {
         });
     }
 
-    // --- Chain-digest copy ---
-    // One document-level listener rather than one per surface: the digest is
-    // rendered by chainBadge() in BOTH the Audit Hub drill-down and the Review
-    // detail pane, and both rebuild their DOM on every load. `.chain-hash` also
-    // carries user-select:all, so a click still selects the full digest if the
-    // clipboard API is unavailable (it needs a secure context — see the
-    // plain-HTTP self-hosting note in the deploy guide).
     document.addEventListener('click', (event) => {
         const el = event.target.closest?.('.chain-hash');
         if (!el) return;
@@ -199,14 +148,10 @@ function setupDelegatedModalListeners() {
                 el.classList.remove('copied');
                 el.textContent = shown;
             }, 1200);
-        }, () => { /* selection fallback already available */ });
+        }, () => {   });
     });
 }
 
-/**
- * INJECTS the Profile Details Modal HTML if it is missing.
- * This prevents the "Profile modal content area not found" error.
- */
 export function ensureProfileModalExists() {
     if (document.getElementById('profile-details-modal')) return;
 
@@ -249,12 +194,9 @@ export function ensureProfileModalExists() {
 
     document.body.insertAdjacentHTML('beforeend', modalHtml);
 
-    // CRITICAL: Manually update the UI elements reference
-    // This fixes the "Cannot read properties of null (reading 'classList')" error in ui.js
     ui.elements.profileModal = document.getElementById('profile-details-modal');
     ui.elements.profileModalContent = document.getElementById('profile-details-content');
 
-    // Re-attach close listeners since this is a new element
     const closeBtn = document.getElementById('close-profile-modal');
     const doneBtn = document.getElementById('done-profile-modal');
 

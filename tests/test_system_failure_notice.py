@@ -1,15 +1,3 @@
-"""
-Unit tests for SAFi._ship_system_failure_notice — the deterministic notice
-shipped when governance itself fails (audit unavailable, structural failure).
-
-Regression guard for the 2026-07-11 incident: an audit_unavailable intercept
-was voiced through trigger_agent_redirect, which generates in a vacuum
-(the user's question is withheld), so the agent's scope rules produced a
-false "outside my area of focus" refusal for an in-scope question. System
-faults must ship an honest, fixed notice with NO LLM calls.
-
-Run:  venv/bin/python tests/test_system_failure_notice.py
-"""
 import sys
 import logging
 import unittest
@@ -33,17 +21,10 @@ def make_safi():
     s.values = VALUES
     s.profile = {"policy_id": "pol-1", "policy_version": 1, "org_id": "org-1"}
     s.active_profile_name = "test_agent"
-    # Mirrors SAFi.__init__ (orchestrator.py:129-130), which sets both models.
-    # This stub bypasses __init__ via object.__new__, so every attribute the
-    # code under test reads has to be mirrored by hand — when the notice path
-    # started reading conscience_model, the stub broke with a bare
-    # AttributeError rather than anything describing the real problem.
     s.intellect_model = "test-model"
     s.conscience_model = "test-conscience-model"
     s.model_attribution = '{"intellect": "test/test-model"}'
     s.spirit = MagicMock(values=VALUES)
-    # Deliberately NO intellect_engine / llm_provider / conscience attributes:
-    # touching any of them (i.e. making an LLM call) raises AttributeError.
     return s
 
 
@@ -67,8 +48,6 @@ def ship(safi, violation_type="audit_unavailable", **kwargs):
 class TestSystemFailureNotice(unittest.TestCase):
 
     def test_makes_no_llm_calls(self):
-        # make_safi() sets no LLM-capable attributes, so any generation attempt
-        # would raise AttributeError instead of returning.
         res, _, _ = ship(make_safi())
         self.assertTrue(res["finalOutput"])
 
@@ -94,7 +73,6 @@ class TestSystemFailureNotice(unittest.TestCase):
         self.assertEqual(entry["blockedDraft"], "blocked draft text")
 
     def test_custom_notice_overrides_default_text(self):
-        # The exhausted content-gate terminal passes its own honest copy.
         res, db, _ = ship(make_safi(), violation_type="ethical_violation",
                           notice="Custom terminal copy.")
         self.assertEqual(res["finalOutput"], "Custom terminal copy.")
@@ -104,14 +82,12 @@ class TestSystemFailureNotice(unittest.TestCase):
     def test_correctable_gate_predicate(self):
         ok = {"verdict": "violation", "stage": "hard_gate", "reason": "ethical_violation"}
         self.assertTrue(SAFi._is_correctable_gate(ok))
-        # Plain scope gates without ledger evidence, spirit dips, approvals, and system faults are NOT correctable.
         self.assertFalse(SAFi._is_correctable_gate({**ok, "reason": "scope_violation"}))
         self.assertFalse(SAFi._is_correctable_gate({**ok, "stage": "spirit"}))
         self.assertFalse(SAFi._is_correctable_gate({**ok, "verdict": "approve"}))
         self.assertFalse(SAFi._is_correctable_gate(
             {"verdict": "violation", "stage": "audit", "reason": "audit_unavailable"}))
 
-        # Scope gate failure where conscience notes in-scope request but draft failed/derailed IS correctable.
         in_scope_draft_failure = {
             **ok,
             "reason": "scope_violation",
@@ -125,7 +101,6 @@ class TestSystemFailureNotice(unittest.TestCase):
         }
         self.assertTrue(SAFi._is_correctable_gate(in_scope_draft_failure))
 
-        # Out-of-scope user prompt is NOT correctable (takes vacuum redirect).
         out_of_scope_prompt = {
             **ok,
             "reason": "scope_violation",
@@ -142,8 +117,6 @@ class TestSystemFailureNotice(unittest.TestCase):
     def test_no_fake_spirit_score(self):
         res, db, _ = ship(make_safi())
         self.assertIsNone(res["spirit_score"])
-        # update_audit_results(msg_id, ledger, score, note, ...) — score must be
-        # None (unaudited), not 0 (a real rock-bottom score).
         score_arg = db.update_audit_results.call_args[0][2]
         self.assertIsNone(score_arg)
 

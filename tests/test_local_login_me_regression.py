@@ -1,10 +1,3 @@
-"""Regression: /api/me must honor g.user hydrated by identity.resolve_session.
-
-The slim session cookie carries only 'sid'; session['user_id'] exists only
-mid-request. get_me previously read session.get('user_id') directly, so a
-freshly-created local-account session looked anonymous and the frontend fell
-into its 'session could not be established' branch.
-"""
 from flask import Flask, g
 
 from safi_app.api import auth as auth_api
@@ -17,7 +10,7 @@ def _client(user_row):
 
     @app.before_request
     def _hydrate():
-        g.user = user_row  # what resolve_session would set for a valid sid
+        g.user = user_row
 
     app.testing = True
     return app.test_client()

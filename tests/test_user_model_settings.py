@@ -1,4 +1,3 @@
-"""User model updates preserve independent faculty selections."""
 from flask import Flask
 
 from safi_app.api import auth as auth_api

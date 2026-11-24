@@ -1,17 +1,4 @@
 #!/usr/bin/env python3
-"""Sign the official TCB release registry with the owner's minisign key.
-
-Usage:
-    python scripts/tcb_sign.py static_site/tcb/releases.json \
-        ~/.safi/tcb-sign.key ~/.safi/TCB_KEY.pub
-
-Steps: append-free bump of the `sequence` field, re-serialize the list, sign
-it with the legacy (raw-message) minisign format, and verify the signature
-over the exact bytes a deployment will fetch. The secret key never enters the
-repo; keep it offline. The list is append-only: a release is a NEW sequence,
-never an edit of an old entry. Depends on the `minisign` binary being on PATH
-(0.12 from https://github.com/jedisct1/minisign/releases works).
-"""
 import hashlib
 import json
 import os
@@ -47,9 +34,6 @@ def main():
         f.write("\n")
 
     print(f"signed sequence {data['sequence']}")
-    # Legacy format: raw Ed25519 over the exact list bytes, which the
-    # in-image verifier (cryptography) and minisign both reject loudly if
-    # they disagree on the message.
     subprocess.run(["minisign", "-Sl", "-m", registry, "-s", seckey], check=True)
     subprocess.run(["minisign", "-Vm", registry, "-p", pubkey], check=True)
     with open(pubkey, "rb") as f:
