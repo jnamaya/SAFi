@@ -1275,7 +1275,7 @@ export function displayEmptyState(activeProfile, promptClickHandler, firstName =
         <div class="flex flex-wrap justify-center gap-2 my-4 max-w-2xl mx-auto">${valuesHtml}</div>
         ${modelHtml}
         <p class="text-xs text-neutral-400 dark:text-neutral-500 mt-2 mb-8">
-          Switch agents anytime from the <span class="font-semibold">+</span> menu in the message bar.
+          Switch agents anytime from the <span class="font-semibold">+</span> menu in the message bar &middot; Review the audit trail in <span class="font-semibold">Control Panel &rarr; Audit Hub</span>.
         </p>`;
 
     container.innerHTML = `
