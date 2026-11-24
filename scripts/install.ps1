@@ -74,13 +74,37 @@ try {
 }
 
 # 4. Pre-install all Linux operational dependencies using WSL root bridge (no sudo password needed)
-# Note: Ubuntu WSL ships /etc/apt/apt.conf.d/20snapd.conf whose JSON hook (advise-snap) aborts
-# apt-get when snapd is not installed. Setting APT_CONFIG before apt-get parses /etc/apt/apt.conf.d/
-# cleanly bypasses broken hooks without modifying system files.
-Write-Host "Ensuring core operational utilities (ssh, sshpass, nmap, jq, curl, rsync, python3) in WSL..." -ForegroundColor Cyan
+# Note: Ubuntu WSL ships an apt hook (20snapd.conf / advise-snap) that aborts apt-get when snapd
+# is absent. Pipe the script via stdin to avoid PowerShell CreateProcess quote mangling, and
+# temporarily stash any advise-snap hook during apt-get (restored automatically on exit).
+Write-Host "Ensuring core operational utilities (ssh, sshpass, nmap, jq, curl, rsync, python3, git) in WSL..." -ForegroundColor Cyan
+$aptScript = @'
+set -u
+STASH_DIR=$(mktemp -d /tmp/safi-apt-stash.XXXXXX)
+restore_hooks() {
+    for f in "$STASH_DIR"/*; do
+        [ -e "$f" ] && mv "$f" "/etc/apt/apt.conf.d/$(basename "$f")" 2>/dev/null || true
+    done
+    rmdir "$STASH_DIR" 2>/dev/null || true
+}
+trap restore_hooks EXIT
+
+if [ -d /etc/apt/apt.conf.d ]; then
+    for f in /etc/apt/apt.conf.d/*; do
+        [ -f "$f" ] || continue
+        if grep -q "advise-snap" "$f" 2>/dev/null; then
+            mv "$f" "$STASH_DIR/" 2>/dev/null || true
+        fi
+    done
+fi
+
+apt-get update -qq
+DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3 python3-pip python3-venv openssh-client sshpass nmap jq curl iputils-ping dnsutils rsync git
+'@
+$aptScriptLf = ($aptScript -replace "`r`n", "`n")
 $prevEap = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
-wsl.exe -u root -e sh -c 'mkdir -p /tmp/safi-empty-apt && printf "Dir::Etc::Parts \"/tmp/safi-empty-apt\";\n" > /tmp/safi-apt.conf && APT_CONFIG=/tmp/safi-apt.conf apt-get update -qq && APT_CONFIG=/tmp/safi-apt.conf DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3 python3-pip python3-venv openssh-client sshpass nmap jq curl iputils-ping dnsutils rsync git; rc=$?; rm -rf /tmp/safi-apt.conf /tmp/safi-empty-apt 2>/dev/null || true; exit $rc'
+$aptScriptLf | wsl.exe -u root -e sh -s
 $aptExit = $LASTEXITCODE
 $ErrorActionPreference = $prevEap
 if ($aptExit -ne 0) {
