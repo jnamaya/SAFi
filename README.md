@@ -7,8 +7,6 @@
 
 > SAFi is an open source governance gateway for AI agents. It lets you enforce your policies in real time, govern tool calls, and maintain an audit trail of every agent's action.
 
-**Project home:** [https://selfalignmentframework.com/](https://selfalignmentframework.com/) — the framework, philosophy, and specifications behind SAFi.
-
 <p align="center">
   <a href="https://runsafi.com/assets/saficli_demo.mp4" title="Watch full HD terminal demo">
     <img src="docs/assets/saficli_demo.gif" alt="SAFi CLI live terminal demo showing governed agent execution, tool calls, and real-time Conscience audit verdicts" width="100%">
