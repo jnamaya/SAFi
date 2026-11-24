@@ -4,17 +4,7 @@ from typing import List, Dict, Any, Tuple, Optional
 import json
 import logging
 import re
-# Retriever is imported lazily inside __init__ — see the note there.
-# Follow-up turns carry no retrievable content of their own. "Yes, give me the
-# full text and the historical background" was embedded verbatim, matched the most
-# history-shaped passages in the corpus, and never retrieved the passage under
-# discussion — so the model recited it from memory and the Conscience correctly
-# scored it -1 on the agent's grounding value.
-#
-# ORDER IS NOT COSMETIC. all-MiniLM-L6-v2 truncates its input, and measured on this
-# deployment a phrase placed AFTER ~2700 characters of preceding text embeds at
-# cosine 0.012 against itself alone — indistinguishable from noise. The same phrase
-# placed first scores 0.616. History must therefore follow the prompt: if anything
+
 # is dropped it has to be the history, never the question.
 _RAG_HISTORY_TAIL_CHARS = 400
 _RAG_STANDALONE_CHARS = 80
