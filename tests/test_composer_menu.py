@@ -16,7 +16,7 @@ CSS = (ROOT / "public" / "css" / "styles.css").read_text(encoding="utf-8")
 APP = (ROOT / "public" / "js" / "core" / "app.js").read_text(encoding="utf-8")
 
 PANEL = INDEX[INDEX.index('id="composer-plus-menu"'):]
-PANEL = PANEL[:PANEL.index("<!-- Text Area -->")]
+PANEL = PANEL[:PANEL.index("<textarea")]
 
 AGENT_RENDER = SIDEBAR[SIDEBAR.index("function renderAgentSelectorOptions"):]
 
@@ -49,7 +49,7 @@ class CategoriesOpenFlyouts(unittest.TestCase):
 
     def test_click_works_too_because_touch_has_no_hover(self):
         block = MENU[MENU.index("function _initFlyouts"):]
-        block = block[:block.index("\n/** Opens one flyout")]
+        block = block[:block.index("\nfunction _setFlyout")]
         self.assertIn("addEventListener('click'", block)
         self.assertIn("addEventListener('mouseenter'", block)
         self.assertIn("DESKTOP.matches", block, "hover must be desktop-gated")
