@@ -7,6 +7,8 @@
 
 > SAFi is an open source governance gateway for AI agents. It lets you enforce your policies in real time, govern tool calls, and maintain an audit trail of every agent's action.
 
+**Project home:** [https://selfalignmentframework.com/](https://selfalignmentframework.com/) — the framework, philosophy, and specifications behind SAFi.
+
 <p align="center">
   <a href="https://runsafi.com/assets/saficli_demo.mp4" title="Watch full HD terminal demo">
     <img src="docs/assets/saficli_demo.gif" alt="SAFi CLI live terminal demo showing governed agent execution, tool calls, and real-time Conscience audit verdicts" width="100%">
@@ -26,7 +28,8 @@
   - [3. Prefer a Turnkey Hardware Appliance?](#3-prefer-a-turnkey-hardware-appliance)
 - [Built-in Agents](#built-in-agents)
 - [The Governance](#the-governance)
-  - [The Five Faculties & Seven-Phase Loop](#the-five-faculties--seven-phase-loop)
+  - [Your Policies as the Supreme Law](#your-policies-as-the-supreme-law)
+  - [The Four Pillars of Runtime Governance](#the-four-pillars-of-runtime-governance)
 - [Regulatory Readiness](#regulatory-readiness)
 - [Sensitive Data Controls](#sensitive-data-controls)
 - [Roles & Permissions](#roles--permissions)
@@ -131,38 +134,21 @@ SAFi ships out of the box with **three production CLI agents**, each bound to an
 
 ## The Governance
 
-Governance in SAFi is not an afterthought or a filter, but the natural result of how the system works. Based on thousands of years of classical thinking, SAFi enforces a strict **separation of powers**: the **Intellect** proposes, the **Will** decides, the **Conscience** evaluates, and the **Spirit** tracks long-term alignment.
+Governance in SAFi is not an afterthought or a filter, but the natural result of how the system works. Every agent action is checked against your rules before it runs, and every decision leaves evidence you can audit.
 
-### Policies, Charters & Client-Server Enforcement
+### Your Policies as the Supreme Law
 
-- **Client-Server Control Plane:** Workstations run the thin `safi-cli` harness with zero LLM API keys and zero local policy overrides. Identity (SSO/LDAP/SCIM), models, Charters, Policies, and audit logs live centrally on your SAFi gateway.
-- **Two-Tier Policy Compilation (Charter → Policy):** Every agent is bound to your **Organizational Charter**, a versioned **domain Policy** (such as `Software Policy`, `Security Engineer Policy`, or `Systems Admin Policy`), or both. Synderesis compiles them into weighted values, scope boundaries, and non-negotiable hard gates on every turn.
-- **Pre-Execution Tool & Draft Enforcement:** Before any command runs or any answer is delivered, the deterministic **Will** enforces tool allow-lists, risk classes (`R0–R4`), parameter constraints, and PII checksums, while the independent **Conscience** scores drafts value-by-value against the governing policy.
-- **Tamper-Evident Audit Trail:** Every turn, tool intent, Conscience ledger, enforcement decision, and exact policy version is written to a hash-chained audit trail — powering the **Audit Hub**, **Supervisory Review Queue**, and custody-logged exports.
+In SAFi, every agent action is governed by an explicit policy written and owned by your organization. The Policy controls the identity and the actions the agent is allowed to take. Ready-to-use default policies ship with the built-in SysAdmin, Security Engineer, and Software Engineer agents, and you can tune these rules or author new role policies at any time in the web admin portal (**Control Panel → Policies**).
 
-### The Five Faculties & Seven-Phase Loop
 
-| Faculty | Module | Role |
-| :--- | :--- | :--- |
-| **Synderesis** | `synderesis.py` | Foundational compiler. Assembles immutable baseline rules, scope boundaries, and weighted value sets from the Charter and Policy. |
-| **Intellect** | `intellect.py` | Generative engine. Drafts responses or proposes tool calls inside an **Air Gap** — it can only emit *intents*, never execute them directly. |
-| **Will** | `will.py` | Deterministic gatekeeper. Approves, blocks, or redirects proposals based on structural invariants and the Conscience ledger. |
-| **Conscience** | `conscience.py` | Independent evaluator. Scores proposals against every policy rubric, producing a mathematical compliance ledger (−1.0 to +1.0 per value). |
-| **Spirit** | `spirit.py` | Long-term memory. Integrates Conscience scores into a rolling alignment vector (EMA) to detect behavioral drift over time. |
+### The Four Pillars of Runtime Governance
 
-Every user turn passes synchronously through seven phases:
+- **Controlled Execution:** The AI can never run commands on your servers directly. It can only *propose* actions, which must pass your policy rules and approvals before anything executes.
+- **Model Independence:** Your policies, agent roles, and history belong to you, not a cloud vendor. Upgrade or swap AI models at any time — your governance rules stay intact.
+- **Built-In Threat Defense:** Incoming prompts and commands are screened for attacks, prompt injections, and sensitive-data exposure *before* they are processed, keeping your systems safe.
+- **Complete Audit Trail:** Every action, tool call, and policy decision is permanently recorded in a tamper-evident, hash-chained audit log — powering the **Audit Hub**, **Supervisory Review Queue**, and custody-logged exports — giving compliance officers and auditors the exact proof they need.
 
-| Phase | Name | What Happens |
-| :--- | :--- | :--- |
-| **Phase 0** | Pre-generation Gate | Deterministic threat screening, injection signatures, per-agent blocked phrases, sensitive-data checksums (Luhn/IBAN/ABA/SSN), and embedded-instruction detection before any model runs. |
-| **Phase 1** | Scope & Context | Scope preflight and context retrieval (RAG knowledge bases, working memory, tool/plugin context). |
-| **Phase 2** | Apprehension | The Intellect drafts a response or proposes a tool call. |
-| **Phase 3** | Structural Will | Deterministic verification of structural invariants (allowed tool schemas, required disclaimers, syntax). |
-| **Phase 4** | Conscience Audit | The Conscience scores the draft against the compiled rubrics, producing the compliance ledger. |
-| **Phase 5** | Spirit & Alignment Gate | The Will checks hard gates; Spirit updates the alignment vector. Low or non-compliant scores trigger a governed Reflexion retry or redirect. |
-| **Phase 6** | Safe Execution | The audited response or authorized tool call is finalized, hash-chained into the audit trail, and delivered. |
-
-For the formal mathematical model, see the [SAFi Math Specification](https://selfalignmentframework.com/safi-math-specification/).
+The formal architecture behind these guarantees — the five faculties (Synderesis, Intellect, Will, Conscience, Spirit) and the seven-phase turn loop — is documented in the [Developer Guide](docs/DEVELOPER_GUIDE.md) and formalized in the [SAFi Math Specification](https://selfalignmentframework.com/safi-math-specification/). For regulator-facing capabilities, see [Regulatory Readiness](#regulatory-readiness).
 
 ---
 
