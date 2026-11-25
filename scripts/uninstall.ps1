@@ -15,6 +15,7 @@ Write-Host "=== SAFi CLI Windows Uninstaller ===" -ForegroundColor Cyan
 
 # 1. Remove Windows command wrappers from WindowsApps
 $winApps = @(
+    "$env:LOCALAPPDATA\Microsoft\WindowsApps\safi.cmd",
     "$env:LOCALAPPDATA\Microsoft\WindowsApps\safi-cli.cmd",
     "$env:LOCALAPPDATA\Microsoft\WindowsApps\saficli.cmd",
     "$env:LOCALAPPDATA\Microsoft\WindowsApps\sys-exec.cmd",
@@ -54,7 +55,7 @@ if ($Purge) {
 
 $winLocalBin = Join-Path $env:USERPROFILE ".local\bin"
 if (Test-Path $winLocalBin) {
-    $targets = @("safi-cli.cmd", "saficli.cmd", "sys-exec.cmd", "safi-setup-key.cmd")
+    $targets = @("safi.cmd", "safi-cli.cmd", "saficli.cmd", "sys-exec.cmd", "safi-setup-key.cmd")
     foreach ($t in $targets) {
         $p = Join-Path $winLocalBin $t
         if (Test-Path $p) {
@@ -90,7 +91,7 @@ if ($wslCmd) {
     if ($Purge) {
         wsl.exe -e bash -c "
             rm -rf ~/.local/share/safi-cli
-            rm -f ~/.local/bin/safi-cli ~/.local/bin/saficli ~/.local/bin/sys-exec ~/.local/bin/safi-setup-key
+            rm -f ~/.local/bin/safi ~/.local/bin/safi-cli ~/.local/bin/saficli ~/.local/bin/sys-exec ~/.local/bin/safi-setup-key
             rm -rf ~/.config/safi
             rm -rf ~/.safi
             [ -d ~/.config ] && [ -z \"\$(ls -A ~/.config 2>/dev/null)\" ] && rmdir ~/.config 2>/dev/null || true
@@ -101,7 +102,7 @@ if ($wslCmd) {
     } else {
         wsl.exe -e bash -c "
             rm -rf ~/.local/share/safi-cli
-            rm -f ~/.local/bin/safi-cli ~/.local/bin/saficli ~/.local/bin/sys-exec ~/.local/bin/safi-setup-key
+            rm -f ~/.local/bin/safi ~/.local/bin/safi-cli ~/.local/bin/saficli ~/.local/bin/sys-exec ~/.local/bin/safi-setup-key
             [ -d ~/.local/bin ] && [ -z \"\$(ls -A ~/.local/bin 2>/dev/null)\" ] && rmdir ~/.local/bin 2>/dev/null || true
             [ -d ~/.local ] && [ -z \"\$(ls -A ~/.local 2>/dev/null)\" ] && rmdir ~/.local 2>/dev/null || true
         " 2>$null

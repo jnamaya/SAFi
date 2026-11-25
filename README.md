@@ -72,7 +72,7 @@ curl -sSL https://runsafi.com/install.sh | bash
 
 **Connect to a SAFi server or try the live demo:**
 ```bash
-safi-cli --setup
+safi --setup
 ```
 1. Enter your SAFi server URL — use **`https://safi.selfalignmentframework.com`** to try the live demo immediately, or your own self-hosted / appliance URL (e.g., `https://192.168.1.200`).
 2. Sign in with a **local account**, type **`sso`** for Google/Microsoft browser login, or press **Enter** to paste a Policy API key (`sk-safi-...`).

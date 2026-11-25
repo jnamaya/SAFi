@@ -1046,8 +1046,8 @@ export function displayEmptyState(activeProfile, promptClickHandler, firstName =
             <span class="cli-os-pill">First-Time Setup</span>
           </div>
           <div class="cli-code-block">
-            <code>safi-cli --setup</code>
-            <button type="button" class="cli-copy-btn" data-copy="safi-cli --setup">${copyIconSvg}<span>Copy</span></button>
+            <code>safi --setup</code>
+            <button type="button" class="cli-copy-btn" data-copy="safi --setup">${copyIconSvg}<span>Copy</span></button>
           </div>
           <div class="cli-code-block cli-url-block">
             <code>${serverOrigin}</code>

@@ -15,7 +15,8 @@ echo "=== SAFi CLI Uninstaller ==="
 
 # 1. Remove binary launchers from ~/.local/bin
 echo "Removing binary launchers from ~/.local/bin..."
-rm -f "${HOME}/.local/bin/safi-cli" \
+rm -f "${HOME}/.local/bin/safi" \
+      "${HOME}/.local/bin/safi-cli" \
       "${HOME}/.local/bin/saficli" \
       "${HOME}/.local/bin/sys-exec" \
       "${HOME}/.local/bin/safi-setup-key"
@@ -23,8 +24,10 @@ rm -f "${HOME}/.local/bin/safi-cli" \
 # 2. Remove system-wide symlinks if present
 if [ -w "/usr/local/bin" ]; then
     rm -f /usr/local/bin/safi-cli /usr/local/bin/saficli /usr/local/bin/sys-exec /usr/local/bin/safi-setup-key 2>/dev/null || true
+    [ ! -x "/usr/local/sbin/safi" ] && rm -f /usr/local/bin/safi 2>/dev/null || true
 elif command -v sudo &>/dev/null && sudo -n true 2>/dev/null; then
     sudo -n rm -f /usr/local/bin/safi-cli /usr/local/bin/saficli /usr/local/bin/sys-exec /usr/local/bin/safi-setup-key 2>/dev/null || true
+    [ ! -x "/usr/local/sbin/safi" ] && sudo -n rm -f /usr/local/bin/safi 2>/dev/null || true
 fi
 
 # 3. Remove application package and venv
@@ -52,7 +55,7 @@ if grep -qi "microsoft" /proc/version 2>/dev/null && command -v cmd.exe &>/dev/n
     if [ -n "$WIN_APPS_RAW" ] && command -v wslpath &>/dev/null; then
         WIN_APPS_DIR=$(wslpath "$WIN_APPS_RAW" 2>/dev/null || true)
         if [ -n "$WIN_APPS_DIR" ] && [ -d "$WIN_APPS_DIR" ]; then
-            rm -f "${WIN_APPS_DIR}/safi-cli.cmd" "${WIN_APPS_DIR}/saficli.cmd" "${WIN_APPS_DIR}/sys-exec.cmd" "${WIN_APPS_DIR}/safi-setup-key.cmd"
+            rm -f "${WIN_APPS_DIR}/safi.cmd" "${WIN_APPS_DIR}/safi-cli.cmd" "${WIN_APPS_DIR}/saficli.cmd" "${WIN_APPS_DIR}/sys-exec.cmd" "${WIN_APPS_DIR}/safi-setup-key.cmd"
         fi
     fi
 
@@ -60,7 +63,8 @@ if grep -qi "microsoft" /proc/version 2>/dev/null && command -v cmd.exe &>/dev/n
     if [ -n "$WIN_PROFILE_RAW" ] && command -v wslpath &>/dev/null; then
         WIN_PROFILE_DIR=$(wslpath "$WIN_PROFILE_RAW" 2>/dev/null || true)
         if [ -n "$WIN_PROFILE_DIR" ] && [ -d "$WIN_PROFILE_DIR" ]; then
-            rm -f "${WIN_PROFILE_DIR}/.local/bin/safi-cli.cmd" \
+            rm -f "${WIN_PROFILE_DIR}/.local/bin/safi.cmd" \
+                  "${WIN_PROFILE_DIR}/.local/bin/safi-cli.cmd" \
                   "${WIN_PROFILE_DIR}/.local/bin/saficli.cmd" \
                   "${WIN_PROFILE_DIR}/.local/bin/sys-exec.cmd" \
                   "${WIN_PROFILE_DIR}/.local/bin/safi-setup-key.cmd"
