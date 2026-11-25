@@ -66,14 +66,18 @@ PYEOF
     rm -rf "${TMP_DIR}"
 fi
 
-# 3. Check & Install system packages (ssh, sshpass, nmap, jq, curl, ping, dig, rsync, python3-venv)
+# 3. Check & Install system packages (ssh, sshpass, nmap, jq, curl, ping, dig, rsync, bubblewrap, python3-venv)
 echo "Checking operational system packages..."
 PKGS=()
-for tool in ssh sshpass nmap jq curl ping dig rsync; do
+for tool in ssh sshpass nmap jq curl ping dig rsync bwrap; do
     case "$tool" in
-        ping) pkg="iputils-ping" ;;
-        dig)  pkg="dnsutils" ;;
-        *)    pkg="$tool" ;;
+        ping)  pkg="iputils-ping" ;;
+        dig)   pkg="dnsutils" ;;
+        bwrap)
+            [ "$(uname -s)" = "Linux" ] || continue
+            pkg="bubblewrap"
+            ;;
+        *)     pkg="$tool" ;;
     esac
     if ! command -v "$tool" &>/dev/null; then
         PKGS+=("$pkg")
