@@ -160,7 +160,7 @@ if (-not (Test-Path $localBin)) {
     New-Item -ItemType Directory -Force -Path $localBin | Out-Null
 }
 
-$tools = @("safi-cli", "saficli", "sys-exec", "safi-setup-key")
+$tools = @("safi", "safi-cli", "saficli", "sys-exec", "safi-setup-key")
 foreach ($t in $tools) {
     $cmdContent = "@echo off`r`nchcp 65001 >nul 2>&1`r`nwsl.exe -e bash -lic `"LANG=C.UTF-8 LC_ALL=C.UTF-8 exec $t \""`$@\""`" bash %*`r`nexit /b %ERRORLEVEL%`r`n"
     $cmdPath = Join-Path $localBin "$t.cmd"
@@ -195,8 +195,8 @@ if ($env:Path -notlike "*$localBin*") {
 Write-Host ""
 Write-Host "=== SAFi CLI Installation Complete ===" -ForegroundColor Green
 Write-Host "Available commands in PowerShell & CMD:" -ForegroundColor Cyan
-Write-Host "  safi-cli             Launch interactive SAFi agent session"
-Write-Host "  saficli --setup      Run connection and model setup wizard"
+Write-Host "  safi                 Launch interactive SAFi agent session"
+Write-Host "  safi --setup         Run connection and model setup wizard"
 Write-Host "  sys-exec <host> <cmd> Execute commands on managed infrastructure"
 Write-Host "  safi-setup-key <tgt> Deploy SSH key for passwordless agent access"
 Write-Host ""
