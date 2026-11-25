@@ -488,7 +488,7 @@ def execute_cloud_status() -> str:
     tenants = cfg.get("tenants", {})
     subs = cfg.get("subscriptions", {})
 
-    lines = ["☁️ SAFi Cloud Environment Status:"]
+    lines = ["SAFi Cloud Environment Status:"]
 
     if tenants:
         lines.append(f"\nMicrosoft 365 Tenants ({len(tenants)} configured):")
@@ -512,7 +512,7 @@ def execute_cloud_status() -> str:
 
 
 def interactive_setup_cloud() -> None:
-    ui.console.print(f"\n[bold {ui.COLOR_BRAND_400}]☁️ Configure Cloud Environments (M365 & Azure)[/]")
+    ui.console.print(f"\n[bold {ui.COLOR_BRAND_400}]Configure Cloud Environments (M365 & Azure)[/]")
     ui.console.print("[dim]Configure Service Principal credentials for Microsoft 365 and Azure administration.[/dim]\n")
 
     cfg = load_cloud_config()

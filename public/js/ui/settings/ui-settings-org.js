@@ -1802,11 +1802,11 @@ function renderCharterValues(valuesData, container, mode = 'charter') {
             <div class="cv-rubric-panel hidden mt-4 pt-4 border-t border-dashed border-gray-200 dark:border-neutral-700 space-y-2">
                 <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Scoring criteria (traffic light)</p>
                 ${[
-                    { score: 1.0,  icon: '✅', label: 'Positive (+1)', color: 'green',  bg: 'bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-900',
+                    { score: 1.0,  icon: '+', label: 'Positive (+1)', color: 'green',  bg: 'bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-900',
                       hint: mode === 'standard' ? 'A response that respects this. Word it so an answer that never touched the topic still counts.' : 'What an excellent response looks like...' },
-                    { score: 0.0,  icon: '⚪', label: 'Neutral (0)',   color: 'gray',   bg: 'bg-white dark:bg-neutral-800 border-gray-200 dark:border-neutral-700',
+                    { score: 0.0,  icon: '·', label: 'Neutral (0)',   color: 'gray',   bg: 'bg-white dark:bg-neutral-800 border-gray-200 dark:border-neutral-700',
                       hint: mode === 'standard' ? 'Optional. Leave blank for a pass/fail standard.' : 'Acceptable, neither good nor bad...' },
-                    { score: -1.0, icon: '🚫', label: 'Violation (−1)', color: 'red',   bg: 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-900',
+                    { score: -1.0, icon: '×', label: 'Violation (−1)', color: 'red',   bg: 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-900',
                       hint: mode === 'standard' ? 'Something the response actually DID - "reveals a bank account number". Never "fails to mention…", which would flag every unrelated answer.' : 'What a violation looks like...' }
                 ].map(def => {
                     const item = v.rubric.scoring_guide.find(g => Math.abs(g.score - def.score) < 0.1);

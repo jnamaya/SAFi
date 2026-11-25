@@ -15,7 +15,7 @@ export function renderReviewStep(container, agentData) {
             
              <div class="bg-gray-50 dark:bg-neutral-800 rounded-lg p-4 border border-gray-200 dark:border-neutral-700 flex gap-4">
                 <div class="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center overflow-hidden shrink-0">
-                     ${agentData.avatar ? `<img src="${escapeHtml(agentData.avatar)}" class="w-full h-full object-cover">` : `<span class="text-2xl">🤖</span>`}
+                     ${agentData.avatar ? `<img src="${escapeHtml(agentData.avatar)}" class="w-full h-full object-cover">` : `<span class="text-sm font-semibold text-neutral-500">AI</span>`}
                 </div>
                 <div>
                      <h3 class="font-bold text-lg dark:text-white">${escapeHtml(agentData.name || 'Unnamed Agent')}</h3>

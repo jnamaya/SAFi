@@ -97,7 +97,7 @@ def show_config(
             masked = key_val[:8] + "..." + key_val[-4:] if len(key_val) > 14 else "••••••••"
             status = f"[{ui.COLOR_PASS}]✓ Configured ({masked})[/]"
         else:
-            status = f"[{ui.COLOR_WARN}]⚠️  Key Needed[/]"
+            status = f"[{ui.COLOR_WARN}]! Key Needed[/]"
         table.add_row(k, v["title"], status)
 
     ui.console.print(table)
@@ -1217,7 +1217,8 @@ def interactive_repl(
                     ui.console.print(f"[bold {ui.COLOR_BRAND_400}]● Skill:[/] [bold white]{matched_skill.description}[/]")
                     if scheduler.is_agent_busy():
                         prompt_q.put(rendered_prompt, source=f"skill:{skill_trigger}", agent=current_agent)
-                        ui.console.print(f"[bold green]✓ Queued skill prompt for next turn:[/] [white]{matched_skill.description}[/]")
+                        if not rich_input:
+                            ui.console.print(f"[bold green]✓ Queued skill prompt for next turn:[/] [white]{matched_skill.description}[/]")
                     else:
                         prompt_q.put(rendered_prompt, source=f"skill:{skill_trigger}", agent=current_agent)
                     continue
@@ -1264,7 +1265,8 @@ def interactive_repl(
 
             if scheduler.is_agent_busy():
                 prompt_q.put(line, source="user", agent=current_agent)
-                ui.console.print(f"[bold green]✓ Queued prompt #{len(prompt_q.peek_all())}:[/] [bold white]{line}[/]")
+                if not rich_input:
+                    ui.console.print(f"[bold green]✓ Queued prompt #{len(prompt_q.peek_all())}:[/] [bold white]{line}[/]")
                 continue
 
             prompt_q.put(line, source="user", agent=current_agent)
@@ -1483,7 +1485,7 @@ def run_setup_wizard() -> tuple[str, str, Optional[str]]:
                 sys.exit(0)
             if confirm in ("y", "yes"):
                 config.save_config({"api_url": chosen_url})
-                ui.console.print(f"[yellow]⚠️ Warning: Saved unverified URL '{chosen_url}'. CLI commands will fail until this endpoint is live.[/]")
+                ui.console.print(f"[yellow]Warning: Saved unverified URL '{chosen_url}'. CLI commands will fail until this endpoint is live.[/]")
                 break
             else:
                 ui.console.print("[dim]Please re-enter the correct endpoint URL.[/dim]")

@@ -126,7 +126,7 @@ def prompt_switch_agent(
         for idx, (k, v) in enumerate(AVAILABLE_AGENTS.items(), 1):
             active_marker = f" [bold {ui.COLOR_BRAND_500}](active)[/]" if k == current_agent else ""
             key_val = config.resolve_agent_api_key(k)
-            key_status = f"[{ui.COLOR_PASS}]✓ Configured[/]" if key_val else f"[{ui.COLOR_WARN}]⚠️  Key Needed[/]"
+            key_status = f"[{ui.COLOR_PASS}]✓ Configured[/]" if key_val else f"[{ui.COLOR_WARN}]! Key Needed[/]"
             table.add_row(str(idx), f"{k}{active_marker}", v["title"], key_status, v["description"])
 
         ui.console.print(table)
@@ -170,7 +170,7 @@ def prompt_switch_agent(
     agent_key_val = config.resolve_agent_api_key(target_agent)
 
     if not agent_key_val:
-        ui.console.print(f"\n[bold yellow]🔑 No Policy API Key found for '{agent_title}' ({target_agent}).[/]")
+        ui.console.print(f"\n[bold yellow]No Policy API Key found for '{agent_title}' ({target_agent}).[/]")
         ui.console.print("[dim]Each agent is governed by a separate domain policy and requires its own Policy API Key.[/dim]")
         try:
             entered_key = input(f"Enter Policy API Key for {target_agent} (from SAFi Governance Portal): ").strip()
@@ -275,7 +275,7 @@ def resolve_model_preference(
         return serving
     if is_serving_alias(resolved):
         ui.console.print(
-            f"[bold {ui.COLOR_WARN}]⚠ No locally-served model found on {client.api_url}; "
+            f"[bold {ui.COLOR_WARN}]Warning: No locally-served model found on {client.api_url}; "
             "using the backend policy default.[/]"
         )
     return None

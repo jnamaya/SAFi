@@ -397,7 +397,7 @@ def interactive_setup_key(target_arg: Optional[str] = None) -> None:
         return
 
     inv_file = config.resolve_inventory_file()
-    ui.console.print(f"\n[bold {ui.COLOR_BRAND_400}]🔑 Deploy SSH Key to Server[/]")
+    ui.console.print(f"\n[bold {ui.COLOR_BRAND_400}]Deploy SSH Key to Server[/]")
     ui.console.print(f"  [dim]Inventory file:[/] [cyan]{inv_file}[/]")
     ui.console.print("[dim]Pushes your local Ed25519 public key to Linux or Windows targets for passwordless execution.[/dim]\n")
 
