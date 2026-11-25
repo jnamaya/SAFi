@@ -548,16 +548,54 @@ def _dir_contains_protected(directory: Path, agent: Optional[str] = None) -> Opt
     return None
 
 
+_BWRAP_PROBE_RESULT: Optional[bool] = None
+_BWRAP_WARNED: bool = False
+
+
+def _bwrap_usable(bwrap_path: str) -> bool:
+    global _BWRAP_PROBE_RESULT
+    if _BWRAP_PROBE_RESULT is not None:
+        return _BWRAP_PROBE_RESULT
+    try:
+        res = subprocess.run(
+            [
+                bwrap_path,
+                "--ro-bind", "/", "/",
+                "--dev", "/dev",
+                "--proc", "/proc",
+                "--unshare-pid",
+                "true",
+            ],
+            capture_output=True,
+            timeout=3,
+        )
+        _BWRAP_PROBE_RESULT = (res.returncode == 0)
+    except Exception:
+        _BWRAP_PROBE_RESULT = False
+    return _BWRAP_PROBE_RESULT
+
+
 def _build_bwrap_command(
     cmd: str,
     workspace_root: Path,
     agent: Optional[str] = None,
 ) -> Optional[List[str]]:
+    global _BWRAP_WARNED
     bwrap_path = shutil.which("bwrap")
     if not bwrap_path:
-        logger.warning(
-            "Bubblewrap (bwrap) binary not found on PATH. Commands will execute unconfined on the host."
-        )
+        if not _BWRAP_WARNED:
+            _BWRAP_WARNED = True
+            logger.warning(
+                "Bubblewrap (bwrap) binary not found on PATH. Commands will execute unconfined on the host."
+            )
+        return None
+    if not _bwrap_usable(bwrap_path):
+        if not _BWRAP_WARNED:
+            _BWRAP_WARNED = True
+            logger.warning(
+                "Bubblewrap (bwrap) cannot create user namespaces on this kernel (e.g. WSL1 or restricted AppArmor). "
+                "Commands will execute unconfined on the host."
+            )
         return None
 
     ws_resolved = workspace_root.resolve()
