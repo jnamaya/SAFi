@@ -40,7 +40,7 @@
 
 ## Client-Server Architecture
 
-Unlike standalone terminal agents where API keys, rules, and logs live unmanaged on individual laptops, **SAFi separates the workstation harness from the central governance gateway**:
+Unlike standalone terminal agents where API keys, rules, and logs live unmanaged on individual laptops, **SAFi separates the workstation client from the central governance gateway**:
 
 ```text
 [ Workstation: safi-cli ] ──HTTPS──▶ [ SAFi Governance Gateway (Server / Appliance) ] ──▶ [ Local / Cloud Models ]
