@@ -988,12 +988,6 @@ def execute_tool(
             popen_args: Any = bwrap_cmd if bwrap_cmd else cmd
             use_shell = not bool(bwrap_cmd)
 
-            if not bwrap_cmd and on_output:
-                try:
-                    on_output("[SANDBOX NOTICE] Bubblewrap (bwrap) not installed - running unconfined on host.")
-                except Exception:
-                    pass
-
             output_lines: List[str] = []
             last_progress_msg: Optional[str] = None
             proc = subprocess.Popen(
