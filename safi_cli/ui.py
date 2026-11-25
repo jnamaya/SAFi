@@ -102,6 +102,7 @@ class MarginedConsole(Console):
 
         norm_objects = []
         is_light = globals().get("IS_LIGHT_THEME", False)
+        is_legacy_ps = globals().get("_IS_LEGACY_POWERSHELL", False)
         for obj in objects:
             if isinstance(obj, str):
                 s = _sanitize_terminal_text(obj)
@@ -110,7 +111,7 @@ class MarginedConsole(Console):
                         s = s.replace("[bold white]", "[bold #0f172a]").replace("[/bold white]", "[/bold #0f172a]")
                     if "[white]" in s:
                         s = s.replace("[white]", "[#0f172a]").replace("[/white]", "[/#0f172a]")
-                elif "[dim]" in s:
+                elif is_legacy_ps and "[dim]" in s:
                     s = s.replace("[dim]", "[#cbd5e1]").replace("[/dim]", "[/#cbd5e1]")
                 norm_objects.append(s)
             else:
@@ -251,6 +252,11 @@ def _detect_light_background() -> bool:
 
 
 IS_LIGHT_THEME = _detect_light_background()
+_IS_LEGACY_POWERSHELL = bool(
+    os.environ.get("WSL_DISTRO_NAME")
+    and not os.environ.get("WT_SESSION")
+    and not IS_LIGHT_THEME
+)
 
 if IS_LIGHT_THEME:
     _PALETTE = {
@@ -297,15 +303,15 @@ else:
         "COLOR_PASS": "#22c55e",
         "COLOR_WARN": "#eab308",
         "COLOR_FAIL": "#ef4444",
-        "COLOR_PENDING": "#e2e8f0",
-        "COLOR_MUTED": "#cbd5e1",
-        "COLOR_BORDER": "#64748b",
+        "COLOR_PENDING": "#e2e8f0" if _IS_LEGACY_POWERSHELL else "#a3a3a3",
+        "COLOR_MUTED": "#cbd5e1" if _IS_LEGACY_POWERSHELL else "#737373",
+        "COLOR_BORDER": "#64748b" if _IS_LEGACY_POWERSHELL else "#27272a",
         "COLOR_USER_ACCENT": "#38bdf8",
         "COLOR_USER_BORDER": "#2563eb",
         "COLOR_USER_BADGE_BG": "#1e3a5f",
-        "COLOR_PROMPT_DIVIDER": "#64748b",
+        "COLOR_PROMPT_DIVIDER": "#64748b" if _IS_LEGACY_POWERSHELL else "#334155",
         "COLOR_PROMPT_BRAND": "#4ade80",
-        "COLOR_PROMPT_AGENT": "#e2e8f0",
+        "COLOR_PROMPT_AGENT": "#e2e8f0" if _IS_LEGACY_POWERSHELL else "#94a3b8",
         "COLOR_PROMPT_CHEVRON": "#38bdf8",
         "COLOR_PROMPT_TEXT": "#f8fafc",
     }
