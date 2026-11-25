@@ -123,6 +123,7 @@ def print_help():
         ("/schedule <time> <instruction>", "Schedule delayed or recurring tasks (e.g. /schedule 10m run audit)"),
         ("/tasks", "List active scheduled tasks and countdowns"),
         ("/queue", "View or clear queued prompts awaiting execution"),
+        ("/update", "Update safi CLI to the latest version"),
         ("/skills", "List custom project skills defined in .safi/skills/"),
         ("/new", "Start a fresh conversation session without clearing screen"),
         ("/clear [screen]", "Clear screen & reset session memory (or /clear screen for visual only)"),
@@ -775,6 +776,11 @@ def interactive_repl(
         user_name=current_user_name,
         intellect_model=current_model,
     )
+    try:
+        from . import updater
+        updater.print_update_notice_if_available(client)
+    except Exception:
+        pass
     ui.console.print(
         f"[dim]Commands: [bold {ui.COLOR_BRAND_400}]/[/] menu  •  [bold {ui.COLOR_BRAND_400}]/memory[/] memory & compact  •  [bold {ui.COLOR_BRAND_400}]/models[/] switch model  •  [bold {ui.COLOR_BRAND_400}]/agents[/] switch agent  •  [bold {ui.COLOR_BRAND_400}]/new[/] fresh session[/dim]\n"
     )
@@ -1199,6 +1205,11 @@ def interactive_repl(
                     ui.console.print("[dim]Usage: /title <session_name>[/dim]")
                 continue
 
+
+            if line.lower() in ("/update", "/upgrade"):
+                from . import updater
+                updater.run_self_update()
+                continue
 
             if line.lower() in ("/help", "/?", "help", "?"):
                 print_help()

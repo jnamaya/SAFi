@@ -98,6 +98,11 @@ class SafiClient:
         self.endpoint = f"{self.api_url}/api/agentic/process_prompt"
 
         self.session = requests.Session()
+        try:
+            from . import __version__ as _cli_version
+            self.session.headers["X-SAFi-CLI-Version"] = _cli_version
+        except Exception:
+            pass
         retry_strategy = Retry(
             total=3,
             backoff_factor=0.3,
