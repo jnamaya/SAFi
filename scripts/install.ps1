@@ -78,7 +78,7 @@ try {
 # Note: Ubuntu WSL ships an apt hook (20snapd.conf / advise-snap) that aborts apt-get when snapd
 # is absent. Pipe the script via stdin to avoid PowerShell CreateProcess quote mangling, and
 # temporarily stash any advise-snap hook during apt-get (restored automatically on exit).
-Write-Host "Ensuring core operational utilities (ssh, sshpass, nmap, jq, curl, rsync, python3, git) in WSL..." -ForegroundColor Cyan
+Write-Host "Ensuring core operational utilities (ssh, sshpass, nmap, jq, curl, rsync, bubblewrap, python3, git) in WSL..." -ForegroundColor Cyan
 $aptScript = @'
 set -u
 STASH_DIR=$(mktemp -d /tmp/safi-apt-stash.XXXXXX)
@@ -111,7 +111,7 @@ for pair in "etc:/etc/apt/apt.conf.d" "usr:/usr/share/apt/apt.conf.d"; do
 done
 
 apt-get update -qq
-DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3 python3-pip python3-venv openssh-client sshpass nmap jq curl iputils-ping dnsutils rsync git
+DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3 python3-pip python3-venv openssh-client sshpass nmap jq curl iputils-ping dnsutils rsync git bubblewrap
 '@
 $aptScriptLf = ($aptScript -replace "`r`n", "`n")
 $prevEap = $ErrorActionPreference
