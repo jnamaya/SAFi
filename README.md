@@ -44,7 +44,7 @@ Unlike standalone terminal agents where API keys, rules, and logs live unmanaged
 
 ```text
 [ Workstation: safi-cli ] ──HTTPS──▶ [ SAFi Governance Gateway (Server / Appliance) ] ──▶ [ Local / Cloud Models ]
- • Thin terminal harness               • Central Identity (SSO / LDAP / SCIM) & RBAC
+ • Thin terminal client               • Central Identity (SSO / LDAP / SCIM) & RBAC
  • Executes repo & ops tools           • Immutable Charters & Policies (no local overrides)
  • Zero LLM API keys on laptop         • Deterministic policy & risk gates (R0–R4) + audit scoring
                                        • Unified hash-chained Audit Hub across every workstation
