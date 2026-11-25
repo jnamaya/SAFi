@@ -105,7 +105,12 @@ class MarginedConsole(Console):
         for obj in objects:
             if isinstance(obj, str):
                 s = _sanitize_terminal_text(obj)
-                if not is_light and "[dim]" in s:
+                if is_light:
+                    if "[bold white]" in s:
+                        s = s.replace("[bold white]", "[bold #0f172a]").replace("[/bold white]", "[/bold #0f172a]")
+                    if "[white]" in s:
+                        s = s.replace("[white]", "[#0f172a]").replace("[/white]", "[/#0f172a]")
+                elif "[dim]" in s:
                     s = s.replace("[dim]", "[#cbd5e1]").replace("[/dim]", "[/#cbd5e1]")
                 norm_objects.append(s)
             else:
@@ -263,6 +268,7 @@ if IS_LIGHT_THEME:
         "COLOR_BORDER": "#a1a1aa",
         "COLOR_USER_ACCENT": "#0369a1",
         "COLOR_USER_BORDER": "#1d4ed8",
+        "COLOR_USER_BG": "#eff6ff",
         "COLOR_USER_BADGE_BG": "#dbeafe",
         "COLOR_PROMPT_DIVIDER": "#64748b",
         "COLOR_PROMPT_BRAND": "#15803d",
@@ -271,6 +277,19 @@ if IS_LIGHT_THEME:
         "COLOR_PROMPT_TEXT": "#1e293b",
     }
     _DEFAULT_USER_BG = "#eff6ff"
+    from rich.theme import Theme as _RichTheme
+    console.push_theme(_RichTheme({
+        "markdown.code": "bold #0f172a on #e2e8f0",
+        "markdown.code_block": "#0f172a on #f1f5f9",
+        "markdown.h1": "bold #15803d",
+        "markdown.h2": "bold #0f172a",
+        "markdown.h3": "bold #1e293b",
+        "markdown.link": "underline #0369a1",
+        "markdown.item.bullet": "bold #15803d",
+        "markdown.block_quote": "#475569",
+        "bold white": "bold #0f172a",
+        "white": "#0f172a",
+    }))
 else:
     _PALETTE = {
         "COLOR_BRAND_600": "#16a34a",
@@ -1570,7 +1589,7 @@ def print_final_output(text: str, res: Dict[str, Any]):
         title_align = "center"
 
     response_panel = Panel(
-        Markdown(_sanitize_terminal_text(text)),
+        Markdown(_sanitize_terminal_text(text), code_theme=SYNTAX_THEME),
         title=top_title,
         title_align=title_align,
         border_style=COLOR_BRAND_600,
@@ -1725,7 +1744,7 @@ def print_compression_result(data: Dict[str, Any]):
 
         if summary:
             console.print(Panel(
-                Markdown(summary),
+                Markdown(_sanitize_terminal_text(summary), code_theme=SYNTAX_THEME),
                 title=f"[bold {COLOR_BRAND_400}]Active Session Memory Summary[/]",
                 subtitle="[dim]Distilled from conversation turns[/dim]",
                 border_style=COLOR_BRAND_600,
@@ -1760,7 +1779,7 @@ def print_compression_result(data: Dict[str, Any]):
 
     if summary_text:
         console.print(Panel(
-            Markdown(summary_text),
+            Markdown(_sanitize_terminal_text(summary_text), code_theme=SYNTAX_THEME),
             title=f"[bold {COLOR_BRAND_400}]Compacted Technical Memory[/]",
             subtitle="[dim]Anchored into session context for future turns[/dim]",
             border_style=COLOR_BRAND_700,
