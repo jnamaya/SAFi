@@ -66,6 +66,15 @@ def main():
     if len(sys.argv) > 1 and sys.argv[1] in ("keygen", "gen-key"):
         sys.exit(ssh_keys.keygen_local())
 
+    if len(sys.argv) > 1 and sys.argv[1] in ("update", "upgrade"):
+        from . import updater
+        sys.exit(updater.run_self_update())
+
+    if len(sys.argv) > 1 and sys.argv[1] in ("--version", "-V", "version"):
+        from . import __version__ as _cli_version
+        print(f"safi {_cli_version}")
+        sys.exit(0)
+
     parser = argparse.ArgumentParser(
         prog="safi-cli",
         description="SAFi (The Self-alignment Framework Interface) - The governance gateway for AI agents.",

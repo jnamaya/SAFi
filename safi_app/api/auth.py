@@ -369,6 +369,10 @@ def sso_required(fn):
 def app_config():
     google_configured = bool(Config.GOOGLE_CLIENT_ID and Config.GOOGLE_CLIENT_SECRET)
     microsoft_configured = bool(Config.MICROSOFT_CLIENT_ID and Config.MICROSOFT_CLIENT_SECRET)
+    try:
+        from safi_cli import __version__ as _cli_version
+    except Exception:
+        _cli_version = None
     return jsonify({
         "cloud_edition":       Config.CLOUD_EDITION,
         "demo_enabled":        Config.ENABLE_DEMO_LOGIN,
@@ -379,6 +383,7 @@ def app_config():
         "google_login_enabled": Config.SSO_LOGIN_ENABLED and google_configured,
         "microsoft_login_enabled": Config.SSO_LOGIN_ENABLED and microsoft_configured,
         "ldap_login_enabled":    Config.ldap_configured() and db.any_org_ldap_enabled(),
+        "latest_cli_version":    _cli_version,
     })
 
 
