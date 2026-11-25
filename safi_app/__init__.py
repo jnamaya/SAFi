@@ -3,7 +3,7 @@ import os
 import re
 import secrets
 from pathlib import Path
-from flask import Flask, send_file, send_from_directory, jsonify, g, Response
+from flask import Flask, send_file, send_from_directory, jsonify, g, request, Response
 from werkzeug.middleware.proxy_fix import ProxyFix
 from .config import Config
 from .persistence import database as db
@@ -131,6 +131,11 @@ def create_app():
             scim_store.init_schema()
         except Exception as e:
             app.logger.error("SCIM table init failed, directory sync disabled: %s", e)
+        try:
+            from .persistence import rate_limit_store
+            rate_limit_store.init_schema()
+        except Exception as e:
+            app.logger.error("Rate-limit table init failed, using in-memory fallback: %s", e)
 
         from .bootstrap import initialize as initialize_userland_defaults
         try:
@@ -215,6 +220,45 @@ def create_app():
     from .core.identity import resolve_session, strip_session_shim
     app.before_request(resolve_session)
     app.after_request(strip_session_shim)
+
+    @app.before_request
+    def enforce_csrf_origin():
+        from urllib.parse import urlparse
+        if request.method not in ('POST', 'PUT', 'PATCH', 'DELETE'):
+            return None
+        if request.path.startswith('/api/public/'):
+            return None
+        if request.headers.get('Authorization'):
+            return None
+        cookie_name = app.config.get('SESSION_COOKIE_NAME', 'safi_session')
+        if not request.cookies.get(cookie_name):
+            return None
+
+        allowed = {o.rstrip('/').lower() for o in (Config.ALLOWED_ORIGINS or []) if o}
+        if request.host:
+            allowed.add(f"https://{request.host}".lower())
+            allowed.add(f"http://{request.host}".lower())
+        if Config.WEB_BASE_URL:
+            allowed.add(Config.WEB_BASE_URL.rstrip('/').lower())
+
+        origin = (request.headers.get('Origin') or '').strip()
+        if origin:
+            if origin.rstrip('/').lower() not in allowed:
+                return jsonify({"error": "Cross-site request blocked."}), 403
+            return None
+
+        referer = (request.headers.get('Referer') or '').strip()
+        if referer:
+            parsed = urlparse(referer)
+            ref_origin = f"{parsed.scheme}://{parsed.netloc}".lower() if parsed.scheme and parsed.netloc else ""
+            if not ref_origin or ref_origin not in allowed:
+                return jsonify({"error": "Cross-site request blocked."}), 403
+            return None
+
+        sec_fetch_site = (request.headers.get('Sec-Fetch-Site') or '').strip().lower()
+        if sec_fetch_site == 'cross-site':
+            return jsonify({"error": "Cross-site request blocked."}), 403
+        return None
 
     @app.before_request
     def assign_csp_nonce():

@@ -6,12 +6,14 @@ services:
     environment:
       MYSQL_DATABASE: ${DB_NAME:-safi}
       MYSQL_USER: ${DB_USER:-safi}
-      MYSQL_PASSWORD: ${DB_PASSWORD}
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD must be set in .env}
+    security_opt:
+      - no-new-privileges:true
     volumes:
       - db_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-rootpassword}"]
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_ROOT_PASSWORD\" mysqladmin ping -h localhost -u root --silent"]
       interval: 5s
       timeout: 5s
       retries: 12
@@ -67,6 +69,10 @@ services:
     # container recreation, unlike an /etc/hosts edit.
     extra_hosts:
       - "safi-DC1.safi.local:192.168.1.224"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   # ── Retention purge (daily) ──────────────────────────────────────────────────
@@ -98,6 +104,10 @@ services:
         condition: service_healthy
     volumes:
       - ./logs:/app/logs
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   # ── Scheduled Updates runner ─────────────────────────────────────────────────
@@ -119,6 +129,10 @@ services:
         condition: service_healthy
     volumes:
       - ./logs:/app/logs
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   # ── Knowledge-base indexer ───────────────────────────────────────────────────
@@ -149,6 +163,10 @@ services:
       - ./logs:/app/logs
       - ./cache:/app/cache
       - vector_store:/app/vector_store
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   # ── OAuth tool gateways (optional) ───────────────────────────────────────────
@@ -192,6 +210,10 @@ services:
     volumes:
       - workspace_gateway_data:/app/gateway-data
       - ./logs:/app/logs
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   graph-gateway:
@@ -211,6 +233,10 @@ services:
     volumes:
       - graph_gateway_data:/app/gateway-data
       - ./logs:/app/logs
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
 volumes:
