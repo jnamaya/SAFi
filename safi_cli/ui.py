@@ -203,22 +203,18 @@ def _query_terminal_bg(timeout: float = 0.15) -> Optional[str]:
     except termios.error:
         return None
     try:
-        termios.tcsetattr(fd, termios.TCSANOW, old_attrs[:3] + [termios.CC])
-    except Exception:
-        return None
-    try:
         import tty as _tty
         _tty.setraw(fd)
         sys.stdout.write("\033]11;?\033\\")
         sys.stdout.flush()
         reply = ""
-        while len(reply) < 32:
+        while len(reply) < 40:
             ready, _, _ = select.select([fd], [], [], timeout)
             if not ready:
                 break
             ch = os.read(fd, 1).decode("utf-8", "ignore")
             reply += ch
-            if ch == "\\":
+            if ch in ("\\", "\x07"):
                 break
         match = re.search(r"rgb:([0-9a-fA-F]+)/([0-9a-fA-F]+)/([0-9a-fA-F]+)", reply)
         return match.group(0) if match else None
@@ -238,10 +234,12 @@ def _detect_light_background() -> bool:
 
     bg = _query_terminal_bg()
     if bg:
-        r, g, b = (int(part, 16) for part in re.findall(r"([0-9a-fA-F]+)", bg.split(":", 1)[1]))
-        scale = 255.0 if max(r, g, b) <= 15 else 65535.0
-        luminance = (0.2126 * r / scale) + (0.7152 * g / scale) + (0.0722 * b / scale)
-        return luminance > 0.5
+        parts = re.findall(r"([0-9a-fA-F]+)", bg.split(":", 1)[1])
+        if len(parts) == 3:
+            r, g, b = (int(part, 16) for part in parts)
+            scale = float((16 ** max(len(part) for part in parts)) - 1)
+            luminance = (0.2126 * r / scale) + (0.7152 * g / scale) + (0.0722 * b / scale)
+            return luminance > 0.5
 
     colorfgbg = (os.environ.get("COLORFGBG") or "").split(";")
     if colorfgbg and colorfgbg[-1].isdigit():
@@ -272,7 +270,7 @@ if IS_LIGHT_THEME:
         "COLOR_USER_BADGE_BG": "#dbeafe",
         "COLOR_PROMPT_DIVIDER": "#64748b",
         "COLOR_PROMPT_BRAND": "#15803d",
-        "COLOR_PROMPT_AGENT": "#475569",
+        "COLOR_PROMPT_AGENT": "#334155",
         "COLOR_PROMPT_CHEVRON": "#0284c7",
         "COLOR_PROMPT_TEXT": "#1e293b",
     }
