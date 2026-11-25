@@ -24,6 +24,21 @@ def get_ssh_config_args() -> list[str]:
     return ["-F", "/dev/null"]
 
 
+def _ssh_copy_id_supports_f() -> bool:
+    if not shutil.which("ssh-copy-id"):
+        return False
+    try:
+        res = subprocess.run(
+            ["ssh-copy-id", "-h"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        return "-F" in (res.stdout + res.stderr)
+    except Exception:
+        return False
+
+
 def get_default_key_paths() -> tuple[Path, Path]:
     ssh_dir = Path.home() / ".ssh"
     priv = ssh_dir / "id_ed25519"
@@ -248,7 +263,7 @@ def deploy_key_native(
         ui.console.print("\n[bold]Installing key to Linux host...[/]")
         ui.console.print(f"[bold yellow]You will be prompted for {user}@{host}'s password once:[/]")
 
-        if shutil.which("ssh-copy-id"):
+        if _ssh_copy_id_supports_f():
             copy_cmd = [
                 "ssh-copy-id",
                 *ssh_cfg_args,
