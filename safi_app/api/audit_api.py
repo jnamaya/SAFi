@@ -25,15 +25,18 @@ def _actor_email():
             or user.get('name') or user.get('id') or "unknown")
 
 
-def _parse_date(value):
+def _parse_date(value, end_of_day=False):
     if not value:
         return None
+    raw = str(value).strip()
     try:
-        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
     except ValueError:
         return None
     if dt.tzinfo:
         dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    if end_of_day and len(raw) == 10 and "T" not in raw and " " not in raw:
+        dt = dt + timedelta(days=1) - timedelta(microseconds=1)
     return dt
 
 
@@ -41,7 +44,7 @@ def _common_filters():
     flt = request.args.get("filter")
     if flt and flt not in VALID_FILTERS:
         return None, (jsonify({"error": f"filter must be one of {', '.join(VALID_FILTERS)}"}), 400)
-    date_to = _parse_date(request.args.get("to")) or datetime.utcnow()
+    date_to = _parse_date(request.args.get("to"), end_of_day=True) or datetime.utcnow()
     date_from = _parse_date(request.args.get("from")) or (date_to - timedelta(days=DEFAULT_WINDOW_DAYS))
     if date_from >= date_to:
         return None, (jsonify({"error": "'from' must be earlier than 'to'"}), 400)
