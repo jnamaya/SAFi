@@ -995,7 +995,7 @@ def build_audit_footer(result: Dict[str, Any]) -> Optional[Text]:
     if passes:
         tally.append(f"{passes} ✓")
     if cautions:
-        tally.append(f"{cautions} ⚠")
+        tally.append(f"{cautions} warn")
     if violations:
         tally.append(f"{violations} ✗")
     if tally:
@@ -1144,7 +1144,7 @@ def _rubric_tags(ledger: List[Dict[str, Any]]) -> Optional[Text]:
         if s_val >= 0.7:
             line.append(f"✓ {val}  ", style=COLOR_PASS)
         elif s_val >= 0.0:
-            line.append(f"⚠ {val}  ", style=COLOR_WARN)
+            line.append(f"! {val}  ", style=COLOR_WARN)
         else:
             line.append(f"✗ {val}  ", style=COLOR_FAIL)
         found = True
@@ -1186,7 +1186,7 @@ def print_tool_proposal(name: str, args: Dict[str, Any], res: Dict[str, Any]):
         else:
             title_line.append("  # approved ✓", style="dim")
     else:
-        title_line.append("  [⛔ BLOCKED]", style=f"bold {COLOR_FAIL}")
+        title_line.append("  [BLOCKED]", style=f"bold {COLOR_FAIL}")
         if will_reason:
             title_line.append(f"  # {will_reason}", style="dim")
     items.append(title_line)
@@ -1262,7 +1262,7 @@ def prompt_user_permission(name: str, args: Dict[str, Any], auto_approve: bool =
     def _ask() -> bool:
         margin = " " * CLI_MARGIN if CLI_MARGIN > 0 else ""
         console.print(
-            f"\n{margin}[bold black on {COLOR_WARN}] ⚠️  ACTION CONFIRMATION [/] "
+            f"\n{margin}[bold black on {COLOR_WARN}] ACTION CONFIRMATION [/] "
             f"[bold white]Allow executing tool [cyan]{escape(name)}[/]? "
             f"[Y/n/a (always)]:[/] ",
             end="",
@@ -1282,7 +1282,7 @@ def prompt_user_permission(name: str, args: Dict[str, Any], auto_approve: bool =
 
 
 def prompt_question(question: str, options: Optional[List[str]] = None) -> str:
-    card_items = [Text(f"❓ {question}", style="bold")]
+    card_items = [Text(f"? {question}", style="bold")]
 
     if options and isinstance(options, list):
         card_items.append(Text("\nOptions:", style="dim cyan"))
@@ -1350,7 +1350,7 @@ def build_plan_panel(todos: Optional[List[Dict[str, Any]]] = None) -> Optional[P
             badge = Text("  ✔", style=f"bold {COLOR_PASS}")
             text = Text(task_text, style="dim")
         elif status in ("in_progress", "running"):
-            badge = Text("▶ ⏳", style=f"bold {COLOR_WARN}")
+            badge = Text("▶ ...", style=f"bold {COLOR_WARN}")
             text = Text(task_text, style="bold #38bdf8")
         elif status in ("failed", "error"):
             badge = Text("  ✖", style=f"bold {COLOR_FAIL}")
@@ -1391,7 +1391,7 @@ def print_workspace_step(
     if is_approved:
         title_line.append("[✓ APPROVED] ", style=f"bold {COLOR_PASS}")
     else:
-        title_line.append("[⛔ BLOCKED] ", style=f"bold {COLOR_FAIL}")
+        title_line.append("[BLOCKED] ", style=f"bold {COLOR_FAIL}")
     title_line.append("-> ", style="dim")
     title_line.append(f"{tool_name}", style="bold")
     will_reason = proposal_res.get("willReason")

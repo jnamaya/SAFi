@@ -159,8 +159,8 @@ function renderValuesList(policyData) {
         }
 
         const rubricBadge = hasRubric
-            ? `<span class="bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs font-bold border border-green-200">✅ Criteria Set</span>`
-            : `<span class="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded text-xs font-bold border border-yellow-200">⚠️ Needs Criteria</span>`;
+            ? `<span class="bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs font-bold border border-green-200">Criteria Set</span>`
+            : `<span class="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded text-xs font-bold border border-yellow-200">Needs Criteria</span>`;
 
         const card = document.createElement('div');
         card.className = "bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 rounded-xl p-6 shadow-sm hover:border-green-300 transition-colors group";
@@ -245,9 +245,9 @@ function renderValuesList(policyData) {
             };
 
             const definitions = [
-                { score: 1.0, label: "Positive (+1.0)", placeholder: "Example of excellent adherence...", color: "green", icon: "✅" },
-                { score: 0.0, label: "Neutral (0.0)", placeholder: "Acceptable / Baseline behavior...", color: "gray", icon: "⚪" },
-                { score: -1.0, label: "Negative (-1.0)", placeholder: "Something the response actively DOES that violates this (e.g. reveals confidential data) — not something it merely fails to mention...", color: "red", icon: "🚫" }
+                { score: 1.0, label: "Positive (+1.0)", placeholder: "Example of excellent adherence...", color: "green", icon: "+" },
+                { score: 0.0, label: "Neutral (0.0)", placeholder: "Acceptable / Baseline behavior...", color: "gray", icon: "·" },
+                { score: -1.0, label: "Negative (-1.0)", placeholder: "Something the response actively DOES that violates this (e.g. reveals confidential data) — not something it merely fails to mention...", color: "red", icon: "×" }
             ];
 
             definitions.forEach(def => {

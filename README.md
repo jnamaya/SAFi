@@ -189,11 +189,11 @@ SAFi enforces **four organization-scoped roles** (`admin` > `editor` > `auditor`
 
 | Capability | `member` | `auditor` | `editor` | `admin` |
 | :--- | :---: | :---: | :---: | :---: |
-| Chat with org agents, use `safi-cli`, view own turn verdicts & governing Charter/Policy | ✅ | ✅ | ✅ | ✅ |
-| **Audit Hub** — KPIs, drift trends, log explorer, hash-chain verification, export | — | ✅ | ✅ | ✅ |
-| **Supervisory review** — sampled queue, dispositions, coverage reports | — | ✅ | **—** | ✅ |
-| **Authoring** — create/edit agents, policies, versions, tools, and Policy API keys | — | — | ✅ | ✅ |
-| **Org administration** — members, SSO/SCIM, MFA mandate, retention, legal hold, provider allow-list, examiner exports | — | — | — | ✅ |
+| Chat with org agents, use `safi-cli`, view own turn verdicts & governing Charter/Policy | Yes | Yes | Yes | Yes |
+| **Audit Hub** — KPIs, drift trends, log explorer, hash-chain verification, export | — | Yes | Yes | Yes |
+| **Supervisory review** — sampled queue, dispositions, coverage reports | — | Yes | **—** | Yes |
+| **Authoring** — create/edit agents, policies, versions, tools, and Policy API keys | — | — | Yes | Yes |
+| **Org administration** — members, SSO/SCIM, MFA mandate, retention, legal hold, provider allow-list, examiner exports | — | — | — | Yes |
 
 - **Organization scoping:** Enforced in both API routes and SQL queries.
 - **Immediate session revocation:** Role changes revoke active sessions and journal the change in the same transaction.

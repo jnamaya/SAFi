@@ -285,7 +285,7 @@ def _bottom_divider_text() -> "FormattedText":
 
             if is_busy:
                 if active_tasks:
-                    s_tasks = f"⏱ {len(active_tasks)} Scheduled • "
+                    s_tasks = f"{len(active_tasks)} Scheduled • "
                     right_parts.append(("class:safi-scheduled", s_tasks))
                     right_len += len(s_tasks)
 
@@ -300,7 +300,7 @@ def _bottom_divider_text() -> "FormattedText":
                 lbl = next_task.label
                 if len(lbl) > 16:
                     lbl = lbl[:13] + "..."
-                s_label = f"⏱ {len(active_tasks)} Scheduled"
+                s_label = f"{len(active_tasks)} Scheduled"
                 s_detail = f" (next: '{lbl}' in {rem}) • /tasks"
                 right_parts.extend([
                     ("class:safi-scheduled", s_label),
@@ -320,7 +320,7 @@ def _bottom_divider_text() -> "FormattedText":
                 prompt_raw = first_item.prompt.replace("\n", " ").strip()
                 count = len(queued_items)
 
-                q_prefix = "⏳ Queued: " if count == 1 else f"⏳ Queued ({count}): "
+                q_prefix = "Queued: " if count == 1 else f"Queued ({count}): "
                 q_suffix = f" (+{count - 1} more)" if count > 1 else ""
 
                 fixed_len = len(margin) + len(q_prefix) + len(q_suffix) + 2

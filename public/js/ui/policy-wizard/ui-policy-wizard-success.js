@@ -46,7 +46,7 @@ export function renderSuccessStep(container, policyData, generatedCredentials) {
                         <button id="btn-copy-key" class="px-3 bg-gray-200 hover:bg-gray-300 dark:bg-neutral-700 dark:hover:bg-neutral-600 rounded text-black dark:text-white font-bold transition-colors">Copy</button>
                         <button id="btn-rotate-key" class="px-3 bg-red-100 hover:bg-red-200 text-red-700 rounded font-bold transition-colors text-xs" title="Generate a new key (Old one stops working)">Rotate</button>
                     </div>
-                    ${isMasked ? '<p id="key-warning" class="text-xs text-red-500 mt-1 font-bold">⚠️ Key is hidden. If lost, click Rotate to generate a new one.</p>' : ''}
+                    ${isMasked ? '<p id="key-warning" class="text-xs text-red-500 mt-1 font-bold">Key is hidden. If lost, click Rotate to generate a new one.</p>' : ''}
                 </div>
             </div>
             

@@ -312,7 +312,7 @@ def main():
 
     if not api_key:
         ui.console.print(
-            f"[bold yellow]🔑 Authentication required for {api_url}[/]\n"
+            f"[bold yellow]Authentication required for {api_url}[/]\n"
             f"[dim]Sign in with your SAFi account (local username/password or Google/Microsoft SSO)\n"
             f"to automatically configure access for all available agents, or press Enter\n"
             f"to paste a single Policy API key (sk-safi-...).[/dim]"
