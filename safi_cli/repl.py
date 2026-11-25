@@ -530,6 +530,11 @@ def prompt_command_menu(
         _render_queued_prompts(q.peek_all())
         return current_agent, current_conv, current_model, current_user_name, False
 
+    elif choice_clean in ("update", "upgrade"):
+        from . import updater
+        updater.run_self_update()
+        return current_agent, current_conv, current_model, current_user_name, False
+
     elif choice_clean in ("usage", "totals"):
         ui.console.print()
         ui.console.print(ui.build_session_usage_panel())
@@ -606,6 +611,7 @@ SLASH_COMMANDS = [
     "/tasks",
     "/schedules",
     "/queue",
+    "/update",
     "/sessions",
     "/setup-key",
     "/ssh-key",
