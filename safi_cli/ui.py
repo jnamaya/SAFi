@@ -283,14 +283,18 @@ if IS_LIGHT_THEME:
     _DEFAULT_USER_BG = "#eff6ff"
     from rich.theme import Theme as _RichTheme
     console.push_theme(_RichTheme({
-        "markdown.code": "bold #0f172a on #e2e8f0",
-        "markdown.code_block": "#0f172a on #f1f5f9",
+        "markdown.code": "bold #0369a1 on default",
+        "markdown.code_block": "#0f172a on default",
         "markdown.h1": "bold #15803d",
         "markdown.h2": "bold #0f172a",
         "markdown.h3": "bold #1e293b",
-        "markdown.link": "underline #0369a1",
+        "markdown.link": "underline #0369a1 on default",
+        "markdown.link_url": "underline #0369a1 on default",
         "markdown.item.bullet": "bold #15803d",
         "markdown.block_quote": "#475569",
+        "repr.url": "underline #0369a1 on default",
+        "repr.path": "#0369a1 on default",
+        "repr.filename": "bold #0369a1 on default",
         "bold white": "bold #0f172a",
         "white": "#0f172a",
     }))
