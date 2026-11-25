@@ -338,13 +338,12 @@ COLOR_PROMPT_AGENT = _PALETTE["COLOR_PROMPT_AGENT"]
 COLOR_PROMPT_CHEVRON = _PALETTE["COLOR_PROMPT_CHEVRON"]
 COLOR_PROMPT_TEXT = _PALETTE["COLOR_PROMPT_TEXT"]
 
-SYNTAX_THEME = "default" if IS_LIGHT_THEME else "monokai"
+SYNTAX_THEME = "default" if IS_LIGHT_THEME else "ansi_dark"
 
 
 def _syntax(code: str, lexer: str, **kwargs) -> "Syntax":
     kwargs.setdefault("theme", SYNTAX_THEME)
-    if IS_LIGHT_THEME:
-        kwargs.setdefault("background_color", "default")
+    kwargs.setdefault("background_color", "default")
     pad = kwargs.get("padding", (0, 1))
     try:
         kwargs["padding"] = (1, pad[1] if len(pad) > 1 else pad[0])

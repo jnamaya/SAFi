@@ -146,7 +146,7 @@ class SafiInstanceCache:
     def _generate_key(self, profile_name, intellect, will, conscience, policy_id=None, org_settings_hash=None):
         norm_name = self._normalize_key(profile_name)
         rest = f"{intellect}|{will}|{conscience}|{policy_id or ''}|{org_settings_hash or ''}"
-        rest_hash = hashlib.md5(rest.encode()).hexdigest()
+        rest_hash = hashlib.sha256(rest.encode()).hexdigest()
         
         return f"{norm_name}|{rest_hash}"
 
@@ -162,7 +162,7 @@ class SafiInstanceCache:
             "scope_statement": prof.get("scope_statement", ""),
             "spirit_beta": spirit_beta,
         }
-        config_hash = hashlib.md5(
+        config_hash = hashlib.sha256(
             json.dumps(gov_fingerprint, sort_keys=True, default=str).encode()
         ).hexdigest()
         key = self._generate_key(
@@ -498,7 +498,7 @@ async def public_process_prompt_endpoint():
     anonymous_user_id = f"public_{incoming_convo_id}"
 
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr or '').split(',')[0].strip()
-    ip_key = f"ip_{hashlib.md5(client_ip.encode()).hexdigest()[:16]}"
+    ip_key = f"ip_{hashlib.sha256(client_ip.encode()).hexdigest()[:16]}"
     public_limit = Config.DAILY_PROMPT_LIMIT if Config.DAILY_PROMPT_LIMIT > 0 else 20
     if db.get_todays_prompt_count(ip_key) >= public_limit:
         return jsonify({"error": "Daily message limit reached.", "code": "LIMIT_REACHED"}), 429
@@ -1701,7 +1701,7 @@ async def agentic_process_prompt_endpoint():
     cli_demo_limit = getattr(Config, "CLI_DEMO_TURN_LIMIT", 0)
     if cli_demo_limit > 0:
         client_ip = request.headers.get('X-Forwarded-For', request.remote_addr or '').split(',')[0].strip()
-        ip_hash = hashlib.md5(client_ip.encode()).hexdigest()[:16]
+        ip_hash = hashlib.sha256(client_ip.encode()).hexdigest()[:16]
         ip_key = f"cli_ip_{ip_hash}"
         step_key = f"cli_step_{ip_hash}"
         if (not tool_results and db.get_todays_prompt_count(ip_key) >= cli_demo_limit) or (

@@ -23,8 +23,10 @@ from ..core import totp as totp_lib
 
 auth_bp = Blueprint('auth', __name__)
 
-_DUMMY_PASSWORD_HASH = "pbkdf2:sha256$bugGYOUtECOdeqFragMEnts$"
-"120000$4f4e8b2a1c9d0e3f5a6b7c8d9e0f1a2b3c4d4e5f60718293a4b5c6d7e8f9012"
+_DUMMY_PASSWORD_HASH = (
+    "pbkdf2:sha256:600000$hoc9W551n0cb6hOE$"
+    "cd991ab88e42a094d8ca5c1e41f3d828a6aa8c986ff265746f9fa4b5d95f8861"
+)
 
 
 _MFA_TOKEN_TTL_SECONDS = 300
@@ -35,6 +37,11 @@ _MFA_ATTEMPT_WINDOW = 300
 
 
 def _mfa_rate_limited(user_id):
+    from ..persistence import rate_limit_store
+    bucket = f"mfa:{user_id}"
+    db_result = rate_limit_store.is_rate_limited(bucket, _MFA_MAX_ATTEMPTS, _MFA_ATTEMPT_WINDOW)
+    if db_result is not None:
+        return db_result
     import time as _time
     now = _time.time()
     attempts = [t for t in _mfa_attempts.get(user_id, []) if now - t < _MFA_ATTEMPT_WINDOW]
@@ -43,8 +50,30 @@ def _mfa_rate_limited(user_id):
 
 
 def _mfa_record_attempt(user_id):
+    from ..persistence import rate_limit_store
+    bucket = f"mfa:{user_id}"
+    if rate_limit_store.record_attempt(bucket, _MFA_ATTEMPT_WINDOW):
+        return
     import time as _time
     _mfa_attempts.setdefault(user_id, []).append(_time.time())
+
+
+def _mfa_clear_attempts(user_id):
+    from ..persistence import rate_limit_store
+    rate_limit_store.clear_attempts(f"mfa:{user_id}")
+    _mfa_attempts.pop(user_id, None)
+
+
+_MAX_INVITE_EXPIRES_DAYS = 30
+
+
+def _signing_key(purpose: str) -> str:
+    import hmac
+    return hmac.new(
+        str(Config.SECRET_KEY).encode("utf-8"),
+        f"safi:jwt:{purpose}".encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
 
 
 def _issue_mfa_token(user_id):
@@ -53,13 +82,13 @@ def _issue_mfa_token(user_id):
         "type": "mfa_pending",
         "exp": datetime.utcnow() + timedelta(seconds=_MFA_TOKEN_TTL_SECONDS),
     }
-    token = jwt.encode(payload, Config.SECRET_KEY, algorithm="HS256")
+    token = jwt.encode(payload, _signing_key("mfa_pending"), algorithm="HS256")
     return token.decode("utf-8") if isinstance(token, bytes) else token
 
 
 def _verify_mfa_token(token):
     try:
-        payload = jwt.decode(token, Config.SECRET_KEY, algorithms=["HS256"])
+        payload = jwt.decode(token, _signing_key("mfa_pending"), algorithms=["HS256"])
         if payload.get("type") != "mfa_pending":
             return None
         return payload.get("sub")
@@ -68,19 +97,20 @@ def _verify_mfa_token(token):
 
 
 def issue_invite_claim_token(invite_id, email, expires_days):
+    capped_days = min(max(1, int(expires_days)), _MAX_INVITE_EXPIRES_DAYS)
     payload = {
         "sub": invite_id,
         "email": email,
         "type": "invite_claim",
-        "exp": datetime.utcnow() + timedelta(days=expires_days),
+        "exp": datetime.utcnow() + timedelta(days=capped_days),
     }
-    token = jwt.encode(payload, Config.SECRET_KEY, algorithm="HS256")
+    token = jwt.encode(payload, _signing_key("invite_claim"), algorithm="HS256")
     return token.decode("utf-8") if isinstance(token, bytes) else token
 
 
 def verify_invite_claim_token(token):
     try:
-        payload = jwt.decode(token, Config.SECRET_KEY, algorithms=["HS256"])
+        payload = jwt.decode(token, _signing_key("invite_claim"), algorithms=["HS256"])
         if payload.get("type") != "invite_claim":
             return None
         invite_id, email = payload.get("sub"), payload.get("email")
@@ -528,9 +558,8 @@ def login_local():
 
     user = db.get_user_by_identifier(identifier) if (identifier and password) else None
     stored_hash = (user or {}).get('password_hash') or _DUMMY_PASSWORD_HASH
-    valid = bool(identifier and password and user
-                 and user.get('password_hash')
-                 and check_password_hash(stored_hash, password))
+    pw_ok = check_password_hash(stored_hash, password) if (identifier and password) else False
+    valid = bool(user and user.get('password_hash') and pw_ok)
     if not valid:
         current_app.logger.warning(
             "login_failed ip=%s identifier_hash=%s",
@@ -588,8 +617,8 @@ def cli_login():
             return jsonify({"error": "Password login is not enabled on this instance."}), 404
         user = db.get_user_by_identifier(identifier) if (identifier and password) else None
         stored_hash = (user or {}).get('password_hash') or _DUMMY_PASSWORD_HASH
-        valid = bool(identifier and password and user and user.get('password_hash')
-                     and check_password_hash(stored_hash, password))
+        pw_ok = check_password_hash(stored_hash, password) if (identifier and password) else False
+        valid = bool(user and user.get('password_hash') and pw_ok)
         if not valid:
             current_app.logger.warning("cli_login_failed ip=%s", request.remote_addr)
             return jsonify({"error": "Invalid credentials."}), 401
@@ -855,7 +884,7 @@ def login_local_mfa():
                           user_id=user_id, detail={"method": "totp", "phase": "login"})
         return jsonify({"error": "Invalid code."}), 401
 
-    _mfa_attempts.pop(user_id, None)
+    _mfa_clear_attempts(user_id)
     _establish_session(user, idp='local', extra_context={"amr": ["pwd", "otp"], "mfa": True})
     current_app.logger.info(f"Local MFA login: {user.get('email')}")
     return jsonify({"ok": True})
@@ -1000,7 +1029,7 @@ def login_ldap_mfa():
                                                    "idp": "ldap"})
         return jsonify({"error": "Invalid code."}), 401
 
-    _mfa_attempts.pop(user_id, None)
+    _mfa_clear_attempts(user_id)
     _establish_session(user, idp='ldap', extra_context={"amr": ["pwd", "otp"], "mfa": True})
     current_app.logger.info(f"LDAP MFA login: {user.get('email')}")
     return jsonify({"ok": True})
@@ -1609,7 +1638,7 @@ def verify_my_totp():
                           detail={"method": "totp", "phase": "enrollment"})
         return jsonify({"error": "Invalid code."}), 401
 
-    _mfa_attempts.pop(user_id, None)
+    _mfa_clear_attempts(user_id)
     user = db.get_user_details(user_id) or {}
     if not state['enabled']:
         db.enable_user_totp(user_id, f"user:{user_id}", org_id=user.get('org_id'))
@@ -1645,6 +1674,7 @@ def disable_my_totp():
         db.log_auth_event('mfa_failed', f"user:{user_id}", user_id=user_id,
                           detail={"method": "totp", "phase": "disable"})
         return jsonify({"error": "Invalid code."}), 401
+    _mfa_clear_attempts(user_id)
     user = db.get_user_details(user_id) or {}
     db.disable_user_totp(user_id, f"user:{user_id}", org_id=user.get('org_id'))
     return jsonify({"ok": True, "totp_enabled": False})

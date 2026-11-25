@@ -39,15 +39,42 @@ def provider_key(server_key: str) -> str:
     return f"{PROVIDER_PREFIX}{server_key}"
 
 
+def _assert_safe_url(url: str) -> None:
+    import ipaddress
+    import socket
+
+    if not url or not isinstance(url, str):
+        raise OAuthConfigError("Blocked unsafe OAuth endpoint URL: empty URL.")
+    parsed = urlparse(url.strip())
+    if parsed.scheme not in ("https", "http"):
+        raise OAuthConfigError(f"Blocked unsafe OAuth endpoint URL scheme: {parsed.scheme!r}")
+    if not parsed.hostname:
+        raise OAuthConfigError("Blocked unsafe OAuth endpoint URL: missing hostname.")
+    if parsed.username or parsed.password:
+        raise OAuthConfigError("Blocked unsafe OAuth endpoint URL: embedded credentials are not allowed.")
+    try:
+        infos = socket.getaddrinfo(parsed.hostname, parsed.port or (443 if parsed.scheme == "https" else 80), proto=socket.IPPROTO_TCP)
+    except socket.gaierror as e:
+        raise OAuthConfigError(f"OAuth endpoint host does not resolve: {e}") from e
+    for info in infos:
+        try:
+            ip = ipaddress.ip_address(info[4][0])
+        except ValueError:
+            raise OAuthConfigError(f"Blocked unparseable OAuth endpoint address: {info[4][0]}")
+        if ip.is_link_local or ip.is_multicast or ip.is_unspecified:
+            raise OAuthConfigError(f"Blocked unsafe OAuth endpoint IP: {ip}")
+
+
 def _get_json(url: str) -> Optional[Dict[str, Any]]:
     try:
+        _assert_safe_url(url)
         resp = requests.get(url, timeout=HTTP_TIMEOUT,
                             headers={"Accept": "application/json", "User-Agent": "SAFi"})
         if resp.status_code != 200:
             return None
         data = resp.json()
         return data if isinstance(data, dict) else None
-    except (requests.RequestException, ValueError):
+    except (requests.RequestException, ValueError, OAuthConfigError):
         return None
 
 
@@ -155,6 +182,7 @@ def ensure_client(server_key: str, definition: Dict[str, Any],
             "${VAR}) in the server's definition."
         )
     try:
+        _assert_safe_url(registration_endpoint)
         resp = requests.post(
             registration_endpoint,
             json={
@@ -208,6 +236,7 @@ def _token_request(discovery: Dict[str, Any], client: Dict[str, str],
     form["resource"] = discovery["resource"]
     if client.get("client_secret"):
         form["client_secret"] = client["client_secret"]
+    _assert_safe_url(discovery["token_endpoint"])
     resp = requests.post(discovery["token_endpoint"], data=form,
                          timeout=HTTP_TIMEOUT,
                          headers={"Accept": "application/json"})
@@ -315,6 +344,7 @@ def revoke_at_server(user_id: str, server_key: str,
         endpoint = discovery.get("revocation_endpoint")
         if not endpoint:
             return False
+        _assert_safe_url(endpoint)
         resp = requests.post(endpoint, data={"token": token}, timeout=10)
         ok = resp.status_code == 200
         if not ok:

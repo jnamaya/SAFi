@@ -10,14 +10,14 @@ if [ -n "$DB_HOST" ] && [ "$DB_HOST" != "localhost" ]; then
     echo "Waiting for MySQL at $DB_HOST..."
     attempts=0
     max_attempts=30
-    until error=$(python - <<EOF 2>&1
-import sys, mysql.connector
+    until error=$(python - <<'EOF' 2>&1
+import os, sys, mysql.connector
 try:
     mysql.connector.connect(
-        host="$DB_HOST",
-        user="${DB_USER:-safi}",
-        password="${DB_PASSWORD}",
-        database="${DB_NAME:-safi}"
+        host=os.environ.get("DB_HOST", ""),
+        user=os.environ.get("DB_USER") or "safi",
+        password=os.environ.get("DB_PASSWORD", ""),
+        database=os.environ.get("DB_NAME") or "safi",
     )
     sys.exit(0)
 except Exception as e:

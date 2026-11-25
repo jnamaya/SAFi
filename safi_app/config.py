@@ -164,7 +164,7 @@ class Config:
 
     SECRET_KEY = os.environ.get("FLASK_SECRET_KEY", "dev-secret-key-should-be-changed")
 
-    BOT_API_SECRET = os.environ.get("SAFI_BOT_API_SECRET", "safi-bot-secret-123")
+    BOT_API_SECRET = os.environ.get("SAFI_BOT_API_SECRET", "")
 
     BOT_EMAIL_DOMAIN = os.environ.get("SAFI_BOT_EMAIL_DOMAIN", "bot.safi.local")
     GATEWAY_EMAIL_DOMAIN = os.environ.get("SAFI_GATEWAY_EMAIL_DOMAIN", "gateway.safi.local")
@@ -468,7 +468,7 @@ class Config:
                   "".join(f"\n  • {e}" for e in errors)
             raise ValueError(msg)
 
-        if cls.BOT_API_SECRET == "safi-bot-secret-123":
-            _log.warning("SAFI_BOT_API_SECRET is using the insecure default value — set it in .env")
+        if cls.BOT_API_SECRET in ("safi-bot-secret-123", "change-me"):
+            _log.warning("SAFI_BOT_API_SECRET is using an insecure placeholder value — set a random secret in .env")
         if cls.APP_ENV != 'production' and cls.SECRET_KEY == "dev-secret-key-should-be-changed":
             _log.warning("FLASK_SECRET_KEY is using the insecure default value")
