@@ -277,7 +277,7 @@ else
     echo "You will be prompted for ${USER}@${HOST}'s password once."
     echo ""
 
-    if command -v ssh-copy-id &>/dev/null; then
+    if command -v ssh-copy-id &>/dev/null && ssh-copy-id -h 2>&1 | grep -q -- '-F'; then
         ssh-copy-id "${SSH_CFG_ARGS[@]}" -o StrictHostKeyChecking=accept-new -i "$PUB_KEY" -p "$PORT" "${USER}@${HOST}"
     else
         # Fallback manual install if ssh-copy-id is unavailable
