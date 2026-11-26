@@ -323,6 +323,10 @@ else:
     console.push_theme(_RichTheme({
         "markdown.code": "bold cyan on default",
         "markdown.code_block": "cyan on default",
+        "markdown.h1": "bold #4ade80",
+        "markdown.h2": "bold #f8fafc",
+        "markdown.h3": "bold #e2e8f0",
+        "markdown.h4": "bold #cbd5e1",
     }))
 
 COLOR_BRAND_600 = _PALETTE["COLOR_BRAND_600"]
