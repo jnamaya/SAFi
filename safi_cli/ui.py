@@ -319,6 +319,11 @@ else:
         "COLOR_PROMPT_CHEVRON": "#38bdf8",
         "COLOR_PROMPT_TEXT": "#f8fafc",
     }
+    from rich.theme import Theme as _RichTheme
+    console.push_theme(_RichTheme({
+        "markdown.code": "bold cyan on default",
+        "markdown.code_block": "cyan on default",
+    }))
 
 COLOR_BRAND_600 = _PALETTE["COLOR_BRAND_600"]
 COLOR_BRAND_500 = _PALETTE["COLOR_BRAND_500"]
@@ -338,7 +343,7 @@ COLOR_PROMPT_AGENT = _PALETTE["COLOR_PROMPT_AGENT"]
 COLOR_PROMPT_CHEVRON = _PALETTE["COLOR_PROMPT_CHEVRON"]
 COLOR_PROMPT_TEXT = _PALETTE["COLOR_PROMPT_TEXT"]
 
-SYNTAX_THEME = "default" if IS_LIGHT_THEME else "ansi_dark"
+SYNTAX_THEME = "ansi_light" if IS_LIGHT_THEME else "ansi_dark"
 
 
 def _syntax(code: str, lexer: str, **kwargs) -> "Syntax":
