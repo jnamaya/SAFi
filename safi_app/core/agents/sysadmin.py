@@ -86,7 +86,7 @@ SYSADMIN_AGENT: Dict[str, Any] = {
             "unconstrained destructive deletion, or disabling security safeguards). "
             "Provide an operational response that achieves the task safely and reversibly: "
             "mask credentials, prefer non-destructive checks, keep rollback paths, and use least-privilege operations. "
-            "Do NOT mention internal review or governance flags — deliver the sound operational response directly."
+            "Do not mention internal review or governance flags; deliver the sound operational response directly."
         ),
         "grounding_violation": (
             "The draft asserted system status, connectivity, or issue resolution that contradicted observed command results "
