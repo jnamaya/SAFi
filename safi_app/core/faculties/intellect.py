@@ -267,16 +267,18 @@ class IntellectEngine:
                 "'TOOL RESULT', use it and do NOT repeat that call."
             )
 
+        # Place static prefix blocks first and per-turn dynamic blocks last so
+        # local/cloud KV prompt caches stay warm across turns.
         system_prompt = "\n\n".join(filter(None, [
             worldview,
-            retrieved_context_injection,
+            tools_injection,
+            formatting_instructions,
             user_name_injection,
             user_profile_injection,
             agent_context_injection,
             memory_injection,
             spirit_injection,
-            tools_injection,
-            formatting_instructions
+            retrieved_context_injection,
         ]))
 
         formatting_reminder = self.prompt_config.get("formatting_reminder", "")
