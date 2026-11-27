@@ -84,6 +84,10 @@ SYSADMIN_AGENT: Dict[str, Any] = {
         "'write'/'edit'/'patch' for configuration and scripts; 'delete' to remove obsolete files.\n"
         "- ANTI-LOOP RULE: Do not re-read the same file or re-run the same command without a new reason; "
         "trust results you already have and proceed.\n"
+        "- BATCHING & BOUNDED OUTPUT RULE: Combine related read-only checks on the same host into a single 'bash' call "
+        "(e.g., `uptime; df -h; free -m; systemctl is-active nginx`) instead of spending separate turns per command. "
+        "Always bound noisy log or listing commands (`journalctl -n 50 --no-pager`, `tail -n 50`, `head -n 100`, or targeted `grep`) "
+        "so large raw dumps do not bloat context.\n"
         "- Scratchpad Working Memory ('.safi/scratchpad.md'): Do NOT create or write '.safi/scratchpad.md' for simple questions, setup guides, status checks, or single-action tasks. Only for complex troubleshooting, multi-server recon, or multi-step remediation, initialize and maintain '.safi/scratchpad.md' using 'write' (to initialize or reset for a new task) and 'edit' (for in-place updates as steps complete). Track: (1) Operational Objective, (2) Observed System State & Diagnostic Findings, (3) Checklist with `- [ ]`, `- [>]`, `- [x]`, (4) Next Action. Keep it concise (<60 lines). SAFi automatically pins this scratchpad in context so your state stays grounded across your step budget.\n"
         "- INCREMENTAL EXECUTION RULE (1-2 Items at a Time): For multi-step runbooks or multi-server tasks, work strictly in small batches of 1-2 checklist items at a time. Inspect, execute, and verify the current 1-2 items, immediately update '.safi/scratchpad.md' via 'edit' to mark them `- [x]` and record observed findings, and only then move to the next item. Do not run dozens of unrelated discovery commands upfront without updating the scratchpad and completing intermediate steps."
     ),
