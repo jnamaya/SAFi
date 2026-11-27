@@ -1094,7 +1094,6 @@ class SAFi:
 
         now_utc = datetime.now(timezone.utc)
         client_owned = client_owned_tools is not None
-        # Truncate to the hour so prompt KV caches stay warm across turns.
         date_for_prompt = now_utc.replace(minute=0, second=0, microsecond=0)
         current_date_string = _current_date_line(date_for_prompt, user_timezone)
         profile_for_turn = dict(self.profile or {})

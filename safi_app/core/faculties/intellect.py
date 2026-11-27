@@ -267,8 +267,6 @@ class IntellectEngine:
                 "'TOOL RESULT', use it and do NOT repeat that call."
             )
 
-        # Place static prefix blocks first and per-turn dynamic blocks last so
-        # local/cloud KV prompt caches stay warm across turns.
         system_prompt = "\n\n".join(filter(None, [
             worldview,
             tools_injection,
