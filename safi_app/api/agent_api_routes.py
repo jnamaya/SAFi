@@ -305,13 +305,12 @@ def list_all_agents():
         raw_key = raw_key.strip()
         if raw_key:
             try:
-                policy_id = db.get_policy_id_by_api_key(raw_key)
+                from ._api_key_auth import resolve_api_key_identity
+                policy_id, key_uid, key_org, key_role = resolve_api_key_identity(raw_key)
                 if policy_id:
-                    policy = db.get_policy(policy_id)
-                    if policy:
-                        org_id = policy.get("org_id")
-                        user_id = policy.get("created_by")
-                        user_role = ROLE_CONFIG["default_role"]
+                    org_id = key_org
+                    user_id = key_uid
+                    user_role = key_role or ROLE_CONFIG["default_role"]
             except Exception as e:
                 current_app.logger.warning(f"Error resolving policy from API key in list_all_agents: {e}")
 
