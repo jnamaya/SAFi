@@ -54,6 +54,9 @@ def _open_browser_url(url: str) -> None:
                     return
             except Exception:
                 continue
+        parsed_url = urlparse(url)
+        if parsed_url.scheme not in ("http", "https") or any(ch in url for ch in ('|', '<', '>', '^', '\r', '\n', '"')):
+            return
         safe_cmd_url = url.replace("&", "^&")
         for cmd_bin in ("cmd.exe", "/mnt/c/Windows/System32/cmd.exe"):
             try:
@@ -144,9 +147,41 @@ class SafiClient:
             logger.debug("Could not fetch peer cert from %s: %s", self.api_url, exc)
         return None
 
+    def _pem_sha256(self, pem: str) -> str:
+        import hashlib
+        try:
+            der = ssl.PEM_cert_to_DER_cert(pem)
+            return hashlib.sha256(der).hexdigest()
+        except Exception:
+            return hashlib.sha256(pem.encode("utf-8", errors="ignore")).hexdigest()
+
     def _allow_cert_refresh(self) -> bool:
-        val = os.environ.get("SAFI_TRUST_ON_REINSTALL", "1")
-        return val.strip().lower() not in ("0", "false", "no", "off")
+        import sys
+        val = os.environ.get("SAFI_TRUST_ON_REINSTALL", "0").strip().lower()
+        if val in ("1", "true", "yes", "on"):
+            return True
+        if not sys.stdin.isatty():
+            return False
+        new_pem = self._fetch_peer_cert()
+        if not new_pem:
+            return False
+        new_fp = self._pem_sha256(new_pem)
+        old_fp = None
+        if self.default_ca.exists():
+            try:
+                old_fp = self._pem_sha256(self.default_ca.read_text(encoding="ascii"))
+            except Exception:
+                old_fp = None
+        host = urlparse(self.api_url).hostname or self.api_url
+        print(f"\nWARNING: TLS certificate for {host} changed.", file=sys.stderr)
+        if old_fp:
+            print(f"  Saved SHA-256: {old_fp}", file=sys.stderr)
+        print(f"  New   SHA-256: {new_fp}", file=sys.stderr)
+        try:
+            ans = input("Trust and overwrite saved certificate? [y/N]: ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            return False
+        return ans in ("y", "yes")
 
     def _host_validates_with_system_ca(self) -> Optional[Any]:
         try:
