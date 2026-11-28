@@ -1,6 +1,7 @@
 import json
 import os
 import logging
+import secrets
 from dotenv import load_dotenv
 from typing import List
 
@@ -162,7 +163,9 @@ class Config:
 
     PREFERRED_URL_SCHEME = 'https'
 
-    SECRET_KEY = os.environ.get("FLASK_SECRET_KEY", "dev-secret-key-should-be-changed")
+    _env_secret_key = os.environ.get("FLASK_SECRET_KEY", "").strip()
+    SECRET_KEY_CONFIGURED = bool(_env_secret_key)
+    SECRET_KEY = _env_secret_key or secrets.token_hex(32)
 
     BOT_API_SECRET = os.environ.get("SAFI_BOT_API_SECRET", "")
 
@@ -429,7 +432,7 @@ class Config:
             )
 
         if cls.APP_ENV == 'production':
-            if cls.SECRET_KEY == "dev-secret-key-should-be-changed":
+            if not cls.SECRET_KEY_CONFIGURED:
                 errors.append("FLASK_SECRET_KEY must be set to a strong random value in production")
             if not cls.DB_PASSWORD:
                 errors.append("DB_PASSWORD is required")
@@ -470,5 +473,5 @@ class Config:
 
         if cls.BOT_API_SECRET in ("safi-bot-secret-123", "change-me"):
             _log.warning("SAFI_BOT_API_SECRET is using an insecure placeholder value — set a random secret in .env")
-        if cls.APP_ENV != 'production' and cls.SECRET_KEY == "dev-secret-key-should-be-changed":
-            _log.warning("FLASK_SECRET_KEY is using the insecure default value")
+        if cls.APP_ENV != 'production' and not cls.SECRET_KEY_CONFIGURED:
+            _log.warning("FLASK_SECRET_KEY is not set; using an ephemeral per-process key")
