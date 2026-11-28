@@ -35,11 +35,16 @@ def resolve_api_key_identity(
         cursor.close()
         conn.close()
 
+    policy = db.get_policy(policy_id) or {}
     if isinstance(label, str) and label.startswith("safi-cli:"):
         cli_uid = label.split(":", 1)[1].strip()
         if cli_uid:
             u_det = db.get_user_details(cli_uid)
-            if u_det:
+            is_shared_policy = bool(
+                policy.get("is_demo")
+                or str(policy_id).startswith(("prod_", "demo_"))
+            )
+            if u_det and (is_shared_policy or u_det.get("org_id") == policy.get("org_id")):
                 return (
                     policy_id,
                     u_det.get("id"),
@@ -47,7 +52,6 @@ def resolve_api_key_identity(
                     u_det.get("role"),
                 )
 
-    policy = db.get_policy(policy_id) or {}
     owner_id = policy.get("created_by")
     owner_role = None
     if owner_id:

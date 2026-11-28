@@ -257,11 +257,13 @@ def create_app():
             return None
 
         allowed = {o.rstrip('/').lower() for o in (Config.ALLOWED_ORIGINS or []) if o}
-        if request.host:
+        base_url = (Config.WEB_BASE_URL or "").rstrip('/').lower()
+        if base_url:
+            allowed.add(base_url)
+        req_host_only = (request.host or "").split(":", 1)[0].lower()
+        if request.host and (not base_url or req_host_only in ("localhost", "127.0.0.1")):
             allowed.add(f"https://{request.host}".lower())
             allowed.add(f"http://{request.host}".lower())
-        if Config.WEB_BASE_URL:
-            allowed.add(Config.WEB_BASE_URL.rstrip('/').lower())
 
         origin = (request.headers.get('Origin') or '').strip()
         if origin:

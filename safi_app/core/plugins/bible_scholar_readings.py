@@ -128,6 +128,8 @@ async def _fetch_usccb_rss(log: logging.Logger, target_date=None) -> Optional[Di
         resp = await client.get(_USCCB_RSS_URL, headers=headers, follow_redirects=True)
         resp.raise_for_status()
 
+    if re.search(r"<!\s*(?:DOCTYPE|ENTITY)\b", resp.text, re.IGNORECASE):
+        raise ValueError("Unsafe XML construct rejected in RSS feed")
     root = ET.fromstring(resp.text)
     now = datetime.now(_USCCB_TZ)
     day = target_date or now.date()
