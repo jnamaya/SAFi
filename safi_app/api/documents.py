@@ -56,9 +56,13 @@ def extract_document_text():
             max_chars=Config.MAX_DOCUMENT_CHARS
         )
 
+        import os as _os
+        import re as _re
+        safe_filename = _re.sub(r'[\x00-\x1f\x7f<>"\'\\]+', '_', _os.path.basename(file.filename)).strip()[:255] or "document"
+
         truncated = total_chars > Config.MAX_DOCUMENT_CHARS
         current_app.logger.info(
-            f"Document extracted: {file.filename} | "
+            f"Document extracted: {safe_filename} | "
             f"{total_chars:,} chars | sha256:{digest[:12]} | User: {user_id}"
         )
 
@@ -66,7 +70,7 @@ def extract_document_text():
             org_id = get_current_org_id()
             if org_id:
                 db.append_compliance_log(org_id, 'chat_document_attached', f"user:{user_id}", {
-                    "filename": file.filename,
+                    "filename": safe_filename,
                     "sha256": digest,
                     "bytes": size_bytes,
                     "chars": total_chars,

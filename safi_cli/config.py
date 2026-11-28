@@ -248,6 +248,12 @@ def save_agent_api_key(agent: str, key: str) -> None:
     cfg["agent_keys"] = agent_keys
     cfg.pop("api_key", None)
     save_config(cfg)
+    import sys as _sys
+    print(
+        f"Warning: OS keyring unavailable; storing API key in {CONFIG_FILE} (mode 0600). "
+        "For headless hosts, prefer setting SAFI_API_KEY in your environment.",
+        file=_sys.stderr,
+    )
 
 
 def list_configured_agent_keys() -> Dict[str, str]:

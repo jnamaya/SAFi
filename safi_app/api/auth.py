@@ -599,14 +599,16 @@ def cli_login():
     from werkzeug.security import check_password_hash
     from .keys import per_minute_allowed as _pm_allowed
 
-    if not _pm_allowed("cli-login:ip:{}".format(request.remote_addr or "-")):
-        return jsonify({"error": "Too many attempts. Try again shortly."}), 429
-
     data       = request.get_json(silent=True) or {}
     identifier = (data.get('identifier') or '').strip()
     password   = data.get('password') or ''
     totp_code  = (data.get('totp_code') or '').strip()
     use_ldap   = bool(data.get('ldap') or '\\' in identifier or data.get('idp') == 'ldap')
+
+    if not _pm_allowed("cli-login:ip:{}".format(request.remote_addr or "-")) or (
+            identifier and not _pm_allowed("cli-login:id:{}".format(identifier.lower()))):
+        current_app.logger.warning("cli_login_throttled ip=%s", request.remote_addr)
+        return jsonify({"error": "Too many attempts. Try again shortly."}), 429
 
     user = None
     if use_ldap and Config.ldap_configured():

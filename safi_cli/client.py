@@ -100,6 +100,16 @@ class SafiClient:
         self.user_id = (user_id or "").strip() or None
         self.endpoint = f"{self.api_url}/api/agentic/process_prompt"
 
+        if self.api_key and self.api_url.lower().startswith("http://"):
+            _host = (urlparse(self.api_url).hostname or "").lower()
+            if _host not in ("localhost", "127.0.0.1", "::1"):
+                import sys as _sys
+                logger.warning("Sending API key over unencrypted HTTP to %s", self.api_url)
+                print(
+                    f"Warning: Sending SAFi API key over unencrypted HTTP ({self.api_url}). Use https:// in production.",
+                    file=_sys.stderr,
+                )
+
         self.session = requests.Session()
         try:
             from . import __version__ as _cli_version
