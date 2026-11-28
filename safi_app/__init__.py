@@ -80,7 +80,7 @@ def create_app():
         or Config.CLOUD_EDITION
     )
     _secret = str(app.config.get("SECRET_KEY") or "").strip()
-    if _is_prod and not _is_test and (not _secret or _secret == "dev-secret-key-should-be-changed"):
+    if _is_prod and not _is_test and (not _secret or not getattr(Config, "SECRET_KEY_CONFIGURED", True)):
         raise RuntimeError(
             "FLASK_SECRET_KEY must be set to a strong non-default value in production."
         )
