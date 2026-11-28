@@ -11,7 +11,9 @@ gates before any command or response is permitted to execute.
 
 from __future__ import annotations
 import json
+import posixpath
 import re
+import shlex
 from typing import List, Dict, Any, Tuple, Optional
 import logging
 from .utils import _norm_label
@@ -22,6 +24,134 @@ from ... import security_policy
 ALLOWED_GATE_REASONS: frozenset = frozenset(
     {"scope_violation", "grounding_violation", "ethical_violation"}
 )
+
+_DESTRUCTIVE_PATH_EXES: frozenset = frozenset({"rm", "unlink", "shred", "truncate"})
+_WRAPPER_EXES: frozenset = frozenset({"env", "command", "nohup", "nice", "timeout", "xargs"})
+
+_FORBIDDEN_SHELL_REGEXES: Tuple[re.Pattern, ...] = (
+    re.compile(
+        r"\b(?:curl|wget|fetch|lynx|lwp-download)\b[^;\n]*\|\s*(?:(?:env|sudo|command)\s+)*(?:ba|da|z|k|c|tc|fi)?sh\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:ba|da|z|k|c|tc|fi)?sh\b[^;\n]*<\(\s*(?:curl|wget|fetch)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\bchmod\b(?:\s+-[a-zA-Z-]+)*\s+(?:0?777|a\+rwx)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\bdd\s+(?:[^\s;&|]*\s+)*if=", re.IGNORECASE),
+    re.compile(r"(?:^|[\s;&|(/])mkfs(?:\.[a-z0-9]+)?\b", re.IGNORECASE),
+    re.compile(r":\s*\(\s*\)\s*\{"),
+)
+
+
+def _split_shell_commands(cmd: str) -> List[List[str]]:
+    commands: List[List[str]] = []
+    try:
+        lexer = shlex.shlex(cmd, posix=True, punctuation_chars=True)
+        current: List[str] = []
+        for t in lexer:
+            if t in ("|", "&&", "||", ";", "&", "\n"):
+                if current:
+                    commands.append(current)
+                    current = []
+            else:
+                current.append(t)
+        if current:
+            commands.append(current)
+    except Exception:
+        for seg in re.split(r"(?:\s*(?:&&|\|\||[;\n|])\s*)", cmd):
+            seg_clean = seg.strip()
+            if not seg_clean:
+                continue
+            try:
+                cmd_tokens = shlex.split(seg_clean)
+            except Exception:
+                cmd_tokens = seg_clean.split()
+            if cmd_tokens:
+                commands.append(cmd_tokens)
+    return commands
+
+
+def _is_protected_path_target(raw_arg: str, protected_root_dirs: List[str]) -> bool:
+    arg = str(raw_arg or "").strip().strip("'\"")
+    if not arg:
+        return False
+    allow_root = False
+    named_dirs = set()
+    for d in protected_root_dirs:
+        raw = str(d or "").strip()
+        stripped = raw.strip("/").lower()
+        if raw == "/" and not stripped:
+            allow_root = True
+        elif stripped:
+            named_dirs.add(stripped)
+
+    cleaned = re.sub(r"[*?]+$", "", arg).rstrip("/") or ("/" if arg.startswith("/") else "")
+    if cleaned.startswith("/"):
+        norm = posixpath.normpath(cleaned)
+        if norm == "/":
+            return allow_root
+        parts = [p for p in norm.split("/") if p]
+        if not parts:
+            return allow_root
+        top = parts[0].lower()
+        if top in named_dirs:
+            if top == "home":
+                return len(parts) <= 2
+            return True
+        return False
+
+    raw_parts = [p for p in cleaned.split("/") if p and p != "."]
+    if ".." in raw_parts:
+        i = 0
+        while i < len(raw_parts) and raw_parts[i] == "..":
+            i += 1
+        rem = raw_parts[i:]
+        if not rem:
+            return allow_root and i >= 2
+        top = rem[0].lower()
+        if top in named_dirs:
+            if top == "home":
+                return len(rem) <= 2
+            return True
+    return False
+
+
+def _has_protected_destructive_target(cmd_lower: str, protected_root_dirs: List[str]) -> bool:
+    if not protected_root_dirs:
+        return False
+    for tokens in _split_shell_commands(cmd_lower):
+        idx = 0
+        while idx < len(tokens):
+            tok = tokens[idx]
+            if "=" in tok and not tok.startswith("-") and "/" not in tok.split("=", 1)[0]:
+                idx += 1
+                continue
+            exe = tok.split("/")[-1]
+            if exe in _WRAPPER_EXES:
+                idx += 1
+                while idx < len(tokens) and (tokens[idx].startswith("-") or (exe == "timeout" and re.fullmatch(r"\d+[smhd]?", tokens[idx]))):
+                    idx += 1
+                continue
+            break
+        if idx >= len(tokens):
+            continue
+        exe = tokens[idx].split("/")[-1]
+        if exe not in _DESTRUCTIVE_PATH_EXES:
+            continue
+        after_double_dash = False
+        for arg in tokens[idx + 1:]:
+            if not after_double_dash and arg == "--":
+                after_double_dash = True
+                continue
+            if not after_double_dash and arg.startswith("-"):
+                continue
+            if _is_protected_path_target(arg, protected_root_dirs):
+                return True
+    return False
 
 
 def _build_protected_rm_regex(protected_root_dirs: List[str]) -> Optional[re.Pattern]:
@@ -68,6 +198,10 @@ def _has_forbidden_destructive_payload(
 ) -> bool:
     if any(str(f).lower() in cmd_lower for f in (forbidden_shell_patterns or []) if f):
         return True
+    if any(rx.search(cmd_lower) for rx in _FORBIDDEN_SHELL_REGEXES):
+        return True
+    if _has_protected_destructive_target(cmd_lower, protected_root_dirs):
+        return True
     rm_re = _build_protected_rm_regex(protected_root_dirs)
     return bool(rm_re and rm_re.search(cmd_lower))
 
@@ -99,12 +233,11 @@ class WillGate:
             if struct.get("require_disclaimer"):
                 expected = (struct.get("mandatory_disclaimer_substring") or "").strip()
                 if not expected:
-
-
-                    self.log.warning(
+                    self.log.error(
                         "WillGate: require_disclaimer is set but "
-                        "mandatory_disclaimer_substring is empty — skipping disclaimer check."
+                        "mandatory_disclaimer_substring is empty — failing closed."
                     )
+                    return False, "missing_disclaimer"
                 elif expected not in draft_output:
                     return False, "missing_disclaimer"
             

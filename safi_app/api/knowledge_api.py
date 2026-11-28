@@ -300,15 +300,19 @@ def upload_document(kb_id):
     if not (text or '').strip():
         return jsonify({"error": "No readable text found in that document."}), 400
 
+    import os as _os
+    import re as _re
+    safe_filename = _re.sub(r'[\x00-\x1f\x7f<>"\'\\]+', '_', _os.path.basename(file.filename)).strip()[:255] or "document"
+
     status = 'pending' if kb.get('visibility') in SHARED_VISIBILITIES else 'private'
     doc = db.add_knowledge_base_document(
-        kb_id=kb_id, filename=file.filename, text=text,
+        kb_id=kb_id, filename=safe_filename, text=text,
         uploaded_by=user_id, size_bytes=size_bytes, status=status)
 
     if kb.get('org_id'):
         db.append_compliance_log(
             kb['org_id'], 'kb_document_uploaded', f'user:{user_id}',
-            {"kb_id": kb_id, "document_id": doc["id"], "filename": file.filename,
+            {"kb_id": kb_id, "document_id": doc["id"], "filename": safe_filename,
              "sha256": doc.get("sha256"), "char_count": total_chars, "status": status})
 
     enqueue_rebuild(kb_id)
