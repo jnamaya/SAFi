@@ -653,12 +653,26 @@ def cli_login():
 _CLI_SSO_TTL_SECONDS = 300
 
 
+def _cli_sso_dir():
+    import stat
+    import tempfile
+    uid = os.getuid() if hasattr(os, "getuid") else 0
+    sso_dir = os.path.join(tempfile.gettempdir(), f"safi_cli_sso_{uid}")
+    os.makedirs(sso_dir, mode=0o700, exist_ok=True)
+    st = os.lstat(sso_dir)
+    if not stat.S_ISDIR(st.st_mode) or stat.S_ISLNK(st.st_mode):
+        raise OSError("Invalid CLI SSO directory")
+    if hasattr(os, "getuid") and st.st_uid != uid:
+        raise PermissionError("CLI SSO directory is not owned by the current user")
+    os.chmod(sso_dir, 0o700)
+    return sso_dir
+
+
 def _cli_sso_file(device_code: str):
     import re
-    import tempfile
     if not device_code or not re.fullmatch(r"[A-Za-z0-9_-]{16,64}", device_code):
         return None
-    return os.path.join(tempfile.gettempdir(), f"safi_cli_sso_{device_code}.json")
+    return os.path.join(_cli_sso_dir(), f"{device_code}.json")
 
 
 def _cli_sso_load(device_code: str):
@@ -667,7 +681,9 @@ def _cli_sso_load(device_code: str):
     if not path or not os.path.exists(path):
         return None
     try:
-        with open(path, "r", encoding="utf-8") as fh:
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(path, flags)
+        with os.fdopen(fd, "r", encoding="utf-8") as fh:
             rec = json.load(fh)
         if time.time() - float(rec.get("created_at", 0)) > _CLI_SSO_TTL_SECONDS:
             try:
@@ -684,7 +700,8 @@ def _cli_sso_save(device_code: str, rec: dict) -> None:
     path = _cli_sso_file(device_code)
     if not path:
         return
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(path, flags, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         json.dump(rec, fh)
 
