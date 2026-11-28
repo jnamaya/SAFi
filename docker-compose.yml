@@ -32,6 +32,10 @@ services:
     # that changes on every `up` silently invalidates saved tokens, sending the
     # operator back through an OAuth flow after each rebuild.
     hostname: safi-app
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     ports:
       - "${APP_PORT:-5000}:5000"
     env_file: .env
