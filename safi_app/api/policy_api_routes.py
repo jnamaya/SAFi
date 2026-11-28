@@ -165,6 +165,13 @@ def validate_policy_data(data):
 
     if 'will_rules' in data and not isinstance(data['will_rules'], (list, dict)):
         errors.append("will_rules must be a list or dict.")
+    elif isinstance(data.get('will_rules'), dict) and not check_permission('admin'):
+        privileged_keys = {
+            "allow_sudo", "forbidden_paths", "forbidden_executables",
+            "forbidden_shell_patterns", "protected_root_dirs", "max_tool_risk_class",
+        }
+        if privileged_keys.intersection(data['will_rules'].keys()):
+            errors.append("Only organization admins may modify privileged tool risk rules.")
 
     if errors: return False, "; ".join(errors)
     return True, None

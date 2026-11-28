@@ -151,6 +151,15 @@ def save_agent():
                 blocked = set(pending_additions)
                 tools_to_save = [t for t in requested_tools if t not in blocked]
 
+        raw_rules = data.get('will_rules') or data.get('rules', [])
+        if isinstance(raw_rules, dict) and not check_permission('admin'):
+            privileged_keys = {
+                "allow_sudo", "forbidden_paths", "forbidden_executables",
+                "forbidden_shell_patterns", "protected_root_dirs", "max_tool_risk_class",
+            }
+            if privileged_keys.intersection(raw_rules.keys()):
+                return jsonify({"error": "Only organization admins may modify privileged tool risk rules."}), 403
+
         if request.method == 'POST':
             if existing: return jsonify({"error": "Agent exists"}), 409
             if not governed: return jsonify({"error": UNGOVERNED_MSG}), 400

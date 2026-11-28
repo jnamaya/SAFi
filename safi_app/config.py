@@ -7,7 +7,7 @@ from typing import List
 project_root = os.path.join(os.path.dirname(__file__), '..')
 dotenv_path = os.path.join(project_root, '.env')
 
-load_dotenv(dotenv_path=dotenv_path, override=True)
+load_dotenv(dotenv_path=dotenv_path, override=False)
 
 _FACULTY_DEFAULTS_BY_PROVIDER = {
     "groq":      {"intellect": "openai/gpt-oss-20b",        "conscience": "openai/gpt-oss-120b",       "light": "openai/gpt-oss-20b"},
