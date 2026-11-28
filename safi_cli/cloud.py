@@ -45,11 +45,19 @@ def load_cloud_config() -> Dict[str, Any]:
 
 def save_cloud_config(config: Dict[str, Any]) -> None:
     ensure_cloud_config_dir()
-    CLOUD_CONFIG_FILE.write_text(json.dumps(config, indent=2), encoding="utf-8")
+    payload = json.dumps(config, indent=2)
+    tmp_path = CLOUD_CONFIG_FILE.with_suffix(".json.tmp")
+    fd = os.open(str(tmp_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     try:
-        os.chmod(CLOUD_CONFIG_FILE, 0o600)
-    except OSError:
-        pass
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(payload)
+        os.replace(tmp_path, CLOUD_CONFIG_FILE)
+    except Exception:
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
 
 
 def get_tenant_config(tenant_alias: Optional[str] = None) -> Optional[Dict[str, Any]]:
