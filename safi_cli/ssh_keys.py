@@ -3,6 +3,8 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
+import shlex
 import shutil
 import socket
 import subprocess
@@ -103,6 +105,11 @@ def ensure_local_ssh_key() -> str:
     key_content = pub_path.read_text(encoding="utf-8").strip()
     if not key_content:
         raise ValueError(f"Public key at {pub_path} is empty.")
+    if not re.match(
+        r"^(ssh-(ed25519|rsa)|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh\.com) [A-Za-z0-9+/=]+(?:\s+[^\r\n'\"`;|&$]+)?$",
+        key_content,
+    ):
+        raise ValueError(f"Public key at {pub_path} has an invalid or unsafe format.")
     return key_content
 
 
@@ -274,9 +281,10 @@ def deploy_key_native(
             ]
             ret = subprocess.call(copy_cmd, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr)
         else:
+            quoted_key = shlex.quote(key_content)
             remote_sh = (
                 f"mkdir -p ~/.ssh && chmod 700 ~/.ssh && "
-                f"(grep -qF '{key_content}' ~/.ssh/authorized_keys 2>/dev/null || echo '{key_content}' >> ~/.ssh/authorized_keys) && "
+                f"(grep -qF -- {quoted_key} ~/.ssh/authorized_keys 2>/dev/null || printf '%s\\n' {quoted_key} >> ~/.ssh/authorized_keys) && "
                 f"chmod 600 ~/.ssh/authorized_keys"
             )
             fallback_cmd = [
