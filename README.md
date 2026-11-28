@@ -5,7 +5,7 @@
 [![Demo](https://img.shields.io/badge/Live%20Demo-Try%20It-brightgreen)](https://safi.selfalignmentframework.com)
 [![Hardware Appliance](https://img.shields.io/badge/Hardware%20Appliance-runsafi.com-16a34a)](https://runsafi.com)
 
-> SAFi is an open source governance gateway for AI agents. It lets you enforce your policies in real time, govern tool calls, and maintain an audit trail of every agent's action.
+> SAFi is an open source governance gateway for AI agents. It lets you enforce your policies in real time, govern tool calls, and maintain an audit trail of what every agent does. 
 
 <p align="center">
   <a href="https://runsafi.com/assets/saficli_demo.mp4" title="Watch full HD terminal demo">
@@ -40,7 +40,7 @@
 
 ## Client-Server Architecture
 
-Unlike standalone terminal agents where API keys, rules, and logs live unmanaged on individual laptops, **SAFi separates the workstation client from the central governance gateway**:
+If you are an IT professional, think of SAFi as a **domain controller** for AI agents: a central server that holds your accounts, groups, and policies and applies them to every agent running across your machines. The agents run as thin clients in your terminal (sandboxed with Linux `bubblewrap` on Linux and WSL), executing only what the server allows. By default, agents are confined to their project workspace; only the Sysadmin agent is granted read-only inspection access to the broader host.
 
 ```text
 [ Workstation: safi-cli ] ──HTTPS──▶ [ SAFi Governance Gateway (Server / Appliance) ] ──▶ [ Local / Cloud Models ]
