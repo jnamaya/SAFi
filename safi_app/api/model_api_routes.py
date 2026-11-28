@@ -67,7 +67,7 @@ def list_models():
             return jsonify({"error": "Unauthorized"}), 401
 
     x_user_id = request.headers.get("X-User-ID")
-    if x_user_id and user_role == "admin" and org_id:
+    if x_user_id and user and user_role == "admin" and org_id:
         u_det = db.get_user_details(x_user_id)
         if u_det and u_det.get("org_id") == org_id:
             user_id = u_det["id"]

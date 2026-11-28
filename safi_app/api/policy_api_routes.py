@@ -683,6 +683,7 @@ def generate_key(policy_id):
         return jsonify({"error": "An internal error occurred."}), 500
 
 @policy_api_bp.route('/policies/<policy_id>/keys', methods=['GET'], strict_slashes=False)
+@require_role('editor')
 def list_keys(policy_id):
     try:
         _policy, err = _load_policy_for_write(policy_id)
