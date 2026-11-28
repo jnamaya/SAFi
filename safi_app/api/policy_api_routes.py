@@ -666,7 +666,9 @@ def generate_key(policy_id):
         _policy, err = _load_policy_for_write(policy_id)
         if err: return err
         data = request.get_json(force=True, silent=True) or {}
-        label = data.get("label", "Default Key")
+        label = str(data.get("label", "Default Key") or "Default Key").strip()
+        if label.lower().startswith("safi-cli:"):
+            return jsonify({"error": "Reserved key label prefix."}), 400
         raw_key = db.create_api_key(policy_id, label)
         return jsonify({"ok": True, "api_key": raw_key}), 201
     except Exception as e:

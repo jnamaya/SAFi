@@ -114,10 +114,17 @@ def download_local_model():
             + (['--activate'] if activate else []),
             capture_output=True, text=True, timeout=15, check=False)
     except (OSError, subprocess.TimeoutExpired) as exc:
-        return jsonify({'error': f'Local model management is unavailable: {exc}'}), 503
+        current_app.logger.warning("Local model management unavailable for %s: %s", model_id, exc)
+        return jsonify({'error': 'Local model management is unavailable.'}), 503
     if result.returncode:
+        current_app.logger.warning(
+            "safi-model-manage failed for %s (rc=%s): %s",
+            model_id,
+            result.returncode,
+            (result.stderr or result.stdout or "").strip()[:500],
+        )
         fallback = 'Unable to load model.' if activate else 'Unable to start local model download.'
-        return jsonify({'error': result.stderr.strip() or result.stdout.strip() or fallback}), 409
+        return jsonify({'error': fallback}), 409
     return jsonify({'ok': True})
 
 
