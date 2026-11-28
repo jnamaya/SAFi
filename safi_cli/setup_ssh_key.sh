@@ -280,9 +280,12 @@ else
     if command -v ssh-copy-id &>/dev/null && ssh-copy-id -h 2>&1 | grep -q -- '-F'; then
         ssh-copy-id "${SSH_CFG_ARGS[@]}" -o StrictHostKeyChecking=accept-new -i "$PUB_KEY" -p "$PORT" "${USER}@${HOST}"
     else
-        # Fallback manual install if ssh-copy-id is unavailable
-        ssh "${SSH_CFG_ARGS[@]}" -o StrictHostKeyChecking=accept-new -p "$PORT" "${USER}@${HOST}" \
-            "mkdir -p ~/.ssh && chmod 700 ~/.ssh && (grep -qF '$KEY_CONTENT' ~/.ssh/authorized_keys 2>/dev/null || echo '$KEY_CONTENT' >> ~/.ssh/authorized_keys) && chmod 600 ~/.ssh/authorized_keys"
+        if [[ ! "$KEY_CONTENT" =~ ^(ssh-(ed25519|rsa)|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh\.com)\ [A-Za-z0-9+/=]+([[:space:]]+[^\'\"\`\;\|&\$\r\n]+)?$ ]]; then
+            echo "Error: public key has an invalid or unsafe format." >&2
+            exit 1
+        fi
+        printf '%s\n' "$KEY_CONTENT" | ssh "${SSH_CFG_ARGS[@]}" -o StrictHostKeyChecking=accept-new -p "$PORT" "${USER}@${HOST}" \
+            'IFS= read -r k && mkdir -p ~/.ssh && chmod 700 ~/.ssh && (grep -qF -- "$k" ~/.ssh/authorized_keys 2>/dev/null || printf "%s\n" "$k" >> ~/.ssh/authorized_keys) && chmod 600 ~/.ssh/authorized_keys'
     fi
 fi
 
