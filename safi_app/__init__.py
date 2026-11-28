@@ -74,6 +74,27 @@ def create_app():
     app.config.setdefault('SESSION_COOKIE_HTTPONLY', True)
     app.config.setdefault('SESSION_COOKIE_SAMESITE', 'Lax')
 
+    _is_prod = (
+        os.environ.get("FLASK_ENV", "").strip().lower() == "production"
+        or Config.CLOUD_EDITION
+    )
+    _secret = str(app.config.get("SECRET_KEY") or "").strip()
+    if _is_prod and (not _secret or _secret == "dev-secret-key-should-be-changed"):
+        raise RuntimeError(
+            "FLASK_SECRET_KEY must be set to a strong non-default value in production."
+        )
+    if not app.config.get("SESSION_COOKIE_SECURE"):
+        app.logger.warning(
+            "SESSION_COOKIE_SECURE is disabled (WEB_BASE_URL=%s); session cookies may be sent over HTTP.",
+            Config.WEB_BASE_URL,
+        )
+    if Config.ldap_configured() and (not Config.LDAP_STARTTLS or not Config.LDAP_TLS_VERIFY):
+        app.logger.warning(
+            "LDAP TLS protection is partially disabled (LDAP_STARTTLS=%s, LDAP_TLS_VERIFY=%s).",
+            Config.LDAP_STARTTLS,
+            Config.LDAP_TLS_VERIFY,
+        )
+
     from .persistence import crypto
     if not crypto.is_enabled():
         logging.getLogger(__name__).warning(

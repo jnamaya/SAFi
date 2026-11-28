@@ -315,15 +315,14 @@ def list_all_agents():
             except Exception as e:
                 current_app.logger.warning(f"Error resolving policy from API key in list_all_agents: {e}")
 
-    x_user_id = request.headers.get("X-User-ID") or request.args.get("user_id")
-    if x_user_id:
+    x_user_id = request.headers.get("X-User-ID")
+    if x_user_id and user_role == "admin" and org_id:
         u_det = db.get_user_details(x_user_id)
         if not u_det:
             u_det = db.get_user_by_identifier(x_user_id)
-        if u_det:
+        if u_det and u_det.get("org_id") == org_id:
             user_id = u_det["id"]
             user_role = u_det.get("role") or user_role
-            org_id = u_det.get("org_id") or org_id
 
     if user_id and (not user_role or user_role == ROLE_CONFIG["default_role"]):
         u_det = db.get_user_details(user_id)
