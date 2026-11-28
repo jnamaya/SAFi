@@ -410,7 +410,11 @@ def callback():
         user_info = oauth.google.get('userinfo').json()
         
         email = user_info.get('email')
-        if email:
+        email_verified = bool(
+            user_info.get('email_verified') is True
+            or id_claims.get('email_verified') is True
+        )
+        if email and email_verified:
             existing_user = db.get_user_by_email(email)
             if existing_user:
                 user_info['sub'] = existing_user['id']

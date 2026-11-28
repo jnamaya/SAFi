@@ -130,8 +130,11 @@ def verify_domain_dns():
         answers = dns.resolver.resolve(domain, 'TXT')
         found = False
         for rdata in answers:
-            txt_value = rdata.to_text().strip('"')
-            if token in txt_value:
+            txt_value = "".join(
+                s.decode("utf-8", errors="ignore") if isinstance(s, bytes) else str(s)
+                for s in getattr(rdata, "strings", ())
+            ).strip() or rdata.to_text().strip('"').strip()
+            if txt_value == token:
                 found = True
                 break
         
