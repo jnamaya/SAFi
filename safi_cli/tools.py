@@ -807,6 +807,9 @@ def execute_tool(
                 return "Error: 'path' parameter is required for delete."
             target = resolve_safe_path(path_str, workspace_root, follow_symlinks=False, agent=agent)
             if not target.exists() and not target.is_symlink():
+                norm_p = path_str.replace("\\", "/").strip("/")
+                if norm_p == ".safi/scratchpad.md" or norm_p.endswith("/.safi/scratchpad.md"):
+                    return f"Already absent: {path_str}"
                 return f"Error: No such file or directory: {path_str}"
             if target == workspace_root.resolve():
                 return "Error: Cannot delete the repository root directory."
